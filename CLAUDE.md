@@ -216,3 +216,51 @@ feat: add SearchAPI integration for Phase 4
 If a change affects multiple services, either:
 1. Use the primary service scope: `feat(api): add trip endpoints and update UI`
 2. Make separate commits per service when practical
+
+## Deployment
+
+### Frontend Hosting
+The `web` app is hosted on **Vercel** for optimized Next.js deployment. Vercel provides automatic deployments, preview environments, and a global CDN. Configure the `NEXT_PUBLIC_API_URL` environment variable in Vercel to point to the FastAPI backend.
+
+### Backend Hosting
+The FastAPI backend can be hosted on platforms like **Fly.io**, **Render**, or **AWS Free Tier**. Ensure the backend is accessible to the Vercel-hosted frontend.
+
+### CORS Configuration
+
+Since the frontend is hosted separately on Vercel, configure **CORS** in the FastAPI backend to allow requests from the Vercel domain.
+
+Example:
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-vercel-domain.vercel.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Replace `https://your-vercel-domain.vercel.app` with your actual Vercel domain.
+
+### CSRF Protection
+
+To prevent Cross-Site Request Forgery (CSRF) attacks, the backend requires CSRF tokens for all state-changing requests (e.g., `POST`, `PUT`, `DELETE`).
+
+- **Frontend**: Include the CSRF token in the request headers or body.
+- **Backend**: Validate the CSRF token in middleware or route handlers.
+
+Example:
+```python
+from fastapi import Request, HTTPException
+
+async def csrf_protection(request: Request):
+    token = request.headers.get("X-CSRF-Token")
+    if not token or token != "expected_token_value":
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+app.middleware("http")(csrf_protection)
+```
+
+Replace `"expected_token_value"` with your actual token logic.

@@ -97,3 +97,60 @@ vacation-tracker/
 3. **Room Type/View Filtering:** No hotel API supports query-level room filtering—implemented post-fetch parsing of room descriptions.
 4. **OAuth on Home Server:** Solved using Cloudflare Tunnel to provide a public callback URL without port forwarding.
 5. **Distributed Workflow Reliability:** Used Temporal's Saga pattern to ensure partial failures don't corrupt state.
+
+## Deployment
+
+### Frontend (Next.js)
+The `web` app is hosted on **Vercel** for optimized Next.js deployment. Vercel provides:
+- Automatic deployments from GitHub branches.
+- Preview environments for pull requests.
+- Global CDN for fast load times.
+
+To deploy:
+1. Connect your GitHub repository to Vercel.
+2. Select the `apps/web/` directory as the project root.
+3. Configure environment variables in the Vercel dashboard:
+   - `NEXT_PUBLIC_API_URL`: URL of the FastAPI backend (e.g., `https://api.yourdomain.com`).
+
+### Backend (FastAPI)
+The FastAPI backend can be hosted on platforms like **Fly.io**, **Render**, or **AWS Free Tier**. Ensure the backend is accessible to the Vercel-hosted frontend.
+
+### CORS Configuration
+
+Since the frontend is hosted separately on Vercel, you need to configure **CORS** in the FastAPI backend to allow requests from the Vercel domain.
+
+Example FastAPI CORS setup:
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-vercel-domain.vercel.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Replace `https://your-vercel-domain.vercel.app` with your actual Vercel domain.
+
+### CSRF Protection
+
+To prevent Cross-Site Request Forgery (CSRF) attacks, the backend requires CSRF tokens for all state-changing requests (e.g., `POST`, `PUT`, `DELETE`).
+
+- **Frontend**: Include the CSRF token in the request headers or body.
+- **Backend**: Validate the CSRF token in middleware or route handlers.
+
+Example FastAPI middleware for CSRF validation:
+```python
+from fastapi import Request, HTTPException
+
+async def csrf_protection(request: Request):
+    token = request.headers.get("X-CSRF-Token")
+    if not token or token != "expected_token_value":
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+app.middleware("http")(csrf_protection)
+```
+
+Replace `"expected_token_value"` with your actual token logic.
