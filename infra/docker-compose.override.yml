@@ -1,0 +1,35 @@
+# Development overrides - automatically loaded by docker-compose
+# Provides hot-reload for all application services
+
+services:
+  api:
+    build:
+      target: development
+    volumes:
+      - ../apps/api:/app
+      - /app/.venv  # Exclude virtualenv from mount
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      target: development
+    volumes:
+      - ../apps/worker:/app
+      - /app/.venv  # Exclude virtualenv from mount
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+
+  web:
+    build:
+      target: development
+    volumes:
+      - ../apps/web:/app
+      - /app/node_modules  # Exclude node_modules from mount
+      - /app/.next  # Exclude .next build cache from mount
+    environment:
+      - NODE_ENV=development
+    command: ["npm", "run", "dev"]

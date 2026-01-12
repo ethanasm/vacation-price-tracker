@@ -7,7 +7,7 @@
 ## 1. Infrastructure Setup
 
 ### 1.1 Docker Compose Environment
-- [ ] Create `docker-compose.yml` with services:
+- [X] Create `docker-compose.yml` with services:
   - `db`: PostgreSQL 15 with health check
   - `redis`: Redis 7 for caching and idempotency keys
   - `temporal`: Temporal server (temporalio/auto-setup)
@@ -15,14 +15,14 @@
   - `api`: FastAPI backend
   - `worker`: Temporal worker process
   - `web`: Next.js frontend
-- [ ] Configure shared network for inter-service communication
-- [ ] Set up volume mounts for database persistence
-- [ ] Create `docker-compose.override.yml` for development hot-reload
+- [X] Configure shared network for inter-service communication
+- [X] Set up volume mounts for database persistence
+- [X] Create `docker-compose.override.yml` for development hot-reload
 
 ### 1.2 Environment Configuration
-- [ ] Validate `.env.example` has all required variables
-- [ ] Create startup script that fails fast on missing required env vars
-- [ ] Document minimum required variables for Phase 1:
+- [X] Validate `.env.example` has all required variables
+- [X] Create startup script that fails fast on missing required env vars
+- [X] Document minimum required variables for Phase 1:
   - `DATABASE_URL`
   - `REDIS_URL`
   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
