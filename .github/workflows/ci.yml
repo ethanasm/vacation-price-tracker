@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-uv:
+    name: Python (uv) build, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Build
+        run: uv build
+      - name: Lint
+        run: uv run ruff check apps/api
+      - name: Test
+        run: uv run pytest apps/api/tests -v
+
+  web-pnpm:
+    name: Web (pnpm) build, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm --filter vacation-price-tracker-web build
+      - name: Lint
+        run: pnpm --filter vacation-price-tracker-web lint
+      - name: Check for web test script
+        id: web-tests
+        run: |
+          node -e "const fs = require('fs'); const p = JSON.parse(fs.readFileSync('apps/web/package.json', 'utf8')); process.stdout.write(p.scripts && p.scripts.test ? 'true' : 'false');" > /tmp/has_test
+          echo "has_test=$(cat /tmp/has_test)" >> "$GITHUB_OUTPUT"
+      - name: Test
+        if: steps.web-tests.outputs.has_test == 'true'
+        run: pnpm --filter vacation-price-tracker-web test
+      - name: Skip tests
+        if: steps.web-tests.outputs.has_test != 'true'
+        run: echo "No web test script defined"

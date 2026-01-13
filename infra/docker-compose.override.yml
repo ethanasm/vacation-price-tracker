@@ -6,7 +6,7 @@ services:
     build:
       target: development
     volumes:
-      - ../apps/api:/app
+      - ../:/app
       - /app/.venv  # Exclude virtualenv from mount
     environment:
       - ENVIRONMENT=development
@@ -32,4 +32,5 @@ services:
       - /app/.next  # Exclude .next build cache from mount
     environment:
       - NODE_ENV=development
-    command: ["npm", "run", "dev"]
+      - CI=true
+    command: ["sh", "-c", "pnpm install --no-frozen-lockfile --force && pnpm run dev"]

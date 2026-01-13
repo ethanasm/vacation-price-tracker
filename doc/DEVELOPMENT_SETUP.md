@@ -87,6 +87,21 @@ uv run pip-audit
 uv run pip-audit --ignore-vuln <CVE-ID>
 ```
 
+### Security (pnpm audit)
+When updating frontend dependencies, run a pnpm audit.
+
+```bash
+# Run security audit
+cd apps/web
+pnpm audit
+
+# Limit to production dependencies
+pnpm audit --prod
+
+# JSON output (CI-friendly)
+pnpm audit --json
+```
+
 ### Running the API Server
 ```bash
 # Development mode (auto-reload)

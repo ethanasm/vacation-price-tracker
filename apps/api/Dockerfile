@@ -20,6 +20,8 @@ RUN uv pip install --system -e ".[dev]" 2>/dev/null || echo "No pyproject.toml y
 
 COPY . .
 
+WORKDIR /app/apps/api
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # Production stage
@@ -29,6 +31,8 @@ COPY pyproject.toml uv.lock* ./
 RUN uv pip install --system -e "." 2>/dev/null || echo "No pyproject.toml yet"
 
 COPY . .
+
+WORKDIR /app/apps/api
 
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
 USER appuser

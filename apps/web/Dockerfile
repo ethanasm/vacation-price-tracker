@@ -3,29 +3,30 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
+RUN corepack enable
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Development stage
 FROM base AS development
 
-COPY package*.json ./
-RUN npm install 2>/dev/null || echo "No package.json yet"
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install 2>/dev/null || echo "No package.json yet"
 
 COPY . .
 
 ENV NODE_ENV=development
 
-CMD ["npm", "run", "dev"]
+CMD ["pnpm", "run", "dev"]
 
 # Builder stage
 FROM base AS builder
 
-COPY package*.json ./
-RUN npm ci 2>/dev/null || echo "No package.json yet"
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install 2>/dev/null || echo "No package.json yet"
 
 COPY . .
 
-RUN npm run build 2>/dev/null || echo "No build script yet"
+RUN pnpm run build 2>/dev/null || echo "No build script yet"
 
 # Production stage
 FROM base AS production

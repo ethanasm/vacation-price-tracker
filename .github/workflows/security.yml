@@ -2,7 +2,7 @@
 name: Security Scan
 on: [push, pull_request]
 jobs:
-  security:
+  pip-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,3 +15,37 @@ jobs:
         run: uv sync --extra dev
       - name: Run pip-audit
         run: uv run pip-audit --ignore-vuln CVE-2024-23342
+
+  pnpm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for web changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'pnpm-lock.yaml'
+      - uses: actions/setup-node@v4
+        if: steps.filter.outputs.web == 'true'
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        if: steps.filter.outputs.web == 'true'
+        with:
+          version: 9
+      - name: Install dependencies
+        if: steps.filter.outputs.web == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Run pnpm audit
+        if: steps.filter.outputs.web == 'true'
+        run: pnpm --filter vacation-price-tracker-web audit --audit-level=moderate
+        continue-on-error: true
+      - name: Run pnpm audit (production only)
+        if: steps.filter.outputs.web == 'true'
+        run: pnpm --filter vacation-price-tracker-web audit --prod
+      - name: Skip message
+        if: steps.filter.outputs.web != 'true'
+        run: echo "No web changes detected, skipping pnpm audit"

@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: vacation-tracker-db
+    container_name: vacation-price-tracker-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -19,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: vacation-tracker-redis
+    container_name: vacation-price-tracker-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -33,7 +33,7 @@ services:
 
   temporal:
     image: temporalio/auto-setup:latest
-    container_name: vacation-tracker-temporal
+    container_name: vacation-price-tracker-temporal
     restart: unless-stopped
     environment:
       DB: postgres12
@@ -55,7 +55,7 @@ services:
 
   temporal-ui:
     image: temporalio/ui:latest
-    container_name: vacation-tracker-temporal-ui
+    container_name: vacation-price-tracker-temporal-ui
     restart: unless-stopped
     environment:
       TEMPORAL_ADDRESS: temporal:7233
@@ -68,9 +68,9 @@ services:
 
   api:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile
-    container_name: vacation-tracker-api
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: vacation-price-tracker-api
     restart: unless-stopped
     env_file: ../.env
     environment:
@@ -92,9 +92,9 @@ services:
 
   worker:
     build:
-      context: ../apps/worker
-      dockerfile: Dockerfile
-    container_name: vacation-tracker-worker
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    container_name: vacation-price-tracker-worker
     restart: unless-stopped
     env_file: ../.env
     environment:
@@ -102,7 +102,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
-      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-vacation-tracker-tasks}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-vacation-price-tracker-tasks}
     depends_on:
       db:
         condition: service_healthy
@@ -110,12 +110,14 @@ services:
         condition: service_healthy
       temporal:
         condition: service_healthy
+    profiles:
+      - worker
 
   web:
     build:
       context: ../apps/web
       dockerfile: Dockerfile
-    container_name: vacation-tracker-web
+    container_name: vacation-price-tracker-web
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${BACKEND_URL:-http://localhost:8000}

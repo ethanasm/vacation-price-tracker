@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Temporal
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
-    temporal_task_queue: str = "vacation-tracker-tasks"
+    temporal_task_queue: str = "vacation-price-tracker-tasks"
 
     # Email Notifications
     smtp_host: str = "smtp.smtp2go.com"

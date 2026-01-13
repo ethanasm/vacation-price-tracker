@@ -46,7 +46,7 @@
 - [ ] Install `cloudflared` on host machine
 - [ ] Create Cloudflare Tunnel:
   ```bash
-  cloudflared tunnel create vacation-tracker
+  cloudflared tunnel create vacation-price-tracker
   ```
 - [ ] Configure tunnel routing in `config.yml`:
   ```yaml
@@ -673,6 +673,7 @@ Already implemented in Phase 1:
 ### 8.3 Dependency Scanning
 - [ ] Add Dependabot or Renovate for dependency updates
 - [ ] Run `pip-audit` in CI pipeline
+- [ ] Run `pnpm audit` for frontend dependencies in CI pipeline
 - [ ] Document process for security patches
 
 ---

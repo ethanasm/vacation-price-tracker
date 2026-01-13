@@ -1,0 +1,20 @@
+{
+  "name": "vacation-price-tracker",
+  "private": true,
+  "packageManager": "pnpm@9.12.1",
+  "scripts": {
+    "web:dev": "pnpm --filter vacation-price-tracker-web dev",
+    "web:build": "pnpm --filter vacation-price-tracker-web build",
+    "web:start": "pnpm --filter vacation-price-tracker-web start",
+    "web:lint": "pnpm --filter vacation-price-tracker-web lint",
+    "web:format": "pnpm --filter vacation-price-tracker-web format",
+    "web:audit": "pnpm --filter vacation-price-tracker-web audit",
+    "sonar": "sonar-scanner",
+    "validate:web": "pnpm web:build && pnpm web:lint",
+    "validate:all": "pnpm validate:web && pnpm sonar"
+  },
+  "devDependencies": {
+    "shadcn": "^3.6.3",
+    "sonarqube-scanner": "^4.0.1"
+  }
+}

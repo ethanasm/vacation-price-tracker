@@ -1,4 +1,4 @@
-Can# Temporal Worker Dockerfile
+# Temporal Worker Dockerfile
 FROM python:3.12-slim AS base
 
 WORKDIR /app
@@ -20,6 +20,8 @@ RUN uv pip install --system -e ".[dev]" 2>/dev/null || echo "No pyproject.toml y
 
 COPY . .
 
+WORKDIR /app/apps/worker
+
 CMD ["python", "-m", "worker"]
 
 # Production stage
@@ -29,6 +31,8 @@ COPY pyproject.toml uv.lock* ./
 RUN uv pip install --system -e "." 2>/dev/null || echo "No pyproject.toml yet"
 
 COPY . .
+
+WORKDIR /app/apps/worker
 
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
 USER appuser

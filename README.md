@@ -48,7 +48,7 @@ Since flights and hotels are covered by existing MCP servers, our custom MCP ser
 
 ## Directory Structure
 ```text
-vacation-tracker/
+vacation-price-tracker/
 ├── apps/
 │   ├── web/              # Next.js frontend
 │   ├── api/              # FastAPI backend
@@ -62,7 +62,8 @@ vacation-tracker/
 
 ### Prerequisites
 - Python 3.12+
-- Node.js 18+ (for frontend, not yet implemented)
+- Node.js 18+ (for frontend)
+- pnpm 9+ (frontend package manager)
 - [uv](https://github.com/astral-sh/uv) (Python package manager)
 - Docker & Docker Compose (for services)
 
@@ -70,14 +71,19 @@ vacation-tracker/
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/your-repo/vacation-tracker
-   cd vacation-tracker
+   git clone https://github.com/your-repo/vacation-price-tracker
+   cd vacation-price-tracker
    ```
 
 2. **Install dependencies:**
    ```bash
    # Install Python dependencies
    uv sync --extra dev
+   ```
+   ```bash
+   # Install frontend dependencies
+   cd apps/web
+   pnpm install
    ```
 
 3. **Configure `.env`:**
@@ -151,6 +157,19 @@ uv run pip-audit
 
 # Ignore accepted risks (see SECURITY_AUDIT.md)
 uv run pip-audit --ignore-vuln CVE-2024-23342
+```
+
+#### Security Scanning (pnpm audit)
+```bash
+# Scan frontend dependencies for known vulnerabilities
+cd apps/web
+pnpm audit
+
+# Limit to production dependencies
+pnpm audit --prod
+
+# JSON output (CI-friendly)
+pnpm audit --json
 ```
 
 #### Type Checking (mypy) - Optional

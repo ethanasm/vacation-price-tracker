@@ -89,7 +89,7 @@ Copy `.env.example` to `.env` and configure:
 ## Directory Structure (Planned)
 
 ```
-vacation-tracker/
+vacation-price-tracker/
 ├── apps/
 │   ├── web/              # Next.js frontend
 │   ├── api/              # FastAPI backend
