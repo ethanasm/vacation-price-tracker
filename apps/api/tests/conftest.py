@@ -1,18 +1,16 @@
 """Pytest fixtures for testing."""
 
-import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
-from sqlmodel import SQLModel
-from fastapi.testclient import TestClient
+import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+import pytest_asyncio
 from app.db.deps import get_db
-
-# Test database URL (use file-based SQLite with shared cache for tests)
-import tempfile
-import os
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+from sqlmodel import SQLModel
 
 TEST_DB_FILE = os.path.join(tempfile.gettempdir(), "test_vacation_tracker.db")
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_FILE}"
@@ -27,7 +25,9 @@ def anyio_backend():
 @pytest_asyncio.fixture(scope="function")
 async def test_engine():
     """Create a test database engine for each test."""
-    from app.models.user import User  # Import models to register them
+    import app.models.user as user_models
+
+    _ = user_models.User
 
     # Remove old test DB if exists
     if os.path.exists(TEST_DB_FILE):

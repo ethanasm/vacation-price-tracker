@@ -1,11 +1,12 @@
 """Tests for authentication endpoints."""
 
-import pytest
-from jose import jwt
+from datetime import UTC
 
+import pytest
 from app.core.config import settings
 from app.core.constants import JWTClaims
 from app.models.user import User
+from jose import jwt
 
 
 class TestGoogleOAuthCallback:
@@ -18,7 +19,6 @@ class TestGoogleOAuthCallback:
     @pytest.mark.asyncio
     async def test_create_user_from_google_oauth(self, test_session, mock_redis):
         """Test user creation from Google OAuth data."""
-        from app.routers.auth import google_auth_callback
         from app.core.security import create_access_token
 
         # Simulate what happens after OAuth succeeds
@@ -84,8 +84,9 @@ class TestTokenRefresh:
     @pytest.mark.asyncio
     async def test_refresh_token_logic(self, test_session, mock_redis):
         """Test refresh token creation and validation logic."""
+        from app.core.security import create_access_token, create_refresh_token
+
         from tests.test_models import set_test_timestamps
-        from app.core.security import create_refresh_token, create_access_token
 
         # Create test user
         user = User(google_sub="test_sub", email="refresh@example.com")
@@ -132,8 +133,9 @@ class TestLogout:
     @pytest.mark.asyncio
     async def test_logout_token_invalidation(self, test_session):
         """Test logout invalidates refresh token."""
-        from tests.test_models import set_test_timestamps
         from app.core.security import create_refresh_token
+
+        from tests.test_models import set_test_timestamps
 
         # Create test user
         user = User(google_sub="test_sub", email="logout@example.com")
@@ -155,8 +157,8 @@ class TestLogout:
         assert JWTClaims.EXPIRATION in payload
 
         # Token should have reasonable expiration (7 days)
-        from datetime import datetime, timezone, timedelta
-        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=timezone.utc)
-        expected_exp = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        from datetime import datetime, timedelta
+        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=UTC)
+        expected_exp = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         # Within 1 minute of expected expiration
         assert abs((exp_time - expected_exp).total_seconds()) < 60

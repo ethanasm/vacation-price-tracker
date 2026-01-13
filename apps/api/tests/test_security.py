@@ -1,12 +1,11 @@
 """Tests for security utilities (JWT token creation/validation)."""
 
-import pytest
-from datetime import datetime, timedelta, timezone
-from jose import jwt, JWTError
+from datetime import UTC, datetime, timedelta
 
 from app.core.config import settings
 from app.core.constants import JWTClaims, TokenType
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
+from jose import jwt
 
 
 class TestTokenCreation:
@@ -25,8 +24,8 @@ class TestTokenCreation:
         assert JWTClaims.EXPIRATION in payload
 
         # Verify expiration is approximately correct (within 1 minute)
-        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=timezone.utc)
-        expected_exp = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=UTC)
+        expected_exp = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
         assert abs((exp_time - expected_exp).total_seconds()) < 60
 
     def test_create_refresh_token(self):
@@ -42,8 +41,8 @@ class TestTokenCreation:
         assert JWTClaims.EXPIRATION in payload
 
         # Verify expiration is approximately correct (within 1 minute)
-        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=timezone.utc)
-        expected_exp = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=UTC)
+        expected_exp = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         assert abs((exp_time - expected_exp).total_seconds()) < 60
 
     def test_token_immutability(self):

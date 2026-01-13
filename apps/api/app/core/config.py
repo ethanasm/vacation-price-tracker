@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Load env vars from real .env, then test overrides, then fall back to the example
+        env_file=(".env", ".env.test", ".env.example"),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )

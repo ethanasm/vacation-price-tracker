@@ -1,15 +1,16 @@
 """Tests for database models."""
 
-import pytest
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import pytest
 from app.models.user import User
+from sqlalchemy.exc import IntegrityError
 
 
 def set_test_timestamps(user: User) -> None:
     """Helper to set timestamps for SQLite tests (doesn't support server_default with RETURNING)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     user.created_at = now
     user.updated_at = now
 
@@ -68,7 +69,7 @@ class TestUserModel:
         set_test_timestamps(user2)
         test_session.add(user2)
 
-        with pytest.raises(Exception):  # SQLAlchemy will raise IntegrityError
+        with pytest.raises(IntegrityError):
             await test_session.commit()
 
     @pytest.mark.asyncio
@@ -84,7 +85,7 @@ class TestUserModel:
         set_test_timestamps(user2)
         test_session.add(user2)
 
-        with pytest.raises(Exception):  # SQLAlchemy will raise IntegrityError
+        with pytest.raises(IntegrityError):
             await test_session.commit()
 
     @pytest.mark.asyncio

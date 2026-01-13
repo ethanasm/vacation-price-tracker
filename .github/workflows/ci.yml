@@ -10,6 +10,15 @@ jobs:
   python-uv:
     name: Python (uv) build, lint, test
     runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: test
+      SECRET_KEY: test-secret
+      GOOGLE_CLIENT_ID: test-google-client-id
+      GOOGLE_CLIENT_SECRET: test-google-client-secret
+      DATABASE_URL: sqlite+aiosqlite:///tmp/test_vacation_tracker.db
+      GROQ_API_KEY: test-groq-key
+      AMADEUS_API_KEY: test-amadeus-key
+      AMADEUS_API_SECRET: test-amadeus-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,7 +45,7 @@ jobs:
           node-version: "20"
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.12.1
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build
