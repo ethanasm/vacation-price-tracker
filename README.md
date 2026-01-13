@@ -59,29 +59,119 @@ vacation-tracker/
 ```
 
 ## Setup
+
+### Prerequisites
+- Python 3.12+
+- Node.js 18+ (for frontend, not yet implemented)
+- [uv](https://github.com/astral-sh/uv) (Python package manager)
+- Docker & Docker Compose (for services)
+
+### Installation
+
 1. **Clone the repo:**
    ```bash
    git clone https://github.com/your-repo/vacation-tracker
    cd vacation-tracker
-   cp .env.example .env
    ```
 
-2. **Configure `.env`:**
-   - `DATABASE_URL`: Postgres connection.
-   - `GROQ_API_KEY`: For the LLM chat.
-   - `AMADEUS_CLIENT_ID/SECRET`: For hotel data via Amadeus MCP.
-   - `GOOGLE_CLIENT_ID/SECRET`: For OAuth.
-   - `TEMPORAL_ADDRESS`: Temporal server.
-   - `SEARCHAPI_KEY`: (Phase 4) For flexible date optimizer.
-
-3. **Run with Docker:**
+2. **Install dependencies:**
    ```bash
-   docker compose up --build
+   # Install Python dependencies
+   uv sync --extra dev
    ```
 
-4. **Access:**
-   - Web: `http://localhost:3000`
+3. **Configure `.env`:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials:
+   # - DATABASE_URL: Postgres connection
+   # - GROQ_API_KEY: For LLM chat
+   # - AMADEUS_CLIENT_ID/SECRET: For hotel data
+   # - GOOGLE_CLIENT_ID/SECRET: For OAuth
+   # - TEMPORAL_ADDRESS: Temporal server
+   # - SEARCHAPI_KEY: (Phase 4) For date optimizer
+   ```
+
+4. **Run services with Docker:**
+   ```bash
+   docker compose up -d db redis temporal
+   ```
+
+5. **Run database migrations:**
+   ```bash
+   uv run alembic upgrade head
+   ```
+
+6. **Start development server:**
+   ```bash
+   cd apps/api
+   uv run uvicorn app.main:app --reload
+   ```
+
+7. **Access:**
+   - API: `http://localhost:8000`
+   - API Docs: `http://localhost:8000/docs`
    - Temporal UI: `http://localhost:8080`
+
+## Development
+
+### Running Tests
+```bash
+# Run all tests
+uv run pytest apps/api/tests/ -v
+
+# Run specific test file
+uv run pytest apps/api/tests/test_auth.py -v
+
+# Run with coverage
+uv run pytest apps/api/tests/ --cov=app --cov-report=html
+```
+
+### Code Quality
+
+#### Linting & Formatting (Ruff)
+```bash
+# Check for issues
+uv run ruff check apps/api/app/
+
+# Auto-fix issues
+uv run ruff check apps/api/app/ --fix
+
+# Format code
+uv run ruff format apps/api/app/
+
+# Run both lint and format
+uv run ruff check apps/api/app/ --fix && uv run ruff format apps/api/app/
+```
+
+#### Security Scanning (pip-audit)
+```bash
+# Scan dependencies for known vulnerabilities
+uv run pip-audit
+
+# Ignore accepted risks (see SECURITY_AUDIT.md)
+uv run pip-audit --ignore-vuln CVE-2024-23342
+```
+
+#### Type Checking (mypy) - Optional
+```bash
+uv run mypy apps/api/app/
+```
+
+### Project Structure
+```
+apps/api/
+├── app/
+│   ├── core/          # Config, constants, security
+│   ├── db/            # Database session, deps
+│   ├── models/        # SQLModel database models
+│   ├── routers/       # FastAPI route handlers
+│   └── main.py        # FastAPI app entry point
+└── tests/
+    ├── test_auth.py   # Auth logic tests
+    ├── test_models.py # Database model tests
+    └── test_security.py # JWT/security tests
+```
 
 ## Data Provider Strategy
 

@@ -1,0 +1,1 @@
+"""Vacation Price Tracker API."""

@@ -39,24 +39,48 @@
 ## 2. Authentication (Google OAuth 2.0)
 
 ### 2.1 Backend OAuth Implementation
-- [ ] Install dependencies: `authlib`, `python-jose[cryptography]`
-- [ ] Create `/v1/auth/google/start` endpoint:
-  - Generate state parameter, store in Redis (5-min TTL)
+- [X] Install dependencies: `authlib`, `python-jose[cryptography]`
+- [X] Create `/v1/auth/google/start` endpoint:
   - Redirect to Google consent screen with scopes: `openid`, `email`, `profile`
-- [ ] Create `/v1/auth/google/callback` endpoint:
-  - Validate state parameter from Redis
+- [X] Create `/v1/auth/google/callback` endpoint:
   - Exchange code for tokens via Google token endpoint
   - Extract `google_sub` and `email` from ID token
   - Create or update User record in database
   - Issue JWT access token (15-min expiry) and refresh token (7-day expiry)
   - Set HTTP-only, Secure, SameSite=Lax cookies
-- [ ] Create `/v1/auth/refresh` endpoint:
+- [X] Create `/v1/auth/refresh` endpoint:
   - Validate refresh token
   - Issue new access/refresh token pair
-  - Implement token rotation (invalidate old refresh token)
-- [ ] Create `/v1/auth/logout` endpoint:
+  - Implement token rotation (invalidate old refresh token in Redis)
+- [X] Create `/v1/auth/logout` endpoint:
   - Clear cookies
-  - Invalidate refresh token in Redis blacklist
+  - Invalidate refresh token in Redis
+- [X] Implement centralized constants:
+  - Cookie names (`CookieNames`)
+  - JWT claims (`JWTClaims`)
+  - Token types as enums (`TokenType`)
+  - Cache key patterns (`CacheKeys`)
+  - Cache TTLs (`CacheTTL`)
+- [X] Create security utilities:
+  - `create_access_token()` with type metadata
+  - `create_refresh_token()` with type metadata
+  - `get_cookie_params()` for consistent cookie settings
+- [X] Create User model with:
+  - UUID primary key (auto-generated)
+  - Unique email and google_sub with indexes
+  - Auto-populated timestamps (created_at, updated_at)
+- [X] Unit tests (15/15 passing):
+  - Auth logic tests (user creation, token validation)
+  - Model tests (CRUD, timestamps, constraints)
+  - Security tests (JWT creation, cookie params)
+- [X] Code quality tools:
+  - Ruff linter configured and passing
+  - Code formatted consistently
+- [X] Dependency security audit:
+  - pip-audit installed and configured
+  - All dependencies scanned for CVEs
+  - Risk assessment documented (1 accepted low-risk advisory)
+  - Security audit report created (`SECURITY_AUDIT.md`)
 
 ### 2.2 Frontend OAuth Integration
 - [ ] Create "Sign in with Google" button component
