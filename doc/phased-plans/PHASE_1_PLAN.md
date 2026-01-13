@@ -30,9 +30,9 @@
   - `AMADEUS_API_KEY` / `AMADEUS_API_SECRET`
 
 ### 1.3 MCP Server Configuration
-- [ ] Add Amadeus MCP server as sidecar container
-- [ ] Document Kiwi MCP connection options (Claude.ai connector or self-hosted)
-- [ ] Create MCP router configuration in FastAPI for tool dispatching
+- [X] Document MCP server architecture (stdio-based subprocesses, not containers)
+- [X] Document Kiwi MCP connection options (Claude.ai connector or self-hosted)
+- [X] Document MCP router design for FastAPI implementation (Phase 1 Section 4)
 
 ---
 
