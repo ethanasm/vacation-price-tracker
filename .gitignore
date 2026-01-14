@@ -4,4 +4,7 @@
 /apps/web/node_modules
 /apps/web/.next
 /apps/web/.pnpm-store
+/apps/api/*/*/__pycache__/
+/apps/api/*/__pycache__/
 /.scannerwork
+.DS_Store
