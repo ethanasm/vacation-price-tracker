@@ -1,4 +1,4 @@
-name: SonarQube Scan
+name: SonarQube
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 
 jobs:
   scan:
-    name: SonarQube Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
