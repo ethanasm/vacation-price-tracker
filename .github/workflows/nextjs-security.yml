@@ -1,22 +1,14 @@
-# .github/workflows/security.yml
-name: Security Scan
-on: [push, pull_request]
-jobs:
-  pip-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install uv
-        run: pip install uv
-      - name: Install dependencies
-        run: uv sync --extra dev
-      - name: Run pip-audit
-        run: uv run pip-audit --ignore-vuln CVE-2024-23342
+name: Next.js Security Audit
 
-  pnpm-audit:
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    name: Next.js Security Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

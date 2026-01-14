@@ -1,5 +1,4 @@
-# .github/workflows/sonarqube.yml
-name: SonarQube Analysis
+name: SonarQube Scan
 
 on:
   push:
@@ -8,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  sonarqube:
+  scan:
     name: SonarQube Scan
     runs-on: ubuntu-latest
     steps:
