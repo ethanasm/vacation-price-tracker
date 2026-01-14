@@ -8,6 +8,7 @@
     "web:start": "pnpm --filter vacation-price-tracker-web start",
     "web:lint": "pnpm --filter vacation-price-tracker-web lint",
     "web:format": "pnpm --filter vacation-price-tracker-web format",
+    "web:test": "pnpm --filter vacation-price-tracker-web test",
     "web:audit": "pnpm --filter vacation-price-tracker-web audit",
     "sonar": "sonar-scanner",
     "validate:web": "pnpm web:build && pnpm web:lint",

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "biome lint .",
     "format": "biome format .",
-    "test": "echo \"No web tests yet\""
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@radix-ui/react-separator": "^1.1.8",
@@ -26,13 +28,20 @@
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "20.14.10",
     "@types/react": "19.2.8",
     "@types/react-dom": "19.2.3",
     "autoprefixer": "^10.4.23",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
     "postcss": "^8.5.6",
     "shadcn": "^3.6.3",
     "tailwindcss": "^4.1.18",
+    "ts-node": "^10.9.2",
     "typescript": "5.5.4"
   },
   "packageManager": "pnpm@9.12.1"

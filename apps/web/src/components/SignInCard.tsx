@@ -13,11 +13,12 @@ import {
 
 type SignInCardProps = Readonly<{
   signInUrl: string;
+  onNavigate?: (url: string) => void;
 }>;
 
-export function SignInCard({ signInUrl }: SignInCardProps) {
+export function SignInCard({ signInUrl, onNavigate }: SignInCardProps) {
   const handleClick = () => {
-    globalThis.location.href = signInUrl;
+    (onNavigate ?? ((url) => globalThis.location.assign(url)))(signInUrl);
   };
 
   return (

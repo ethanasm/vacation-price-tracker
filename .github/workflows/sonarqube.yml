@@ -44,6 +44,10 @@ jobs:
           uv run pytest apps/api/tests/ --cov=app --cov-report=xml:apps/api/coverage.xml -v
         continue-on-error: true
 
+      - name: Run web tests with coverage
+        run: pnpm --filter vacation-price-tracker-web test:coverage
+        continue-on-error: true
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
