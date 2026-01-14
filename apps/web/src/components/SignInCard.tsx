@@ -12,15 +12,11 @@ import {
 } from "./ui/card";
 
 type SignInCardProps = Readonly<{
+  onSignIn: () => void;
   signInUrl: string;
-  onNavigate?: (url: string) => void;
 }>;
 
-export function SignInCard({ signInUrl, onNavigate }: SignInCardProps) {
-  const handleClick = () => {
-    (onNavigate ?? ((url) => globalThis.location.assign(url)))(signInUrl);
-  };
-
+export function SignInCard({ onSignIn }: SignInCardProps) {
   return (
     <Card className={styles.card}>
       <CardHeader className={styles.header}>
@@ -32,7 +28,7 @@ export function SignInCard({ signInUrl, onNavigate }: SignInCardProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className={styles.content}>
-        <GoogleButton onClick={handleClick} />
+        <GoogleButton onClick={onSignIn} />
         <p className={styles.helper}>
           Scan thousands of flight and hotel combinations to find your cheapest
           vacation window.

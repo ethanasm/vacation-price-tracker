@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "biome lint .",
     "format": "biome format .",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

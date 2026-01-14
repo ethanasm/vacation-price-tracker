@@ -76,7 +76,10 @@ export function HomePage() {
 
           {/* Right column: Sign-in card */}
           <div className={styles.heroCard}>
-            <SignInCard signInUrl={googleStartUrl} />
+            <SignInCard
+              signInUrl={googleStartUrl}
+              onSignIn={() => globalThis.location.assign(googleStartUrl)}
+            />
           </div>
         </div>
       </section>

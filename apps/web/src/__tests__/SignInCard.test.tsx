@@ -6,9 +6,14 @@ jest.mock("../components/SignInCard.module.css", () => ({}));
 
 describe("SignInCard", () => {
   const mockSignInUrl = "https://example.com/auth/google/start";
+  const mockOnSignIn = jest.fn();
+
+  beforeEach(() => {
+    mockOnSignIn.mockClear();
+  });
 
   it("renders the sign in text", () => {
-    render(<SignInCard signInUrl={mockSignInUrl} />);
+    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
 
     expect(screen.getByText("Sign in to start tracking")).toBeInTheDocument();
     expect(
@@ -16,18 +21,17 @@ describe("SignInCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("calls onNavigate with signInUrl when Google button is clicked", async () => {
-    const mockNavigate = jest.fn();
+  it("calls onSignIn when Google button is clicked", async () => {
     const user = userEvent.setup();
 
-    render(<SignInCard signInUrl={mockSignInUrl} onNavigate={mockNavigate} />);
+    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    expect(mockNavigate).toHaveBeenCalledWith(mockSignInUrl);
+    expect(mockOnSignIn).toHaveBeenCalledTimes(1);
   });
 
   it("renders the helper text", () => {
-    render(<SignInCard signInUrl={mockSignInUrl} />);
+    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
 
     expect(
       screen.getByText(
