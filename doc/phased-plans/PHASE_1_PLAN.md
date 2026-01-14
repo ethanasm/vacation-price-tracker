@@ -85,9 +85,9 @@
   - `pnpm audit` documented for frontend dependencies
 
 ### 2.2 Frontend OAuth Integration
-- [ ] Create "Sign in with Google" button component
-- [ ] Implement OAuth redirect flow
-- [ ] Handle callback and token storage
+- [X] Create "Sign in with Google" button component
+- [X] Implement OAuth redirect flow
+- [X] Handle callback and token storage
 - [ ] Create auth context/provider for session state
 - [ ] Implement automatic token refresh on 401 responses
 

@@ -11,6 +11,11 @@
     "indentStyle": "space",
     "indentWidth": 2
   },
+  "javascript": {
+    "formatter": {
+      "bracketSpacing": true
+    }
+  },
   "files": {
     "ignore": [".next", "node_modules", "out", "coverage", ".pnpm-store"]
   }

@@ -5,22 +5,22 @@ import "./globals.css";
 const display = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-display",
-  weight: ["500", "700"]
+  weight: ["500", "700"],
 });
 
 const body = Manrope({
   subsets: ["latin"],
   variable: "--font-body",
-  weight: ["400", "600"]
+  weight: ["400", "600"],
 });
 
 export const metadata: Metadata = {
   title: "Vacation Price Tracker",
-  description: "Track flight and hotel prices for your next trip."
+  description: "Track flight and hotel prices for your next trip.",
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {

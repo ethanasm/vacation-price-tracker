@@ -6,7 +6,7 @@ services:
     build:
       target: development
     volumes:
-      - ../:/app
+      - .:/app
       - /app/.venv  # Exclude virtualenv from mount
     environment:
       - ENVIRONMENT=development
@@ -17,7 +17,7 @@ services:
     build:
       target: development
     volumes:
-      - ../apps/worker:/app
+      - ./apps/worker:/app
       - /app/.venv  # Exclude virtualenv from mount
     environment:
       - ENVIRONMENT=development
@@ -27,7 +27,7 @@ services:
     build:
       target: development
     volumes:
-      - ../apps/web:/app
+      - ./apps/web:/app
       - /app/node_modules  # Exclude node_modules from mount
       - /app/.next  # Exclude .next build cache from mount
     environment:

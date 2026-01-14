@@ -17,7 +17,7 @@ describe("SignInCard", () => {
 
     expect(screen.getByText("Sign in to start tracking")).toBeInTheDocument();
     expect(
-      screen.getByText("Google OAuth only. We never store passwords.")
+      screen.getByText("Google OAuth only. We never store passwords."),
     ).toBeInTheDocument();
   });
 
@@ -35,8 +35,8 @@ describe("SignInCard", () => {
 
     expect(
       screen.getByText(
-        "Scan thousands of flight and hotel combinations to find your cheapest vacation window."
-      )
+        "Scan thousands of flight and hotel combinations to find your cheapest vacation window.",
+      ),
     ).toBeInTheDocument();
   });
 });

@@ -70,11 +70,11 @@ services:
 
   api:
     build:
-      context: ..
+      context: .
       dockerfile: apps/api/Dockerfile
     container_name: api
     restart: unless-stopped
-    env_file: ../.env
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/vacation_tracker
       REDIS_URL: redis://redis:6379/0
@@ -94,11 +94,11 @@ services:
 
   worker:
     build:
-      context: ..
+      context: .
       dockerfile: apps/worker/Dockerfile
     container_name: worker
     restart: unless-stopped
-    env_file: ../.env
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/vacation_tracker
       REDIS_URL: redis://redis:6379/0
@@ -117,7 +117,7 @@ services:
 
   web:
     build:
-      context: ../apps/web
+      context: apps/web
       dockerfile: Dockerfile
     container_name: web
     restart: unless-stopped

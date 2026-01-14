@@ -10,8 +10,8 @@ describe("SiteFooter", () => {
 
     expect(
       screen.getByText(
-        "Track flight and hotel prices without the spreadsheet sprawl."
-      )
+        "Track flight and hotel prices without the spreadsheet sprawl.",
+      ),
     ).toBeInTheDocument();
   });
 

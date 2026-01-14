@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
-import { HomePage } from "../components/HomePage";
+import HomePage from "./page";
 
-jest.mock("../components/HomePage.module.css", () => ({}));
+jest.mock("../app/page.module.css", () => ({}));
 jest.mock("../components/SignInCard.module.css", () => ({}));
 jest.mock("../components/SiteFooter.module.css", () => ({}));
 
@@ -24,8 +24,8 @@ describe("HomePage", () => {
 
     expect(
       screen.getByText(
-        "We scan every flight and hotel combination across your flexible dates to find when your entire trip costs the least."
-      )
+        "We scan every flight and hotel combination across your flexible dates to find when your entire trip costs the least.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -57,8 +57,8 @@ describe("HomePage", () => {
 
     expect(
       screen.getByText(
-        "Track flight and hotel prices without the spreadsheet sprawl."
-      )
+        "Track flight and hotel prices without the spreadsheet sprawl.",
+      ),
     ).toBeInTheDocument();
   });
 });

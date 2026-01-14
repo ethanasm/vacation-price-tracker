@@ -7,7 +7,7 @@ describe("cn utility", () => {
 
   it("handles conditional classes", () => {
     expect(cn("base", true && "included", false && "excluded")).toBe(
-      "base included"
+      "base included",
     );
   });
 

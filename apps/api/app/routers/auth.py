@@ -95,7 +95,7 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     # Store refresh token in Redis (or a DB table) for rotation and validation
     await _store_refresh_token(user.id, refresh_token)
 
-    response = RedirectResponse(url=settings.frontend_url)
+    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
 
     # Set cookies
     _set_auth_cookies(response, access_token, refresh_token)
