@@ -15,6 +15,8 @@ Vacation Price Tracker is a full-stack web application designed for travelers to
 - **Backend**: FastAPI (Python 3.12), SQLModel/PostgreSQL.
 - **Orchestration**: Temporal SDK for Python.
 - **Auth**: Google OAuth 2.0 (No local passwords).
+- **Testing**: pytest (API), Jest (web).
+- **Code Quality**: Ruff, SonarQube (SonarCloud).
 - **Flight Data**: Kiwi MCP Server (Free, no API key required).
 - **Hotel Data**: 
   - **MVP**: Amadeus MCP Server (Free tier: 2,000 calls/month).
@@ -133,6 +135,15 @@ uv run pytest apps/api/tests/test_auth.py -v
 uv run pytest apps/api/tests/ --cov=app --cov-report=html
 ```
 
+#### Frontend Tests (Jest)
+```bash
+# Run web tests
+pnpm web:test
+
+# Watch mode
+pnpm web:test:watch
+```
+
 ### Code Quality
 
 #### Linting & Formatting (Ruff)
@@ -171,6 +182,13 @@ pnpm audit --prod
 # JSON output (CI-friendly)
 pnpm audit --json
 ```
+
+#### Code Quality (SonarQube)
+```bash
+# Run SonarQube scan (configured in sonar-project.properties)
+pnpm sonar
+```
+Connect the SonarQube/SonarCloud project in your IDE via SonarLint to surface warnings before pushing.
 
 #### Type Checking (mypy) - Optional
 ```bash

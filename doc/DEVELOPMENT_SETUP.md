@@ -57,6 +57,15 @@ uv run pytest apps/api/tests/ --cov=app --cov-report=html
 uv run ptw apps/api/tests/ -- -v
 ```
 
+### Frontend Testing (Jest)
+```bash
+# Run web tests
+pnpm test
+
+# Watch mode
+pnpm watch
+```
+
 ### Linting & Formatting (Ruff)
 ```bash
 # Check for linting issues
@@ -75,6 +84,13 @@ uv run ruff check apps/api/app/ --fix && uv run ruff format apps/api/app/
 uv run ruff check apps/api/tests/ --fix
 uv run ruff format apps/api/tests/
 ```
+
+### Code Quality (SonarQube)
+```bash
+# Run SonarQube scan (configured in sonar-project.properties)
+pnpm sonar
+```
+Connect the SonarQube/SonarCloud project in your IDE via SonarLint to surface warnings before pushing.
 
 ### Security (pip-audit)
 When updating dependencies or adding new ones, it's important to check for known security vulnerabilities.

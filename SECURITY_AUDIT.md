@@ -12,6 +12,7 @@
 All critical dependencies are up-to-date with no exploitable vulnerabilities affecting this project's implementation.
 
 **pip-audit Results:** 1 advisory found (ecdsa CVE-2024-23342) - **Risk accepted** (does not affect our HS256 JWT implementation)
+**pnpm audit Results:** No known vulnerabilities found (apps/web)
 
 ---
 
@@ -92,6 +93,9 @@ All critical dependencies are up-to-date with no exploitable vulnerabilities aff
 - ✅ **ruff 0.14.11** - Secure
 - ✅ **pytest-asyncio 1.3.0** - Secure
 - ✅ **aiosqlite 0.22.1** - Secure
+
+### Frontend Dependency Audit (pnpm)
+- ✅ **apps/web** - No known vulnerabilities found via `pnpm audit`
 
 ---
 

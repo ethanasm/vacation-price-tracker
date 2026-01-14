@@ -81,7 +81,7 @@
   - All dependencies scanned for CVEs
   - Risk assessment documented (1 accepted low-risk advisory)
   - Security audit report created (`SECURITY_AUDIT.md`)
-- [ ] Frontend dependency security audit:
+- [X] Frontend dependency security audit:
   - `pnpm audit` documented for frontend dependencies
 
 ### 2.2 Frontend OAuth Integration
