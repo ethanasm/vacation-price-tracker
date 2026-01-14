@@ -13,8 +13,10 @@ const config: Config = {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   collectCoverageFrom: [
+    "src/app/**/*.{ts,tsx}",
     "src/components/**/*.{ts,tsx}",
     "src/lib/**/*.{ts,tsx}",
+    "!src/app/**/layout.tsx",
     "!src/components/ui/**/*.{ts,tsx}",
     "!**/*.d.ts",
   ],

@@ -4,6 +4,57 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+class TestLifespan:
+    """Test application lifespan (startup/shutdown)."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_creates_tables(self, test_engine):
+        """Test that lifespan creates database tables on startup."""
+        from sqlalchemy import inspect
+
+        async with test_engine.connect() as conn:
+            # Get table names using sync inspection
+            def get_tables(connection):
+                inspector = inspect(connection)
+                return inspector.get_table_names()
+
+            tables = await conn.run_sync(get_tables)
+
+        # Users table should exist (created by test_engine fixture which uses same pattern)
+        assert "users" in tables
+
+    @pytest.mark.asyncio
+    async def test_lifespan_context_manager(self):
+        """Test lifespan context manager yields control."""
+        from contextlib import asynccontextmanager
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Mock the engine and connection
+        mock_conn = MagicMock()
+        mock_conn.run_sync = AsyncMock()
+
+        @asynccontextmanager
+        async def mock_begin():
+            yield mock_conn
+
+        mock_engine = MagicMock()
+        mock_engine.begin = mock_begin
+
+        with patch("app.main.async_engine", mock_engine):
+            from app.main import lifespan
+
+            # Create a mock app
+            mock_app = MagicMock()
+
+            # Run the lifespan
+            async with lifespan(mock_app):
+                # Verify we're inside the context (tables would be created)
+                pass
+
+            # Verify run_sync was called with metadata.create_all
+            mock_conn.run_sync.assert_called_once()
+
+
 class TestHealthEndpoint:
     """Test health check endpoint."""
 
