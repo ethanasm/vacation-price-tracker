@@ -18,9 +18,9 @@ echo -e "${BLUE}Vacation Price Tracker - Development Environment${NC}"
 echo "================================================="
 
 # Create .env if missing
-if [ ! -f "$ENV_FILE" ]; then
+if [[ ! -f "$ENV_FILE" ]]; then
     echo -e "${YELLOW}No .env file found.${NC}"
-    if [ -f "$ENV_EXAMPLE" ]; then
+    if [[ -f "$ENV_EXAMPLE" ]]; then
         read -p "Create from .env.example? [Y/n] " -n 1 -r
         echo ""
         if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then

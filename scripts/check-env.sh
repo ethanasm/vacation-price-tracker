@@ -13,8 +13,8 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 
 echo "Checking environment configuration..."
 
-if [ ! -f "$ENV_FILE" ]; then
-    echo -e "${RED}ERROR: .env file not found${NC}"
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${RED}ERROR: .env file not found${NC}" >&2
     echo "Create one with: cp .env.example .env"
     exit 1
 fi
@@ -36,24 +36,24 @@ PLACEHOLDER_VARS=()
 
 for var in "${REQUIRED_VARS[@]}"; do
     value="${!var}"
-    if [ -z "$value" ]; then
+    if [[ -z "$value" ]]; then
         MISSING_VARS+=("$var")
     elif [[ "$value" =~ (your|generate|placeholder) ]]; then
         PLACEHOLDER_VARS+=("$var")
     fi
 done
 
-if [ ${#MISSING_VARS[@]} -eq 0 ] && [ ${#PLACEHOLDER_VARS[@]} -eq 0 ]; then
+if [[ ${#MISSING_VARS[@]} -eq 0 ]] && [[ ${#PLACEHOLDER_VARS[@]} -eq 0 ]]; then
     echo -e "${GREEN}All required environment variables are configured.${NC}"
     exit 0
 fi
 
-[ ${#MISSING_VARS[@]} -gt 0 ] && {
+[[ ${#MISSING_VARS[@]} -gt 0 ]] && {
     echo -e "${RED}Missing required variables:${NC}"
     printf '  - %s\n' "${MISSING_VARS[@]}"
 }
 
-[ ${#PLACEHOLDER_VARS[@]} -gt 0 ] && {
+[[ ${#PLACEHOLDER_VARS[@]} -gt 0 ]] && {
     echo -e "${YELLOW}Variables with placeholder values:${NC}"
     printf '  - %s\n' "${PLACEHOLDER_VARS[@]}"
 }

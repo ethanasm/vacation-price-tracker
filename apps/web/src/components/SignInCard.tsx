@@ -11,13 +11,13 @@ import {
   CardTitle,
 } from "./ui/card";
 
-type SignInCardProps = {
+type SignInCardProps = Readonly<{
   signInUrl: string;
-};
+}>;
 
 export function SignInCard({ signInUrl }: SignInCardProps) {
   const handleClick = () => {
-    window.location.href = signInUrl;
+    globalThis.location.href = signInUrl;
   };
 
   return (
