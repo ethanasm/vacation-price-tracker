@@ -41,11 +41,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run pnpm audit
         if: steps.filter.outputs.web == 'true'
-        run: pnpm --filter vacation-price-tracker-web audit --audit-level=moderate
+        working-directory: apps/web
+        run: pnpm audit --audit-level=moderate
         continue-on-error: true
       - name: Run pnpm audit (production only)
         if: steps.filter.outputs.web == 'true'
-        run: pnpm --filter vacation-price-tracker-web audit --prod
+        working-directory: apps/web
+        run: pnpm audit --prod
       - name: Skip message
         if: steps.filter.outputs.web != 'true'
         run: echo "No web changes detected, skipping pnpm audit"
