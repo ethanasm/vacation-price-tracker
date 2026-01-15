@@ -1,15 +1,20 @@
 """Tests for authentication endpoints."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
+import app.routers.auth as auth_module
 import pytest
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from jose import jwt
+from sqlmodel import select
 from starlette.requests import Request
+
+from tests.test_models import set_test_timestamps
 
 
 def _make_request(path: str, method: str = "GET", cookies: dict[str, str] | None = None) -> Request:
@@ -42,13 +47,11 @@ class TestGoogleOAuthCallback:
         email = "test@example.com"
 
         # Check user doesn't exist
-        from sqlmodel import select
         result = await test_session.execute(select(User).where(User.google_sub == google_sub))
         user = result.scalars().first()
         assert user is None
 
         # Create user (simulating the callback logic)
-        from tests.test_models import set_test_timestamps
         user = User(google_sub=google_sub, email=email)
         set_test_timestamps(user)
         test_session.add(user)
@@ -67,8 +70,6 @@ class TestGoogleOAuthCallback:
     @pytest.mark.asyncio
     async def test_existing_user_oauth_login(self, test_session, mock_redis):
         """Test OAuth login with existing user doesn't create duplicate."""
-        from tests.test_models import set_test_timestamps
-
         google_sub = "google_user_123"
         email = "test@example.com"
 
@@ -80,7 +81,6 @@ class TestGoogleOAuthCallback:
         await test_session.refresh(user1)
 
         # Try to "log in" again (simulating callback)
-        from sqlmodel import select
         result = await test_session.execute(select(User).where(User.google_sub == google_sub))
         user = result.scalars().first()
 
@@ -95,11 +95,6 @@ class TestGoogleOAuthCallback:
 
     def test_google_start_redirects(self, client, monkeypatch):
         """Test OAuth start delegates to provider redirect."""
-        from fastapi import Response
-        from unittest.mock import AsyncMock
-
-        import app.routers.auth as auth_module
-
         authorize_redirect = AsyncMock(return_value=Response(status_code=307))
         monkeypatch.setattr(
             auth_module.oauth.google,
@@ -116,10 +111,6 @@ class TestGoogleOAuthCallback:
 
     def test_callback_returns_400_without_userinfo(self, client, monkeypatch):
         """Test callback returns 400 when userinfo missing."""
-        from unittest.mock import AsyncMock
-
-        import app.routers.auth as auth_module
-
         monkeypatch.setattr(
             auth_module.oauth.google,
             "authorize_access_token",
@@ -133,10 +124,6 @@ class TestGoogleOAuthCallback:
 
     def test_callback_returns_400_with_missing_fields(self, client, monkeypatch):
         """Test callback returns 400 when userinfo missing required fields."""
-        from unittest.mock import AsyncMock
-
-        import app.routers.auth as auth_module
-
         monkeypatch.setattr(
             auth_module.oauth.google,
             "authorize_access_token",
@@ -151,11 +138,6 @@ class TestGoogleOAuthCallback:
     @pytest.mark.asyncio
     async def test_callback_success_creates_user(self, test_session, mock_redis, monkeypatch):
         """Test successful OAuth callback creates user and redirects."""
-        from unittest.mock import AsyncMock
-        from sqlmodel import select
-
-        import app.routers.auth as auth_module
-
         google_sub = "google_user_456"
         email = "callback@example.com"
         monkeypatch.setattr(
@@ -187,8 +169,6 @@ class TestTokenRefresh:
     @pytest.mark.asyncio
     async def test_refresh_token_logic(self, test_session, mock_redis):
         """Test refresh token creation and validation logic."""
-        from tests.test_models import set_test_timestamps
-
         # Create test user
         user = User(google_sub="test_sub", email="refresh@example.com")
         set_test_timestamps(user)
@@ -208,7 +188,6 @@ class TestTokenRefresh:
         assert access_payload[JWTClaims.SUBJECT] == str(user.id)
 
         # Verify token types are different
-        from app.core.constants import TokenType
         assert refresh_payload[JWTClaims.TYPE] == TokenType.REFRESH.value
         assert access_payload[JWTClaims.TYPE] == TokenType.ACCESS.value
 
@@ -258,10 +237,6 @@ class TestTokenRefresh:
     @pytest.mark.asyncio
     async def test_refresh_success_sets_cookies(self, test_session, mock_redis, monkeypatch):
         """Test refresh succeeds when token matches Redis."""
-        from tests.test_models import set_test_timestamps
-
-        import app.routers.auth as auth_module
-
         user = User(google_sub="refresh_user", email="refresh-success@example.com")
         set_test_timestamps(user)
         test_session.add(user)
@@ -291,8 +266,6 @@ class TestLogout:
     @pytest.mark.asyncio
     async def test_logout_token_invalidation(self, test_session):
         """Test logout invalidates refresh token."""
-        from tests.test_models import set_test_timestamps
-
         # Create test user
         user = User(google_sub="test_sub", email="logout@example.com")
         set_test_timestamps(user)
@@ -308,7 +281,6 @@ class TestLogout:
         assert payload[JWTClaims.SUBJECT] == str(user.id)
 
         # Verify token structure
-        from app.core.constants import TokenType
         assert payload[JWTClaims.TYPE] == TokenType.REFRESH.value
         assert JWTClaims.EXPIRATION in payload
 
@@ -329,10 +301,6 @@ class TestLogout:
     @pytest.mark.asyncio
     async def test_logout_with_valid_token_clears_refresh(self, test_session, mock_redis, monkeypatch):
         """Test logout clears refresh token for valid user."""
-        from tests.test_models import set_test_timestamps
-
-        import app.routers.auth as auth_module
-
         user = User(google_sub="logout_user", email="logout-success@example.com")
         set_test_timestamps(user)
         test_session.add(user)
@@ -360,10 +328,6 @@ class TestAuthMe:
     @pytest.mark.asyncio
     async def test_me_returns_user_info(self, test_session):
         """Test authenticated request returns user info."""
-        from tests.test_models import set_test_timestamps
-
-        import app.routers.auth as auth_module
-
         user = User(google_sub="test_sub_me", email="me@example.com")
         set_test_timestamps(user)
         test_session.add(user)
@@ -428,8 +392,6 @@ class TestAuthMe:
     @pytest.mark.asyncio
     async def test_me_returns_401_when_user_missing(self, test_session):
         """Test missing user in database returns 401."""
-        import app.routers.auth as auth_module
-
         access_token = create_access_token(
             data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
         )
