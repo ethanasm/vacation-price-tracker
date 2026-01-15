@@ -23,6 +23,8 @@ jobs:
         run: pnpm --filter vacation-price-tracker-web build
       - name: Lint
         run: pnpm --filter vacation-price-tracker-web lint
+      - name: Typecheck
+        run: pnpm --filter vacation-price-tracker-web typecheck
       - name: Check for web test script
         id: web-tests
         run: |

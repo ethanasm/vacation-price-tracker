@@ -9,13 +9,14 @@ class Settings(BaseSettings):
         env_file=(".env", ".env.test", ".env.example"),
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Ignore extra env vars not defined in the model
     )
 
     # Core
     project_name: str = "Vacation Price Tracker"
     environment: str = "development"
-    frontend_url: str = "http://localhost:3000"
-    backend_url: str = "http://localhost:8000"
+    frontend_url: str = "https://localhost:3000"
+    backend_url: str = "https://localhost:8000"
     secret_key: str
 
     # Google OAuth

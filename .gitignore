@@ -1,7 +1,8 @@
 /.idea
 .env
 /node_modules
-/apps/web/coverage
+.coverage
+/apps/*/coverage*
 /apps/web/node_modules
 /apps/web/.next
 /apps/web/.pnpm-store
@@ -9,3 +10,10 @@
 /apps/api/*/__pycache__
 /.scannerwork
 .DS_Store
+
+# SSL certificates (development only)
+/certs/*.pem
+/certs/*.crt
+/certs/*.key
+# TypeScript incremental build info
+*.tsbuildinfo

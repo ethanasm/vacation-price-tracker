@@ -1,21 +1,32 @@
+import logging
 import uuid
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
-from app.core.constants import CookieNames, JWTClaims
+from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
 from app.db.deps import get_db
 from app.db.redis import redis_client
 from app.models.user import User
 
+
+class UserResponse(BaseModel):
+    """Response model for authenticated user info."""
+
+    id: str
+    email: str
+
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 oauth = OAuth()
 oauth.register(
@@ -95,6 +106,8 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     # Store refresh token in Redis (or a DB table) for rotation and validation
     await _store_refresh_token(user.id, refresh_token)
 
+    logger.info("User logged in: id=%s email=%s", user.id, user.email)
+
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
 
     # Set cookies
@@ -103,7 +116,7 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
 
 
 @router.post("/v1/auth/refresh")
-async def refresh_token(request: Request):
+async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     """Refreshes the access token using a valid refresh token."""
     refresh_token_value = request.cookies.get(CookieNames.REFRESH_TOKEN)
 
@@ -133,11 +146,17 @@ async def refresh_token(request: Request):
 
     response = Response("Tokens refreshed.", status_code=200)
     _set_auth_cookies(response, new_access_token, new_refresh_token)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if user:
+        logger.info("User token refreshed: id=%s email=%s", user.id, user.email)
+
     return response
 
 
 @router.post("/v1/auth/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     """Logs the user out by clearing cookies and invalidating the refresh token."""
     refresh_token_value = request.cookies.get(CookieNames.REFRESH_TOKEN)
     if refresh_token_value:
@@ -149,6 +168,10 @@ async def logout(request: Request):
             )
             user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
             await redis_client.delete(CacheKeys.refresh_token(str(user_id)))
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalars().first()
+            if user:
+                logger.info("User logged out: id=%s email=%s", user.id, user.email)
         except (JWTError, ValueError):
             # If token is invalid, we can't do much but clear cookies anyway
             pass
@@ -157,3 +180,40 @@ async def logout(request: Request):
     response.delete_cookie(CookieNames.ACCESS_TOKEN, path="/")
     response.delete_cookie(CookieNames.REFRESH_TOKEN, path="/")
     return response
+
+
+@router.get("/v1/auth/me", response_model=UserResponse)
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+    """Returns the current authenticated user's info."""
+    access_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        payload = jwt.decode(
+            access_token,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+
+        # Verify this is an access token, not a refresh token
+        token_type = payload.get(JWTClaims.TYPE)
+        if token_type != TokenType.ACCESS.value:
+            raise HTTPException(status_code=401, detail="Invalid token type")
+
+        user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
+
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired") from None
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+
+    # Fetch user from database
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return UserResponse(id=str(user.id), email=user.email)

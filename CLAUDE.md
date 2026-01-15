@@ -170,6 +170,29 @@ Refer to `doc/PROJECT_PLAN.md` for detailed checklists.
 - No room images in Amadeus V3 API
 - Kiwi MCP returns all airlines (requires post-fetch filtering)
 
+## Pre-Commit Validation
+
+**Always run `pnpm verify` before committing changes.** This command runs the same checks as CI and ensures your code will pass the pipeline.
+
+```bash
+pnpm verify
+```
+
+**Workspace note:** Run pnpm commands from the repo root (or use `pnpm --filter vacation-price-tracker-web ...`) to avoid generating `apps/web/pnpm-lock.yaml`. This repo uses a single root lockfile.
+
+This command performs:
+1. `pnpm install --frozen-lockfile` - Verify dependencies match lockfile
+2. `uv sync --extra dev` - Sync Python dependencies
+3. `pnpm --filter vacation-price-tracker-web build` - Build the frontend
+4. `pnpm --filter vacation-price-tracker-web lint` - Lint frontend (Biome)
+5. `pnpm --filter vacation-price-tracker-web test` - Run frontend tests (Jest)
+6. `pnpm audit --prod` - Check for npm security vulnerabilities
+7. `uv run ruff check apps/api` - Lint backend (Ruff)
+8. `uv run pytest apps/api/tests -v` - Run backend tests
+9. `uv run pip-audit` - Check for Python security vulnerabilities
+
+**Run this after adding or modifying any code** to catch issues before they reach CI.
+
 ## Commit Message Conventions
 
 Use **Conventional Commits** format with scope referring to the service modified:

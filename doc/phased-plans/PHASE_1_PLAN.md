@@ -28,6 +28,7 @@
   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
   - `SECRET_KEY`
   - `AMADEUS_API_KEY` / `AMADEUS_API_SECRET`
+- [X] Add local HTTPS setup (cert generation script + dev docs + HTTPS server bootstraps)
 
 ### 1.3 MCP Server Configuration
 - [X] Document MCP server architecture (stdio-based subprocesses, not containers)
@@ -55,6 +56,8 @@
 - [X] Create `/v1/auth/logout` endpoint:
   - Clear cookies
   - Invalidate refresh token in Redis
+- [X] Create `/v1/auth/me` endpoint:
+  - Return authenticated user info from access token
 - [X] Implement centralized constants:
   - Cookie names (`CookieNames`)
   - JWT claims (`JWTClaims`)
@@ -88,15 +91,16 @@
 - [X] Create "Sign in with Google" button component
 - [X] Implement OAuth redirect flow
 - [X] Handle callback and token storage
-- [ ] Create auth context/provider for session state
-- [ ] Implement automatic token refresh on 401 responses
+- [X] Create auth context/provider for session state
+- [X] Implement automatic token refresh on 401 responses
+- [X] Add Next.js middleware to protect `/dashboard` routes
 
 ### 2.3 Auth Middleware
-- [ ] Create FastAPI dependency `get_current_user`:
+- [X] Create FastAPI dependency `get_current_user`:
   - Extract JWT from cookie
   - Validate signature and expiration
   - Return User object or raise 401
-- [ ] Apply middleware to all protected routes
+- [X] Apply middleware to all protected routes (dashboard only in Phase 1)
 
 ---
 
@@ -443,6 +447,7 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
   ```
 
 ### 6.2 Dashboard Layout
+- [X] Create auth-aware dashboard placeholder with sign-out and greeting
 - [ ] Create 2-column responsive layout:
   - Left: Trip table (primary)
   - Right: Reserved for chat (Phase 2)
@@ -510,6 +515,7 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 - [ ] Post-fetch filtering logic (airlines, room types, views)
 - [ ] Date validation helpers
 - [ ] JWT token generation/validation
+- [X] Frontend auth context, middleware, and dashboard smoke tests (Jest)
 
 ### Integration Tests
 - [ ] OAuth callback flow (mocked Google responses)

@@ -2,4 +2,13 @@
   font-size: 0.95rem;
   color: var(--ink-muted);
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.divider {
+  color: var(--border);
 }

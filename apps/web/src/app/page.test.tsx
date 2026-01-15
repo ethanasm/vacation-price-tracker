@@ -1,7 +1,23 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import HomePage from "./page";
 
+const mockRedirectTo = jest.fn();
+
 jest.mock("../app/page.module.css", () => ({}));
+jest.mock("../lib/navigation", () => ({
+  redirectTo: (url: string) => mockRedirectTo(url),
+}));
+jest.mock("../components/SignInCard", () => ({
+  SignInCard: ({ onSignIn }: { onSignIn: () => void }) => (
+    <div>
+      <span>Sign in to start tracking</span>
+      <button type="button" onClick={onSignIn}>
+        Mock Sign In
+      </button>
+    </div>
+  ),
+}));
 jest.mock("../components/SignInCard.module.css", () => ({}));
 jest.mock("../components/SiteFooter.module.css", () => ({}));
 
@@ -60,5 +76,17 @@ describe("HomePage", () => {
         "Track flight and hotel prices without the spreadsheet sprawl.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("redirects to google auth on sign in", async () => {
+    const user = userEvent.setup();
+
+    render(<HomePage />);
+
+    await user.click(screen.getByRole("button", { name: "Mock Sign In" }));
+
+    expect(mockRedirectTo).toHaveBeenCalledWith(
+      "https://localhost:8000/v1/auth/google/start",
+    );
   });
 });

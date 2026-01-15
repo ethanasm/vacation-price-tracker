@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,6 +12,17 @@ from app.core.config import settings
 from app.db.session import async_engine
 from app.models.user import User  # noqa: F401 - Import to register model
 from app.routers import auth
+
+
+def _configure_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    root_logger.setLevel(logging.INFO)
+    logging.getLogger("app").setLevel(logging.INFO)
+
+
+_configure_logging()
 
 
 @asynccontextmanager

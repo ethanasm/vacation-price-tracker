@@ -22,7 +22,11 @@ COPY . .
 
 WORKDIR /app/apps/api
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Copy and set executable permission for entrypoint
+COPY apps/api/docker-entrypoint.sh /app/apps/api/
+RUN chmod +x /app/apps/api/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/apps/api/docker-entrypoint.sh"]
 
 # Production stage
 FROM base AS production

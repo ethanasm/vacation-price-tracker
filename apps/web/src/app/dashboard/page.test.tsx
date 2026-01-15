@@ -1,8 +1,31 @@
 import { render, screen } from "@testing-library/react";
 import DashboardPage from "./page";
 
+// Mock next/navigation
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+  }),
+}));
+
+// Mock useAuth hook
+jest.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: { id: "123", email: "test@example.com" },
+    isLoading: false,
+    logout: jest.fn(),
+  }),
+}));
+
 // Mock CSS modules
-jest.mock("./page.module.css", () => ({}));
+jest.mock("./page.module.css", () => ({
+  main: "main",
+  content: "content",
+  header: "header",
+  title: "title",
+  subtitle: "subtitle",
+  footerWrap: "footerWrap",
+}));
 jest.mock("../../components/SiteFooter.module.css", () => ({}));
 
 describe("DashboardPage", () => {
@@ -12,10 +35,10 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
   });
 
-  it("renders the welcome message", () => {
+  it("renders the welcome message with email", () => {
     render(<DashboardPage />);
 
-    expect(screen.getByText("Welcome! Your trips will appear here.")).toBeInTheDocument();
+    expect(screen.getByText(/Welcome, test@example.com!/)).toBeInTheDocument();
   });
 
   it("renders the SiteFooter", () => {

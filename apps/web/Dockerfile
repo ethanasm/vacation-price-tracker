@@ -16,7 +16,8 @@ COPY . .
 
 ENV NODE_ENV=development
 
-CMD ["pnpm", "run", "dev"]
+# Run with HTTPS if certificates exist, otherwise HTTP
+CMD ["sh", "-c", "if [ -f /app/certs/localhost-key.pem ]; then node server.js; else pnpm run dev:http; fi"]
 
 # Builder stage
 FROM base AS builder

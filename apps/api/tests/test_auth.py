@@ -1,12 +1,30 @@
 """Tests for authentication endpoints."""
 
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.core.config import settings
-from app.core.constants import JWTClaims
+from app.core.constants import CookieNames, JWTClaims, TokenType
+from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
+from fastapi import HTTPException
 from jose import jwt
+from starlette.requests import Request
+
+
+def _make_request(path: str, method: str = "GET", cookies: dict[str, str] | None = None) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if cookies:
+        cookie_header = "; ".join(f"{key}={value}" for key, value in cookies.items())
+        headers.append((b"cookie", cookie_header.encode("ascii")))
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "headers": headers,
+        "query_string": b"",
+    }
+    return Request(scope)
 
 
 class TestGoogleOAuthCallback:
@@ -19,8 +37,6 @@ class TestGoogleOAuthCallback:
     @pytest.mark.asyncio
     async def test_create_user_from_google_oauth(self, test_session, mock_redis):
         """Test user creation from Google OAuth data."""
-        from app.core.security import create_access_token
-
         # Simulate what happens after OAuth succeeds
         google_sub = "google_user_123"
         email = "test@example.com"
@@ -77,6 +93,93 @@ class TestGoogleOAuthCallback:
         users = result.scalars().all()
         assert len(users) == 1
 
+    def test_google_start_redirects(self, client, monkeypatch):
+        """Test OAuth start delegates to provider redirect."""
+        from fastapi import Response
+        from unittest.mock import AsyncMock
+
+        import app.routers.auth as auth_module
+
+        authorize_redirect = AsyncMock(return_value=Response(status_code=307))
+        monkeypatch.setattr(
+            auth_module.oauth.google,
+            "authorize_redirect",
+            authorize_redirect,
+        )
+
+        response = client.get("/v1/auth/google/start", follow_redirects=False)
+
+        assert response.status_code == 307
+        assert authorize_redirect.call_count == 1
+        redirect_uri = authorize_redirect.call_args[0][1]
+        assert str(redirect_uri).endswith("/v1/auth/google/callback")
+
+    def test_callback_returns_400_without_userinfo(self, client, monkeypatch):
+        """Test callback returns 400 when userinfo missing."""
+        from unittest.mock import AsyncMock
+
+        import app.routers.auth as auth_module
+
+        monkeypatch.setattr(
+            auth_module.oauth.google,
+            "authorize_access_token",
+            AsyncMock(return_value={}),
+        )
+
+        response = client.get("/v1/auth/google/callback")
+
+        assert response.status_code == 400
+        assert response.text == "Failed to get user info from Google."
+
+    def test_callback_returns_400_with_missing_fields(self, client, monkeypatch):
+        """Test callback returns 400 when userinfo missing required fields."""
+        from unittest.mock import AsyncMock
+
+        import app.routers.auth as auth_module
+
+        monkeypatch.setattr(
+            auth_module.oauth.google,
+            "authorize_access_token",
+            AsyncMock(return_value={"userinfo": {"sub": "google_user_123"}}),
+        )
+
+        response = client.get("/v1/auth/google/callback")
+
+        assert response.status_code == 400
+        assert response.text == "Missing required user info from Google."
+
+    @pytest.mark.asyncio
+    async def test_callback_success_creates_user(self, test_session, mock_redis, monkeypatch):
+        """Test successful OAuth callback creates user and redirects."""
+        from unittest.mock import AsyncMock
+        from sqlmodel import select
+
+        import app.routers.auth as auth_module
+
+        google_sub = "google_user_456"
+        email = "callback@example.com"
+        monkeypatch.setattr(
+            auth_module.oauth.google,
+            "authorize_access_token",
+            AsyncMock(return_value={"userinfo": {"sub": google_sub, "email": email}}),
+        )
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request("/v1/auth/google/callback")
+        response = await auth_module.google_auth_callback(request, db=test_session)
+
+        assert response.status_code == 307
+        assert response.headers["location"].endswith("/dashboard")
+        set_cookie_headers = response.headers.getlist("set-cookie")
+        assert any(CookieNames.ACCESS_TOKEN in header for header in set_cookie_headers)
+        assert any(CookieNames.REFRESH_TOKEN in header for header in set_cookie_headers)
+
+        result = await test_session.execute(select(User).where(User.google_sub == google_sub))
+        user = result.scalars().first()
+        assert user is not None
+        assert user.email == email
+        mock_redis.set.assert_called()
+
 
 class TestTokenRefresh:
     """Test token refresh endpoint."""
@@ -84,8 +187,6 @@ class TestTokenRefresh:
     @pytest.mark.asyncio
     async def test_refresh_token_logic(self, test_session, mock_redis):
         """Test refresh token creation and validation logic."""
-        from app.core.security import create_access_token, create_refresh_token
-
         from tests.test_models import set_test_timestamps
 
         # Create test user
@@ -120,11 +221,68 @@ class TestTokenRefresh:
             jwt.decode("invalid_token", settings.secret_key, algorithms=[settings.jwt_algorithm])
 
         # Test decoding with wrong secret
-        from app.core.security import create_refresh_token
         token = create_refresh_token(data={JWTClaims.SUBJECT: "test_user"})
 
         with pytest.raises(JWTError):
             jwt.decode(token, "wrong_secret", algorithms=[settings.jwt_algorithm])
+
+    def test_refresh_returns_401_without_cookie(self, client):
+        """Test refresh returns 401 when cookie missing."""
+        client.cookies.clear()
+        response = client.post("/v1/auth/refresh")
+
+        assert response.status_code == 401
+        assert response.text == "Refresh token not found."
+
+    def test_refresh_returns_401_with_invalid_token(self, client):
+        """Test refresh returns 401 for invalid token."""
+        client.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
+        response = client.post("/v1/auth/refresh")
+
+        assert response.status_code == 401
+        assert response.text == "Invalid refresh token."
+
+    def test_refresh_returns_401_when_token_rotated(self, client, mock_redis):
+        """Test refresh returns 401 when token doesn't match Redis."""
+        refresh_token = create_refresh_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        client.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
+        mock_redis.get.return_value = "different_token"
+
+        response = client.post("/v1/auth/refresh")
+
+        assert response.status_code == 401
+        assert response.text == "Refresh token has been rotated or invalidated."
+
+    @pytest.mark.asyncio
+    async def test_refresh_success_sets_cookies(self, test_session, mock_redis, monkeypatch):
+        """Test refresh succeeds when token matches Redis."""
+        from tests.test_models import set_test_timestamps
+
+        import app.routers.auth as auth_module
+
+        user = User(google_sub="refresh_user", email="refresh-success@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get.return_value = refresh_token
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: refresh_token},
+        )
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.status_code == 200
+        set_cookie_headers = response.headers.getlist("set-cookie")
+        assert any(CookieNames.ACCESS_TOKEN in header for header in set_cookie_headers)
+        assert any(CookieNames.REFRESH_TOKEN in header for header in set_cookie_headers)
 
 
 class TestLogout:
@@ -133,8 +291,6 @@ class TestLogout:
     @pytest.mark.asyncio
     async def test_logout_token_invalidation(self, test_session):
         """Test logout invalidates refresh token."""
-        from app.core.security import create_refresh_token
-
         from tests.test_models import set_test_timestamps
 
         # Create test user
@@ -157,8 +313,132 @@ class TestLogout:
         assert JWTClaims.EXPIRATION in payload
 
         # Token should have reasonable expiration (7 days)
-        from datetime import datetime, timedelta
         exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=UTC)
         expected_exp = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         # Within 1 minute of expected expiration
         assert abs((exp_time - expected_exp).total_seconds()) < 60
+
+    def test_logout_with_invalid_token_still_succeeds(self, client):
+        """Test logout succeeds even with invalid refresh token."""
+        client.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
+        response = client.post("/v1/auth/logout")
+
+        assert response.status_code == 200
+        assert response.text == "Logged out successfully."
+
+    @pytest.mark.asyncio
+    async def test_logout_with_valid_token_clears_refresh(self, test_session, mock_redis, monkeypatch):
+        """Test logout clears refresh token for valid user."""
+        from tests.test_models import set_test_timestamps
+
+        import app.routers.auth as auth_module
+
+        user = User(google_sub="logout_user", email="logout-success@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/logout",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: refresh_token},
+        )
+        response = await auth_module.logout(request, db=test_session)
+
+        assert response.status_code == 200
+        assert response.body.decode() == "Logged out successfully."
+        mock_redis.delete.assert_called()
+
+
+class TestAuthMe:
+    """Test /v1/auth/me endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_me_returns_user_info(self, test_session):
+        """Test authenticated request returns user info."""
+        from tests.test_models import set_test_timestamps
+
+        import app.routers.auth as auth_module
+
+        user = User(google_sub="test_sub_me", email="me@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        access_token = create_access_token(data={JWTClaims.SUBJECT: str(user.id)})
+
+        request = _make_request(
+            "/v1/auth/me",
+            cookies={CookieNames.ACCESS_TOKEN: access_token},
+        )
+        response = await auth_module.get_current_user(request, db=test_session)
+
+        assert response.id == str(user.id)
+        assert response.email == "me@example.com"
+
+    def test_me_returns_401_without_token(self, client):
+        """Test unauthenticated request returns 401."""
+        client.cookies.clear()
+        response = client.get("/v1/auth/me")
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Not authenticated"
+
+    def test_me_returns_401_with_invalid_token(self, client):
+        """Test invalid token returns 401."""
+        client.cookies.set(CookieNames.ACCESS_TOKEN, "invalid_token_here")
+        response = client.get("/v1/auth/me")
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid token"
+
+    def test_me_returns_401_with_expired_token(self, client):
+        """Test expired token returns 401."""
+        expired_payload = {
+            JWTClaims.SUBJECT: "some-user-id",
+            JWTClaims.EXPIRATION: datetime.now(UTC) - timedelta(hours=1),
+            JWTClaims.TYPE: TokenType.ACCESS.value,
+        }
+        expired_token = jwt.encode(
+            expired_payload,
+            settings.secret_key,
+            algorithm=settings.jwt_algorithm,
+        )
+
+        client.cookies.set(CookieNames.ACCESS_TOKEN, expired_token)
+        response = client.get("/v1/auth/me")
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Token has expired"
+
+    def test_me_returns_401_with_refresh_token_type(self, client):
+        """Test refresh token used as access token returns 401."""
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: "some-user-id"})
+        client.cookies.set(CookieNames.ACCESS_TOKEN, refresh_token)
+        response = client.get("/v1/auth/me")
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid token type"
+
+    @pytest.mark.asyncio
+    async def test_me_returns_401_when_user_missing(self, test_session):
+        """Test missing user in database returns 401."""
+        import app.routers.auth as auth_module
+
+        access_token = create_access_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        request = _make_request(
+            "/v1/auth/me",
+            cookies={CookieNames.ACCESS_TOKEN: access_token},
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await auth_module.get_current_user(request, db=test_session)
+
+        assert exc_info.value.detail == "User not found"

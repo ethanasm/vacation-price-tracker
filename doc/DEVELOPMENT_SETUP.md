@@ -3,20 +3,70 @@
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
-uv sync --extra dev
+# 1. Generate SSL certificates (mkcert)
+brew install mkcert
+mkcert -install
+mkcert -key-file certs/localhost-key.pem -cert-file certs/localhost-cert.pem localhost 127.0.0.1 ::1
 
-# 2. Copy environment template
+# 2. Install dependencies
+uv sync --extra dev
+pnpm install
+
+# 3. Copy environment template
 cp .env.example .env
 # Edit .env with your credentials
 
-# 3. Run tests
+# 4. Start development servers
+pnpm api:dev    # Terminal 1: FastAPI with HTTPS
+pnpm web:dev    # Terminal 2: Next.js with HTTPS
+
+# 5. Run tests
 uv run pytest apps/api/tests/ -v
 
-# 4. Lint code
+# 6. Lint code
 uv run ruff check apps/api/app/ --fix
 uv run ruff format apps/api/app/
 ```
+
+## SSL Certificates for Local HTTPS
+
+### Why HTTPS in Development?
+- Google OAuth requires HTTPS callback URLs (use Cloudflare Tunnel or ngrok for public URL)
+- Match production environment more closely
+- Test secure cookie behavior
+- Avoid mixed content warnings
+
+### mkcert (Required)
+```bash
+# Install mkcert (macOS)
+brew install mkcert
+
+# Install local CA
+mkcert -install
+
+# Generate certificates
+mkcert -key-file certs/localhost-key.pem -cert-file certs/localhost-cert.pem localhost 127.0.0.1 ::1
+```
+
+**Benefit:** No browser security warnings! mkcert installs a local Certificate Authority that your system trusts.
+
+### Removing a Previously Trusted Self-Signed Cert
+If you added a cert to the System keychain, remove it:
+```bash
+sudo security delete-certificate -Z <SHA1_HASH> /Library/Keychains/System.keychain
+```
+Find the SHA-1 hash by listing `localhost` certs:
+```bash
+security find-certificate -a -c "localhost" -Z /Library/Keychains/System.keychain
+```
+You can also remove it via Keychain Access by searching for `localhost` and deleting the certificate.
+
+## Google OAuth Redirect URLs (Local HTTPS)
+When running locally with HTTPS, add these to your Google OAuth client:
+- Authorized JavaScript origins: `https://localhost:3000`
+- Authorized redirect URIs: `https://localhost:8000/v1/auth/google/callback`
+
+If your frontend uses a different port or hostname, update these to match exactly.
 
 ## Tools & Commands
 
@@ -120,12 +170,28 @@ pnpm audit --json
 
 ### Running the API Server
 ```bash
-# Development mode (auto-reload)
+# Development mode with HTTPS
+pnpm api:dev
+
+# Development mode with HTTP (fallback)
+pnpm api:dev:http
+
+# Or directly with uvicorn:
 cd apps/api
-uv run uvicorn app.main:app --reload --port 8000
+uv run python run_ssl.py  # HTTPS
+uv run uvicorn app.main:app --reload --port 8000  # HTTP
 
 # Production mode
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Running the Web Server
+```bash
+# Development mode with HTTPS (recommended)
+pnpm web:dev
+
+# Development mode with HTTP (fallback)
+pnpm web:dev:http
 ```
 
 ### Database Migrations (Alembic)

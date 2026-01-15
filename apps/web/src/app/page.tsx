@@ -1,11 +1,13 @@
 "use client";
 import styles from "./page.module.css";
 import { Separator } from "../components/ui/separator";
-import { Badge, Bell, Building2, Plane } from "lucide-react";
+import { Bell, Building2, Plane } from "lucide-react";
 import { SiteFooter } from "../components/SiteFooter";
 import { SignInCard } from "../components/SignInCard";
+import { Badge } from "../components/ui/badge";
+import { redirectTo } from "../lib/navigation";
 
-const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "https://localhost:8000";
 const googleStartUrl = `${apiBase}/v1/auth/google/start`;
 
 export default function HomePage() {
@@ -78,7 +80,7 @@ export default function HomePage() {
           <div className={styles.heroCard}>
             <SignInCard
               signInUrl={googleStartUrl}
-              onSignIn={() => globalThis.location.assign(googleStartUrl)}
+              onSignIn={() => redirectTo(googleStartUrl)}
             />
           </div>
         </div>

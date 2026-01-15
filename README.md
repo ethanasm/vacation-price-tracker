@@ -77,18 +77,24 @@ vacation-price-tracker/
    cd vacation-price-tracker
    ```
 
-2. **Install dependencies:**
+2. **Generate SSL certificates (for HTTPS development):**
+   ```bash
+   # macOS
+   brew install mkcert
+   mkcert -install
+   mkcert -key-file certs/localhost-key.pem -cert-file certs/localhost-cert.pem localhost 127.0.0.1 ::1
+   ```
+
+3. **Install dependencies:**
    ```bash
    # Install Python dependencies
    uv sync --extra dev
-   ```
-   ```bash
+
    # Install frontend dependencies
-   cd apps/web
    pnpm install
    ```
 
-3. **Configure `.env`:**
+4. **Configure `.env`:**
    ```bash
    cp .env.example .env
    # Edit .env with your credentials:
@@ -100,26 +106,38 @@ vacation-price-tracker/
    # - SEARCHAPI_KEY: (Phase 4) For date optimizer
    ```
 
-4. **Run services with Docker:**
+5. **Run services with Docker:**
    ```bash
    docker compose up -d db redis temporal
    ```
 
-5. **Run database migrations:**
+6. **Run database migrations:**
    ```bash
    uv run alembic upgrade head
    ```
 
-6. **Start development server:**
+7. **Start development servers:**
    ```bash
-   cd apps/api
-   uv run uvicorn app.main:app --reload
+   # Terminal 1: Start API with HTTPS
+   pnpm api:dev
+
+   # Terminal 2: Start web with HTTPS
+   pnpm web:dev
    ```
 
-7. **Access:**
-   - API: `http://localhost:8000`
-   - API Docs: `http://localhost:8000/docs`
+   **Fallback to HTTP (if needed):**
+   ```bash
+   pnpm api:dev:http  # API on http://localhost:8000
+   pnpm web:dev:http  # Web on http://localhost:3000
+   ```
+
+8. **Access:**
+   - Web App: `https://localhost:3000`
+   - API: `https://localhost:8000`
+   - API Docs: `https://localhost:8000/docs`
    - Temporal UI: `http://localhost:8080`
+
+   **Note:** Your browser will show a security warning for self-signed certificates. Click "Advanced" → "Proceed to localhost" to bypass.
 
 ## Development
 

@@ -1,6 +1,6 @@
 .main {
   position: relative;
-  min-height: 100dvh;
+  min-height: 100svh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -89,7 +89,7 @@
   flex: 1;
   display: flex;
   align-items: center;
-  padding: 6rem 2rem 4rem;
+  padding: 4.5rem 2rem 2.5rem;
 }
 
 .heroGrid {
@@ -227,7 +227,7 @@
   z-index: 1;
   display: flex;
   justify-content: center;
-  padding: 2rem;
+  padding: 1.25rem 2rem 1.75rem;
 }
 
 /* Responsive */
@@ -243,7 +243,7 @@
 
 @media (max-width: 640px) {
   .hero {
-    padding: 4rem 1.5rem 3rem;
+    padding: 3.25rem 1.5rem 2rem;
   }
 
   .featuresRow {
