@@ -210,80 +210,99 @@ class NotificationRule(SQLModel, table=True):
 ## 4. API Endpoints
 
 ### 4.1 Trip CRUD
-- [ ] `GET /v1/trips` - List user's trips with pagination
+- [X] `GET /v1/trips` - List user's trips with pagination
   - Query params: `page`, `limit`, `status`
   - Include current prices from latest snapshot
   - Response: `{ "data": [...], "meta": { "page": 1, "total": 5 } }`
-- [ ] `POST /v1/trips` - Create new trip
+- [X] `POST /v1/trips` - Create new trip
   - Require `X-Idempotency-Key` header
   - Store key in Redis with 24-hour TTL
   - Check trip count < `MAX_TRIPS_PER_USER`
   - Trigger initial `PriceCheckWorkflow`
+  - On workflow start failure, mark trip `ERROR` and return 502 problem detail with `trip_id`
   - Response: 201 with created trip
-- [ ] `GET /v1/trips/{id}` - Get trip details with price history
+- [X] `GET /v1/trips/{id}` - Get trip details with price history
   - Include flight/hotel prefs
   - Include last N price snapshots (paginated)
   - Include notification rules
-- [ ] `DELETE /v1/trips/{id}` - Delete trip (hard delete)
+- [X] `DELETE /v1/trips/{id}` - Delete trip (hard delete)
   - Cascade delete all snapshots, prefs, rules
   - Verify ownership (user_id matches)
   - Response: 204 No Content
-- [ ] `PATCH /v1/trips/{id}/status` - Pause/Resume tracking
+- [X] `PATCH /v1/trips/{id}/status` - Pause/Resume tracking
   - Body: `{ "status": "PAUSED" | "ACTIVE" }`
   - Verify ownership
 
 ### 4.2 Refresh Endpoints
-- [ ] `POST /v1/trips/refresh-all` - Trigger manual refresh
+- [X] `POST /v1/trips/refresh-all` - Trigger manual refresh
   - Check if refresh already in progress (Redis lock)
   - Start `RefreshAllTripsWorkflow` via Temporal client
   - Return `refresh_group_id` for tracking
+  - Return 409 if workflow already started, 502 on start failure
   - Response: `{ "data": { "refresh_group_id": "..." } }`
-- [ ] `GET /v1/trips/refresh-status` - Check refresh progress
+- [X] `GET /v1/trips/refresh-status` - Check refresh progress
   - Query Temporal workflow status
   - Return progress (X of Y trips completed)
+  - Return 404 for unknown refresh groups, 502 on Temporal errors
+  - Clear Redis lock when workflow completes
 
 ### 4.3 Reference Data
-- [ ] `GET /v1/locations/search` - Airport/city search
+- [X] `GET /v1/locations/search` - Airport/city search
   - Query param: `q` (search term)
   - Use Amadeus location API or local database
+  - Cache results in Redis (30-day TTL) and ignore cache decode failures
   - Response: `{ "data": [{ "code": "SFO", "name": "...", "type": "AIRPORT" }] }`
 
 ### 4.4 Error Handling
-- [ ] Create global exception handler middleware
-- [ ] Return RFC 7807 Problem Details:
+- [X] Create global exception handler middleware
+- [X] Return RFC 9457 Problem Details:
   ```json
   {
-    "type": "https://api.example.com/errors/trip-limit-exceeded",
+    "type": "https://vacation-price-tracker.dev/problems/trip-limit-exceeded",
     "title": "Trip Limit Exceeded",
     "detail": "Maximum of 10 trips allowed per user",
     "status": 400,
     "instance": "/v1/trips"
   }
   ```
-- [ ] Define custom exception classes:
+- [X] Standardize `application/problem+json` for AppError, validation, HTTPException, and unhandled errors
+- [X] Define custom exception classes:
   - `TripLimitExceeded`
   - `TripNotFound`
   - `DuplicateTripName`
   - `ExternalAPIError`
   - `RefreshInProgress`
+  - `AuthenticationRequired`
+  - `AccessDenied`
+  - `IdempotencyKeyRequired`
+  - `IdempotencyKeyConflict`
+  - `RefreshGroupNotFound`
+  - `RefreshWorkflowStartFailed`
+  - `PriceCheckWorkflowStartFailed`
+  - `TemporalServiceError`
+  - `LocationSearchFailed`
+  - `MCPServerUnavailable`
+  - `MCPToolError`
 
 ### 4.5 Idempotency Implementation
-- [ ] Create middleware to check `X-Idempotency-Key` header
-- [ ] Store request hash and response in Redis (24h TTL)
-- [ ] Return cached response on duplicate key
-- [ ] Handle race conditions with Redis SETNX
+- [X] Create middleware to check `X-Idempotency-Key` header
+- [X] Store request hash and response in Redis (24h TTL)
+- [X] Return cached response on duplicate key
+- [X] Handle race conditions with Redis SETNX
 
 ---
 
 ## 5. Temporal Worker
 
 ### 5.1 Worker Setup
-- [ ] Install `temporalio` SDK
-- [ ] Configure worker to connect to Temporal server
-- [ ] Register workflows and activities
-- [ ] Implement graceful shutdown handling
+- [X] Install `temporalio` SDK
+- [X] Configure worker to connect to Temporal server
+- [X] Register workflows and activities
+- [X] Implement graceful shutdown handling
+- [X] Add worker test/coverage targets and CI/verify integration
 
 ### 5.2 RefreshAllTripsWorkflow
+- [X] Implement RefreshAllTripsWorkflow
 ```python
 @workflow.defn
 class RefreshAllTripsWorkflow:
@@ -315,6 +334,7 @@ class RefreshAllTripsWorkflow:
 ```
 
 ### 5.3 PriceCheckWorkflow
+- [X] Implement PriceCheckWorkflow
 ```python
 @workflow.defn
 class PriceCheckWorkflow:
@@ -366,23 +386,24 @@ class PriceCheckWorkflow:
 ```
 
 ### 5.4 Activities
-- [ ] `get_active_trips` - Query database for non-paused trips
-- [ ] `load_trip_details` - Load trip with flight/hotel prefs
-- [ ] `fetch_flights_activity` - Call Kiwi MCP `search-flight`
+- [X] `get_active_trips` - Query database for non-paused trips
+- [X] `load_trip_details` - Load trip with flight/hotel prefs
+- [X] `fetch_flights_activity` - Call Kiwi MCP `search-flight`
   - Build request from trip details
   - Handle API errors, return partial result on failure
-- [ ] `fetch_hotels_activity` - Call Amadeus MCP `amadeus_hotel_search`
+- [X] `fetch_hotels_activity` - Call Amadeus MCP `amadeus_hotel_search`
   - Build request from trip details
   - Handle API errors, return partial result on failure
-- [ ] `filter_results_activity` - Apply post-fetch filtering
+- [X] `filter_results_activity` - Apply post-fetch filtering
   - Filter flights by preferred airlines
   - Filter hotels by room type keywords in description
   - Filter hotels by view keywords
-- [ ] `save_snapshot_activity` - Persist PriceSnapshot to database
+- [X] `save_snapshot_activity` - Persist PriceSnapshot to database
   - Store raw API responses in `raw_data` JSONB
   - Calculate totals
 
 ### 5.5 Post-Fetch Filtering Logic
+- [X] Implement post-fetch filtering logic
 ```python
 def filter_flights(flights: List[Flight], prefs: FlightPrefs) -> List[Flight]:
     if not prefs.airlines:
@@ -419,6 +440,10 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 
     return filtered
 ```
+
+### 5.6 MCP Process Hardening
+- [X] Add max restart attempts for MCP subprocesses
+- [X] Capture and log MCP stderr output for debugging
 
 ---
 
@@ -520,17 +545,18 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 
 ### Unit Tests
 - [X] Pydantic schema validation (valid/invalid inputs) - 29 tests in `test_schemas.py`
-- [ ] Post-fetch filtering logic (airlines, room types, views)
+- [X] Post-fetch filtering logic (airlines, room types, views)
 - [X] Date validation helpers (included in schema tests)
 - [X] JWT token generation/validation (tests in `test_security.py`)
 - [X] Frontend auth context, middleware, and dashboard smoke tests (Jest)
-- [X] Backend: 67 total tests passing
+- [X] Backend: API + worker tests (171 total)
+- [X] Worker workflows/activities + MCP client tests with coverage gates
 
 ### Integration Tests
-- [ ] OAuth callback flow (mocked Google responses)
-- [ ] Trip CRUD operations with test database
-- [ ] Idempotency key deduplication
-- [ ] Temporal workflow with mocked activities
+- [X] OAuth callback flow (mocked Google responses)
+- [X] Trip CRUD operations with test database
+- [X] Idempotency key deduplication
+- [X] Temporal workflow with mocked activities
 
 ### Manual Testing
 - [ ] End-to-end OAuth login flow
@@ -552,6 +578,6 @@ Phase 1 is complete when:
 - [ ] User can pause/resume trip tracking
 - [ ] User can delete a trip
 - [ ] All endpoints return envelope-wrapped responses
-- [ ] Error responses follow RFC 7807 format
-- [ ] Unit tests pass with >80% coverage on business logic
+- [ ] Error responses follow RFC 9457 format
+- [ ] Unit tests pass with >=95% coverage on API + worker logic
 - [ ] Docker Compose brings up entire stack with one command

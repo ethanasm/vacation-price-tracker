@@ -200,6 +200,30 @@ class PriceSnapshotResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TripDetailResponse(BaseModel):
+    """Schema for trip detail response with price history."""
+
+    trip: TripDetail
+    price_history: list[PriceSnapshotResponse]
+
+
+class RefreshStartResponse(BaseModel):
+    """Schema for refresh start response."""
+
+    refresh_group_id: str
+
+
+class RefreshStatusResponse(BaseModel):
+    """Schema for refresh status response."""
+
+    refresh_group_id: str
+    status: str
+    total: int
+    completed: int
+    failed: int
+    in_progress: int
+
+
 class TripStatusUpdate(BaseModel):
     """Schema for updating trip status (pause/resume)."""
 

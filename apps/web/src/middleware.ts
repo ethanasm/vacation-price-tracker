@@ -7,6 +7,8 @@ import type { NextRequest } from "next/server";
 const ACCESS_TOKEN_COOKIE = "access_token_cookie";
 const ACCESS_TOKEN_TYPE = "access";
 const JWT_ALG = "HS256";
+const IDEMPOTENCY_HEADER = "x-idempotency-key";
+const IDEMPOTENT_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * Routes that require authentication.
@@ -124,6 +126,16 @@ export async function middleware(request: NextRequest) {
   // Only check protected routes
   if (!isProtectedRoute(pathname)) {
     return NextResponse.next();
+  }
+
+  if (IDEMPOTENT_METHODS.has(request.method)) {
+    const idempotencyKey = request.headers.get(IDEMPOTENCY_HEADER);
+    if (!idempotencyKey) {
+      return NextResponse.json(
+        { detail: "X-Idempotency-Key header required" },
+        { status: 400 },
+      );
+    }
   }
 
   // Check for access token cookie

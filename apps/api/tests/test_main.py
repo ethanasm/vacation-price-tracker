@@ -1,7 +1,14 @@
 """Tests for main application endpoints and configuration."""
 
+import json
+import logging
+from unittest.mock import AsyncMock
+
 import pytest
+from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 
 class TestLifespan:
@@ -40,7 +47,11 @@ class TestLifespan:
         mock_engine = MagicMock()
         mock_engine.begin = mock_begin
 
-        with patch("app.main.async_engine", mock_engine):
+        with (
+            patch("app.main.async_engine", mock_engine),
+            patch("app.main.init_temporal_client", AsyncMock()),
+            patch("app.main.close_temporal_client", AsyncMock()),
+        ):
             from app.main import lifespan
 
             # Create a mock app
@@ -70,6 +81,31 @@ class TestHealthEndpoint:
         response = client.get("/health")
 
         assert response.headers["content-type"] == "application/json"
+
+
+class TestReadinessEndpoint:
+    """Test readiness check endpoint."""
+
+    def test_readiness_check_returns_ready(self, client: TestClient):
+        """Test readiness endpoint returns ready status."""
+        response = client.get("/ready")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "ready",
+            "checks": {"database": "ok", "redis": "ok", "temporal": "ok"},
+        }
+
+    def test_readiness_check_returns_degraded(self, client: TestClient, mock_redis):
+        """Test readiness endpoint returns degraded status on failure."""
+        mock_redis.ping = AsyncMock(side_effect=RuntimeError("redis down"))
+
+        response = client.get("/ready")
+
+        assert response.status_code == 503
+        payload = response.json()
+        assert payload["status"] == "degraded"
+        assert payload["checks"]["redis"] == "error"
 
 
 class TestAppConfiguration:
@@ -107,3 +143,92 @@ class TestAppConfiguration:
         assert "/v1/auth/google/callback" in routes
         assert "/v1/auth/refresh" in routes
         assert "/v1/auth/logout" in routes
+
+
+def _make_request(path: str = "/test") -> Request:
+    return Request({"type": "http", "method": "GET", "path": path, "headers": []})
+
+
+def test_configure_logging_sets_handler():
+    from app.main import _configure_logging
+
+    root_logger = logging.getLogger()
+    existing_handlers = list(root_logger.handlers)
+    root_logger.handlers = []
+    try:
+        _configure_logging()
+        assert root_logger.handlers
+    finally:
+        root_logger.handlers = existing_handlers
+
+
+def test_validation_handler_triggered_by_missing_query(client: TestClient):
+    response = client.get("/v1/locations/search")
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["detail"] == "Request validation failed."
+
+
+@pytest.mark.asyncio
+async def test_http_exception_handler_formats_response():
+    from app.main import http_exception_handler
+
+    request = _make_request("/http-error")
+    response = await http_exception_handler(request, HTTPException(status_code=418, detail="teapot"))
+
+    payload = json.loads(response.body)
+    assert payload["status"] == 418
+    assert payload["detail"] == "teapot"
+
+
+@pytest.mark.asyncio
+async def test_validation_error_handler_formats_response():
+    from app.main import validation_error_handler
+
+    request = _make_request("/validation-error")
+    exc = RequestValidationError(
+        [{"loc": ("query", "q"), "msg": "error", "type": "value_error"}]
+    )
+    response = await validation_error_handler(request, exc)
+
+    payload = json.loads(response.body)
+    assert payload["status"] == 422
+    assert payload["instance"] == "/validation-error"
+
+
+@pytest.mark.asyncio
+async def test_unhandled_exception_handler_formats_response():
+    from app.main import unhandled_exception_handler
+
+    request = _make_request("/boom")
+    response = await unhandled_exception_handler(request, RuntimeError("boom"))
+
+    payload = json.loads(response.body)
+    assert payload["status"] == 500
+    assert payload["instance"] == "/boom"
+
+
+def test_readiness_check_reports_database_error(client: TestClient, test_session, monkeypatch):
+    monkeypatch.setattr(test_session, "execute", AsyncMock(side_effect=RuntimeError("db down")))
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["checks"]["database"] == "error"
+
+
+def test_readiness_check_reports_temporal_error(client: TestClient, monkeypatch):
+    from app import main as main_module
+
+    def fail_temporal():
+        raise RuntimeError("temporal down")
+
+    monkeypatch.setattr(main_module, "get_temporal_client", fail_temporal)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["checks"]["temporal"] == "error"

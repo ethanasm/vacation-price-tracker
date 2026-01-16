@@ -7,9 +7,10 @@ import app.routers.auth as auth_module
 import pytest
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
+from app.core.errors import AuthenticationRequired
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
-from fastapi import HTTPException, Response
+from fastapi import Response
 from jose import jwt
 from sqlmodel import select
 from starlette.requests import Request
@@ -120,7 +121,7 @@ class TestGoogleOAuthCallback:
         response = client.get("/v1/auth/google/callback")
 
         assert response.status_code == 400
-        assert response.text == "Failed to get user info from Google."
+        assert response.json()["detail"] == "Failed to get user info from Google."
 
     def test_callback_returns_400_with_missing_fields(self, client, monkeypatch):
         """Test callback returns 400 when userinfo missing required fields."""
@@ -133,7 +134,7 @@ class TestGoogleOAuthCallback:
         response = client.get("/v1/auth/google/callback")
 
         assert response.status_code == 400
-        assert response.text == "Missing required user info from Google."
+        assert response.json()["detail"] == "Missing required user info from Google."
 
     @pytest.mark.asyncio
     async def test_callback_success_creates_user(self, test_session, mock_redis, monkeypatch):
@@ -211,7 +212,7 @@ class TestTokenRefresh:
         response = client.post("/v1/auth/refresh")
 
         assert response.status_code == 401
-        assert response.text == "Refresh token not found."
+        assert response.json()["detail"] == "Refresh token not found."
 
     def test_refresh_returns_401_with_invalid_token(self, client):
         """Test refresh returns 401 for invalid token."""
@@ -219,7 +220,7 @@ class TestTokenRefresh:
         response = client.post("/v1/auth/refresh")
 
         assert response.status_code == 401
-        assert response.text == "Invalid refresh token."
+        assert response.json()["detail"] == "Invalid refresh token."
 
     def test_refresh_returns_401_when_token_rotated(self, client, mock_redis):
         """Test refresh returns 401 when token doesn't match Redis."""
@@ -230,7 +231,7 @@ class TestTokenRefresh:
         response = client.post("/v1/auth/refresh")
 
         assert response.status_code == 401
-        assert response.text == "Refresh token has been rotated or invalidated."
+        assert response.json()["detail"] == "Refresh token has been rotated or invalidated."
 
     @pytest.mark.asyncio
     async def test_refresh_success_sets_cookies(self, test_session, mock_redis, monkeypatch):
@@ -396,7 +397,7 @@ class TestAuthMe:
             cookies={CookieNames.ACCESS_TOKEN: access_token},
         )
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AuthenticationRequired) as exc_info:
             await auth_module.get_current_user(request, db=test_session)
 
         assert exc_info.value.detail == "User not found"

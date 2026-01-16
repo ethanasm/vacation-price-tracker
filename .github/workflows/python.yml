@@ -30,9 +30,11 @@ jobs:
       - name: Build
         run: uv build
       - name: Lint
-        run: uv run ruff check apps/api
-      - name: Test
+        run: uv run ruff check apps/api apps/worker
+      - name: Api Test
         run: uv run pytest apps/api/tests -v
+      - name: Worker Test
+        run: uv run pytest apps/worker/tests -v
 
   audit:
     runs-on: ubuntu-latest

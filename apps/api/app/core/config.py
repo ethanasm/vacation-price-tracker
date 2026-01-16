@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Amadeus MCP Server (Hotels)
     amadeus_api_key: str
     amadeus_api_secret: str
+    amadeus_base_url: str = "https://test.api.amadeus.com"
 
     # Kiwi MCP Server (Flights)
     kiwi_api_key: str = ""
@@ -46,6 +47,13 @@ class Settings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "vacation-price-tracker-tasks"
+
+    # MCP (stdio subprocesses)
+    mcp_node_path: str = "node"
+    amadeus_mcp_path: str = "node_modules/@modelcontextprotocol/server-amadeus-travel/dist/index.js"
+    kiwi_mcp_path: str | None = None
+    mcp_timeout_seconds: int = 30
+    mcp_max_restart_attempts: int = 3
 
     # Email Notifications
     smtp_host: str = "smtp.smtp2go.com"

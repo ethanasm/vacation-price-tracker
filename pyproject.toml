@@ -69,7 +69,7 @@ packages = ["apps/api/app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["apps/api/tests"]
+testpaths = ["apps/api/tests", "apps/worker/tests"]
 
 [tool.coverage.run]
 source = ["apps/api/app"]

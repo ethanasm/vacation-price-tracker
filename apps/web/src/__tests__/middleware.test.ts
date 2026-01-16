@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 // Mock Next.js server modules
 const mockRedirect = jest.fn();
 const mockNext = jest.fn();
+const mockJson = jest.fn();
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -21,6 +22,14 @@ jest.mock("next/server", () => ({
         headers: new Map(),
       };
     },
+    json: (body: unknown, init?: { status?: number }) => {
+      mockJson(body, init);
+      return {
+        status: init?.status ?? 200,
+        headers: new Map(),
+        json: async () => body,
+      };
+    },
   },
 }));
 
@@ -32,11 +41,19 @@ import { middleware } from "../middleware";
  */
 function createMockRequest(
   pathname: string,
-  cookies: Record<string, string> = {}
+  cookies: Record<string, string> = {},
+  options: { method?: string; headers?: Record<string, string> } = {},
 ): Partial<NextRequest> {
+  const headerMap = new Map(
+    Object.entries(options.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
+  );
   return {
     nextUrl: new URL(pathname, "http://localhost:3000") as unknown as NextRequest["nextUrl"],
     url: `http://localhost:3000${pathname}`,
+    method: options.method ?? "GET",
+    headers: {
+      get: (name: string) => headerMap.get(name.toLowerCase()) ?? null,
+    } as NextRequest["headers"],
     cookies: {
       get: (name: string) =>
         cookies[name] ? { name, value: cookies[name] } : undefined,
@@ -48,6 +65,7 @@ describe("Auth Middleware", () => {
   beforeEach(() => {
     mockRedirect.mockClear();
     mockNext.mockClear();
+    mockJson.mockClear();
     process.env.SECRET_KEY = secret;
   });
 
@@ -229,5 +247,38 @@ describe("Auth Middleware", () => {
 
     expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/");
     expect(response.status).toBe(307);
+  });
+
+  it("blocks POST requests without idempotency key", async () => {
+    const request = createMockRequest(
+      "/dashboard",
+      {},
+      { method: "POST" },
+    );
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockJson).toHaveBeenCalledWith(
+      { detail: "X-Idempotency-Key header required" },
+      { status: 400 },
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("allows POST requests with idempotency key", async () => {
+    const token = buildToken({
+      type: "access",
+      exp: Math.floor(Date.now() / 1000) + 60,
+    });
+    const request = createMockRequest(
+      "/dashboard",
+      { access_token_cookie: token },
+      { method: "POST", headers: { "x-idempotency-key": "request-1" } },
+    );
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(response.status).toBe(200);
   });
 });

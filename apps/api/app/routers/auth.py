@@ -2,7 +2,7 @@ import logging
 import uuid
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from jose import ExpiredSignatureError, JWTError, jwt
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ from sqlalchemy.future import select
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
+from app.core.errors import AuthenticationRequired, BadRequestError
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
 from app.db.deps import get_db
 from app.db.redis import redis_client
@@ -80,13 +81,13 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     user_info = token.get("userinfo")
 
     if not user_info:
-        return Response("Failed to get user info from Google.", status_code=400)
+        raise BadRequestError("Failed to get user info from Google.")
 
     google_sub = user_info.get("sub")
     email = user_info.get("email")
 
     if not google_sub or not email:
-        return Response("Missing required user info from Google.", status_code=400)
+        raise BadRequestError("Missing required user info from Google.")
 
     # Find existing user or create a new one
     result = await db.execute(select(User).where(User.google_sub == google_sub))
@@ -121,7 +122,7 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     refresh_token_value = request.cookies.get(CookieNames.REFRESH_TOKEN)
 
     if not refresh_token_value:
-        return Response("Refresh token not found.", status_code=401)
+        raise AuthenticationRequired("Refresh token not found.")
 
     try:
         payload = jwt.decode(
@@ -130,13 +131,13 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
             algorithms=[settings.jwt_algorithm],
         )
         user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
-    except (JWTError, ValueError):
-        return Response("Invalid refresh token.", status_code=401)
+    except (JWTError, ValueError) as exc:
+        raise AuthenticationRequired("Invalid refresh token.") from exc
 
     # Verify refresh token is still valid in Redis
     stored_token = await redis_client.get(CacheKeys.refresh_token(str(user_id)))
     if stored_token != refresh_token_value:
-        return Response("Refresh token has been rotated or invalidated.", status_code=401)
+        raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
 
     # Issue new tokens
     jwt_data = _build_jwt_data(user_id)
@@ -188,7 +189,7 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     access_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
 
     if not access_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise AuthenticationRequired("Not authenticated")
 
     try:
         payload = jwt.decode(
@@ -200,20 +201,20 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         # Verify this is an access token, not a refresh token
         token_type = payload.get(JWTClaims.TYPE)
         if token_type != TokenType.ACCESS.value:
-            raise HTTPException(status_code=401, detail="Invalid token type")
+            raise AuthenticationRequired("Invalid token type")
 
         user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
 
     except ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired") from None
+        raise AuthenticationRequired("Token has expired") from None
     except (JWTError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid token") from None
+        raise AuthenticationRequired("Invalid token") from None
 
     # Fetch user from database
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
 
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise AuthenticationRequired("User not found")
 
     return UserResponse(id=str(user.id), email=user.email)
