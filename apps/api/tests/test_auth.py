@@ -152,7 +152,7 @@ class TestGoogleOAuthCallback:
         response = await auth_module.google_auth_callback(request, db=test_session)
 
         assert response.status_code == 307
-        assert response.headers["location"].endswith("/dashboard")
+        assert response.headers["location"].endswith("/trips")
         set_cookie_headers = response.headers.getlist("set-cookie")
         assert any(CookieNames.ACCESS_TOKEN in header for header in set_cookie_headers)
         assert any(CookieNames.REFRESH_TOKEN in header for header in set_cookie_headers)

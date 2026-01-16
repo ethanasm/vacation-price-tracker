@@ -2,13 +2,9 @@
 import styles from "./page.module.css";
 import { Separator } from "../components/ui/separator";
 import { Bell, Building2, Plane } from "lucide-react";
-import { SiteFooter } from "../components/SiteFooter";
-import { SignInCard } from "../components/SignInCard";
 import { Badge } from "../components/ui/badge";
-import { redirectTo } from "../lib/navigation";
-
-const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "https://localhost:8000";
-const googleStartUrl = `${apiBase}/v1/auth/google/start`;
+import { Button } from "../components/ui/button";
+import Link from "next/link";
 
 export default function HomePage() {
   return (
@@ -78,17 +74,16 @@ export default function HomePage() {
 
           {/* Right column: Sign-in card */}
           <div className={styles.heroCard}>
-            <SignInCard
-              signInUrl={googleStartUrl}
-              onSignIn={() => redirectTo(googleStartUrl)}
-            />
+            <div className={styles.ctaCard}>
+              <h2>Ready to get started?</h2>
+              <p>Sign in to create your first trip and start tracking prices.</p>
+              <Button asChild>
+                <Link href="/login">Sign In &rarr;</Link>
+              </Button>
+            </div>
           </div>
         </div>
       </section>
-
-      <div className={styles.footerWrap}>
-        <SiteFooter />
-      </div>
     </main>
   );
 }

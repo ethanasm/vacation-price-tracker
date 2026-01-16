@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Space_Grotesk } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
 import "./globals.css";
+import styles from "./layout.module.css";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -20,6 +21,20 @@ export const metadata: Metadata = {
   description: "Track flight and hotel prices for your next trip.",
 };
 
+function SiteFooter() {
+  const year = new Date().getFullYear();
+
+  return (
+    <footer className={styles.footer}>
+      <span>Track flight and hotel prices without the spreadsheet sprawl.</span>
+      <span className={styles.divider} aria-hidden="true">
+        ·
+      </span>
+      <span>(c) {year} Ethan Smith</span>
+    </footer>
+  );
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +43,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <SiteFooter />
+        </AuthProvider>
       </body>
     </html>
   );

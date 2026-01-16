@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import DashboardPage from "../app/dashboard/page";
+import DashboardLayout from "../app/trips/layout";
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -19,34 +19,32 @@ jest.mock("../context/AuthContext", () => ({
 }));
 
 // Mock CSS modules
-jest.mock("../app/dashboard/page.module.css", () => ({
+jest.mock("../app/trips/page.module.css", () => ({
   main: "main",
   content: "content",
   header: "header",
   title: "title",
   subtitle: "subtitle",
-  footerWrap: "footerWrap",
 }));
 
-// Mock SiteFooter
-jest.mock("../components/SiteFooter", () => ({
-  SiteFooter: () => <footer data-testid="site-footer">Footer</footer>,
-}));
-
-describe("Dashboard Page", () => {
+describe("DashboardLayout", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLogout.mockResolvedValue(undefined);
   });
 
-  it("shows loading spinner while auth is loading", () => {
+  it("shows loading state while auth is loading", () => {
     mockUseAuth.mockReturnValue({
       user: null,
       isLoading: true,
       logout: mockLogout,
     });
 
-    render(<DashboardPage />);
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
@@ -58,10 +56,14 @@ describe("Dashboard Page", () => {
       logout: mockLogout,
     });
 
-    render(<DashboardPage />);
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
 
     await waitFor(() => {
-      expect(screen.getByText(/Welcome, test@example.com!/)).toBeInTheDocument();
+      expect(screen.getByText("Welcome, test@example.com")).toBeInTheDocument();
     });
   });
 
@@ -72,12 +74,16 @@ describe("Dashboard Page", () => {
       logout: mockLogout,
     });
 
-    render(<DashboardPage />);
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
 
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it("calls logout when sign out button clicked", async () => {
+  it("calls logout and redirects when sign out button clicked", async () => {
     const user = userEvent.setup();
 
     mockUseAuth.mockReturnValue({
@@ -86,7 +92,11 @@ describe("Dashboard Page", () => {
       logout: mockLogout,
     });
 
-    render(<DashboardPage />);
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
 
     await user.click(screen.getByRole("button", { name: /sign out/i }));
 
@@ -94,5 +104,37 @@ describe("Dashboard Page", () => {
       expect(mockLogout).toHaveBeenCalledTimes(1);
       expect(mockPush).toHaveBeenCalledWith("/");
     });
+  });
+
+  it("redirects to login when not authenticated", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      logout: mockLogout,
+    });
+
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
+
+    expect(mockPush).toHaveBeenCalledWith("/login");
+  });
+
+  it("renders children when authenticated", () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: "123", email: "test@example.com" },
+      isLoading: false,
+      logout: mockLogout,
+    });
+
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
+
+    expect(screen.getByText("Child content")).toBeInTheDocument();
   });
 });

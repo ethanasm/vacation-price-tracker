@@ -1,19 +1,21 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SignInCard } from "../components/SignInCard";
+import LoginPage from "./page";
 
-jest.mock("../components/SignInCard.module.css", () => ({}));
+const mockRedirectTo = jest.fn();
 
-describe("SignInCard", () => {
-  const mockSignInUrl = "https://example.com/auth/google/start";
-  const mockOnSignIn = jest.fn();
+jest.mock("./page.module.css", () => ({}));
+jest.mock("../../lib/navigation", () => ({
+  redirectTo: (url: string) => mockRedirectTo(url),
+}));
 
+describe("LoginPage", () => {
   beforeEach(() => {
-    mockOnSignIn.mockClear();
+    mockRedirectTo.mockClear();
   });
 
   it("renders the sign in text", () => {
-    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
+    render(<LoginPage />);
 
     expect(screen.getByText("Sign in to start tracking")).toBeInTheDocument();
     expect(
@@ -21,17 +23,19 @@ describe("SignInCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("calls onSignIn when Google button is clicked", async () => {
+  it("calls redirectTo when Google button is clicked", async () => {
     const user = userEvent.setup();
 
-    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
+    render(<LoginPage />);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    expect(mockOnSignIn).toHaveBeenCalledTimes(1);
+    expect(mockRedirectTo).toHaveBeenCalledWith(
+      "https://localhost:8000/v1/auth/google/start",
+    );
   });
 
   it("renders the helper text", () => {
-    render(<SignInCard signInUrl={mockSignInUrl} onSignIn={mockOnSignIn} />);
+    render(<LoginPage />);
 
     expect(
       screen.getByText(

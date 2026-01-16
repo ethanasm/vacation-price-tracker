@@ -13,7 +13,7 @@ const IDEMPOTENT_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /**
  * Routes that require authentication.
  */
-const PROTECTED_ROUTES = ["/dashboard"];
+const PROTECTED_ROUTES = ["/trips"];
 
 /**
  * Decode a base64url string into a binary string.
@@ -155,5 +155,5 @@ export async function middleware(request: NextRequest) {
  * Configure which routes the middleware applies to.
  */
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/trips/:path*"],
 };

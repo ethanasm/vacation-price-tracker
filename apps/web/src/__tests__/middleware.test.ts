@@ -85,8 +85,8 @@ describe("Auth Middleware", () => {
     return `${data}.${signature}`;
   };
 
-  it("redirects to / when no access_token_cookie on /dashboard", async () => {
-    const request = createMockRequest("/dashboard");
+  it("redirects to / when no access_token_cookie on /trips", async () => {
+    const request = createMockRequest("/trips");
 
     const response = await middleware(request as NextRequest);
 
@@ -99,7 +99,7 @@ describe("Auth Middleware", () => {
       type: "access",
       exp: Math.floor(Date.now() / 1000) + 60,
     });
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -115,7 +115,7 @@ describe("Auth Middleware", () => {
       type: "access",
       exp: Math.floor(Date.now() / 1000) - 60,
     });
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -133,7 +133,7 @@ describe("Auth Middleware", () => {
       },
       "wrong-secret",
     );
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -144,7 +144,7 @@ describe("Auth Middleware", () => {
   });
 
   it("redirects to / when token is malformed", async () => {
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: "not-a-jwt",
     });
 
@@ -163,7 +163,7 @@ describe("Auth Middleware", () => {
       secret,
       { alg: "none" },
     );
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -178,7 +178,7 @@ describe("Auth Middleware", () => {
       type: "refresh",
       exp: Math.floor(Date.now() / 1000) + 60,
     });
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -192,7 +192,7 @@ describe("Auth Middleware", () => {
     const token = buildToken({
       type: "access",
     });
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -209,7 +209,7 @@ describe("Auth Middleware", () => {
     });
     process.env.SECRET_KEY = "";
 
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: token,
     });
 
@@ -220,7 +220,7 @@ describe("Auth Middleware", () => {
   });
 
   it("redirects to / when token payload is not valid json", async () => {
-    const request = createMockRequest("/dashboard", {
+    const request = createMockRequest("/trips", {
       access_token_cookie: "%%%.%%%.signature",
     });
 
@@ -240,8 +240,8 @@ describe("Auth Middleware", () => {
     expect(response.status).toBe(200);
   });
 
-  it("matches /dashboard/settings and other subpaths", async () => {
-    const request = createMockRequest("/dashboard/settings");
+  it("matches /trips/settings and other subpaths", async () => {
+    const request = createMockRequest("/trips/settings");
 
     const response = await middleware(request as NextRequest);
 
@@ -251,7 +251,7 @@ describe("Auth Middleware", () => {
 
   it("blocks POST requests without idempotency key", async () => {
     const request = createMockRequest(
-      "/dashboard",
+      "/trips",
       {},
       { method: "POST" },
     );
@@ -271,7 +271,7 @@ describe("Auth Middleware", () => {
       exp: Math.floor(Date.now() / 1000) + 60,
     });
     const request = createMockRequest(
-      "/dashboard",
+      "/trips",
       { access_token_cookie: token },
       { method: "POST", headers: { "x-idempotency-key": "request-1" } },
     );

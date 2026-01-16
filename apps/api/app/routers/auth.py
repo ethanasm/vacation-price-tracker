@@ -109,7 +109,7 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
 
     logger.info("User logged in: id=%s email=%s", user.id, user.email)
 
-    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
+    response = RedirectResponse(url=f"{settings.frontend_url}/trips")
 
     # Set cookies
     _set_auth_cookies(response, access_token, refresh_token)

@@ -1,12 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { SiteFooter } from "../../components/SiteFooter";
 import { Button } from "../../components/ui/button";
 import { useAuth } from "../../context/AuthContext";
 import styles from "./page.module.css";
 
-export default function DashboardPage() {
+export default function DashboardLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
 
@@ -25,23 +28,21 @@ export default function DashboardPage() {
     );
   }
 
+  if (!user) {
+    router.push("/login");
+    return null;
+  }
+
   return (
     <main className={styles.main}>
       <div className={styles.header}>
+        <p>Welcome, {user.email}</p>
         <Button variant="outline" onClick={handleSignOut}>
           Sign out
         </Button>
       </div>
-      <div className={styles.content}>
-        <h1 className={styles.title}>Dashboard</h1>
-        <p className={styles.subtitle}>
-          Welcome{user?.email ? `, ${user.email}` : ""}! Your trips will appear
-          here.
-        </p>
-      </div>
-      <div className={styles.footerWrap}>
-        <SiteFooter />
-      </div>
+      {children}
     </main>
   );
 }
+

@@ -450,34 +450,36 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 ## 6. Frontend (Next.js 14)
 
 ### 6.1 Project Setup
-- [ ] Initialize Next.js 14 with App Router
-- [ ] Configure Tailwind CSS
-- [ ] Install and configure shadcn/ui components
-- [ ] Set up project structure:
+- [X] Initialize Next.js 14 with App Router
+- [X] Configure Tailwind CSS
+- [X] Install and configure shadcn/ui components
+- [X] Set up project structure:
   ```
   apps/web/
   ├── app/
-  │   ├── (auth)/
-  │   │   ├── login/page.tsx
-  │   │   └── callback/page.tsx
-  │   ├── (dashboard)/
-  │   │   ├── layout.tsx
+  │   ├── login/
+  │   │   ├── page.tsx (Google OAuth sign-in)
+  │   │   └── login.module.css
+  │   ├── trips/
+  │   │   ├── layout.tsx (auth check, welcome header)
   │   │   ├── page.tsx (trip list)
-  │   │   └── trips/[id]/page.tsx
-  │   ├── layout.tsx
+  │   │   └── [tripId]/page.tsx
+  │   ├── layout.tsx (root layout with footer)
+  │   ├── layout.module.css
+  │   ├── page.tsx (landing page)
   │   └── globals.css
   ├── components/
-  │   ├── ui/ (shadcn)
-  │   ├── trip-table.tsx
-  │   ├── trip-detail-modal.tsx
-  │   ├── price-chart.tsx
-  │   └── refresh-button.tsx
-  ├── lib/
-  │   ├── api.ts (fetch wrapper)
-  │   └── auth.ts (session helpers)
-  └── hooks/
-      └── use-trips.ts
+  │   └── ui/ (shadcn)
+  ├── context/
+  │   └── AuthContext.tsx
+  └── lib/
+      ├── api.ts (fetch wrapper with auto-refresh)
+      ├── navigation.ts
+      └── utils.ts
   ```
+
+  Note: OAuth callback is handled by backend (`/v1/auth/google/callback`),
+  which redirects to `/trips` after successful authentication.
 
 ### 6.2 Dashboard Layout
 - [X] Create auth-aware dashboard placeholder with sign-out and greeting
