@@ -25,9 +25,18 @@ def anyio_backend():
 @pytest_asyncio.fixture(scope="function")
 async def test_engine():
     """Create a test database engine for each test."""
-    import app.models.user as user_models
+    # Import all models so SQLAlchemy registers them with metadata
+    from app.models import (
+        NotificationRule,
+        PriceSnapshot,
+        Trip,
+        TripFlightPrefs,
+        TripHotelPrefs,
+        User,
+    )
 
-    _ = user_models.User
+    # Reference models to avoid unused import warnings
+    _ = (User, Trip, TripFlightPrefs, TripHotelPrefs, PriceSnapshot, NotificationRule)
 
     # Remove old test DB if exists
     if os.path.exists(TEST_DB_FILE):
@@ -88,6 +97,7 @@ def app(test_session, mock_redis):
 
     # Mock redis_client globally
     import app.routers.auth as auth_module
+
     auth_module.redis_client = mock_redis
 
     yield fastapi_app
@@ -115,5 +125,5 @@ def mock_oauth_token():
             "email": "test@example.com",
             "email_verified": True,
             "name": "Test User",
-        }
+        },
     }

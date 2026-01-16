@@ -66,3 +66,24 @@ indent-style = "space"
 
 [tool.hatch.build.targets.wheel]
 packages = ["apps/api/app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["apps/api/tests"]
+
+[tool.coverage.run]
+source = ["apps/api/app"]
+omit = [
+    "apps/api/app/models/*",      # Models tested via integration tests
+    "apps/api/migrations/*",       # Migration files don't need coverage
+    "apps/api/app/__init__.py",
+    "apps/api/app/*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+fail_under = 70

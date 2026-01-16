@@ -21,10 +21,7 @@ class TestUserModel:
     @pytest.mark.asyncio
     async def test_create_user(self, test_session):
         """Test basic user creation."""
-        user = User(
-            google_sub="test_google_sub_123",
-            email="test@example.com"
-        )
+        user = User(google_sub="test_google_sub_123", email="test@example.com")
         set_test_timestamps(user)
 
         test_session.add(user)
@@ -40,10 +37,7 @@ class TestUserModel:
     @pytest.mark.asyncio
     async def test_user_timestamps_auto_populated(self, test_session):
         """Test that created_at and updated_at are set (in production by DB, in tests manually)."""
-        user = User(
-            google_sub="test_google_sub_456",
-            email="timestamps@example.com"
-        )
+        user = User(google_sub="test_google_sub_456", email="timestamps@example.com")
         set_test_timestamps(user)
 
         test_session.add(user)

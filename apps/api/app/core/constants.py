@@ -56,3 +56,50 @@ class RefreshFrequency(str, Enum):
     DAILY = "daily"
     EVERY_3_DAYS = "every_3_days"
     WEEKLY = "weekly"
+
+
+# =============================================================================
+# NOTIFICATION CONSTANTS (Phase 1)
+# =============================================================================
+
+
+class ThresholdType(str, Enum):
+    """Notification threshold types for price alerts."""
+
+    TRIP_TOTAL = "trip_total"
+    FLIGHT_TOTAL = "flight_total"
+    HOTEL_TOTAL = "hotel_total"
+
+
+# =============================================================================
+# FLIGHT PREFERENCES CONSTANTS (Phase 1)
+# =============================================================================
+
+
+class StopsMode(str, Enum):
+    """Flight stops preference modes."""
+
+    NONSTOP = "nonstop"
+    ONE_STOP = "1-stop"
+    ANY = "any"
+
+
+class CabinClass(str, Enum):
+    """Flight cabin class options."""
+
+    ECONOMY = "economy"
+    PREMIUM_ECONOMY = "premium_economy"
+    BUSINESS = "business"
+    FIRST = "first"
+
+
+# =============================================================================
+# HOTEL PREFERENCES CONSTANTS (Phase 1)
+# =============================================================================
+
+
+class RoomSelectionMode(str, Enum):
+    """Hotel room selection preference modes."""
+
+    CHEAPEST = "cheapest"
+    PREFERRED = "preferred"

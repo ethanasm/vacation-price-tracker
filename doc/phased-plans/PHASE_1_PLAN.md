@@ -107,9 +107,16 @@
 ## 3. Data Layer
 
 ### 3.1 SQLModel/SQLAlchemy Models
+- [X] All models implemented in `apps/api/app/models/`
+- [X] User model (already existed from Phase 1 Auth)
+- [X] Trip model with status enum
+- [X] TripFlightPrefs and TripHotelPrefs models
+- [X] PriceSnapshot model with JSON raw_data
+- [X] NotificationRule model with threshold settings
+- [X] All enums added to `apps/api/app/core/constants.py`
 
 ```python
-# Core entities to implement:
+# Core entities implemented:
 
 class User(SQLModel, table=True):
     id: uuid.UUID (PK, default=uuid4)
@@ -170,32 +177,33 @@ class NotificationRule(SQLModel, table=True):
 ```
 
 ### 3.2 Database Setup
-- [ ] Install dependencies: `sqlmodel`, `asyncpg`, `alembic`
-- [ ] Configure async database engine with connection pooling (min=5, max=20)
-- [ ] Create `alembic.ini` and migration environment
-- [ ] Write initial migration with all Phase 1 tables
-- [ ] Add indexes:
+- [X] Install dependencies: `sqlmodel`, `asyncpg`, `alembic`
+- [X] Configure async database engine with connection pooling (min=5, max=20)
+- [X] Create `alembic.ini` and migration environment
+- [X] Write initial migration with all Phase 1 tables
+- [X] Add indexes:
   - `ix_trip_user_id` on `trip.user_id`
   - `ix_trip_status` on `trip.status`
   - `ix_price_snapshot_trip_id` on `price_snapshot.trip_id`
   - `ix_price_snapshot_created_at` on `price_snapshot.created_at`
   - Composite unique on `(user_id, name)` for Trip
-- [ ] Configure ON DELETE CASCADE for:
+- [X] Configure ON DELETE CASCADE for:
   - TripFlightPrefs, TripHotelPrefs, NotificationRule -> Trip
   - PriceSnapshot -> Trip
 
 ### 3.3 Pydantic Schemas
-- [ ] Create request/response schemas matching API spec:
+- [X] Create request/response schemas matching API spec:
   - `TripCreate`, `TripResponse`, `TripDetail`
   - `FlightPrefs`, `HotelPrefs`, `NotificationPrefs`
   - `PriceSnapshotResponse`
-- [ ] Implement envelope wrapper for all responses:
+- [X] Implement envelope wrapper for all responses:
   ```python
   class APIResponse(BaseModel, Generic[T]):
       data: T
       meta: Optional[dict] = None
   ```
-- [ ] Add validation constraints (max 10 trips, valid IATA codes, date ranges)
+- [X] Add validation constraints (max 10 trips, valid IATA codes, date ranges)
+- [X] Unit tests for schema validation (29 tests covering all schemas)
 
 ---
 
@@ -511,11 +519,12 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 ## 8. Testing Checklist (Phase 1)
 
 ### Unit Tests
-- [ ] Pydantic schema validation (valid/invalid inputs)
+- [X] Pydantic schema validation (valid/invalid inputs) - 29 tests in `test_schemas.py`
 - [ ] Post-fetch filtering logic (airlines, room types, views)
-- [ ] Date validation helpers
-- [ ] JWT token generation/validation
+- [X] Date validation helpers (included in schema tests)
+- [X] JWT token generation/validation (tests in `test_security.py`)
 - [X] Frontend auth context, middleware, and dashboard smoke tests (Jest)
+- [X] Backend: 67 total tests passing
 
 ### Integration Tests
 - [ ] OAuth callback flow (mocked Google responses)

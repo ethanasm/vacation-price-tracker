@@ -223,9 +223,7 @@ class TestTokenRefresh:
 
     def test_refresh_returns_401_when_token_rotated(self, client, mock_redis):
         """Test refresh returns 401 when token doesn't match Redis."""
-        refresh_token = create_refresh_token(
-            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
-        )
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"})
         client.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
         mock_redis.get.return_value = "different_token"
 
@@ -392,9 +390,7 @@ class TestAuthMe:
     @pytest.mark.asyncio
     async def test_me_returns_401_when_user_missing(self, test_session):
         """Test missing user in database returns 401."""
-        access_token = create_access_token(
-            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
-        )
+        access_token = create_access_token(data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"})
         request = _make_request(
             "/v1/auth/me",
             cookies={CookieNames.ACCESS_TOKEN: access_token},

@@ -23,7 +23,10 @@
     "api:lint": "uv run ruff check apps/api/app/ apps/api/tests/",
     "api:format": "uv run ruff format apps/api/app/ apps/api/tests/",
     "api:test": "uv run pytest apps/api/tests/ -v",
-    "api:test:coverage": "uv run pytest apps/api/tests/ --cov=app --cov-report=html"
+    "api:test:coverage": "uv run pytest apps/api/tests/ --cov=app --cov-report=html",
+    "db:migrate": "DATABASE_URL='postgresql+asyncpg://postgres:postgres@localhost:5432/vacation_tracker' uv run alembic upgrade head",
+    "db:migrate:status": "DATABASE_URL='postgresql+asyncpg://postgres:postgres@localhost:5432/vacation_tracker' uv run alembic current",
+    "db:migrate:new": "DATABASE_URL='postgresql+asyncpg://postgres:postgres@localhost:5432/vacation_tracker' uv run alembic revision --autogenerate -m"
   },
   "devDependencies": {
     "shadcn": "^3.6.3",
