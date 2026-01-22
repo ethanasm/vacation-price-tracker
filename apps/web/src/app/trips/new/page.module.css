@@ -229,7 +229,7 @@
 
 .tagInput:focus-within {
   outline: none;
-  ring: 2px solid hsl(var(--ring));
+  box-shadow: 0 0 0 2px hsl(var(--ring));
   border-color: hsl(var(--border));
   background: rgba(255, 255, 255, 0.8);
 }

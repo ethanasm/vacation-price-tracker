@@ -2,20 +2,6 @@ import * as React from "react";
 
 import { cn } from "../../lib/utils";
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
-    <table
-      ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
-      {...props}
-    />
-  </div>
-));
-Table.displayName = "Table";
-
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
@@ -104,6 +90,36 @@ const TableCaption = React.forwardRef<
   />
 ));
 TableCaption.displayName = "TableCaption";
+
+const Table = React.forwardRef<
+  HTMLTableElement,
+  React.HTMLAttributes<HTMLTableElement>
+>(({ className, children, ...props }, ref) => {
+  const hasHeader = React.Children.toArray(children).some((child) => {
+    if (!React.isValidElement(child)) return false;
+    return child.type === TableHeader;
+  });
+
+  return (
+    <div className="relative w-full overflow-auto">
+      <table
+        ref={ref}
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      >
+        {!hasHeader && (
+          <thead className="sr-only">
+            <tr>
+              <th scope="col">Data</th>
+            </tr>
+          </thead>
+        )}
+        {children}
+      </table>
+    </div>
+  );
+});
+Table.displayName = "Table";
 
 export {
   Table,
