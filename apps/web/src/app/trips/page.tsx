@@ -163,7 +163,7 @@ export default function DashboardPage() {
             {isRefreshing ? "Refreshing..." : "Refresh All"}
           </Button>
           <Button asChild size="sm">
-            <Link href="/trips/create">
+            <Link href="/trips/new">
               <Plus className="h-4 w-4" />
               New Trip
             </Link>

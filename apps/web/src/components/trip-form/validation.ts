@@ -13,7 +13,8 @@ export function validateName(name: string): string | undefined {
 }
 
 export function validateAirportCode(code: string): string | undefined {
-  if (!code.match(AIRPORT_CODE_REGEX)) {
+  const normalized = code.trim().toUpperCase();
+  if (!normalized.match(AIRPORT_CODE_REGEX)) {
     return "Enter a valid 3-letter airport code";
   }
   return undefined;
@@ -42,7 +43,7 @@ export function validateReturnDate(
 }
 
 export function validateThresholdValue(value: string): string | undefined {
-  if (!value || Number.parseFloat(value) <= 0) {
+  if (!value.trim() || Number.parseFloat(value) <= 0) {
     return "Enter a valid price threshold";
   }
   return undefined;
@@ -63,8 +64,10 @@ export function validateTripForm(data: TripFormData): TripFormErrors {
   const departError = validateDepartDate(data.departDate);
   if (departError) errors.departDate = departError;
 
-  const returnError = validateReturnDate(data.returnDate, data.departDate);
-  if (returnError) errors.returnDate = returnError;
+  if (data.isRoundTrip || data.returnDate) {
+    const returnError = validateReturnDate(data.returnDate, data.departDate);
+    if (returnError) errors.returnDate = returnError;
+  }
 
   const thresholdError = validateThresholdValue(
     data.notificationPrefs.thresholdValue

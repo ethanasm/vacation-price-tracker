@@ -50,6 +50,17 @@ import {
 import { mockTripsData } from "@/lib/mock-data";
 import styles from "./page.module.css";
 
+const parsePrice = (value: string | null | undefined): number | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getHotelShortName = (name: string | null | undefined): string => {
+  if (!name) return "Hotel";
+  return name.split(" ")[0] || "Hotel";
+};
+
 function getStatusVariant(
   status: string
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -76,11 +87,9 @@ function PriceHistoryChart({
   flightPrice: string | null;
   selectedHotelName: string;
 }) {
-  const selectedHistory = hotelPriceHistories.find(
-    (h) => h.hotel_id === selectedHotelId?.replace("h", "")?.replace(/^\d+$/, selectedHotelId)
-  ) ?? hotelPriceHistories.find(h =>
-    selectedHotelId?.includes(h.hotel_id) || h.hotel_id.includes(selectedHotelId?.replace("h", "") ?? "")
-  ) ?? hotelPriceHistories[0];
+  const selectedHistory =
+    hotelPriceHistories.find((h) => h.hotel_id === selectedHotelId) ??
+    hotelPriceHistories[0];
 
   if (!selectedHistory || selectedHistory.snapshots.length === 0) {
     return (
@@ -91,13 +100,13 @@ function PriceHistoryChart({
     );
   }
 
-  const flightPriceNum = flightPrice ? Number.parseFloat(flightPrice) : 0;
+  const flightPriceNum = parsePrice(flightPrice) ?? 0;
 
   const chartData = selectedHistory.snapshots.map((snapshot) => ({
     date: formatShortDate(snapshot.date),
-    total: Number.parseFloat(snapshot.total_price) + flightPriceNum,
+    total: (parsePrice(snapshot.total_price) ?? 0) + flightPriceNum,
     flight: flightPriceNum,
-    hotel: Number.parseFloat(snapshot.total_price),
+    hotel: parsePrice(snapshot.total_price) ?? 0,
   }));
 
   const chartConfig = {
@@ -137,6 +146,9 @@ function PriceHistoryChart({
 }
 
 function PriceTrend({ currentPrice, previousPrice }: { currentPrice: number; previousPrice: number }) {
+  if (!Number.isFinite(previousPrice) || previousPrice <= 0 || !Number.isFinite(currentPrice)) {
+    return null;
+  }
   const diff = currentPrice - previousPrice;
   const percentChange = ((diff / previousPrice) * 100).toFixed(1);
   const isDown = diff < 0;
@@ -220,7 +232,7 @@ export default function TripDetailPage({
   const initialFlights = mockData?.top_flights ?? [];
   const initialHotels = mockData?.tracked_hotels ?? [];
   const initialHotelHistories = mockData?.hotel_price_histories ?? [];
-  const initialSelectedHotel = initialHotels.length > 0 ? initialHotels[0].id : null;
+  const initialSelectedHotel = initialHotels.length > 0 ? initialHotels[0].hotel_id : null;
 
   const [trip, setTrip] = useState<TripDetail | null>(initialTrip);
   const [topFlights] = useState<FlightOffer[]>(initialFlights);
@@ -234,18 +246,29 @@ export default function TripDetailPage({
     if (!tripId || !trip) return;
     setIsUpdatingStatus(true);
     const newStatus = checked ? "active" : "paused";
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    setTrip({ ...trip, status: newStatus });
-    toast.success(newStatus === "active" ? "Tracking resumed" : "Tracking paused");
-    setIsUpdatingStatus(false);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setTrip({ ...trip, status: newStatus });
+      toast.success(newStatus === "active" ? "Tracking resumed" : "Tracking paused");
+    } catch {
+      toast.error("Failed to update trip status");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
   };
 
   const handleDelete = async () => {
     if (!tripId) return;
     setIsDeleting(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    toast.success("Trip deleted");
-    router.push("/trips");
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      toast.success("Trip deleted");
+      router.push("/trips");
+    } catch {
+      toast.error("Failed to delete trip");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (!trip) {
@@ -261,24 +284,32 @@ export default function TripDetailPage({
     );
   }
 
-  const selectedHotel = trackedHotels.find((h) => h.id === selectedHotelId);
+  const selectedHotel = trackedHotels.find((h) => h.hotel_id === selectedHotelId);
   const flightPrice = topFlights.length > 0 ? topFlights[0].price : trip.current_flight_price;
   const hotelPrice = selectedHotel?.total_price ?? trip.current_hotel_price;
-  const totalPrice = flightPrice && hotelPrice
-    ? (Number.parseFloat(flightPrice) + Number.parseFloat(hotelPrice)).toFixed(2)
-    : trip.total_price;
+  const flightPriceValue = parsePrice(flightPrice);
+  const hotelPriceValue = parsePrice(hotelPrice);
+  const totalPriceValue =
+    flightPriceValue !== null && hotelPriceValue !== null
+      ? flightPriceValue + hotelPriceValue
+      : parsePrice(trip.total_price);
+  const selectedHotelShortName = getHotelShortName(selectedHotel?.hotel_name);
 
   const isActive = trip.status.toLowerCase() === "active";
 
   // Calculate trend from hotel history
-  const selectedHistory = hotelPriceHistories.find(h =>
-    h.hotel_id === selectedHotel?.hotel_id
-  ) ?? hotelPriceHistories[0];
-  const hasTrend = selectedHistory && selectedHistory.snapshots.length >= 2;
-  const currentTotal = Number.parseFloat(totalPrice ?? "0");
-  const previousTotal = hasTrend
-    ? Number.parseFloat(selectedHistory.snapshots[selectedHistory.snapshots.length - 2].total_price) + Number.parseFloat(flightPrice ?? "0")
-    : currentTotal;
+  const selectedHistory =
+    hotelPriceHistories.find((h) => h.hotel_id === selectedHotel?.hotel_id) ??
+    hotelPriceHistories[0];
+  const hasTrend = Boolean(selectedHistory && selectedHistory.snapshots.length >= 2);
+  const currentTotal = totalPriceValue ?? 0;
+  const previousHotelPrice = hasTrend
+    ? parsePrice(selectedHistory?.snapshots[selectedHistory.snapshots.length - 2]?.total_price)
+    : null;
+  const previousTotal =
+    previousHotelPrice !== null && flightPriceValue !== null
+      ? previousHotelPrice + flightPriceValue
+      : null;
 
   return (
     <div className={styles.containerCompact}>
@@ -330,18 +361,18 @@ export default function TripDetailPage({
         <div className={styles.priceItem}>
           <Plane className="h-4 w-4" />
           <span className={styles.priceItemLabel}>Flight</span>
-          <span className={styles.priceItemValue}>{formatPrice(flightPrice)}</span>
+          <span className={styles.priceItemValue}>{formatPrice(flightPriceValue)}</span>
         </div>
         <span className={styles.pricePlus}>+</span>
         <div className={styles.priceItem}>
           <Hotel className="h-4 w-4" />
-          <span className={styles.priceItemLabel}>{selectedHotel?.hotel_name.split(" ")[0] ?? "Hotel"}</span>
-          <span className={styles.priceItemValue}>{formatPrice(hotelPrice)}</span>
+          <span className={styles.priceItemLabel}>{selectedHotelShortName}</span>
+          <span className={styles.priceItemValue}>{formatPrice(hotelPriceValue)}</span>
         </div>
         <span className={styles.priceEquals}>=</span>
         <div className={styles.priceTotal}>
-          <span className={styles.priceTotalValue}>{formatPrice(totalPrice)}</span>
-          {hasTrend && currentTotal !== previousTotal && (
+          <span className={styles.priceTotalValue}>{formatPrice(totalPriceValue)}</span>
+          {hasTrend && previousTotal !== null && currentTotal !== previousTotal && (
             <PriceTrend currentPrice={currentTotal} previousPrice={previousTotal} />
           )}
         </div>
@@ -357,14 +388,14 @@ export default function TripDetailPage({
               <div className={styles.chartLegendCompact}>
                 <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-1))" }} /> Total</span>
                 <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-2))" }} /> Flight</span>
-                <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-3))" }} /> {selectedHotel?.hotel_name.split(" ")[0] ?? "Hotel"}</span>
+                <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-3))" }} /> {selectedHotelShortName}</span>
               </div>
             </div>
             <PriceHistoryChart
               hotelPriceHistories={hotelPriceHistories}
-              selectedHotelId={selectedHotel?.hotel_id ?? null}
+              selectedHotelId={selectedHotelId}
               flightPrice={flightPrice ?? null}
-              selectedHotelName={selectedHotel?.hotel_name.split(" ")[0] ?? "Hotel"}
+              selectedHotelName={selectedHotelShortName}
             />
           </CardContent>
         </Card>
@@ -381,8 +412,8 @@ export default function TripDetailPage({
                 <HotelOption
                   key={hotel.id}
                   hotel={hotel}
-                  isSelected={selectedHotelId === hotel.id}
-                  onSelect={() => setSelectedHotelId(hotel.id)}
+                  isSelected={selectedHotelId === hotel.hotel_id}
+                  onSelect={() => setSelectedHotelId(hotel.hotel_id)}
                 />
               ))}
             </div>

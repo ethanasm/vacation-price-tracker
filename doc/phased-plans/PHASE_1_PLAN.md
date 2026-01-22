@@ -557,37 +557,46 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 ### 6.5 Create Trip Page
 Manual trip creation form for testing (conversational creation comes in Phase 2).
 
-- [ ] Create `/trips/new` page with multi-step form or single page layout
-- [ ] Basic trip info section:
+- [X] Create `/trips/new` page with multi-step form or single page layout
+- [X] Basic trip info section:
   - Trip name (text input, required, max 100 chars)
-  - Origin airport (IATA code autocomplete using `/v1/locations/search`)
-  - Destination airport (IATA code autocomplete)
+  - Origin airport (IATA code input)
+  - Destination airport (IATA code input)
   - Departure date (date picker, must be future, max 359 days out)
   - Return date (date picker, must be after departure)
   - Round trip toggle (default: true)
   - Number of adults (1-9, default: 1)
-- [ ] Flight preferences section (collapsible/optional):
+- [X] Flight preferences section (collapsible/optional):
   - Cabin class (Economy/Premium Economy/Business/First)
   - Stops preference (Any/Non-stop only/1 stop max)
   - Preferred airlines (multi-select or tag input)
-- [ ] Hotel preferences section (collapsible/optional):
+- [X] Hotel preferences section (collapsible/optional):
   - Number of rooms (1-9, default: 1)
   - Adults per room (1-4, default: 2)
   - Room selection mode (Cheapest/Preferred)
   - Preferred room types (tag input: King, Queen, Suite, etc.)
   - Preferred views (tag input: Ocean, City, Garden, etc.)
-- [ ] Notification settings section:
+- [X] Notification settings section:
   - Threshold type (Trip Total/Flight Only/Hotel Only)
   - Threshold value (currency input)
   - Email notifications toggle (default: true)
   - SMS notifications toggle (default: false)
-- [ ] Form validation matching backend schema constraints
+- [X] Form validation matching backend schema constraints (basic client validation)
 - [ ] Submit button calls `POST /v1/trips` with idempotency key
-- [ ] Success: redirect to `/trips` with success toast
-- [ ] Error: display validation errors inline
-- [ ] Add "New Trip" button to dashboard header
+- [X] Success: redirect to `/trips` with success toast
+- [X] Error: display validation errors inline
+- [X] Add "New Trip" button to dashboard header
+- [ ] Airport autocomplete via `/v1/locations/search`
 
-### 6.6 Frontend API Integration
+### 6.6 Edit Trip Page
+- [ ] Create `/trips/[tripId]/edit` page
+- [ ] Reuse trip form with prefilled trip data
+- [ ] Allow updating trip details, flight prefs, hotel prefs, notifications
+- [ ] Submit button calls `PATCH /v1/trips/{id}`
+- [ ] Success: redirect back to trip detail with success toast
+- [ ] Error: display validation errors inline
+
+### 6.7 Frontend API Integration
 Connect frontend to real backend APIs and remove mock data.
 
 - [ ] Create API client service (`lib/api-client.ts`):

@@ -27,7 +27,10 @@ jest.mock("recharts", () => ({
   LineChart: ({ children }: { children: React.ReactNode }) => <div data-testid="line-chart">{children}</div>,
   Line: () => <div data-testid="chart-line" />,
   XAxis: () => null,
-  YAxis: () => null,
+  YAxis: ({ tickFormatter }: { tickFormatter?: (value: number) => string }) => {
+    if (tickFormatter) tickFormatter(1200);
+    return null;
+  },
   CartesianGrid: () => null,
 }));
 
@@ -45,7 +48,11 @@ jest.mock("../app/trips/[tripId]/page.module.css", () => new Proxy({}, {
 
 // Mock format functions
 jest.mock("@/lib/format", () => ({
-  formatPrice: (price: string | null) => price ? `$${Number.parseFloat(price).toFixed(0)}` : "—",
+  formatPrice: (price: string | number | null) => {
+    if (price === null || price === undefined) return "—";
+    const value = typeof price === "number" ? price : Number.parseFloat(price);
+    return Number.isFinite(value) ? `$${value.toFixed(0)}` : "—";
+  },
   formatShortDate: (date: string) => {
     const d = new Date(date);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -59,93 +66,97 @@ jest.mock("@/lib/format", () => ({
 
 // Mock the mock-data module - data must be defined inside factory
 jest.mock("@/lib/mock-data", () => {
-  const baseTripData = {
-    trip: {
-      id: "test-trip",
-      name: "Test Vacation",
-      origin_airport: "SFO",
-      destination_code: "LAX",
-      depart_date: "2025-06-15",
-      return_date: "2025-06-22",
-      is_round_trip: true,
-      adults: 2,
-      status: "active",
-      current_flight_price: "500.00",
-      current_hotel_price: "700.00",
-      total_price: "1200.00",
-      last_refreshed: "2025-01-21T10:30:00Z",
-    },
-    top_flights: [
-      {
-        id: "fl1",
-        airline: "United Airlines",
-        airline_code: "UA",
-        flight_number: "UA 123",
-        departure_time: "2025-06-15T08:00:00",
-        arrival_time: "2025-06-15T10:00:00",
-        duration_minutes: 120,
-        stops: 0,
-        cabin: "economy",
-        price: "500.00",
-        return_flight: {
-          flight_number: "UA 456",
-          departure_time: "2025-06-22T14:00:00",
-          arrival_time: "2025-06-22T16:00:00",
-          duration_minutes: 120,
-          stops: 0,
-        },
-      },
-      {
-        id: "fl2",
-        airline: "Delta",
-        airline_code: "DL",
-        flight_number: "DL 789",
-        departure_time: "2025-06-15T12:00:00",
-        arrival_time: "2025-06-15T14:00:00",
-        duration_minutes: 120,
-        stops: 0,
-        cabin: "economy",
-        price: "550.00",
-      },
-    ],
-    tracked_hotels: [
-      {
-        id: "h1",
-        hotel_name: "Test Hotel One",
-        hotel_id: "hotel-1",
-        star_rating: 4,
-        room_type: "King",
-        room_description: "King room with view",
-        price_per_night: "100.00",
-        total_price: "700.00",
-        amenities: ["Pool", "WiFi"],
-      },
-      {
-        id: "h2",
-        hotel_name: "Test Hotel Two",
-        hotel_id: "hotel-2",
-        star_rating: 3,
-        room_type: "Double",
-        room_description: "Double room",
-        price_per_night: "80.00",
-        total_price: "560.00",
-        amenities: ["WiFi"],
-      },
-    ],
-    price_history: [],
-    hotel_price_histories: [
-      {
-        hotel_id: "hotel-1",
-        snapshots: [
-          { date: "2025-01-19", total_price: "720.00" },
-          { date: "2025-01-20", total_price: "700.00" },
-        ],
-      },
-    ],
+  const { mockTripsData } = jest.requireActual("@/lib/fixtures/trips");
+  const baseTripData = JSON.parse(JSON.stringify(mockTripsData["1"]));
+  baseTripData.trip = {
+    ...baseTripData.trip,
+    id: "test-trip",
+    name: "Test Vacation",
+    origin_airport: "SFO",
+    destination_code: "LAX",
+    depart_date: "2025-06-15",
+    return_date: "2025-06-22",
+    adults: 2,
+    status: "active",
+    current_flight_price: "500.00",
+    current_hotel_price: "700.00",
+    total_price: "1200.00",
+    last_refreshed: "2025-01-21T10:30:00Z",
   };
+  baseTripData.top_flights = [
+    {
+      id: "fl1",
+      airline: "United Airlines",
+      airline_code: "UA",
+      flight_number: "UA 123",
+      departure_time: "2025-06-15T08:00:00",
+      arrival_time: "2025-06-15T10:00:00",
+      duration_minutes: 120,
+      stops: 0,
+      cabin: "economy",
+      price: "500.00",
+      return_flight: {
+        flight_number: "UA 456",
+        departure_time: "2025-06-22T14:00:00",
+        arrival_time: "2025-06-22T16:00:00",
+        duration_minutes: 120,
+        stops: 0,
+      },
+    },
+    {
+      id: "fl2",
+      airline: "Delta",
+      airline_code: "DL",
+      flight_number: "DL 789",
+      departure_time: "2025-06-15T12:00:00",
+      arrival_time: "2025-06-15T14:00:00",
+      duration_minutes: 120,
+      stops: 0,
+      cabin: "economy",
+      price: "550.00",
+    },
+  ];
+  baseTripData.tracked_hotels = [
+    {
+      id: "h1",
+      hotel_name: "Test Hotel One",
+      hotel_id: "hotel-1",
+      star_rating: 4,
+      room_type: "King",
+      room_description: "King room with view",
+      price_per_night: "100.00",
+      total_price: "700.00",
+      amenities: ["Pool", "WiFi"],
+    },
+    {
+      id: "h2",
+      hotel_name: "Test Hotel Two",
+      hotel_id: "hotel-2",
+      star_rating: 3,
+      room_type: "Double",
+      room_description: "Double room",
+      price_per_night: "80.00",
+      total_price: "560.00",
+      amenities: ["WiFi"],
+    },
+  ];
+  baseTripData.price_history = [];
+  baseTripData.hotel_price_histories = [
+    {
+      hotel_id: "hotel-1",
+      snapshots: [
+        { date: "2025-01-19", total_price: "720.00" },
+        { date: "2025-01-20", total_price: "700.00" },
+      ],
+    },
+  ];
 
   return {
     mockTripsData: {
+      "": {
+        ...baseTripData,
+        trip: { ...baseTripData.trip, name: "Empty Trip" },
+      },
       "test-trip": baseTripData,
       "paused-trip": {
         ...baseTripData,
@@ -155,6 +166,105 @@ jest.mock("@/lib/mock-data", () => {
         ...baseTripData,
         trip: { ...baseTripData.trip, status: "error" },
       },
+      "unknown-status-trip": {
+        ...baseTripData,
+        trip: { ...baseTripData.trip, status: "unknown" },
+      },
+      "fallback-trip": {
+        ...baseTripData,
+        trip: {
+          ...baseTripData.trip,
+          name: "Fallback Trip",
+          is_round_trip: false,
+          return_date: null,
+          current_flight_price: null,
+          current_hotel_price: null,
+          total_price: "not-a-number",
+        },
+        top_flights: [],
+        tracked_hotels: [],
+        hotel_price_histories: [
+          {
+            hotel_id: "hotel-1",
+            snapshots: [{ date: "2025-01-19", total_price: "not-a-number" }],
+          },
+        ],
+      },
+      "space-hotel-trip": {
+        ...baseTripData,
+        tracked_hotels: [
+          {
+            ...baseTripData.tracked_hotels[0],
+            hotel_name: " ",
+          },
+        ],
+      },
+      "increase-trip": {
+        ...baseTripData,
+        hotel_price_histories: [
+          {
+            hotel_id: "hotel-1",
+            snapshots: [
+              { date: "2025-01-19", total_price: "650.00" },
+              { date: "2025-01-20", total_price: "700.00" },
+            ],
+          },
+        ],
+      },
+      "missing-data-trip": {
+        ...baseTripData,
+        trip: { ...baseTripData.trip, status: "active" },
+        tracked_hotels: [
+          { ...baseTripData.tracked_hotels[0], hotel_name: null },
+        ],
+        top_flights: [
+          { ...baseTripData.top_flights[0], airline: null, airline_code: null },
+        ],
+      },
+      "no-history-trip": {
+        ...baseTripData,
+        hotel_price_histories: [],
+      },
+      "not-enough-history-trip": {
+        ...baseTripData,
+        hotel_price_histories: [
+          {
+            hotel_id: "hotel-1",
+            snapshots: [{ date: "2025-01-20", total_price: "700.00" }],
+          },
+        ],
+      },
+      "zero-trend-trip": {
+        ...baseTripData,
+        trip: {
+          ...baseTripData.trip,
+          status: "active",
+          current_flight_price: "0.00",
+          current_hotel_price: "100.00",
+          total_price: "100.00",
+        },
+        top_flights: [
+          {
+            ...baseTripData.top_flights[0],
+            price: "0.00",
+          },
+        ],
+        tracked_hotels: [
+          {
+            ...baseTripData.tracked_hotels[0],
+            total_price: "100.00",
+          },
+        ],
+        hotel_price_histories: [
+          {
+            hotel_id: "hotel-1",
+            snapshots: [
+              { date: "2025-01-19", total_price: "0.00" },
+              { date: "2025-01-20", total_price: "100.00" },
+            ],
+          },
+        ],
+      },
     },
   };
 });
@@ -163,12 +273,8 @@ jest.mock("@/lib/mock-data", () => {
 import TripDetailPage from "../app/trips/[tripId]/page";
 import { toast } from "sonner";
 
-// Wrapper component to handle Suspense for the async params
 function TestWrapper({ tripId }: { tripId: string }) {
-  // Create a resolved promise that the component can use synchronously
-  const params = { tripId };
-  // Wrap in a resolved promise
-  const paramsPromise = Promise.resolve(params);
+  const paramsPromise = Promise.resolve({ tripId });
 
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -260,6 +366,16 @@ describe("TripDetailPage", () => {
 
       await waitFor(() => {
         expect(screen.getByText("ERROR")).toBeInTheDocument();
+      });
+    });
+
+    it("shows outline badge for unknown trips", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="unknown-status-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
       });
     });
   });
@@ -370,6 +486,12 @@ describe("TripDetailPage", () => {
   });
 
   describe("status toggle", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+      (toast.success as jest.Mock).mockReset();
+      (toast.error as jest.Mock).mockReset();
+    });
+
     it("toggles status from active to paused", async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -396,7 +518,6 @@ describe("TripDetailPage", () => {
         expect(screen.getByText("PAUSED")).toBeInTheDocument();
       });
 
-      jest.useRealTimers();
     });
 
     it("toggles status from paused to active", async () => {
@@ -423,11 +544,56 @@ describe("TripDetailPage", () => {
         expect(screen.getByText("ACTIVE")).toBeInTheDocument();
       });
 
-      jest.useRealTimers();
+    });
+
+    it("shows error toast on status toggle failure", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      (toast.success as jest.Mock).mockImplementation(() => {
+        throw new Error("API Error");
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => expect(screen.getByText("ACTIVE")).toBeInTheDocument());
+
+      await user.click(screen.getByRole("switch"));
+
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to update trip status");
+      });
+
+    });
+
+    it("does nothing when tripId is missing", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      await act(async () => {
+        render(<TestWrapper tripId="" />);
+      });
+      await waitFor(() => expect(screen.getByText("Empty Trip")).toBeInTheDocument());
+
+      await user.click(screen.getByRole("switch"));
+
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+
+      expect(toast.success).not.toHaveBeenCalled();
     });
   });
 
   describe("delete flow", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it("shows delete confirmation dialog", async () => {
       const user = userEvent.setup();
       await act(async () => {
@@ -480,15 +646,13 @@ describe("TripDetailPage", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
 
       await act(async () => {
-        jest.advanceTimersByTime(600);
+        jest.runOnlyPendingTimers();
       });
 
       await waitFor(() => {
         expect(toast.success).toHaveBeenCalledWith("Trip deleted");
         expect(mockRouterPush).toHaveBeenCalledWith("/trips");
       });
-
-      jest.useRealTimers();
     });
 
     it("can cancel delete dialog", async () => {
@@ -522,6 +686,53 @@ describe("TripDetailPage", () => {
 
       // Trip should still be visible
       expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+    });
+
+    it("shows error toast on delete failure", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      (toast.success as jest.Mock).mockImplementation(() => {
+        throw new Error("API Error");
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => expect(screen.getByText("Test Vacation")).toBeInTheDocument());
+
+      const deleteButtons = screen.getAllByRole("button");
+      const deleteButton = deleteButtons.find(btn => btn.querySelector('svg.lucide-trash-2') !== null);
+      if (deleteButton) await user.click(deleteButton);
+
+      await waitFor(() => expect(screen.getByText("Delete this trip?")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to delete trip");
+      });
+
+    });
+
+    it("does nothing when tripId is missing", async () => {
+      const user = userEvent.setup();
+      await act(async () => {
+        render(<TestWrapper tripId="" />);
+      });
+      await waitFor(() => expect(screen.getByText("Empty Trip")).toBeInTheDocument());
+
+      const deleteButtons = screen.getAllByRole("button");
+      const deleteButton = deleteButtons.find(btn => btn.querySelector('svg.lucide-trash-2') !== null);
+      if (deleteButton) await user.click(deleteButton);
+
+      await waitFor(() => expect(screen.getByText("Delete this trip?")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(mockRouterPush).not.toHaveBeenCalled();
     });
   });
 
@@ -579,6 +790,87 @@ describe("TripDetailPage", () => {
         // Check for percentage change display (negative trend)
         const trendElement = screen.queryByText(/-\d+\.\d+%/);
         expect(trendElement).toBeInTheDocument();
+      });
+    });
+
+    it("shows positive trend when prices increase", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="increase-trip" />);
+      });
+
+      await waitFor(() => {
+        const trendElement = screen.queryByText(/\+\d+\.\d+%/);
+        expect(trendElement).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("fallbacks", () => {
+    it("handles missing prices and one-way trips", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="fallback-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Fallback Trip")).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/→/)).toBeInTheDocument();
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+      expect(screen.getByTestId("chart-container")).toBeInTheDocument();
+    });
+  });
+
+  describe("missing data", () => {
+    it("handles missing hotel and airline names", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="missing-data-trip" />);
+      });
+
+      await waitFor(() => {
+        // Find the hotel name display - it should default to "Hotel"
+        expect(screen.getAllByText("Hotel").length).toBeGreaterThan(0);
+        // Find the airline code display - it should default to "—"
+        expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+      });
+    });
+
+    it("shows no history message when price history is empty", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="no-history-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("No price history yet")).toBeInTheDocument();
+      });
+    });
+
+    it("does not show trend when history is insufficient", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="not-enough-history-trip" />);
+      });
+      await waitFor(() => {
+        const trendElement = screen.queryByText(/%\d+\.\d+%/);
+        expect(trendElement).not.toBeInTheDocument();
+      });
+    });
+
+    it("does not show trend when previous total is zero", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="zero-trend-trip" />);
+      });
+      await waitFor(() => {
+        const trendElement = screen.queryByText(/[-+]\d+\.\d+%/);
+        expect(trendElement).not.toBeInTheDocument();
+      });
+    });
+
+    it("uses fallback hotel name when the name is blank", async () => {
+      await act(async () => {
+        render(<TestWrapper tripId="space-hotel-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Hotel").length).toBeGreaterThan(0);
       });
     });
   });

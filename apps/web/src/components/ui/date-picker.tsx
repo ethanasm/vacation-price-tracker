@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils"
 import { Button } from "./button"
 import { Calendar } from "./calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "./popover"
+import {useEffect, useState} from "react";
 
 interface DatePickerProps {
   date: Date | undefined
@@ -28,6 +29,12 @@ export function DatePicker({
   toDate,
   className,
 }: DatePickerProps) {
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -41,7 +48,7 @@ export function DatePicker({
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, "PPP") : <span>{placeholder}</span>}
+          {isHydrated && date ? format(date, "PPP") : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

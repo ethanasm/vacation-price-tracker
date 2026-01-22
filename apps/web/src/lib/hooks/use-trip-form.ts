@@ -58,6 +58,19 @@ const getDefaultFormData = (): TripFormData => ({
   hotelPrefsOpen: false,
 });
 
+const formatDateForApi = (date: Date | undefined): string | undefined => {
+  if (!date) return undefined;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseNumber = (value: string, fallback: number): number => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
 export function useTripForm(
   initialData?: Partial<TripFormData>
 ): UseTripFormReturn {
@@ -227,6 +240,7 @@ export function useTripForm(
   const getPayload = useCallback((): TripPayload => {
     const { flightPrefs, hotelPrefs, notificationPrefs, flightPrefsOpen, hotelPrefsOpen } =
       formData;
+    const thresholdValue = Number.parseFloat(notificationPrefs.thresholdValue);
 
     const hasFlightPrefs = flightPrefsOpen || flightPrefs.airlines.length > 0;
     const hasHotelPrefs =
@@ -236,12 +250,14 @@ export function useTripForm(
 
     return {
       name: formData.name.trim(),
-      origin_airport: formData.originAirport.toUpperCase(),
-      destination_code: formData.destinationCode.toUpperCase(),
+      origin_airport: formData.originAirport.trim().toUpperCase(),
+      destination_code: formData.destinationCode.trim().toUpperCase(),
       is_round_trip: formData.isRoundTrip,
-      depart_date: formData.departDate?.toISOString().split("T")[0],
-      return_date: formData.returnDate?.toISOString().split("T")[0],
-      adults: Number.parseInt(formData.adults, 10),
+      depart_date: formatDateForApi(formData.departDate),
+      return_date: formData.isRoundTrip
+        ? formatDateForApi(formData.returnDate)
+        : undefined,
+      adults: parseNumber(formData.adults, 1),
       flight_prefs: hasFlightPrefs
         ? {
             airlines: flightPrefs.airlines,
@@ -252,8 +268,8 @@ export function useTripForm(
         : null,
       hotel_prefs: hasHotelPrefs
         ? {
-            rooms: Number.parseInt(hotelPrefs.rooms, 10),
-            adults_per_room: Number.parseInt(hotelPrefs.adultsPerRoom, 10),
+            rooms: parseNumber(hotelPrefs.rooms, 1),
+            adults_per_room: parseNumber(hotelPrefs.adultsPerRoom, 1),
             room_selection_mode: hotelPrefs.roomSelectionMode,
             preferred_room_types: hotelPrefs.roomTypes,
             preferred_views: hotelPrefs.views,
@@ -261,7 +277,7 @@ export function useTripForm(
         : null,
       notification_prefs: {
         threshold_type: notificationPrefs.thresholdType,
-        threshold_value: Number.parseFloat(notificationPrefs.thresholdValue),
+        threshold_value: Number.isFinite(thresholdValue) ? thresholdValue : 0,
         notify_without_threshold: false,
         email_enabled: notificationPrefs.emailEnabled,
         sms_enabled: notificationPrefs.smsEnabled,

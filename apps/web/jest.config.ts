@@ -20,10 +20,22 @@ const config: Config = {
     "src/middleware.ts",
     "!src/app/**/layout.tsx",
     "!src/components/ui/**/*.{ts,tsx}",
+    "!src/lib/fixtures/**/*.{ts,tsx}",
+    "!src/lib/navigation.ts",
     "!**/*.d.ts",
+    "!**/index.ts",
+    "!**/index.tsx",
   ],
   coverageReporters: ["text", "lcov", "json"],
   coverageDirectory: "coverage",
+  coverageThreshold: {
+    global: {
+      branches: 95,
+      functions: 95,
+      lines: 95,
+      statements: 95,
+    },
+  },
 };
 
 export default createJestConfig(config);
