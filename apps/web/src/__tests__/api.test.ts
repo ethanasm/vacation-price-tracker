@@ -1,4 +1,4 @@
-import { AuthError, api, fetchWithAuth } from "../lib/api";
+import { AuthError, ApiError, api, fetchWithAuth } from "../lib/api";
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -221,6 +221,286 @@ describe("API Client", () => {
           credentials: "include",
         })
       );
+    });
+  });
+
+  describe("ApiError", () => {
+    it("creates error with status and message", () => {
+      const error = new ApiError(404, "Not Found");
+
+      expect(error.status).toBe(404);
+      expect(error.message).toBe("Not Found");
+      expect(error.detail).toBe("Not Found");
+      expect(error.name).toBe("ApiError");
+    });
+
+    it("creates error with custom detail", () => {
+      const error = new ApiError(400, "Bad Request", "Invalid input");
+
+      expect(error.status).toBe(400);
+      expect(error.message).toBe("Bad Request");
+      expect(error.detail).toBe("Invalid input");
+    });
+
+    it("is an instance of Error", () => {
+      const error = new ApiError(500, "Server Error");
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(ApiError);
+    });
+  });
+
+  describe("api.trips.getDetails", () => {
+    it("returns trip details on success", async () => {
+      const mockTripResponse = {
+        data: {
+          trip: { id: "1", name: "Test Trip" },
+          top_flights: [],
+          tracked_hotels: [],
+          price_history: [],
+          hotel_price_histories: [],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockTripResponse,
+      });
+
+      const result = await api.trips.getDetails("1");
+
+      expect(result).toEqual(mockTripResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/1?page=1&limit=50",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("passes pagination parameters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.getDetails("1", 2, 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/1?page=2&limit=25",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError with 404 when trip not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.getDetails("invalid")).rejects.toThrow(ApiError);
+
+      mockFetch.mockClear();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.getDetails("invalid")).rejects.toThrow("Trip not found");
+    });
+
+    it("throws ApiError with detail from server response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database connection failed" }),
+      });
+
+      try {
+        await api.trips.getDetails("1");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+        expect((error as ApiError).detail).toBe("Database connection failed");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.getDetails("1")).rejects.toThrow("Failed to load trip");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.getDetails("1")).rejects.toThrow("Failed to load trip");
+    });
+  });
+
+  describe("api.trips.updateStatus", () => {
+    it("updates trip status successfully", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+
+      await api.trips.updateStatus("1", "paused");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/1/status",
+        expect.objectContaining({
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: "paused" }),
+        })
+      );
+    });
+
+    it("can set status to active", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+
+      await api.trips.updateStatus("1", "active");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ status: "active" }),
+        })
+      );
+    });
+
+    it("throws ApiError when trip not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.updateStatus("invalid", "active")).rejects.toThrow("Trip not found");
+    });
+
+    it("throws ApiError with detail from server response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: "Bad Request", detail: "Invalid status" }),
+      });
+
+      try {
+        await api.trips.updateStatus("1", "active");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).message).toBe("Bad Request");
+        expect((error as ApiError).detail).toBe("Invalid status");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.updateStatus("1", "active")).rejects.toThrow("Failed to update trip status");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.updateStatus("1", "active")).rejects.toThrow("Failed to update trip status");
+    });
+  });
+
+  describe("api.trips.delete", () => {
+    it("deletes trip successfully", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+      });
+
+      await api.trips.delete("1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/1",
+        expect.objectContaining({
+          method: "DELETE",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError when trip not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.delete("invalid")).rejects.toThrow("Trip not found");
+    });
+
+    it("throws ApiError with detail from server response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ title: "Forbidden", detail: "Cannot delete active trip" }),
+      });
+
+      try {
+        await api.trips.delete("1");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(403);
+        expect((error as ApiError).message).toBe("Forbidden");
+        expect((error as ApiError).detail).toBe("Cannot delete active trip");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.delete("1")).rejects.toThrow("Failed to delete trip");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.delete("1")).rejects.toThrow("Failed to delete trip");
     });
   });
 });

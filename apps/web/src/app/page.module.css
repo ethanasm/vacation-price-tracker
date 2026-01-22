@@ -105,6 +105,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+  min-width: 0; /* Allow shrinking below content size */
 }
 
 .badge {
@@ -218,7 +219,7 @@
 /* Sign-in card */
 .heroCard {
   justify-self: center;
-  width: min(100%, 420px);
+  width: min(100%, 360px);
 }
 
 .ctaCard {
@@ -229,6 +230,7 @@
   padding: 2rem;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 1rem;
   text-align: center;
 }
@@ -244,6 +246,13 @@
   margin-bottom: 0.5rem;
 }
 
+.oauthNote {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
 
 /* Footer */
 .footerWrap {
@@ -255,9 +264,9 @@
 }
 
 /* Responsive */
-@media (min-width: 900px) {
+@media (min-width: 720px) {
   .heroGrid {
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: 1fr 360px; /* Left column flexible, right card fixed */
   }
 
   .heroCard {
@@ -265,7 +274,7 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 719px) {
   .hero {
     padding: 3.25rem 1.5rem 2rem;
   }

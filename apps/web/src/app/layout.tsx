@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Space_Grotesk } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
+import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
 import styles from "./layout.module.css";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <SiteFooter />
+          <Toaster position="top-right" richColors closeButton />
         </AuthProvider>
       </body>
     </html>

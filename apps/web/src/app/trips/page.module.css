@@ -1,25 +1,348 @@
+/* Layout wrapper */
 .main {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  padding: 2rem;
+  flex: 1;
+  padding: 0.75rem 2rem 0;
+  min-height: 0;
 }
 
-.content {
+/* Header bar with user info and sign out */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--border));
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.brandSection {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brandIcon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, hsl(262 83% 58%) 0%, hsl(340 75% 55%) 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+}
+
+.brandIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.brandName {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.userSection {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.userCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 2rem;
+  transition: all 0.2s ease;
+}
+
+.userCard:hover {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(262 83% 65%) 0%, hsl(262 83% 50%) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.userDetails {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+
+.greeting {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.userName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .brandName {
+    display: none;
+  }
+
+  .userDetails {
+    display: none;
+  }
+
+  .userCard {
+    padding: 0.375rem;
+  }
+}
+
+/* Page header with title and refresh button */
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+}
+
+.title {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Two-column layout */
+.columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 1rem;
   flex: 1;
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .columns {
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 1fr;
+  }
+}
+
+@media (min-width: 1280px) {
+  .columns {
+    grid-template-columns: 1fr 380px;
+  }
+}
+
+/* Trip table panel */
+.tablePanel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tableWrapper {
+  overflow: auto;
+  flex: 1;
+}
+
+/* Chat placeholder panel */
+.chatPanel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+  min-height: 120px;
+  max-height: 150px;
 }
 
-.title {
-  font-family: var(--font-display), "Space Grotesk", sans-serif;
-  font-size: 2.5rem;
-  font-weight: 700;
+@media (min-width: 1024px) {
+  .chatPanel {
+    max-height: none;
+    padding: 1.5rem;
+  }
+}
+
+.chatPlaceholderIcon {
+  width: 48px;
+  height: 48px;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.chatPlaceholderTitle {
+  font-weight: 600;
   color: var(--ink);
   margin: 0 0 0.5rem 0;
+}
+
+.chatPlaceholderText {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  height: 100%;
+}
+
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 1rem;
+  opacity: 0.4;
+}
+
+.emptyTitle {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 0.5rem 0;
+}
+
+.emptyText {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+/* Table styling overrides */
+.tripTable {
+  width: 100%;
+}
+
+.tripTable th {
+  background: hsl(var(--muted) / 0.3);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.tripTable td {
+  white-space: nowrap;
+}
+
+.clickableRow {
+  position: relative;
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+/* Stretched link pattern - makes the entire row clickable via the Link */
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Route display */
+.route {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.875rem;
+}
+
+.routeArrow {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Price cells */
+.price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.priceTotal {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Date display */
+.dates {
+  font-size: 0.875rem;
+}
+
+/* Last updated timestamp */
+.timestamp {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* Loading state */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 60vh;
 }
 
 .subtitle {
@@ -28,6 +351,113 @@
   margin: 0;
 }
 
-.footerWrap {
-  padding: 2rem 0 1rem;
+/* Skeleton loading */
+.skeletonRow {
+  height: 57px;
+}
+
+/* Error state */
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 60vh;
+  padding: 2rem;
+  text-align: center;
+}
+
+.errorIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: hsl(0 84% 95%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.errorIcon svg {
+  width: 32px;
+  height: 32px;
+  color: hsl(0 84% 60%);
+}
+
+.errorTitle {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 0.5rem 0;
+}
+
+.errorText {
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  margin: 0 0 1.5rem 0;
+  max-width: 400px;
+}
+
+.errorActions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.errorDetails {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: hsl(var(--muted) / 0.3);
+  border-radius: var(--radius);
+  text-align: left;
+  max-width: 500px;
+  width: 100%;
+}
+
+.errorDetails summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.errorDetails pre {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: hsl(0 84% 40%);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Failed to load state (inline in table panel) */
+.failedState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  height: 100%;
+}
+
+.failedIcon {
+  width: 48px;
+  height: 48px;
+  color: hsl(0 84% 60%);
+  margin-bottom: 1rem;
+  opacity: 0.7;
+}
+
+.failedTitle {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 0.5rem 0;
+}
+
+.failedText {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  margin: 0 0 1rem 0;
 }

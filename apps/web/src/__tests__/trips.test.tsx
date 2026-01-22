@@ -21,10 +21,24 @@ jest.mock("../context/AuthContext", () => ({
 // Mock CSS modules
 jest.mock("../app/trips/page.module.css", () => ({
   main: "main",
-  content: "content",
+  loadingState: "loadingState",
   header: "header",
-  title: "title",
-  subtitle: "subtitle",
+  brandSection: "brandSection",
+  brandIcon: "brandIcon",
+  brandName: "brandName",
+  userSection: "userSection",
+  userCard: "userCard",
+  avatar: "avatar",
+  userDetails: "userDetails",
+  greeting: "greeting",
+  userName: "userName",
+}));
+
+// Mock PlaneLoader component
+jest.mock("../components/ui/plane-loader", () => ({
+  PlaneLoader: ({ message }: { message?: string }) => (
+    <div data-testid="plane-loader">{message || "Loading..."}</div>
+  ),
 }));
 
 describe("DashboardLayout", () => {
@@ -33,7 +47,7 @@ describe("DashboardLayout", () => {
     mockLogout.mockResolvedValue(undefined);
   });
 
-  it("shows loading state while auth is loading", () => {
+  it("shows skeleton avatar while auth is loading", () => {
     mockUseAuth.mockReturnValue({
       user: null,
       isLoading: true,
@@ -46,12 +60,15 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    // Shows skeleton avatar with "--" placeholder while loading
+    expect(screen.getByText("--")).toBeInTheDocument();
+    // Children are still rendered (loading state is handled by individual pages)
+    expect(screen.getByText("Child content")).toBeInTheDocument();
   });
 
-  it("displays user email when authenticated", async () => {
+  it("displays user name when authenticated", async () => {
     mockUseAuth.mockReturnValue({
-      user: { id: "123", email: "test@example.com" },
+      user: { id: "123", email: "test.user@example.com" },
       isLoading: false,
       logout: mockLogout,
     });
@@ -63,7 +80,8 @@ describe("DashboardLayout", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Welcome, test@example.com")).toBeInTheDocument();
+      // getDisplayName converts "test.user" to "Test User"
+      expect(screen.getByText("Test User")).toBeInTheDocument();
     });
   });
 
@@ -80,7 +98,8 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    // Sign out button has title="Sign out"
+    expect(screen.getByTitle("Sign out")).toBeInTheDocument();
   });
 
   it("calls logout and redirects when sign out button clicked", async () => {
@@ -98,7 +117,7 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    await user.click(screen.getByRole("button", { name: /sign out/i }));
+    await user.click(screen.getByTitle("Sign out"));
 
     await waitFor(() => {
       expect(mockLogout).toHaveBeenCalledTimes(1);
@@ -106,7 +125,7 @@ describe("DashboardLayout", () => {
     });
   });
 
-  it("redirects to login when not authenticated", () => {
+  it("shows skeleton avatar when not authenticated (middleware handles redirect)", () => {
     mockUseAuth.mockReturnValue({
       user: null,
       isLoading: false,
@@ -119,7 +138,10 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    expect(mockPush).toHaveBeenCalledWith("/login");
+    // Component shows skeleton avatar; middleware handles redirect to home
+    expect(screen.getByText("--")).toBeInTheDocument();
+    // Children are still rendered (middleware handles unauthenticated redirect at server level)
+    expect(screen.getByText("Child content")).toBeInTheDocument();
   });
 
   it("renders children when authenticated", () => {

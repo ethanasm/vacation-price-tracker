@@ -1,0 +1,57 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+.loader {
+  width: 150px;
+  height: 150px;
+  transform-origin: center center;
+  animation: loader-spin 1.4s linear infinite;
+}
+
+.path {
+  stroke: hsl(var(--muted-foreground) / 0.3);
+  animation: loader-path 1.4s ease-in-out infinite;
+}
+
+.plane {
+  fill: hsl(var(--primary));
+}
+
+.message {
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  margin: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loader-path {
+  0% {
+    stroke-dasharray: 0, 580, 0, 0, 0, 0, 0, 0, 0;
+  }
+  50% {
+    stroke-dasharray: 0, 450, 10, 30, 10, 30, 10, 30, 10;
+  }
+  100% {
+    stroke-dasharray: 0, 580, 0, 0, 0, 0, 0, 0, 0;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

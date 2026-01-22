@@ -526,6 +526,12 @@ export function ChatPanel() {
 - [ ] Sync trip table updates from chat actions
 - [ ] Show toast notifications for successful tool calls
 
+### 5.5 Real-time Updates (SSE)
+- [ ] Create SSE endpoint in FastAPI for price updates
+- [ ] Connect to SSE stream on dashboard mount
+- [ ] Update trip table when new snapshots arrive
+- [ ] Show "refreshing" indicator during workflow execution
+
 ---
 
 ## 6. Elicitation Logic

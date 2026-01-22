@@ -1,7 +1,8 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 // Mock the AuthProvider
 jest.mock("../context/AuthContext", () => ({
@@ -25,22 +26,24 @@ jest.mock("next/font/google", () => ({
 const { default: RootLayout } = require("./layout");
 
 describe("RootLayout", () => {
+  const renderLayout = (children: React.ReactNode) => {
+    const html = renderToStaticMarkup(<RootLayout>{children}</RootLayout>);
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    document.body.innerHTML = parsed.body.innerHTML;
+  };
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
   it("renders children", () => {
-    render(
-      <RootLayout>
-        <div>Test content</div>
-      </RootLayout>,
-    );
+    renderLayout(<div>Test content</div>);
 
     expect(screen.getByText("Test content")).toBeInTheDocument();
   });
 
   it("renders the site footer", () => {
-    render(
-      <RootLayout>
-        <div>Test content</div>
-      </RootLayout>,
-    );
+    renderLayout(<div>Test content</div>);
 
     expect(
       screen.getByText("Track flight and hotel prices without the spreadsheet sprawl."),
@@ -48,11 +51,7 @@ describe("RootLayout", () => {
   });
 
   it("renders footer as contentinfo element", () => {
-    render(
-      <RootLayout>
-        <div>Test content</div>
-      </RootLayout>,
-    );
+    renderLayout(<div>Test content</div>);
 
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
   });

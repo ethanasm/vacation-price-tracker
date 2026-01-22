@@ -1,9 +1,19 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import HomePage from "./page";
 
+const mockRedirectTo = jest.fn();
+
 jest.mock("./page.module.css", () => ({}));
+jest.mock("../lib/navigation", () => ({
+  redirectTo: (url: string) => mockRedirectTo(url),
+}));
 
 describe("HomePage", () => {
+  beforeEach(() => {
+    mockRedirectTo.mockClear();
+  });
+
   it("renders the main heading", () => {
     render(<HomePage />);
 
@@ -44,16 +54,27 @@ describe("HomePage", () => {
     expect(screen.getByText("date combinations checked")).toBeInTheDocument();
   });
 
-  it("renders the CTA card with sign in link", () => {
+  it("renders the CTA card with Google sign-in button", () => {
     render(<HomePage />);
 
     expect(screen.getByText("Ready to get started?")).toBeInTheDocument();
     expect(
       screen.getByText("Sign in to create your first trip and start tracking prices."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
-      "href",
-      "/login",
+    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(
+      screen.getByText("Google OAuth only. We never store passwords."),
+    ).toBeInTheDocument();
+  });
+
+  it("calls redirectTo when Google button is clicked", async () => {
+    const user = userEvent.setup();
+
+    render(<HomePage />);
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(mockRedirectTo).toHaveBeenCalledWith(
+      "https://localhost:8000/v1/auth/google/start",
     );
   });
 });

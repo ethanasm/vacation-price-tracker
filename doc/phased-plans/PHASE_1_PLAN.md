@@ -290,6 +290,38 @@ class NotificationRule(SQLModel, table=True):
 - [X] Return cached response on duplicate key
 - [X] Handle race conditions with Redis SETNX
 
+### 4.6 Current Best Offers API
+- [ ] Create `BestOfferResponse` schema to expose parsed offer details:
+  ```python
+  class FlightOffer(BaseModel):
+      airline: str
+      airline_name: str
+      departure_time: datetime
+      arrival_time: datetime
+      duration_minutes: int
+      stops: int
+      price: Decimal
+
+  class HotelOffer(BaseModel):
+      hotel_name: str
+      room_type: str
+      description: str
+      price_per_night: Decimal
+      total_price: Decimal
+
+  class BestOffersResponse(BaseModel):
+      flight: FlightOffer | None
+      hotel: HotelOffer | None
+      snapshot_id: uuid.UUID
+      fetched_at: datetime
+  ```
+- [ ] Add `GET /v1/trips/{id}/best-offers` endpoint
+  - Parse `raw_data` JSONB from latest PriceSnapshot
+  - Extract best flight offer (lowest price matching prefs)
+  - Extract best hotel offer (lowest price matching prefs)
+  - Return structured offer details for UI display
+- [ ] Update frontend trip detail page to display offer details
+
 ---
 
 ## 5. Temporal Worker
@@ -483,10 +515,10 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 
 ### 6.2 Dashboard Layout
 - [X] Create auth-aware dashboard placeholder with sign-out and greeting
-- [ ] Create 2-column responsive layout:
+- [X] Create 2-column responsive layout:
   - Left: Trip table (primary)
   - Right: Reserved for chat (Phase 2)
-- [ ] Implement trip table with columns:
+- [X] Implement trip table with columns:
   - Trip Name
   - Route (SFO → MCO)
   - Dates
@@ -495,30 +527,92 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
   - Total
   - Status
   - Last Updated
-- [ ] Add row click to open detail modal
-- [ ] Implement "Refresh All" button with loading state
+- [X] Add row click to navigate to trip detail page
+- [X] Implement "Refresh All" button with loading state
+- [X] Add loading skeleton state for table
+- [X] Add empty state when no trips exist
+- [X] Create modern button component with glassmorphism styling
 
-### 6.3 Trip Detail Modal/Page
-- [ ] Display trip configuration details
-- [ ] Show price history chart (line chart with date on X, price on Y)
-- [ ] Display current best offers (flight and hotel)
-- [ ] Add Pause/Resume toggle
-- [ ] Add Delete button with confirmation dialog
+### 6.3 Trip Detail Page
+- [X] Display trip configuration details (dates, travelers, trip type)
+- [X] Show price history chart (line chart with date on X, price on Y)
+- [X] Display current prices (flight, hotel, total with trend indicator)
+- [X] Display flight preferences (cabin, stops, airlines)
+- [X] Display hotel preferences (rooms, room types, views)
+- [X] Display notification settings
+- [X] Add Pause/Resume toggle with Switch component
+- [X] Add Delete button with AlertDialog confirmation
+- [X] Loading skeleton and error states
+- [X] Back navigation to trips list
 
 ### 6.4 Error Handling
-- [ ] Create error boundary components
-- [ ] Show toast notifications for transient errors (refresh failed)
-- [ ] Show empty states for:
+- [X] Create error boundary components
+- [X] Show toast notifications for transient errors (refresh failed)
+- [X] Show empty states for:
   - No trips yet
   - Failed to load trips
   - No price data available
-- [ ] Handle 401 errors with redirect to login
+- [X] Handle 401 errors with redirect to login
 
-### 6.5 Real-time Updates (SSE)
-- [ ] Create SSE endpoint in FastAPI for price updates
-- [ ] Connect to SSE stream on dashboard mount
-- [ ] Update trip table when new snapshots arrive
-- [ ] Show "refreshing" indicator during workflow execution
+### 6.5 Create Trip Page
+Manual trip creation form for testing (conversational creation comes in Phase 2).
+
+- [ ] Create `/trips/new` page with multi-step form or single page layout
+- [ ] Basic trip info section:
+  - Trip name (text input, required, max 100 chars)
+  - Origin airport (IATA code autocomplete using `/v1/locations/search`)
+  - Destination airport (IATA code autocomplete)
+  - Departure date (date picker, must be future, max 359 days out)
+  - Return date (date picker, must be after departure)
+  - Round trip toggle (default: true)
+  - Number of adults (1-9, default: 1)
+- [ ] Flight preferences section (collapsible/optional):
+  - Cabin class (Economy/Premium Economy/Business/First)
+  - Stops preference (Any/Non-stop only/1 stop max)
+  - Preferred airlines (multi-select or tag input)
+- [ ] Hotel preferences section (collapsible/optional):
+  - Number of rooms (1-9, default: 1)
+  - Adults per room (1-4, default: 2)
+  - Room selection mode (Cheapest/Preferred)
+  - Preferred room types (tag input: King, Queen, Suite, etc.)
+  - Preferred views (tag input: Ocean, City, Garden, etc.)
+- [ ] Notification settings section:
+  - Threshold type (Trip Total/Flight Only/Hotel Only)
+  - Threshold value (currency input)
+  - Email notifications toggle (default: true)
+  - SMS notifications toggle (default: false)
+- [ ] Form validation matching backend schema constraints
+- [ ] Submit button calls `POST /v1/trips` with idempotency key
+- [ ] Success: redirect to `/trips` with success toast
+- [ ] Error: display validation errors inline
+- [ ] Add "New Trip" button to dashboard header
+
+### 6.6 Frontend API Integration
+Connect frontend to real backend APIs and remove mock data.
+
+- [ ] Create API client service (`lib/api-client.ts`):
+  - Base fetch wrapper with auth token handling
+  - Automatic 401 redirect to login
+  - Automatic token refresh on expiry
+  - Request/response type safety
+- [ ] Trips list page (`/trips`):
+  - Fetch trips from `GET /v1/trips`
+  - Handle pagination (page, limit params)
+  - Handle loading, error, empty states
+  - Remove mock trip data
+- [ ] Trip detail page (`/trips/[tripId]`):
+  - Fetch trip from `GET /v1/trips/{id}`
+  - Fetch price history from response
+  - Connect pause/resume to `PATCH /v1/trips/{id}/status`
+  - Connect delete to `DELETE /v1/trips/{id}`
+  - Remove mock trip detail data
+- [ ] Refresh functionality:
+  - Connect "Refresh All" to `POST /v1/trips/refresh-all`
+  - Poll `GET /v1/trips/refresh-status` for progress
+  - Update UI when refresh completes
+- [ ] Location search:
+  - Connect airport inputs to `GET /v1/locations/search`
+  - Debounced autocomplete with caching
 
 ---
 
@@ -572,13 +666,14 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 
 Phase 1 is complete when:
 - [ ] User can sign in with Google OAuth
-- [ ] User can create a trip with flight and hotel preferences
+- [ ] User can create a trip via form with flight and hotel preferences
 - [ ] User can view all their trips in a dashboard table
 - [ ] User can manually trigger a price refresh
 - [ ] Price snapshots are stored with raw API data
 - [ ] User can view price history for a trip
 - [ ] User can pause/resume trip tracking
 - [ ] User can delete a trip
+- [ ] Frontend is connected to real backend APIs (no mock data)
 - [ ] All endpoints return envelope-wrapped responses
 - [ ] Error responses follow RFC 9457 format
 - [ ] Unit tests pass with >=95% coverage on API + worker logic

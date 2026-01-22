@@ -4,7 +4,12 @@
     "enabled": true
   },
   "linter": {
-    "enabled": true
+    "enabled": true,
+    "rules": {
+      "security": {
+        "noDangerouslySetInnerHtml": "warn"
+      }
+    }
   },
   "formatter": {
     "enabled": true,

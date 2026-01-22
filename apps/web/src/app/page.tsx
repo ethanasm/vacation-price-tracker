@@ -3,10 +3,16 @@ import styles from "./page.module.css";
 import { Separator } from "../components/ui/separator";
 import { Bell, Building2, Plane } from "lucide-react";
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import Link from "next/link";
+import GoogleButton from "react-google-button";
+import { redirectTo } from "../lib/navigation";
+
+const apiBase =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "https://localhost:8000";
+const googleStartUrl = `${apiBase}/v1/auth/google/start`;
 
 export default function HomePage() {
+  const handleSignIn = () => redirectTo(googleStartUrl);
+
   return (
     <main className={styles.main}>
       {/* Decorative gradient blobs for depth */}
@@ -77,9 +83,10 @@ export default function HomePage() {
             <div className={styles.ctaCard}>
               <h2>Ready to get started?</h2>
               <p>Sign in to create your first trip and start tracking prices.</p>
-              <Button asChild>
-                <Link href="/login">Sign In &rarr;</Link>
-              </Button>
+              <GoogleButton onClick={handleSignIn} />
+              <p className={styles.oauthNote}>
+                Google OAuth only. We never store passwords.
+              </p>
             </div>
           </div>
         </div>

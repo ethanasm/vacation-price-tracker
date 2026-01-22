@@ -21,6 +21,10 @@ Vacation Price Tracker is a full-stack web application that tracks flight and ho
 - **Auth:** Google OAuth 2.0 only (no local passwords)
 - **LLM:** Groq (Llama 3.3) with MCP tool integration
 
+## Web File Naming
+
+Use kebab-case for new files in the web app (`apps/web/`).
+
 ## External MCP Server Architecture
 
 This project uses a **hybrid MCP architecture** that leverages existing open-source MCP servers rather than building custom ones:
