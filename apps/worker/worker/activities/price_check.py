@@ -3,6 +3,8 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.clients.amadeus_mock import mock_hotel_search
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
 from app.models.trip import Trip
@@ -117,6 +119,23 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
 
 @activity.defn
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
+    if settings.mock_amadeus_api:
+        logger.info("Using mock Amadeus hotels for trip_id=%s", trip["trip_id"])
+        adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
+        response = mock_hotel_search(
+            city_code=trip["destination_code"],
+            check_in_date=trip["depart_date"],
+            check_out_date=trip["return_date"],
+            adults=adults,
+            rooms=trip["hotel_prefs"]["rooms"],
+        )
+        offers = _extract_offers(response)
+        return {
+            "offers": offers,
+            "raw": _normalize_raw(response, "amadeus_mock"),
+            "error": None,
+        }
+
     if not AMADEUS_CLIENT:
         logger.info(
             "Skipping hotel fetch for trip_id=%s; Amadeus MCP server not configured",

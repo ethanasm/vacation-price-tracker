@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from app.clients.amadeus_mock import mock_search_locations
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,9 @@ class AmadeusClient:
         return response
 
     async def search_locations(self, query: str, limit: int = 10) -> list[dict[str, str]]:
+        if settings.mock_amadeus_api:
+            return mock_search_locations(query, limit)
+
         params = {
             "keyword": query,
             "subType": "AIRPORT,CITY",

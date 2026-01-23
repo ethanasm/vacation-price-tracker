@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     amadeus_api_key: str
     amadeus_api_secret: str
     amadeus_base_url: str = "https://test.api.amadeus.com"
+    mock_amadeus_api: bool = False  # Return mock data instead of calling Amadeus
 
     # Kiwi MCP Server (Flights)
     kiwi_api_key: str = ""
