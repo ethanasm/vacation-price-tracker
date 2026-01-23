@@ -220,6 +220,7 @@ async def create_trip(
         adults=payload.adults,
     )
     db.add(trip)
+    await db.flush()
 
     flight_prefs = None
     if payload.flight_prefs:

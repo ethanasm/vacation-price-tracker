@@ -197,6 +197,11 @@ This command performs:
 
 **Run this after adding or modifying any code** to catch issues before they reach CI.
 
+## Verification Preference
+
+- After making code changes, automatically run the most relevant tests or checks without asking.
+- Only ask for confirmation when a command needs elevated permissions or could be destructive.
+
 ## Commit Message Conventions
 
 Use **Conventional Commits** format with scope referring to the service modified:
