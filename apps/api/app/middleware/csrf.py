@@ -11,7 +11,6 @@ from app.core.constants import CookieNames, HeaderNames
 from app.core.errors import ForbiddenError
 from app.core.security import get_csrf_cookie_params
 
-
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 

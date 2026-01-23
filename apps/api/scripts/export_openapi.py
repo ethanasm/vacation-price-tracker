@@ -30,11 +30,10 @@ for key, value in _DUMMY_ENV.items():
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import FastAPI to create a minimal app
-from fastapi import FastAPI
-
 # Import the routers (these import the schemas)
-from app.routers import auth, locations, trips
-from app.core.config import settings
+from app.core.config import settings  # noqa: E402
+from app.routers import auth, locations, trips  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 
 
 def create_schema_app() -> FastAPI:

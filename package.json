@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@9.12.1",
   "scripts": {
-    "verify": "pnpm verify:deps && pnpm verify:web && pnpm verify:audit && pnpm verify:py",
+    "verify": "./scripts/verify.sh",
     "verify:deps": "pnpm install --frozen-lockfile && uv sync --extra dev",
     "verify:web": "pnpm web:validate && pnpm web:typecheck && pnpm web:test:coverage",
     "verify:audit": "pnpm audit --prod",

@@ -191,8 +191,8 @@ This command performs:
 4. `pnpm --filter vacation-price-tracker-web lint` - Lint frontend (Biome)
 5. `pnpm --filter vacation-price-tracker-web test` - Run frontend tests (Jest)
 6. `pnpm audit --prod` - Check for npm security vulnerabilities
-7. `uv run ruff check apps/api` - Lint backend (Ruff)
-8. `uv run pytest apps/api/tests -v` - Run backend tests
+7. `uv run ruff check apps/api apps/worker` - Lint backend (Ruff)
+8. `uv run pytest apps/api/tests apps/worker/tests -v` - Run backend tests
 9. `uv run pip-audit` - Check for Python security vulnerabilities
 
 **Run this after adding or modifying any code** to catch issues before they reach CI.
