@@ -4,16 +4,16 @@
 set -o pipefail
 
 STEPS=(
-  "deps|pnpm install --frozen-lockfile && uv sync --extra dev"
-  "web:build|pnpm --filter vacation-price-tracker-web build"
-  "web:lint|pnpm --filter vacation-price-tracker-web lint"
-  "web:typecheck|pnpm --filter vacation-price-tracker-web typecheck"
-  "web:test|pnpm --filter vacation-price-tracker-web test:coverage"
-  "npm:audit|pnpm audit --prod"
-  "py:lint|uv run ruff check apps/api apps/worker"
-  "py:test:api|uv run pytest apps/api/tests -v --cov=app --cov-fail-under=95 --cov-report=xml:apps/api/coverage.xml"
-  "py:test:worker|uv run pytest apps/worker/tests -v --cov=worker --cov-fail-under=95 --cov-report=xml:apps/worker/coverage.xml"
-  "py:audit|uv run pip-audit --ignore-vuln CVE-2024-23342"
+  "deps|pnpm verify:deps"
+  "web:build|pnpm web:build"
+  "web:lint|pnpm web:lint"
+  "web:typecheck|pnpm web:typecheck"
+  "web:test|pnpm web:test:coverage"
+  "web:audit|pnpm verify:audit"
+  "py:lint|pnpm verify:py:lint"
+  "py:test:api|pnpm verify:py:test:api"
+  "py:test:worker|pnpm verify:py:test:worker"
+  "py:audit|pnpm verify:py:audit"
 )
 
 GREEN=$'\033[0;32m'
@@ -44,16 +44,16 @@ done
 
 echo ""
 echo "${BOLD}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${NC}"
-echo "${BOLD}┃           VERIFICATION SUMMARY              ┃${NC}"
+echo "${BOLD}┃           VERIFICATION SUMMARY               ┃${NC}"
 echo "${BOLD}┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
 
 for result in "${RESULTS[@]}"; do
   STATUS="${result%%|*}"
   NAME="${result#*|}"
   if [ "$STATUS" = "pass" ]; then
-    printf "┃ ${GREEN}${CHECK}${NC}  %-40s ┃\n" "$NAME"
+    printf "┃ ${GREEN}${CHECK}${NC} %-43s┃\n" "$NAME"
   else
-    printf "┃ ${RED}${CROSS}${NC}  %-40s ┃\n" "$NAME"
+    printf "┃ ${RED}${CROSS}${NC} %-43s┃\n" "$NAME"
   fi
 done
 
