@@ -63,17 +63,51 @@ describe("field validation helpers", () => {
 
   it("requires a departure date", () => {
     expect(validateDepartDate(undefined)).toBe("Departure date is required");
-    expect(validateDepartDate(new Date())).toBeUndefined();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 30);
+    expect(validateDepartDate(futureDate)).toBeUndefined();
+  });
+
+  it("rejects departure dates in the past", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    expect(validateDepartDate(yesterday)).toBe("Departure date cannot be in the past");
+  });
+
+  it("rejects departure dates more than 359 days out", () => {
+    const tooFar = new Date();
+    tooFar.setDate(tooFar.getDate() + 360);
+    expect(validateDepartDate(tooFar)).toBe("Departure date cannot be more than 359 days out");
+
+    const maxAllowed = new Date();
+    maxAllowed.setDate(maxAllowed.getDate() + 359);
+    expect(validateDepartDate(maxAllowed)).toBeUndefined();
   });
 
   it("validates return dates", () => {
-    const departDate = new Date(2025, 5, 10);
-    const returnDate = new Date(2025, 5, 9);
+    const departDate = new Date();
+    departDate.setDate(departDate.getDate() + 10);
+    const returnDateBefore = new Date(departDate);
+    returnDateBefore.setDate(returnDateBefore.getDate() - 1);
     expect(validateReturnDate(undefined, departDate)).toBe("Return date is required");
-    expect(validateReturnDate(returnDate, departDate)).toBe(
+    expect(validateReturnDate(returnDateBefore, departDate)).toBe(
       "Return date must be after departure"
     );
-    expect(validateReturnDate(new Date(2025, 5, 12), departDate)).toBeUndefined();
+    const validReturn = new Date(departDate);
+    validReturn.setDate(validReturn.getDate() + 2);
+    expect(validateReturnDate(validReturn, departDate)).toBeUndefined();
+  });
+
+  it("rejects return dates more than 359 days out", () => {
+    const departDate = new Date();
+    departDate.setDate(departDate.getDate() + 300);
+    const tooFar = new Date();
+    tooFar.setDate(tooFar.getDate() + 360);
+    expect(validateReturnDate(tooFar, departDate)).toBe("Return date cannot be more than 359 days out");
+
+    const maxAllowed = new Date();
+    maxAllowed.setDate(maxAllowed.getDate() + 359);
+    expect(validateReturnDate(maxAllowed, departDate)).toBeUndefined();
   });
 
   it("validates threshold values", () => {

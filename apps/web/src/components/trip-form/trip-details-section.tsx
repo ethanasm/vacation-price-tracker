@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Plane } from "lucide-react";
+import { MapPin } from "lucide-react";
 import { addDays } from "date-fns";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { TRAVELER_COUNTS } from "./constants";
+import { AirportAutocomplete, type Location } from "./airport-autocomplete";
 import type { TripFormErrors } from "./types";
 import styles from "./trip-details-section.module.css";
 
@@ -33,6 +34,7 @@ export interface TripDetailsSectionProps {
   onDepartDateChange: (value: Date | undefined) => void;
   onReturnDateChange: (value: Date | undefined) => void;
   onAdultsChange: (value: string) => void;
+  searchLocations: (query: string) => Promise<Location[]>;
 }
 
 export function TripDetailsSection({
@@ -51,6 +53,7 @@ export function TripDetailsSection({
   onDepartDateChange,
   onReturnDateChange,
   onAdultsChange,
+  searchLocations,
 }: TripDetailsSectionProps) {
   const today = new Date();
   const maxDate = addDays(today, 359);
@@ -85,43 +88,32 @@ export function TripDetailsSection({
         <div className={styles.gridTwo}>
           <div className={styles.field}>
             <Label className={styles.fieldLabel} htmlFor="origin">
-              From (Airport Code)
+              From (Airport)
             </Label>
-            <div className={styles.airportInput}>
-              <Plane className={styles.airportIcon} />
-              <Input
-                id="origin"
-                placeholder="SFO"
-                value={originAirport}
-                onChange={(e) =>
-                  onOriginAirportChange(e.target.value.toUpperCase().slice(0, 3))
-                }
-                maxLength={3}
-              />
-            </div>
+            <AirportAutocomplete
+              id="origin"
+              value={originAirport}
+              onChange={onOriginAirportChange}
+              placeholder="Search airports..."
+              icon="departure"
+              searchLocations={searchLocations}
+            />
             {errors.originAirport && (
               <span className={styles.fieldError}>{errors.originAirport}</span>
             )}
           </div>
           <div className={styles.field}>
             <Label className={styles.fieldLabel} htmlFor="destination">
-              To (Airport Code)
+              To (Airport)
             </Label>
-            <div className={styles.airportInput}>
-              <Plane
-                className={styles.airportIcon}
-                style={{ transform: "rotate(90deg)" }}
-              />
-              <Input
-                id="destination"
-                placeholder="HNL"
-                value={destinationCode}
-                onChange={(e) =>
-                  onDestinationCodeChange(e.target.value.toUpperCase().slice(0, 3))
-                }
-                maxLength={3}
-              />
-            </div>
+            <AirportAutocomplete
+              id="destination"
+              value={destinationCode}
+              onChange={onDestinationCodeChange}
+              placeholder="Search airports..."
+              icon="arrival"
+              searchLocations={searchLocations}
+            />
             {errors.destinationCode && (
               <span className={styles.fieldError}>{errors.destinationCode}</span>
             )}

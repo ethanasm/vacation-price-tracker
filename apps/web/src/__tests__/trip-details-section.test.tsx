@@ -38,6 +38,8 @@ jest.mock("../components/ui/select", () => ({
   }) => <div data-value={value}>{children}</div>,
 }));
 
+const mockSearchLocations = jest.fn().mockResolvedValue([]);
+
 const renderTripDetails = (errors: TripFormErrors) => {
   const handlers = {
     onNameChange: jest.fn(),
@@ -66,6 +68,7 @@ const renderTripDetails = (errors: TripFormErrors) => {
       onDepartDateChange={handlers.onDepartDateChange}
       onReturnDateChange={handlers.onReturnDateChange}
       onAdultsChange={handlers.onAdultsChange}
+      searchLocations={mockSearchLocations}
     />
   );
 
@@ -78,8 +81,8 @@ describe("TripDetailsSection", () => {
 
     expect(screen.getByText("Trip Details")).toBeInTheDocument();
     expect(screen.getByLabelText("Trip Name")).toBeInTheDocument();
-    expect(screen.getByLabelText("From (Airport Code)")).toBeInTheDocument();
-    expect(screen.getByLabelText("To (Airport Code)")).toBeInTheDocument();
+    expect(screen.getByLabelText("From (Airport)")).toBeInTheDocument();
+    expect(screen.getByLabelText("To (Airport)")).toBeInTheDocument();
     expect(screen.getByText("Departure Date")).toBeInTheDocument();
     expect(screen.getByText("Return Date")).toBeInTheDocument();
     expect(screen.getByText("Number of Travelers")).toBeInTheDocument();
@@ -104,14 +107,15 @@ describe("TripDetailsSection", () => {
   it("normalizes airport codes on change", () => {
     const handlers = renderTripDetails(emptyTripFormErrors);
 
-    fireEvent.change(screen.getByLabelText("From (Airport Code)"), {
-      target: { value: "seattle" },
+    fireEvent.change(screen.getByLabelText("From (Airport)"), {
+      target: { value: "sfo" },
     });
-    fireEvent.change(screen.getByLabelText("To (Airport Code)"), {
+    fireEvent.change(screen.getByLabelText("To (Airport)"), {
       target: { value: "hnl" },
     });
 
-    expect(handlers.onOriginAirportChange).toHaveBeenCalledWith("SEA");
+    // The autocomplete component converts to uppercase
+    expect(handlers.onOriginAirportChange).toHaveBeenCalledWith("SFO");
     expect(handlers.onDestinationCodeChange).toHaveBeenCalledWith("HNL");
   });
 

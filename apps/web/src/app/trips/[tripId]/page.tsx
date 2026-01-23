@@ -1,15 +1,17 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Loader2,
+  Pencil,
   Plane,
   Hotel,
   Trash2,
   TrendingDown,
   TrendingUp,
+  AlertCircle,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -18,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,30 +38,15 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import type {
-  TripDetail,
-  FlightOffer,
-  HotelOffer,
-  HotelPriceHistory,
-} from "@/lib/api";
-import {
-  formatPrice,
-  formatShortDate,
-  formatDuration,
-  formatFlightTime,
-} from "@/lib/format";
-import { mockTripsData } from "@/lib/mock-data";
+import type { TripDetail, PriceSnapshot } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { formatPrice, formatShortDate } from "@/lib/format";
 import styles from "./page.module.css";
 
 const parsePrice = (value: string | null | undefined): number | null => {
   if (value === null || value === undefined) return null;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const getHotelShortName = (name: string | null | undefined): string => {
-  if (!name) return "Hotel";
-  return name.split(" ")[0] || "Hotel";
 };
 
 function getStatusVariant(
@@ -77,21 +65,11 @@ function getStatusVariant(
 }
 
 function PriceHistoryChart({
-  hotelPriceHistories,
-  selectedHotelId,
-  flightPrice,
-  selectedHotelName,
+  priceHistory,
 }: {
-  hotelPriceHistories: HotelPriceHistory[];
-  selectedHotelId: string | null;
-  flightPrice: string | null;
-  selectedHotelName: string;
+  priceHistory: PriceSnapshot[];
 }) {
-  const selectedHistory =
-    hotelPriceHistories.find((h) => h.hotel_id === selectedHotelId) ??
-    hotelPriceHistories[0];
-
-  if (!selectedHistory || selectedHistory.snapshots.length === 0) {
+  if (priceHistory.length === 0) {
     return (
       <div className={styles.emptyChart}>
         <TrendingUp className={styles.emptyChartIcon} />
@@ -100,19 +78,17 @@ function PriceHistoryChart({
     );
   }
 
-  const flightPriceNum = parsePrice(flightPrice) ?? 0;
-
-  const chartData = selectedHistory.snapshots.map((snapshot) => ({
-    date: formatShortDate(snapshot.date),
-    total: (parsePrice(snapshot.total_price) ?? 0) + flightPriceNum,
-    flight: flightPriceNum,
-    hotel: parsePrice(snapshot.total_price) ?? 0,
+  const chartData = priceHistory.map((snapshot) => ({
+    date: formatShortDate(snapshot.created_at),
+    total: parsePrice(snapshot.total_price) ?? 0,
+    flight: parsePrice(snapshot.flight_price) ?? 0,
+    hotel: parsePrice(snapshot.hotel_price) ?? 0,
   }));
 
   const chartConfig = {
     total: { label: "Total", color: "hsl(var(--chart-1))" },
     flight: { label: "Flight", color: "hsl(var(--chart-2))" },
-    hotel: { label: selectedHotelName, color: "hsl(var(--chart-3))" },
+    hotel: { label: "Hotel", color: "hsl(var(--chart-3))" },
   } satisfies ChartConfig;
 
   return (
@@ -123,30 +99,74 @@ function PriceHistoryChart({
         margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
       >
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-        <YAxis tickLine={false} axisLine={false} tickMargin={4} tickFormatter={(v) => `$${v}`} fontSize={11} width={45} />
+        <XAxis
+          dataKey="date"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          fontSize={11}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          tickMargin={4}
+          tickFormatter={(v) => `$${v}`}
+          fontSize={11}
+          width={45}
+        />
         <ChartTooltip
           cursor={false}
           content={
             <ChartTooltipContent
               formatter={(value, name) => (
                 <span>
-                  {chartConfig[name as keyof typeof chartConfig]?.label}: <strong>${Number(value).toLocaleString()}</strong>
+                  {chartConfig[name as keyof typeof chartConfig]?.label}:{" "}
+                  <strong>${Number(value).toLocaleString()}</strong>
                 </span>
               )}
             />
           }
         />
-        <Line dataKey="total" type="monotone" stroke="var(--color-total)" strokeWidth={2} dot={{ r: 3 }} />
-        <Line dataKey="flight" type="monotone" stroke="var(--color-flight)" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
-        <Line dataKey="hotel" type="monotone" stroke="var(--color-hotel)" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
+        <Line
+          dataKey="total"
+          type="monotone"
+          stroke="var(--color-total)"
+          strokeWidth={2}
+          dot={{ r: 3 }}
+        />
+        <Line
+          dataKey="flight"
+          type="monotone"
+          stroke="var(--color-flight)"
+          strokeWidth={1.5}
+          dot={false}
+          strokeDasharray="4 4"
+        />
+        <Line
+          dataKey="hotel"
+          type="monotone"
+          stroke="var(--color-hotel)"
+          strokeWidth={1.5}
+          dot={false}
+          strokeDasharray="4 4"
+        />
       </LineChart>
     </ChartContainer>
   );
 }
 
-function PriceTrend({ currentPrice, previousPrice }: { currentPrice: number; previousPrice: number }) {
-  if (!Number.isFinite(previousPrice) || previousPrice <= 0 || !Number.isFinite(currentPrice)) {
+function PriceTrend({
+  currentPrice,
+  previousPrice,
+}: {
+  currentPrice: number;
+  previousPrice: number;
+}) {
+  if (
+    !Number.isFinite(previousPrice) ||
+    previousPrice <= 0 ||
+    !Number.isFinite(currentPrice)
+  ) {
     return null;
   }
   const diff = currentPrice - previousPrice;
@@ -154,68 +174,68 @@ function PriceTrend({ currentPrice, previousPrice }: { currentPrice: number; pre
   const isDown = diff < 0;
 
   return (
-    <span className={`${styles.trendInline} ${isDown ? styles.trendDown : styles.trendUp}`}>
-      {isDown ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+    <span
+      className={`${styles.trendInline} ${isDown ? styles.trendDown : styles.trendUp}`}
+    >
+      {isDown ? (
+        <TrendingDown className="h-3 w-3" />
+      ) : (
+        <TrendingUp className="h-3 w-3" />
+      )}
       {isDown ? "" : "+"}
       {percentChange}%
     </span>
   );
 }
 
-function FlightOption({ flight, isFirst }: { flight: FlightOffer; isFirst: boolean }) {
-  const outboundAirline = flight.airline_code ?? flight.airline?.substring(0, 2).toUpperCase() ?? "—";
-  // Extract airline code from return flight number (e.g., "UA 456" -> "UA")
-  const returnAirline = flight.return_flight?.flight_number?.split(/[\s\d]/)[0] || outboundAirline;
-
+function LoadingSkeleton() {
   return (
-    <div className={`${styles.flightCard} ${isFirst ? styles.bestFlight : ""}`}>
-      <div className={styles.flightRow}>
-        <div className={styles.flightLegs}>
-          <div className={styles.flightLeg}>
-            <span className={styles.airlineCode}>{outboundAirline}</span>
-            <span className={styles.flightTimes}>{formatFlightTime(flight.departure_time)}–{formatFlightTime(flight.arrival_time)}</span>
-            <span className={styles.flightMeta}>{formatDuration(flight.duration_minutes)}</span>
-          </div>
-          {flight.return_flight && (
-            <div className={styles.flightLeg}>
-              <span className={styles.airlineCode}>{returnAirline}</span>
-              <span className={styles.flightTimes}>{formatFlightTime(flight.return_flight.departure_time)}–{formatFlightTime(flight.return_flight.arrival_time)}</span>
-              <span className={styles.flightMeta}>{formatDuration(flight.return_flight.duration_minutes)}</span>
-            </div>
-          )}
+    <div className={styles.containerCompact}>
+      <div className={styles.headerCompact}>
+        <Skeleton className="h-10 w-10 rounded-md" />
+        <div className={styles.headerInfo}>
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-32 mt-1" />
         </div>
-        <div className={styles.flightPriceCol}>
-          <span className={styles.flightPrice}>{formatPrice(flight.price)}</span>
-          {isFirst && <span className={styles.bestLabel}>Best</span>}
+        <div className={styles.headerActions}>
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-8" />
+          <Skeleton className="h-8 w-8" />
         </div>
+      </div>
+      <div className={styles.priceSummaryBar}>
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-6 w-32" />
+      </div>
+      <div className={styles.gridCompact}>
+        <Card className={styles.chartCard}>
+          <CardContent className={styles.chartCardContent}>
+            <Skeleton className="h-[200px] w-full" />
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 }
 
-function HotelOption({
-  hotel,
-  isSelected,
-  onSelect,
+function ErrorState({
+  error,
+  onBack,
 }: {
-  hotel: HotelOffer;
-  isSelected: boolean;
-  onSelect: () => void;
+  error: string;
+  onBack: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className={`${styles.hotelCardCompact} ${isSelected ? styles.hotelSelected : ""}`}
-      onClick={onSelect}
-    >
-      <div className={styles.hotelRadioCompact}>
-        <div className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}>
-          {isSelected && <div className={styles.radioInner} />}
-        </div>
+    <div className={styles.container}>
+      <div className={styles.errorState}>
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2>{error}</h2>
+        <Button variant="outline" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back to trips
+        </Button>
       </div>
-      <span className={styles.hotelNameCompact}>{hotel.hotel_name}</span>
-      <span className={styles.hotelPriceCompact}>{formatPrice(hotel.total_price)}</span>
-    </button>
+    </div>
   );
 }
 
@@ -227,31 +247,53 @@ export default function TripDetailPage({
   const router = useRouter();
   const { tripId } = use(params);
 
-  const mockData = mockTripsData[tripId];
-  const initialTrip = mockData?.trip ?? null;
-  const initialFlights = mockData?.top_flights ?? [];
-  const initialHotels = mockData?.tracked_hotels ?? [];
-  const initialHotelHistories = mockData?.hotel_price_histories ?? [];
-  const initialSelectedHotel = initialHotels.length > 0 ? initialHotels[0].hotel_id : null;
-
-  const [trip, setTrip] = useState<TripDetail | null>(initialTrip);
-  const [topFlights] = useState<FlightOffer[]>(initialFlights);
-  const [trackedHotels] = useState<HotelOffer[]>(initialHotels);
-  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(initialSelectedHotel);
-  const [hotelPriceHistories] = useState<HotelPriceHistory[]>(initialHotelHistories);
+  const [trip, setTrip] = useState<TripDetail | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceSnapshot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const fetchTripDetails = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await api.trips.getDetails(tripId);
+      setTrip(response.data.trip);
+      setPriceHistory(response.data.price_history);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setError("Trip not found");
+        } else {
+          setError(err.detail || "Failed to load trip");
+        }
+      } else {
+        setError("Failed to load trip");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tripId]);
+
+  useEffect(() => {
+    fetchTripDetails();
+  }, [fetchTripDetails]);
 
   const handleStatusToggle = async (checked: boolean) => {
     if (!tripId || !trip) return;
     setIsUpdatingStatus(true);
     const newStatus = checked ? "active" : "paused";
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await api.trips.updateStatus(tripId, newStatus);
       setTrip({ ...trip, status: newStatus });
       toast.success(newStatus === "active" ? "Tracking resumed" : "Tracking paused");
-    } catch {
-      toast.error("Failed to update trip status");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail || "Failed to update trip status");
+      } else {
+        toast.error("Failed to update trip status");
+      }
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -261,67 +303,66 @@ export default function TripDetailPage({
     if (!tripId) return;
     setIsDeleting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await api.trips.delete(tripId);
       toast.success("Trip deleted");
       router.push("/trips");
-    } catch {
-      toast.error("Failed to delete trip");
-    } finally {
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail || "Failed to delete trip");
+      } else {
+        toast.error("Failed to delete trip");
+      }
       setIsDeleting(false);
     }
   };
 
-  if (!trip) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.errorState}>
-          <h2>Trip not found</h2>
-          <Button variant="outline" onClick={() => router.push("/trips")}>
-            <ArrowLeft className="h-4 w-4" /> Back to trips
-          </Button>
-        </div>
-      </div>
-    );
+  const handleBack = useCallback(() => {
+    router.push("/trips");
+  }, [router]);
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
   }
 
-  const selectedHotel = trackedHotels.find((h) => h.hotel_id === selectedHotelId);
-  const flightPrice = topFlights.length > 0 ? topFlights[0].price : trip.current_flight_price;
-  const hotelPrice = selectedHotel?.total_price ?? trip.current_hotel_price;
-  const flightPriceValue = parsePrice(flightPrice);
-  const hotelPriceValue = parsePrice(hotelPrice);
-  const totalPriceValue =
-    flightPriceValue !== null && hotelPriceValue !== null
-      ? flightPriceValue + hotelPriceValue
-      : parsePrice(trip.total_price);
-  const selectedHotelShortName = getHotelShortName(selectedHotel?.hotel_name);
+  if (error) {
+    return <ErrorState error={error} onBack={handleBack} />;
+  }
+
+  if (!trip) {
+    return <ErrorState error="Trip not found" onBack={handleBack} />;
+  }
+
+  const flightPriceValue = parsePrice(trip.current_flight_price);
+  const hotelPriceValue = parsePrice(trip.current_hotel_price);
+  const totalPriceValue = parsePrice(trip.total_price);
 
   const isActive = trip.status.toLowerCase() === "active";
 
-  // Calculate trend from hotel history
-  const selectedHistory =
-    hotelPriceHistories.find((h) => h.hotel_id === selectedHotel?.hotel_id) ??
-    hotelPriceHistories[0];
-  const hasTrend = Boolean(selectedHistory && selectedHistory.snapshots.length >= 2);
+  // Calculate trend from price history
+  const hasTrend = priceHistory.length >= 2;
   const currentTotal = totalPriceValue ?? 0;
-  const previousHotelPrice = hasTrend
-    ? parsePrice(selectedHistory?.snapshots[selectedHistory.snapshots.length - 2]?.total_price)
+  const previousTotal = hasTrend
+    ? parsePrice(priceHistory[priceHistory.length - 2]?.total_price)
     : null;
-  const previousTotal =
-    previousHotelPrice !== null && flightPriceValue !== null
-      ? previousHotelPrice + flightPriceValue
-      : null;
 
   return (
     <div className={styles.containerCompact}>
       {/* Header */}
       <div className={styles.headerCompact}>
-        <Button variant="ghost" size="icon" onClick={() => router.push("/trips")} className={styles.backButton}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBack}
+          className={styles.backButton}
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className={styles.headerInfo}>
           <h1 className={styles.titleCompact}>{trip.name}</h1>
           <span className={styles.routeCompact}>
-            {trip.origin_airport} {trip.is_round_trip ? "↔" : "→"} {trip.destination_code} · {formatShortDate(trip.depart_date)}–{trip.return_date ? formatShortDate(trip.return_date) : ""}
+            {trip.origin_airport} {trip.is_round_trip ? "↔" : "→"}{" "}
+            {trip.destination_code} · {formatShortDate(trip.depart_date)}–
+            {trip.return_date ? formatShortDate(trip.return_date) : ""}
           </span>
         </div>
         <div className={styles.headerActions}>
@@ -332,24 +373,41 @@ export default function TripDetailPage({
               onCheckedChange={handleStatusToggle}
               disabled={isUpdatingStatus}
             />
-            <Badge variant={getStatusVariant(trip.status)}>{trip.status.toUpperCase()}</Badge>
+            <Badge variant={getStatusVariant(trip.status)}>
+              {trip.status.toUpperCase()}
+            </Badge>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push(`/trips/${tripId}/edit`)}
+            title="Edit trip"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="ghost" size="icon" disabled={isDeleting}>
-                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete this trip?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete &quot;{trip.name}&quot; and all price history.
+                  This will permanently delete &quot;{trip.name}&quot; and all
+                  price history.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                <AlertDialogAction onClick={handleDelete}>
+                  Delete
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -361,20 +419,31 @@ export default function TripDetailPage({
         <div className={styles.priceItem}>
           <Plane className="h-4 w-4" />
           <span className={styles.priceItemLabel}>Flight</span>
-          <span className={styles.priceItemValue}>{formatPrice(flightPriceValue)}</span>
+          <span className={styles.priceItemValue}>
+            {formatPrice(flightPriceValue)}
+          </span>
         </div>
         <span className={styles.pricePlus}>+</span>
         <div className={styles.priceItem}>
           <Hotel className="h-4 w-4" />
-          <span className={styles.priceItemLabel}>{selectedHotelShortName}</span>
-          <span className={styles.priceItemValue}>{formatPrice(hotelPriceValue)}</span>
+          <span className={styles.priceItemLabel}>Hotel</span>
+          <span className={styles.priceItemValue}>
+            {formatPrice(hotelPriceValue)}
+          </span>
         </div>
         <span className={styles.priceEquals}>=</span>
         <div className={styles.priceTotal}>
-          <span className={styles.priceTotalValue}>{formatPrice(totalPriceValue)}</span>
-          {hasTrend && previousTotal !== null && currentTotal !== previousTotal && (
-            <PriceTrend currentPrice={currentTotal} previousPrice={previousTotal} />
-          )}
+          <span className={styles.priceTotalValue}>
+            {formatPrice(totalPriceValue)}
+          </span>
+          {hasTrend &&
+            previousTotal !== null &&
+            currentTotal !== previousTotal && (
+              <PriceTrend
+                currentPrice={currentTotal}
+                previousPrice={previousTotal}
+              />
+            )}
         </div>
       </div>
 
@@ -386,54 +455,122 @@ export default function TripDetailPage({
             <div className={styles.chartHeader}>
               <span className={styles.chartTitle}>Price History</span>
               <div className={styles.chartLegendCompact}>
-                <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-1))" }} /> Total</span>
-                <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-2))" }} /> Flight</span>
-                <span><span className={styles.legendDot} style={{ background: "hsl(var(--chart-3))" }} /> {selectedHotelShortName}</span>
+                <span>
+                  <span
+                    className={styles.legendDot}
+                    style={{ background: "hsl(var(--chart-1))" }}
+                  />{" "}
+                  Total
+                </span>
+                <span>
+                  <span
+                    className={styles.legendDot}
+                    style={{ background: "hsl(var(--chart-2))" }}
+                  />{" "}
+                  Flight
+                </span>
+                <span>
+                  <span
+                    className={styles.legendDot}
+                    style={{ background: "hsl(var(--chart-3))" }}
+                  />{" "}
+                  Hotel
+                </span>
               </div>
             </div>
-            <PriceHistoryChart
-              hotelPriceHistories={hotelPriceHistories}
-              selectedHotelId={selectedHotelId}
-              flightPrice={flightPrice ?? null}
-              selectedHotelName={selectedHotelShortName}
-            />
+            <PriceHistoryChart priceHistory={priceHistory} />
           </CardContent>
         </Card>
 
-        {/* Hotels */}
-        <Card className={styles.listCard}>
-          <CardContent className={styles.listCardContent}>
-            <div className={styles.listHeader}>
-              <Hotel className="h-4 w-4" />
-              <span>Hotels</span>
-            </div>
-            <div className={styles.hotelsListCompact}>
-              {trackedHotels.map((hotel) => (
-                <HotelOption
-                  key={hotel.id}
-                  hotel={hotel}
-                  isSelected={selectedHotelId === hotel.hotel_id}
-                  onSelect={() => setSelectedHotelId(hotel.hotel_id)}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Flights */}
+        {/* Trip Details Card */}
         <Card className={styles.listCard}>
           <CardContent className={styles.listCardContent}>
             <div className={styles.listHeader}>
               <Plane className="h-4 w-4" />
-              <span>Flights</span>
+              <span>Trip Details</span>
             </div>
-            <div className={styles.flightsListCompact}>
-              {topFlights.slice(0, 3).map((flight, i) => (
-                <FlightOption key={flight.id} flight={flight} isFirst={i === 0} />
-              ))}
+            <div className={styles.detailsList}>
+              <div className={styles.detailRow}>
+                <span className={styles.detailLabel}>Travelers</span>
+                <span className={styles.detailValue}>
+                  {trip.adults} adult{trip.adults !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className={styles.detailRow}>
+                <span className={styles.detailLabel}>Trip Type</span>
+                <span className={styles.detailValue}>
+                  {trip.is_round_trip ? "Round trip" : "One way"}
+                </span>
+              </div>
+              {trip.flight_prefs && (
+                <>
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>Cabin</span>
+                    <span className={styles.detailValue}>
+                      {trip.flight_prefs.cabin
+                        ? trip.flight_prefs.cabin.charAt(0).toUpperCase() +
+                          trip.flight_prefs.cabin.slice(1)
+                        : "Economy"}
+                    </span>
+                  </div>
+                  {trip.flight_prefs.airlines &&
+                    trip.flight_prefs.airlines.length > 0 && (
+                      <div className={styles.detailRow}>
+                        <span className={styles.detailLabel}>Airlines</span>
+                        <span className={styles.detailValue}>
+                          {trip.flight_prefs.airlines.join(", ")}
+                        </span>
+                      </div>
+                    )}
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
+
+        {/* Hotel Preferences Card */}
+        {trip.hotel_prefs && (
+          <Card className={styles.listCard}>
+            <CardContent className={styles.listCardContent}>
+              <div className={styles.listHeader}>
+                <Hotel className="h-4 w-4" />
+                <span>Hotel Preferences</span>
+              </div>
+              <div className={styles.detailsList}>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Rooms</span>
+                  <span className={styles.detailValue}>
+                    {trip.hotel_prefs.rooms}
+                  </span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Adults/Room</span>
+                  <span className={styles.detailValue}>
+                    {trip.hotel_prefs.adults_per_room}
+                  </span>
+                </div>
+                {trip.hotel_prefs.preferred_room_types &&
+                  trip.hotel_prefs.preferred_room_types.length > 0 && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Room Types</span>
+                      <span className={styles.detailValue}>
+                        {trip.hotel_prefs.preferred_room_types.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                {trip.hotel_prefs.preferred_views &&
+                  trip.hotel_prefs.preferred_views.length > 0 && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Views</span>
+                      <span className={styles.detailValue}>
+                        {trip.hotel_prefs.preferred_views.join(", ")}
+                      </span>
+                    </div>
+                  )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

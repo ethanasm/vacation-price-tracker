@@ -1,0 +1,1458 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Vacation Price Tracker",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/auth/google/start": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start Google Auth",
+        "description": "Redirects the user to Google for authentication.",
+        "operationId": "start_google_auth_v1_auth_google_start_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/google/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Auth Callback",
+        "description": "Handles the callback from Google and issues JWT tokens.",
+        "operationId": "google_auth_callback_v1_auth_google_callback_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh Token",
+        "description": "Refreshes the access token using a valid refresh token.",
+        "operationId": "refresh_token_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "description": "Logs the user out by clearing cookies and invalidating the refresh token.",
+        "operationId": "logout_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Current User",
+        "description": "Returns the current authenticated user's info.",
+        "operationId": "get_current_user_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips": {
+      "get": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "List Trips",
+        "description": "List trips for the current user with latest snapshot prices.",
+        "operationId": "list_trips_v1_trips_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TripStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_list_TripResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Create Trip",
+        "description": "Create a new trip for the current user.",
+        "operationId": "create_trip_v1_trips_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TripCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_TripDetail_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/refresh-all": {
+      "post": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Refresh All Trips",
+        "description": "Trigger a manual refresh for all active trips.",
+        "operationId": "refresh_all_trips_v1_trips_refresh_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_RefreshStartResponse_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/refresh-status": {
+      "get": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Refresh Status",
+        "description": "Check refresh workflow progress.",
+        "operationId": "refresh_status_v1_trips_refresh_status_get",
+        "parameters": [
+          {
+            "name": "refresh_group_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Refresh Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_RefreshStatusResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/{trip_id}": {
+      "get": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Get Trip Details",
+        "description": "Get trip details including prefs, notification rules, and price history.",
+        "operationId": "get_trip_details_v1_trips__trip_id__get",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trip Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_TripDetailResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Delete Trip",
+        "description": "Delete a trip and all associated records.",
+        "operationId": "delete_trip_v1_trips__trip_id__delete",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/{trip_id}/status": {
+      "patch": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Update Trip Status",
+        "description": "Pause or resume trip tracking.",
+        "operationId": "update_trip_status_v1_trips__trip_id__status_patch",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TripStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_TripResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/locations/search": {
+      "get": {
+        "tags": [
+          "locations"
+        ],
+        "summary": "Search Locations",
+        "description": "Search airports and cities by keyword.",
+        "operationId": "search_locations_v1_locations_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 50,
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_list_LocationResult__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "APIResponse_RefreshStartResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RefreshStartResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[RefreshStartResponse]"
+      },
+      "APIResponse_RefreshStatusResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RefreshStatusResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[RefreshStatusResponse]"
+      },
+      "APIResponse_TripDetailResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TripDetailResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[TripDetailResponse]"
+      },
+      "APIResponse_TripDetail_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TripDetail"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[TripDetail]"
+      },
+      "APIResponse_TripResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TripResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[TripResponse]"
+      },
+      "APIResponse_list_LocationResult__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/LocationResult"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[list[LocationResult]]"
+      },
+      "APIResponse_list_TripResponse__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/TripResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[list[TripResponse]]"
+      },
+      "CabinClass": {
+        "type": "string",
+        "enum": [
+          "economy",
+          "premium_economy",
+          "business",
+          "first"
+        ],
+        "title": "CabinClass",
+        "description": "Flight cabin class options."
+      },
+      "FlightPrefs": {
+        "properties": {
+          "airlines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Airlines",
+            "description": "Preferred airline IATA codes (e.g., ['UA', 'NH'])"
+          },
+          "stops_mode": {
+            "$ref": "#/components/schemas/StopsMode",
+            "description": "Flight stops preference",
+            "default": "any"
+          },
+          "max_stops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Stops",
+            "description": "Maximum number of stops (only used when stops_mode is 'any')"
+          },
+          "cabin": {
+            "$ref": "#/components/schemas/CabinClass",
+            "description": "Preferred cabin class",
+            "default": "economy"
+          }
+        },
+        "type": "object",
+        "title": "FlightPrefs",
+        "description": "Flight preferences for a trip."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HotelPrefs": {
+        "properties": {
+          "rooms": {
+            "type": "integer",
+            "maximum": 9.0,
+            "minimum": 1.0,
+            "title": "Rooms",
+            "description": "Number of rooms needed",
+            "default": 1
+          },
+          "adults_per_room": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Adults Per Room",
+            "description": "Number of adults per room",
+            "default": 2
+          },
+          "room_selection_mode": {
+            "$ref": "#/components/schemas/RoomSelectionMode",
+            "description": "How to select rooms: cheapest or preferred",
+            "default": "cheapest"
+          },
+          "preferred_room_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preferred Room Types",
+            "description": "Preferred room types (e.g., ['King', 'Suite'])"
+          },
+          "preferred_views": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preferred Views",
+            "description": "Preferred views (e.g., ['Ocean', 'City'])"
+          }
+        },
+        "type": "object",
+        "title": "HotelPrefs",
+        "description": "Hotel preferences for a trip."
+      },
+      "LocationResult": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "IATA location code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Location name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Location type (AIRPORT or CITY)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "type"
+        ],
+        "title": "LocationResult",
+        "description": "Airport or city location result."
+      },
+      "NotificationPrefs-Input": {
+        "properties": {
+          "threshold_type": {
+            "$ref": "#/components/schemas/ThresholdType",
+            "description": "What price to compare against threshold",
+            "default": "trip_total"
+          },
+          "threshold_value": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Threshold Value",
+            "description": "Price threshold for notifications"
+          },
+          "notify_without_threshold": {
+            "type": "boolean",
+            "title": "Notify Without Threshold",
+            "description": "Send notification on every refresh regardless of threshold",
+            "default": false
+          },
+          "email_enabled": {
+            "type": "boolean",
+            "title": "Email Enabled",
+            "description": "Enable email notifications",
+            "default": true
+          },
+          "sms_enabled": {
+            "type": "boolean",
+            "title": "Sms Enabled",
+            "description": "Enable SMS notifications",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "threshold_value"
+        ],
+        "title": "NotificationPrefs",
+        "description": "Notification preferences for a trip."
+      },
+      "NotificationPrefs-Output": {
+        "properties": {
+          "threshold_type": {
+            "$ref": "#/components/schemas/ThresholdType",
+            "description": "What price to compare against threshold",
+            "default": "trip_total"
+          },
+          "threshold_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+            "title": "Threshold Value",
+            "description": "Price threshold for notifications"
+          },
+          "notify_without_threshold": {
+            "type": "boolean",
+            "title": "Notify Without Threshold",
+            "description": "Send notification on every refresh regardless of threshold",
+            "default": false
+          },
+          "email_enabled": {
+            "type": "boolean",
+            "title": "Email Enabled",
+            "description": "Enable email notifications",
+            "default": true
+          },
+          "sms_enabled": {
+            "type": "boolean",
+            "title": "Sms Enabled",
+            "description": "Enable SMS notifications",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "threshold_value"
+        ],
+        "title": "NotificationPrefs",
+        "description": "Notification preferences for a trip."
+      },
+      "PriceSnapshotResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "flight_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flight Price"
+          },
+          "hotel_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hotel Price"
+          },
+          "total_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Price"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "PriceSnapshotResponse",
+        "description": "Schema for price snapshot in trip history."
+      },
+      "RefreshStartResponse": {
+        "properties": {
+          "refresh_group_id": {
+            "type": "string",
+            "title": "Refresh Group Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_group_id"
+        ],
+        "title": "RefreshStartResponse",
+        "description": "Schema for refresh start response."
+      },
+      "RefreshStatusResponse": {
+        "properties": {
+          "refresh_group_id": {
+            "type": "string",
+            "title": "Refresh Group Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "in_progress": {
+            "type": "integer",
+            "title": "In Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_group_id",
+          "status",
+          "total",
+          "completed",
+          "failed",
+          "in_progress"
+        ],
+        "title": "RefreshStatusResponse",
+        "description": "Schema for refresh status response."
+      },
+      "RoomSelectionMode": {
+        "type": "string",
+        "enum": [
+          "cheapest",
+          "preferred"
+        ],
+        "title": "RoomSelectionMode",
+        "description": "Hotel room selection preference modes."
+      },
+      "StopsMode": {
+        "type": "string",
+        "enum": [
+          "nonstop",
+          "1-stop",
+          "any"
+        ],
+        "title": "StopsMode",
+        "description": "Flight stops preference modes."
+      },
+      "ThresholdType": {
+        "type": "string",
+        "enum": [
+          "trip_total",
+          "flight_total",
+          "hotel_total"
+        ],
+        "title": "ThresholdType",
+        "description": "Notification threshold types for price alerts."
+      },
+      "TripCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Trip name (must be unique per user)"
+          },
+          "origin_airport": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Origin Airport",
+            "description": "Origin airport IATA code (e.g., 'SFO')"
+          },
+          "destination_code": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Destination Code",
+            "description": "Destination airport IATA code (e.g., 'MCO')"
+          },
+          "is_round_trip": {
+            "type": "boolean",
+            "title": "Is Round Trip",
+            "description": "Whether this is a round trip",
+            "default": true
+          },
+          "depart_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Depart Date",
+            "description": "Departure date"
+          },
+          "return_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Return Date",
+            "description": "Return date"
+          },
+          "adults": {
+            "type": "integer",
+            "maximum": 9.0,
+            "minimum": 1.0,
+            "title": "Adults",
+            "description": "Number of adult travelers",
+            "default": 1
+          },
+          "flight_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlightPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Flight preferences (optional)"
+          },
+          "hotel_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HotelPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hotel preferences (optional)"
+          },
+          "notification_prefs": {
+            "$ref": "#/components/schemas/NotificationPrefs-Input",
+            "description": "Notification settings (required)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "origin_airport",
+          "destination_code",
+          "depart_date",
+          "return_date",
+          "notification_prefs"
+        ],
+        "title": "TripCreate",
+        "description": "Schema for creating a new trip."
+      },
+      "TripDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "origin_airport": {
+            "type": "string",
+            "title": "Origin Airport"
+          },
+          "destination_code": {
+            "type": "string",
+            "title": "Destination Code"
+          },
+          "depart_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Depart Date"
+          },
+          "return_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Return Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TripStatus"
+          },
+          "current_flight_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Flight Price"
+          },
+          "current_hotel_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Hotel Price"
+          },
+          "total_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Price"
+          },
+          "last_refreshed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refreshed"
+          },
+          "is_round_trip": {
+            "type": "boolean",
+            "title": "Is Round Trip"
+          },
+          "adults": {
+            "type": "integer",
+            "title": "Adults"
+          },
+          "flight_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlightPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hotel_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HotelPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notification_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPrefs-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "origin_airport",
+          "destination_code",
+          "depart_date",
+          "return_date",
+          "status",
+          "is_round_trip",
+          "adults",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TripDetail",
+        "description": "Schema for detailed trip response with all preferences."
+      },
+      "TripDetailResponse": {
+        "properties": {
+          "trip": {
+            "$ref": "#/components/schemas/TripDetail"
+          },
+          "price_history": {
+            "items": {
+              "$ref": "#/components/schemas/PriceSnapshotResponse"
+            },
+            "type": "array",
+            "title": "Price History"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trip",
+          "price_history"
+        ],
+        "title": "TripDetailResponse",
+        "description": "Schema for trip detail response with price history."
+      },
+      "TripResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "origin_airport": {
+            "type": "string",
+            "title": "Origin Airport"
+          },
+          "destination_code": {
+            "type": "string",
+            "title": "Destination Code"
+          },
+          "depart_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Depart Date"
+          },
+          "return_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Return Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TripStatus"
+          },
+          "current_flight_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Flight Price"
+          },
+          "current_hotel_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Hotel Price"
+          },
+          "total_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Price"
+          },
+          "last_refreshed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refreshed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "origin_airport",
+          "destination_code",
+          "depart_date",
+          "return_date",
+          "status"
+        ],
+        "title": "TripResponse",
+        "description": "Schema for trip list response."
+      },
+      "TripStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "paused",
+          "error"
+        ],
+        "title": "TripStatus",
+        "description": "Trip tracking status values."
+      },
+      "TripStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ],
+            "title": "Status",
+            "description": "New status: 'active' or 'paused'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "TripStatusUpdate",
+        "description": "Schema for updating trip status (pause/resume)."
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "UserResponse",
+        "description": "Response model for authenticated user info."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

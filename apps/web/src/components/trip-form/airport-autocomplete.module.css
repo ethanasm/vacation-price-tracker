@@ -1,0 +1,130 @@
+.container {
+  position: relative;
+  width: 100%;
+}
+
+.inputWrapper {
+  position: relative;
+}
+
+.inputIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--ink-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.input {
+  padding-left: 40px;
+  text-transform: uppercase;
+}
+
+.loadingIcon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: translateY(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.option:hover,
+.optionHighlighted {
+  background: hsl(var(--accent));
+}
+
+.option:first-child {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+
+.option:last-child {
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+.optionIcon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--primary));
+  margin-top: 2px;
+}
+
+.optionContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.optionMain {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.optionCode {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.optionName {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.optionSub {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}

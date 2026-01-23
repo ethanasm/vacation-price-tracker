@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -12,12 +12,27 @@ import {
   NotificationSection,
 } from "../../../components/trip-form";
 import { useTripForm } from "../../../lib/hooks/use-trip-form";
+import { api, ApiError } from "../../../lib/api";
+import type { Location } from "../../../components/trip-form";
 import styles from "./page.module.css";
+
+/**
+ * Generate a unique idempotency key for trip creation.
+ * Uses crypto.randomUUID() for browser-side UUID generation.
+ */
+function generateIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
 
 export default function CreateTripPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { formData, setters, errors, validate, getPayload } = useTripForm();
+
+  // Memoized search function that uses the API client
+  const searchLocations = useCallback(async (query: string): Promise<Location[]> => {
+    return api.locations.search(query);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,25 +45,23 @@ export default function CreateTripPage() {
     setIsSubmitting(true);
 
     const payload = getPayload();
+    const idempotencyKey = generateIdempotencyKey();
 
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/trips', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(payload),
-      // });
-
-      console.log("Creating trip with payload:", payload);
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
+      await api.trips.create(payload, idempotencyKey);
       toast.success("Trip created successfully!");
       router.push("/trips");
     } catch (error) {
       console.error("Failed to create trip:", error);
-      toast.error("Failed to create trip. Please try again.");
+      if (error instanceof ApiError) {
+        if (error.status === 409) {
+          toast.error("This request was already processed. Please try again.");
+        } else {
+          toast.error(error.detail || "Failed to create trip. Please try again.");
+        }
+      } else {
+        toast.error("Failed to create trip. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -90,6 +103,7 @@ export default function CreateTripPage() {
           onDepartDateChange={setters.setDepartDate}
           onReturnDateChange={setters.setReturnDate}
           onAdultsChange={setters.setAdults}
+          searchLocations={searchLocations}
         />
 
         <FlightPrefsSection

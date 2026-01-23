@@ -70,24 +70,28 @@ async def _create_user(test_session, email: str = "user@example.com") -> User:
 
 
 def _create_trip(client, payload: dict, idempotency_key: str):
+    csrf_token = client.headers.get("X-CSRF-Token")
+    headers = {"X-Idempotency-Key": idempotency_key}
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
     return client.post(
         "/v1/trips",
         json=payload,
-        headers={"X-Idempotency-Key": idempotency_key},
+        headers=headers,
     )
 
 
 @pytest.mark.asyncio
-async def test_create_trip_success(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_success(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="create@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     trigger_mock = AsyncMock()
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_mock)
 
     payload = _build_trip_payload()
-    response = _create_trip(client, payload, "trip-create-1")
+    response = _create_trip(client_with_csrf, payload, "trip-create-1")
 
     assert response.status_code == 201
     data = response.json()["data"]
@@ -97,9 +101,9 @@ async def test_create_trip_success(client, test_session, mock_redis, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_create_trip_reports_price_check_failure(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_reports_price_check_failure(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="create-fail@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     async def trigger_error(trip_id):
         raise PriceCheckWorkflowStartFailed(extra={"trip_id": str(trip_id)})
@@ -108,7 +112,7 @@ async def test_create_trip_reports_price_check_failure(client, test_session, moc
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_error)
 
     payload = _build_trip_payload(name="Failure Trip")
-    response = _create_trip(client, payload, "trip-create-fail-1")
+    response = _create_trip(client_with_csrf, payload, "trip-create-fail-1")
 
     assert response.status_code == 502
     body = response.json()
@@ -121,16 +125,16 @@ async def test_create_trip_reports_price_check_failure(client, test_session, moc
 
 
 @pytest.mark.asyncio
-async def test_create_trip_rejects_duplicate_name(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_rejects_duplicate_name(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="duplicate@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload = _build_trip_payload(name="Duplicate Trip")
-    response_one = _create_trip(client, payload, "trip-duplicate-1")
-    response_two = _create_trip(client, payload, "trip-duplicate-2")
+    response_one = _create_trip(client_with_csrf, payload, "trip-duplicate-1")
+    response_two = _create_trip(client_with_csrf, payload, "trip-duplicate-2")
 
     assert response_one.status_code == 201
     assert response_two.status_code == 409
@@ -138,34 +142,34 @@ async def test_create_trip_rejects_duplicate_name(client, test_session, mock_red
 
 
 @pytest.mark.asyncio
-async def test_create_trip_rejects_when_limit_exceeded(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_rejects_when_limit_exceeded(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="limit@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
     monkeypatch.setattr(settings, "max_trips_per_user", 1)
 
     payload = _build_trip_payload(name="First Trip")
-    response_one = _create_trip(client, payload, "trip-limit-1")
-    response_two = _create_trip(client, _build_trip_payload(name="Second Trip"), "trip-limit-2")
+    response_one = _create_trip(client_with_csrf, payload, "trip-limit-1")
+    response_two = _create_trip(client_with_csrf, _build_trip_payload(name="Second Trip"), "trip-limit-2")
 
     assert response_one.status_code == 201
     assert response_two.status_code == 400
     assert response_two.json()["detail"] == "Trip limit exceeded."
 
 @pytest.mark.asyncio
-async def test_create_trip_duplicate_idempotency(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_duplicate_idempotency(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="dupe@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr(idempotency_module, "redis_client", fake_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload_one = _build_trip_payload(name="First Trip")
-    response_one = _create_trip(client, payload_one, "trip-dupe")
-    response_two = _create_trip(client, payload_one, "trip-dupe")
+    response_one = _create_trip(client_with_csrf, payload_one, "trip-dupe")
+    response_two = _create_trip(client_with_csrf, payload_one, "trip-dupe")
 
     assert response_one.status_code == 201
     assert response_two.status_code == 201
@@ -173,9 +177,9 @@ async def test_create_trip_duplicate_idempotency(client, test_session, mock_redi
 
 
 @pytest.mark.asyncio
-async def test_create_trip_idempotency_conflict(client, test_session, mock_redis, monkeypatch):
+async def test_create_trip_idempotency_conflict(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="conflict@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr(idempotency_module, "redis_client", fake_redis)
@@ -184,8 +188,8 @@ async def test_create_trip_idempotency_conflict(client, test_session, mock_redis
     payload_one = _build_trip_payload(name="First Trip")
     payload_two = _build_trip_payload(name="Second Trip")
 
-    response_one = _create_trip(client, payload_one, "trip-conflict")
-    response_two = _create_trip(client, payload_two, "trip-conflict")
+    response_one = _create_trip(client_with_csrf, payload_one, "trip-conflict")
+    response_two = _create_trip(client_with_csrf, payload_two, "trip-conflict")
 
     assert response_one.status_code == 201
     assert response_two.status_code == 409
@@ -193,9 +197,9 @@ async def test_create_trip_idempotency_conflict(client, test_session, mock_redis
 
 
 @pytest.mark.asyncio
-async def test_create_trip_idempotency_returns_cached_response(client, test_session, monkeypatch):
+async def test_create_trip_idempotency_returns_cached_response(client_with_csrf, test_session, monkeypatch):
     user = await _create_user(test_session, email="cache@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr(idempotency_module, "redis_client", fake_redis)
@@ -203,8 +207,8 @@ async def test_create_trip_idempotency_returns_cached_response(client, test_sess
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_mock)
 
     payload = _build_trip_payload(name="Cached Trip")
-    response_one = _create_trip(client, payload, "trip-cache")
-    response_two = _create_trip(client, payload, "trip-cache")
+    response_one = _create_trip(client_with_csrf, payload, "trip-cache")
+    response_two = _create_trip(client_with_csrf, payload, "trip-cache")
 
     assert response_one.status_code == 201
     assert response_two.status_code == 201
@@ -217,28 +221,28 @@ async def test_create_trip_idempotency_returns_cached_response(client, test_sess
 
 
 @pytest.mark.asyncio
-async def test_create_trip_requires_idempotency_key(client, test_session, monkeypatch):
+async def test_create_trip_requires_idempotency_key(client_with_csrf, test_session, monkeypatch):
     user = User(google_sub=str(uuid.uuid4()), email="missing-key@example.com")
     set_test_timestamps(user)
     test_session.add(user)
     await test_session.commit()
     await test_session.refresh(user)
 
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload = _build_trip_payload(name="Missing Key Trip")
-    response = client.post("/v1/trips", json=payload)
+    response = client_with_csrf.post("/v1/trips", json=payload)
 
     assert response.status_code == 400
     assert response.json()["detail"] == "X-Idempotency-Key header required"
 
 
 @pytest.mark.asyncio
-async def test_list_trips_includes_latest_snapshot(client, test_session, mock_redis, monkeypatch):
+async def test_list_trips_includes_latest_snapshot(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="list@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
@@ -246,8 +250,8 @@ async def test_list_trips_includes_latest_snapshot(client, test_session, mock_re
     payload_one = _build_trip_payload(name="Trip One")
     payload_two = _build_trip_payload(name="Trip Two")
 
-    response_one = _create_trip(client, payload_one, "trip-list-1")
-    response_two = _create_trip(client, payload_two, "trip-list-2")
+    response_one = _create_trip(client_with_csrf, payload_one, "trip-list-1")
+    response_two = _create_trip(client_with_csrf, payload_two, "trip-list-2")
 
     trip_one_id = response_one.json()["data"]["id"]
     trip_two_id = response_two.json()["data"]["id"]
@@ -280,7 +284,7 @@ async def test_list_trips_includes_latest_snapshot(client, test_session, mock_re
     test_session.add_all(snapshots)
     await test_session.commit()
 
-    response = client.get("/v1/trips?page=1&limit=10")
+    response = client_with_csrf.get("/v1/trips?page=1&limit=10")
 
     assert response.status_code == 200
     body = response.json()
@@ -292,44 +296,44 @@ async def test_list_trips_includes_latest_snapshot(client, test_session, mock_re
 
 
 @pytest.mark.asyncio
-async def test_list_trips_filters_by_status(client, test_session, mock_redis, monkeypatch):
+async def test_list_trips_filters_by_status(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="filter@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
-    response_one = _create_trip(client, _build_trip_payload(name="Active Trip"), "trip-filter-1")
-    response_two = _create_trip(client, _build_trip_payload(name="Paused Trip"), "trip-filter-2")
+    response_one = _create_trip(client_with_csrf, _build_trip_payload(name="Active Trip"), "trip-filter-1")
+    response_two = _create_trip(client_with_csrf, _build_trip_payload(name="Paused Trip"), "trip-filter-2")
 
     trip_one_id = response_one.json()["data"]["id"]
     trip_two_id = response_two.json()["data"]["id"]
 
-    pause_response = client.patch(
+    pause_response = client_with_csrf.patch(
         f"/v1/trips/{trip_two_id}/status",
         json={"status": TripStatus.PAUSED.value},
     )
     assert pause_response.status_code == 200
 
-    paused_list = client.get("/v1/trips?status=paused")
+    paused_list = client_with_csrf.get("/v1/trips?status=paused")
     assert paused_list.status_code == 200
     paused_ids = {trip["id"] for trip in paused_list.json()["data"]}
     assert paused_ids == {trip_two_id}
 
-    active_list = client.get("/v1/trips?status=active")
+    active_list = client_with_csrf.get("/v1/trips?status=active")
     assert active_list.status_code == 200
     active_ids = {trip["id"] for trip in active_list.json()["data"]}
     assert active_ids == {trip_one_id}
 
 
 @pytest.mark.asyncio
-async def test_list_trips_empty_returns_meta(client, test_session, mock_redis, monkeypatch):
+async def test_list_trips_empty_returns_meta(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="empty-list@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
 
-    response = client.get("/v1/trips?page=1&limit=10")
+    response = client_with_csrf.get("/v1/trips?page=1&limit=10")
 
     assert response.status_code == 200
     body = response.json()
@@ -338,9 +342,9 @@ async def test_list_trips_empty_returns_meta(client, test_session, mock_redis, m
 
 
 @pytest.mark.asyncio
-async def test_get_trip_details_includes_history(client, test_session, mock_redis, monkeypatch):
+async def test_get_trip_details_includes_history(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="detail@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
@@ -349,7 +353,7 @@ async def test_get_trip_details_includes_history(client, test_session, mock_redi
     payload["flight_prefs"] = {"airlines": ["UA"]}
     payload["hotel_prefs"] = {"rooms": 2, "preferred_views": ["Ocean"]}
 
-    create_response = _create_trip(client, payload, "trip-detail-1")
+    create_response = _create_trip(client_with_csrf, payload, "trip-detail-1")
     trip_id = create_response.json()["data"]["id"]
 
     now = datetime.now(UTC)
@@ -373,7 +377,7 @@ async def test_get_trip_details_includes_history(client, test_session, mock_redi
     )
     await test_session.commit()
 
-    response = client.get(f"/v1/trips/{trip_id}?page=1&limit=1")
+    response = client_with_csrf.get(f"/v1/trips/{trip_id}?page=1&limit=1")
 
     assert response.status_code == 200
     body = response.json()
@@ -385,31 +389,31 @@ async def test_get_trip_details_includes_history(client, test_session, mock_redi
 
 
 @pytest.mark.asyncio
-async def test_get_trip_details_not_found(client, test_session, mock_redis, monkeypatch):
+async def test_get_trip_details_not_found(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="detail-missing@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
 
-    response = client.get(f"/v1/trips/{uuid.uuid4()}")
+    response = client_with_csrf.get(f"/v1/trips/{uuid.uuid4()}")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Trip not found."
 
 
 @pytest.mark.asyncio
-async def test_update_trip_status(client, test_session, mock_redis, monkeypatch):
+async def test_update_trip_status(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="status@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload = _build_trip_payload(name="Status Trip")
-    create_response = _create_trip(client, payload, "trip-status-1")
+    create_response = _create_trip(client_with_csrf, payload, "trip-status-1")
     trip_id = create_response.json()["data"]["id"]
 
-    response = client.patch(
+    response = client_with_csrf.patch(
         f"/v1/trips/{trip_id}/status",
         json={"status": TripStatus.PAUSED.value},
     )
@@ -419,13 +423,13 @@ async def test_update_trip_status(client, test_session, mock_redis, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_update_trip_status_not_found(client, test_session, mock_redis, monkeypatch):
+async def test_update_trip_status_not_found(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="status-missing@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
 
-    response = client.patch(
+    response = client_with_csrf.patch(
         f"/v1/trips/{uuid.uuid4()}/status",
         json={"status": TripStatus.PAUSED.value},
     )
@@ -435,32 +439,32 @@ async def test_update_trip_status_not_found(client, test_session, mock_redis, mo
 
 
 @pytest.mark.asyncio
-async def test_delete_trip(client, test_session, mock_redis, monkeypatch):
+async def test_delete_trip(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="delete@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload = _build_trip_payload(name="Delete Trip")
-    create_response = _create_trip(client, payload, "trip-delete-1")
+    create_response = _create_trip(client_with_csrf, payload, "trip-delete-1")
     trip_id = create_response.json()["data"]["id"]
 
-    delete_response = client.delete(f"/v1/trips/{trip_id}")
+    delete_response = client_with_csrf.delete(f"/v1/trips/{trip_id}")
     assert delete_response.status_code == 204
 
-    fetch_response = client.get(f"/v1/trips/{trip_id}")
+    fetch_response = client_with_csrf.get(f"/v1/trips/{trip_id}")
     assert fetch_response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_delete_trip_not_found(client, test_session, mock_redis, monkeypatch):
+async def test_delete_trip_not_found(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="delete-missing@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
 
-    response = client.delete(f"/v1/trips/{uuid.uuid4()}")
+    response = client_with_csrf.delete(f"/v1/trips/{uuid.uuid4()}")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Trip not found."
@@ -535,16 +539,16 @@ async def test_trip_routes_direct_calls(test_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_refresh_all_trips_starts_workflow(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_all_trips_starts_workflow(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.set = AsyncMock(return_value=True)
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     start_mock = AsyncMock()
     monkeypatch.setattr(trips_module, "start_refresh_all_workflow", start_mock)
 
-    response = client.post("/v1/trips/refresh-all")
+    response = client_with_csrf.post("/v1/trips/refresh-all")
 
     assert response.status_code == 200
     refresh_group_id = response.json()["data"]["refresh_group_id"]
@@ -556,41 +560,41 @@ async def test_refresh_all_trips_starts_workflow(client, test_session, mock_redi
 
 
 @pytest.mark.asyncio
-async def test_refresh_all_trips_rejects_when_locked(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_all_trips_rejects_when_locked(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-locked@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.set = AsyncMock(return_value=None)
     mock_redis.get = AsyncMock(return_value="refresh-existing")
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "start_refresh_all_workflow", AsyncMock())
 
-    response = client.post("/v1/trips/refresh-all")
+    response = client_with_csrf.post("/v1/trips/refresh-all")
 
     assert response.status_code == 409
     assert "refresh-existing" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_refresh_all_trips_rejects_when_locked_bytes(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_all_trips_rejects_when_locked_bytes(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-bytes@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.set = AsyncMock(return_value=None)
     mock_redis.get = AsyncMock(return_value=b"refresh-bytes")
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     monkeypatch.setattr(trips_module, "start_refresh_all_workflow", AsyncMock())
 
-    response = client.post("/v1/trips/refresh-all")
+    response = client_with_csrf.post("/v1/trips/refresh-all")
 
     assert response.status_code == 409
     assert "refresh-bytes" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_refresh_all_trips_reports_workflow_already_started(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_all_trips_reports_workflow_already_started(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-already@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.set = AsyncMock(return_value=True)
     mock_redis.delete = AsyncMock(return_value=1)
@@ -605,7 +609,7 @@ async def test_refresh_all_trips_reports_workflow_already_started(client, test_s
         ),
     )
 
-    response = client.post("/v1/trips/refresh-all")
+    response = client_with_csrf.post("/v1/trips/refresh-all")
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Refresh workflow already started."
@@ -613,9 +617,9 @@ async def test_refresh_all_trips_reports_workflow_already_started(client, test_s
 
 
 @pytest.mark.asyncio
-async def test_refresh_all_trips_reports_start_failure(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_all_trips_reports_start_failure(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-fail@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.set = AsyncMock(return_value=True)
     mock_redis.delete = AsyncMock(return_value=1)
@@ -626,16 +630,16 @@ async def test_refresh_all_trips_reports_start_failure(client, test_session, moc
         AsyncMock(side_effect=RuntimeError("boom")),
     )
 
-    response = client.post("/v1/trips/refresh-all")
+    response = client_with_csrf.post("/v1/trips/refresh-all")
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Failed to start refresh workflow."
     mock_redis.delete.assert_awaited_once()
 
 @pytest.mark.asyncio
-async def test_refresh_status_returns_progress(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_status_returns_progress(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-status@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     progress = {
@@ -647,7 +651,7 @@ async def test_refresh_status_returns_progress(client, test_session, mock_redis,
     }
     monkeypatch.setattr(trips_module, "get_refresh_progress", AsyncMock(return_value=progress))
 
-    response = client.get("/v1/trips/refresh-status?refresh_group_id=refresh-123")
+    response = client_with_csrf.get("/v1/trips/refresh-status?refresh_group_id=refresh-123")
 
     assert response.status_code == 200
     data = response.json()["data"]
@@ -659,9 +663,9 @@ async def test_refresh_status_returns_progress(client, test_session, mock_redis,
 
 
 @pytest.mark.asyncio
-async def test_refresh_status_not_found_returns_404(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_status_not_found_returns_404(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-not-found@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     rpc_error = temporal_client.RPCError(
@@ -669,16 +673,16 @@ async def test_refresh_status_not_found_returns_404(client, test_session, mock_r
     )
     monkeypatch.setattr(trips_module, "get_refresh_progress", AsyncMock(side_effect=rpc_error))
 
-    response = client.get("/v1/trips/refresh-status?refresh_group_id=refresh-missing")
+    response = client_with_csrf.get("/v1/trips/refresh-status?refresh_group_id=refresh-missing")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Refresh group not found."
 
 
 @pytest.mark.asyncio
-async def test_refresh_status_reports_temporal_error(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_status_reports_temporal_error(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-error@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
     rpc_error = temporal_client.RPCError(
@@ -686,16 +690,16 @@ async def test_refresh_status_reports_temporal_error(client, test_session, mock_
     )
     monkeypatch.setattr(trips_module, "get_refresh_progress", AsyncMock(side_effect=rpc_error))
 
-    response = client.get("/v1/trips/refresh-status?refresh_group_id=refresh-error")
+    response = client_with_csrf.get("/v1/trips/refresh-status?refresh_group_id=refresh-error")
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Failed to fetch refresh status."
 
 
 @pytest.mark.asyncio
-async def test_refresh_status_clears_lock_on_completion(client, test_session, mock_redis, monkeypatch):
+async def test_refresh_status_clears_lock_on_completion(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="refresh-complete@example.com")
-    _authorize_client(client, user)
+    _authorize_client(client_with_csrf, user)
 
     mock_redis.delete = AsyncMock(return_value=1)
     monkeypatch.setattr(trips_module, "redis_client", mock_redis)
@@ -708,7 +712,7 @@ async def test_refresh_status_clears_lock_on_completion(client, test_session, mo
     }
     monkeypatch.setattr(trips_module, "get_refresh_progress", AsyncMock(return_value=progress))
 
-    response = client.get("/v1/trips/refresh-status?refresh_group_id=refresh-done")
+    response = client_with_csrf.get("/v1/trips/refresh-status?refresh_group_id=refresh-done")
 
     assert response.status_code == 200
     mock_redis.delete.assert_awaited_once()

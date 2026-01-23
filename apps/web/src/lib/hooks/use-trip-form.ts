@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { addDays } from "date-fns";
+import { useState, useCallback, useMemo } from "react";
+import { addDays, parseISO } from "date-fns";
 import type {
   TripFormData,
   TripFormErrors,
@@ -9,6 +9,7 @@ import type {
   TripPayload,
 } from "../../components/trip-form/types";
 import { validateTripForm, hasErrors } from "../../components/trip-form/validation";
+import type { TripDetail, CabinClass, StopsMode, RoomSelectionMode, ThresholdType } from "../api";
 
 interface UseTripFormReturn {
   formData: TripFormData;
@@ -58,7 +59,65 @@ const getDefaultFormData = (): TripFormData => ({
   hotelPrefsOpen: false,
 });
 
-const formatDateForApi = (date: Date | undefined): string | undefined => {
+/**
+ * Convert a TripDetail from the API to TripFormData for form initialization.
+ * Used when editing an existing trip.
+ */
+export function tripDetailToFormData(trip: TripDetail): TripFormData {
+  const hasFlightPrefs = trip.flight_prefs !== null;
+  const hasHotelPrefs = trip.hotel_prefs !== null;
+
+  return {
+    // Basic info
+    name: trip.name,
+    originAirport: trip.origin_airport,
+    destinationCode: trip.destination_code,
+    isRoundTrip: trip.is_round_trip,
+    departDate: trip.depart_date ? parseISO(trip.depart_date) : undefined,
+    returnDate: trip.return_date ? parseISO(trip.return_date) : undefined,
+    adults: String(trip.adults),
+
+    // Flight preferences
+    flightPrefs: {
+      cabin: trip.flight_prefs?.cabin ?? "economy",
+      stopsMode: trip.flight_prefs?.stops_mode ?? "any",
+      airlines: trip.flight_prefs?.airlines ?? [],
+    },
+
+    // Hotel preferences
+    hotelPrefs: {
+      rooms: String(trip.hotel_prefs?.rooms ?? 1),
+      adultsPerRoom: String(trip.hotel_prefs?.adults_per_room ?? 2),
+      roomSelectionMode: trip.hotel_prefs?.room_selection_mode ?? "cheapest",
+      roomTypes: trip.hotel_prefs?.preferred_room_types ?? [],
+      views: trip.hotel_prefs?.preferred_views ?? [],
+    },
+
+    // Notification preferences
+    notificationPrefs: {
+      thresholdType: trip.notification_prefs?.threshold_type ?? "trip_total",
+      thresholdValue: trip.notification_prefs?.threshold_value ?? "",
+      emailEnabled: trip.notification_prefs?.email_enabled ?? true,
+      smsEnabled: trip.notification_prefs?.sms_enabled ?? false,
+    },
+
+    // Open sections if they have data
+    flightPrefsOpen: hasFlightPrefs,
+    hotelPrefsOpen: hasHotelPrefs,
+  };
+}
+
+const formatDateForApi = (date: Date | undefined): string => {
+  if (!date) {
+    throw new Error("Date is required but was not provided. Ensure form validation runs before getPayload.");
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateForApiOptional = (date: Date | undefined): string | undefined => {
   if (!date) return undefined;
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -80,151 +139,199 @@ export function useTripForm(
   }));
   const [errors, setErrors] = useState<TripFormErrors>({});
 
-  // Create individual setters
-  const setters: TripFormSetters = {
-    setName: useCallback(
-      (value: string) => setFormData((prev) => ({ ...prev, name: value })),
-      []
-    ),
-    setOriginAirport: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({ ...prev, originAirport: value })),
-      []
-    ),
-    setDestinationCode: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({ ...prev, destinationCode: value })),
-      []
-    ),
-    setIsRoundTrip: useCallback(
-      (value: boolean) =>
-        setFormData((prev) => ({ ...prev, isRoundTrip: value })),
-      []
-    ),
-    setDepartDate: useCallback(
-      (value: Date | undefined) =>
-        setFormData((prev) => ({ ...prev, departDate: value })),
-      []
-    ),
-    setReturnDate: useCallback(
-      (value: Date | undefined) =>
-        setFormData((prev) => ({ ...prev, returnDate: value })),
-      []
-    ),
-    setAdults: useCallback(
-      (value: string) => setFormData((prev) => ({ ...prev, adults: value })),
-      []
-    ),
-    setCabin: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          flightPrefs: { ...prev.flightPrefs, cabin: value },
-        })),
-      []
-    ),
-    setStopsMode: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          flightPrefs: { ...prev.flightPrefs, stopsMode: value },
-        })),
-      []
-    ),
-    setAirlines: useCallback(
-      (value: string[]) =>
-        setFormData((prev) => ({
-          ...prev,
-          flightPrefs: { ...prev.flightPrefs, airlines: value },
-        })),
-      []
-    ),
-    setRooms: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          hotelPrefs: { ...prev.hotelPrefs, rooms: value },
-        })),
-      []
-    ),
-    setAdultsPerRoom: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          hotelPrefs: { ...prev.hotelPrefs, adultsPerRoom: value },
-        })),
-      []
-    ),
-    setRoomSelectionMode: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          hotelPrefs: { ...prev.hotelPrefs, roomSelectionMode: value },
-        })),
-      []
-    ),
-    setRoomTypes: useCallback(
-      (value: string[]) =>
-        setFormData((prev) => ({
-          ...prev,
-          hotelPrefs: { ...prev.hotelPrefs, roomTypes: value },
-        })),
-      []
-    ),
-    setViews: useCallback(
-      (value: string[]) =>
-        setFormData((prev) => ({
-          ...prev,
-          hotelPrefs: { ...prev.hotelPrefs, views: value },
-        })),
-      []
-    ),
-    setThresholdType: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          notificationPrefs: { ...prev.notificationPrefs, thresholdType: value },
-        })),
-      []
-    ),
-    setThresholdValue: useCallback(
-      (value: string) =>
-        setFormData((prev) => ({
-          ...prev,
-          notificationPrefs: {
-            ...prev.notificationPrefs,
-            thresholdValue: value,
-          },
-        })),
-      []
-    ),
-    setEmailEnabled: useCallback(
-      (value: boolean) =>
-        setFormData((prev) => ({
-          ...prev,
-          notificationPrefs: { ...prev.notificationPrefs, emailEnabled: value },
-        })),
-      []
-    ),
-    setSmsEnabled: useCallback(
-      (value: boolean) =>
-        setFormData((prev) => ({
-          ...prev,
-          notificationPrefs: { ...prev.notificationPrefs, smsEnabled: value },
-        })),
-      []
-    ),
-    setFlightPrefsOpen: useCallback(
-      (value: boolean) =>
-        setFormData((prev) => ({ ...prev, flightPrefsOpen: value })),
-      []
-    ),
-    setHotelPrefsOpen: useCallback(
-      (value: boolean) =>
-        setFormData((prev) => ({ ...prev, hotelPrefsOpen: value })),
-      []
-    ),
-  };
+  // Create individual setters (memoized to prevent re-creation on every render)
+  const setName = useCallback(
+    (value: string) => setFormData((prev) => ({ ...prev, name: value })),
+    []
+  );
+  const setOriginAirport = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({ ...prev, originAirport: value })),
+    []
+  );
+  const setDestinationCode = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({ ...prev, destinationCode: value })),
+    []
+  );
+  const setIsRoundTrip = useCallback(
+    (value: boolean) =>
+      setFormData((prev) => ({ ...prev, isRoundTrip: value })),
+    []
+  );
+  const setDepartDate = useCallback(
+    (value: Date | undefined) =>
+      setFormData((prev) => ({ ...prev, departDate: value })),
+    []
+  );
+  const setReturnDate = useCallback(
+    (value: Date | undefined) =>
+      setFormData((prev) => ({ ...prev, returnDate: value })),
+    []
+  );
+  const setAdults = useCallback(
+    (value: string) => setFormData((prev) => ({ ...prev, adults: value })),
+    []
+  );
+  const setCabin = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        flightPrefs: { ...prev.flightPrefs, cabin: value },
+      })),
+    []
+  );
+  const setStopsMode = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        flightPrefs: { ...prev.flightPrefs, stopsMode: value },
+      })),
+    []
+  );
+  const setAirlines = useCallback(
+    (value: string[]) =>
+      setFormData((prev) => ({
+        ...prev,
+        flightPrefs: { ...prev.flightPrefs, airlines: value },
+      })),
+    []
+  );
+  const setRooms = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, rooms: value },
+      })),
+    []
+  );
+  const setAdultsPerRoom = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, adultsPerRoom: value },
+      })),
+    []
+  );
+  const setRoomSelectionMode = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, roomSelectionMode: value },
+      })),
+    []
+  );
+  const setRoomTypes = useCallback(
+    (value: string[]) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, roomTypes: value },
+      })),
+    []
+  );
+  const setViews = useCallback(
+    (value: string[]) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, views: value },
+      })),
+    []
+  );
+  const setThresholdType = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        notificationPrefs: { ...prev.notificationPrefs, thresholdType: value },
+      })),
+    []
+  );
+  const setThresholdValue = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        notificationPrefs: {
+          ...prev.notificationPrefs,
+          thresholdValue: value,
+        },
+      })),
+    []
+  );
+  const setEmailEnabled = useCallback(
+    (value: boolean) =>
+      setFormData((prev) => ({
+        ...prev,
+        notificationPrefs: { ...prev.notificationPrefs, emailEnabled: value },
+      })),
+    []
+  );
+  const setSmsEnabled = useCallback(
+    (value: boolean) =>
+      setFormData((prev) => ({
+        ...prev,
+        notificationPrefs: { ...prev.notificationPrefs, smsEnabled: value },
+      })),
+    []
+  );
+  const setFlightPrefsOpen = useCallback(
+    (value: boolean) =>
+      setFormData((prev) => ({ ...prev, flightPrefsOpen: value })),
+    []
+  );
+  const setHotelPrefsOpen = useCallback(
+    (value: boolean) =>
+      setFormData((prev) => ({ ...prev, hotelPrefsOpen: value })),
+    []
+  );
+
+  // Memoize the setters object to keep it stable across renders
+  const setters: TripFormSetters = useMemo(
+    () => ({
+      setName,
+      setOriginAirport,
+      setDestinationCode,
+      setIsRoundTrip,
+      setDepartDate,
+      setReturnDate,
+      setAdults,
+      setCabin,
+      setStopsMode,
+      setAirlines,
+      setRooms,
+      setAdultsPerRoom,
+      setRoomSelectionMode,
+      setRoomTypes,
+      setViews,
+      setThresholdType,
+      setThresholdValue,
+      setEmailEnabled,
+      setSmsEnabled,
+      setFlightPrefsOpen,
+      setHotelPrefsOpen,
+    }),
+    [
+      setName,
+      setOriginAirport,
+      setDestinationCode,
+      setIsRoundTrip,
+      setDepartDate,
+      setReturnDate,
+      setAdults,
+      setCabin,
+      setStopsMode,
+      setAirlines,
+      setRooms,
+      setAdultsPerRoom,
+      setRoomSelectionMode,
+      setRoomTypes,
+      setViews,
+      setThresholdType,
+      setThresholdValue,
+      setEmailEnabled,
+      setSmsEnabled,
+      setFlightPrefsOpen,
+      setHotelPrefsOpen,
+    ]
+  );
 
   const validate = useCallback((): boolean => {
     const newErrors = validateTripForm(formData);
@@ -254,29 +361,30 @@ export function useTripForm(
       destination_code: formData.destinationCode.trim().toUpperCase(),
       is_round_trip: formData.isRoundTrip,
       depart_date: formatDateForApi(formData.departDate),
+      // Return date is always required by API; for one-way trips, use depart_date
       return_date: formData.isRoundTrip
         ? formatDateForApi(formData.returnDate)
-        : undefined,
+        : formatDateForApi(formData.departDate),
       adults: parseNumber(formData.adults, 1),
       flight_prefs: hasFlightPrefs
         ? {
             airlines: flightPrefs.airlines,
-            stops_mode: flightPrefs.stopsMode,
+            stops_mode: flightPrefs.stopsMode as StopsMode,
             max_stops: null,
-            cabin: flightPrefs.cabin,
+            cabin: flightPrefs.cabin as CabinClass,
           }
         : null,
       hotel_prefs: hasHotelPrefs
         ? {
             rooms: parseNumber(hotelPrefs.rooms, 1),
             adults_per_room: parseNumber(hotelPrefs.adultsPerRoom, 1),
-            room_selection_mode: hotelPrefs.roomSelectionMode,
+            room_selection_mode: hotelPrefs.roomSelectionMode as RoomSelectionMode,
             preferred_room_types: hotelPrefs.roomTypes,
             preferred_views: hotelPrefs.views,
           }
         : null,
       notification_prefs: {
-        threshold_type: notificationPrefs.thresholdType,
+        threshold_type: notificationPrefs.thresholdType as ThresholdType,
         threshold_value: Number.isFinite(thresholdValue) ? thresholdValue : 0,
         notify_without_threshold: false,
         email_enabled: notificationPrefs.emailEnabled,

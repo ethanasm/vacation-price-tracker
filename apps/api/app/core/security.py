@@ -16,6 +16,16 @@ def get_cookie_params() -> dict:
     }
 
 
+def get_csrf_cookie_params() -> dict:
+    """Returns standard cookie parameters for CSRF cookies."""
+    return {
+        "httponly": False,
+        "samesite": "lax",
+        "secure": settings.is_production,
+        "path": "/",
+    }
+
+
 def create_access_token(data: dict) -> str:
     """Creates a new access token."""
     to_encode = data.copy()

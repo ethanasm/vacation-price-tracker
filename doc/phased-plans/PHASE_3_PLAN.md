@@ -660,7 +660,10 @@ Already implemented in Phase 1:
   )
   ```
 - [ ] Configure CORS for production domain only
-- [ ] Enable request size limits
+- [ ] Enable request size limits (1MB max body)
+  - [ ] Add `MAX_REQUEST_BODY_BYTES` setting (default 1048576)
+  - [ ] Implement request size middleware (Content-Length + stream guard)
+  - [ ] Return RFC 9457 Problem Details with 413
 
 ### 8.2 Secret Rotation
 - [ ] Document secret rotation procedure:

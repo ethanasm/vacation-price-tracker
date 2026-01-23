@@ -1,3 +1,10 @@
+import type {
+  CabinClass,
+  StopsMode,
+  RoomSelectionMode,
+  ThresholdType,
+} from "@/lib/api";
+
 export interface FlightPrefsData {
   cabin: string;
   stopsMode: string;
@@ -76,29 +83,34 @@ export interface TripFormSetters {
   setHotelPrefsOpen: (value: boolean) => void;
 }
 
+/**
+ * Payload for creating or updating a trip.
+ * Uses enum types from the generated API for type safety.
+ * Dates are required (form validation ensures they're present before submission).
+ */
 export interface TripPayload {
   name: string;
   origin_airport: string;
   destination_code: string;
   is_round_trip: boolean;
-  depart_date: string | undefined;
-  return_date: string | undefined;
+  depart_date: string;
+  return_date: string;
   adults: number;
   flight_prefs: {
     airlines: string[];
-    stops_mode: string;
-    max_stops: null;
-    cabin: string;
+    stops_mode: StopsMode;
+    max_stops: number | null;
+    cabin: CabinClass;
   } | null;
   hotel_prefs: {
     rooms: number;
     adults_per_room: number;
-    room_selection_mode: string;
+    room_selection_mode: RoomSelectionMode;
     preferred_room_types: string[];
     preferred_views: string[];
   } | null;
   notification_prefs: {
-    threshold_type: string;
+    threshold_type: ThresholdType;
     threshold_value: number;
     notify_without_threshold: boolean;
     email_enabled: boolean;

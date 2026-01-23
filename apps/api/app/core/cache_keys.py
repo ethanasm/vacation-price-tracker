@@ -62,6 +62,6 @@ class CacheTTL:
     PRICE_CACHE = 86400  # 24 hours
     SESSION = 3600  # 1 hour
     REFRESH_TOKEN = 604800  # 7 days
-    RATE_LIMIT = 3600  # 1 hour window
+    RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
     LOCATION_SEARCH = 2592000  # 30 days
     REFRESH_LOCK = 1800  # 30 minutes

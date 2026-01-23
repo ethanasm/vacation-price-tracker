@@ -1,6 +1,7 @@
 import type { TripFormData, TripFormErrors } from "./types";
 
 const AIRPORT_CODE_REGEX = /^[A-Z]{3}$/;
+const MAX_DATE_DAYS_OUT = 359;
 
 export function validateName(name: string): string | undefined {
   if (!name.trim()) {
@@ -26,6 +27,18 @@ export function validateDepartDate(
   if (!departDate) {
     return "Departure date is required";
   }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateOnly = new Date(departDate);
+  dateOnly.setHours(0, 0, 0, 0);
+  if (dateOnly < today) {
+    return "Departure date cannot be in the past";
+  }
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + MAX_DATE_DAYS_OUT);
+  if (dateOnly > maxDate) {
+    return `Departure date cannot be more than ${MAX_DATE_DAYS_OUT} days out`;
+  }
   return undefined;
 }
 
@@ -38,6 +51,15 @@ export function validateReturnDate(
   }
   if (departDate && returnDate <= departDate) {
     return "Return date must be after departure";
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + MAX_DATE_DAYS_OUT);
+  const dateOnly = new Date(returnDate);
+  dateOnly.setHours(0, 0, 0, 0);
+  if (dateOnly > maxDate) {
+    return `Return date cannot be more than ${MAX_DATE_DAYS_OUT} days out`;
   }
   return undefined;
 }

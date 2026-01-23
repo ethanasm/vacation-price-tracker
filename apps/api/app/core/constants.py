@@ -18,6 +18,13 @@ class CookieNames:
 
     ACCESS_TOKEN = "access_token_cookie"
     REFRESH_TOKEN = "refresh_token_cookie"
+    CSRF_TOKEN = "csrf_token"
+
+
+class HeaderNames:
+    """Header name constants (namespace only, not passed as values)."""
+
+    CSRF_TOKEN = "X-CSRF-Token"
 
 
 class JWTClaims:

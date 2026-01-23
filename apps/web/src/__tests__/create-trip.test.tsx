@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TripFormSetters } from "../components/trip-form/types";
 import CreateTripPage from "../app/trips/new/page";
@@ -7,6 +7,13 @@ import {
   emptyTripFormErrors,
   tripPayloadFixture,
 } from "@/lib/fixtures/trip-form";
+
+// Mock crypto.randomUUID for test environment
+Object.defineProperty(global, "crypto", {
+  value: {
+    randomUUID: () => "test-uuid-1234",
+  },
+});
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
@@ -25,16 +32,53 @@ jest.mock("sonner", () => ({
   },
 }));
 
+const mockCreate = jest.fn();
+const mockSearchLocations = jest.fn();
+
+jest.mock("../lib/api", () => ({
+  api: {
+    trips: {
+      create: (...args: unknown[]) => mockCreate(...args),
+    },
+    locations: {
+      search: (...args: unknown[]) => mockSearchLocations(...args),
+    },
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    detail: string;
+    constructor(status: number, message: string, detail?: string) {
+      super(message);
+      this.status = status;
+      this.detail = detail || message;
+    }
+  },
+}));
+
 const mockUseTripForm = jest.fn();
 
 jest.mock("../lib/hooks/use-trip-form", () => ({
   useTripForm: () => mockUseTripForm(),
 }));
 
+// Capture props passed to sections for testing callbacks
+let capturedFlightPrefsProps: { onToggle?: () => void } = {};
+let capturedHotelPrefsProps: { onToggle?: () => void } = {};
+let capturedTripDetailsProps: { searchLocations?: (query: string) => Promise<unknown[]> } = {};
+
 jest.mock("../components/trip-form", () => ({
-  TripDetailsSection: () => <div data-testid="trip-details-section" />,
-  FlightPrefsSection: () => <div data-testid="flight-prefs-section" />,
-  HotelPrefsSection: () => <div data-testid="hotel-prefs-section" />,
+  TripDetailsSection: (props: { searchLocations?: (query: string) => Promise<unknown[]> }) => {
+    capturedTripDetailsProps = props;
+    return <div data-testid="trip-details-section" />;
+  },
+  FlightPrefsSection: (props: { onToggle?: () => void }) => {
+    capturedFlightPrefsProps = props;
+    return <div data-testid="flight-prefs-section" />;
+  },
+  HotelPrefsSection: (props: { onToggle?: () => void }) => {
+    capturedHotelPrefsProps = props;
+    return <div data-testid="hotel-prefs-section" />;
+  },
   NotificationSection: () => <div data-testid="notification-section" />,
 }));
 
@@ -78,6 +122,8 @@ const createHookReturn = (overrides?: Partial<ReturnType<typeof mockUseTripForm>
 describe("CreateTripPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreate.mockReset();
+    mockSearchLocations.mockReset();
   });
 
   it("renders the trip form sections", () => {
@@ -136,10 +182,9 @@ describe("CreateTripPage", () => {
   });
 
   it("submits and navigates on success", async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const user = userEvent.setup();
     const getPayload = jest.fn().mockReturnValue(tripPayloadFixture);
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+    mockCreate.mockResolvedValue({ data: { id: "test-trip-id" } });
 
     mockUseTripForm.mockReturnValue(
       createHookReturn({
@@ -151,28 +196,17 @@ describe("CreateTripPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Create Trip" }));
 
-    await act(async () => {
-      jest.runAllTimers();
-    });
-
     const { toast } = jest.requireMock("sonner");
     expect(getPayload).toHaveBeenCalledTimes(1);
-    expect(logSpy).toHaveBeenCalledWith("Creating trip with payload:", tripPayloadFixture);
+    expect(mockCreate).toHaveBeenCalledWith(tripPayloadFixture, expect.any(String));
     expect(toast.success).toHaveBeenCalledWith("Trip created successfully!");
     expect(mockPush).toHaveBeenCalledWith("/trips");
-
-    logSpy.mockRestore();
-    jest.useRealTimers();
   });
 
   it("shows an error toast when submission fails", async () => {
     const user = userEvent.setup();
-    const logSpy = jest
-      .spyOn(console, "log")
-      .mockImplementation(() => {
-        throw new Error("log failed");
-      });
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    mockCreate.mockRejectedValue(new Error("API error"));
 
     mockUseTripForm.mockReturnValue(createHookReturn());
 
@@ -184,8 +218,149 @@ describe("CreateTripPage", () => {
     expect(toast.error).toHaveBeenCalledWith("Failed to create trip. Please try again.");
     expect(errorSpy).toHaveBeenCalled();
 
-    logSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  it("shows specific error for 409 ApiError (duplicate request)", async () => {
+    const user = userEvent.setup();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const { ApiError } = jest.requireMock("../lib/api");
+    mockCreate.mockRejectedValue(new ApiError(409, "Duplicate", "Already processed"));
+
+    mockUseTripForm.mockReturnValue(createHookReturn());
+
+    render(<CreateTripPage />);
+
+    await user.click(screen.getByRole("button", { name: "Create Trip" }));
+
+    const { toast } = jest.requireMock("sonner");
+    expect(toast.error).toHaveBeenCalledWith("This request was already processed. Please try again.");
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it("shows error detail for non-409 ApiError", async () => {
+    const user = userEvent.setup();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const { ApiError } = jest.requireMock("../lib/api");
+    mockCreate.mockRejectedValue(new ApiError(400, "Bad Request", "Name is required"));
+
+    mockUseTripForm.mockReturnValue(createHookReturn());
+
+    render(<CreateTripPage />);
+
+    await user.click(screen.getByRole("button", { name: "Create Trip" }));
+
+    const { toast } = jest.requireMock("sonner");
+    expect(toast.error).toHaveBeenCalledWith("Name is required");
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it("shows fallback message for ApiError without detail", async () => {
+    const user = userEvent.setup();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    // Create a custom error object that mimics ApiError with empty detail
+    const error = new Error("Server Error");
+    Object.assign(error, { status: 500, detail: "", name: "ApiError" });
+    // Manually set up the mock's ApiError check
+    const { ApiError } = jest.requireMock("../lib/api");
+    const errorWithEmptyDetail = Object.create(ApiError.prototype);
+    Object.assign(errorWithEmptyDetail, { message: "Server Error", status: 500, detail: "" });
+    mockCreate.mockRejectedValue(errorWithEmptyDetail);
+
+    mockUseTripForm.mockReturnValue(createHookReturn());
+
+    render(<CreateTripPage />);
+
+    await user.click(screen.getByRole("button", { name: "Create Trip" }));
+
+    const { toast } = jest.requireMock("sonner");
+    expect(toast.error).toHaveBeenCalledWith("Failed to create trip. Please try again.");
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it("calls setFlightPrefsOpen when flight prefs section is toggled", () => {
+    const setFlightPrefsOpen = jest.fn();
+    mockUseTripForm.mockReturnValue(
+      createHookReturn({
+        formData: { ...baseTripFormData, flightPrefsOpen: false },
+        setters: { ...createTripFormSetters(), setFlightPrefsOpen },
+      })
+    );
+
+    render(<CreateTripPage />);
+
+    // Call the captured onToggle callback
+    capturedFlightPrefsProps.onToggle?.();
+
+    expect(setFlightPrefsOpen).toHaveBeenCalledWith(true);
+  });
+
+  it("calls setFlightPrefsOpen with false when already open", () => {
+    const setFlightPrefsOpen = jest.fn();
+    mockUseTripForm.mockReturnValue(
+      createHookReturn({
+        formData: { ...baseTripFormData, flightPrefsOpen: true },
+        setters: { ...createTripFormSetters(), setFlightPrefsOpen },
+      })
+    );
+
+    render(<CreateTripPage />);
+
+    capturedFlightPrefsProps.onToggle?.();
+
+    expect(setFlightPrefsOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("calls setHotelPrefsOpen when hotel prefs section is toggled", () => {
+    const setHotelPrefsOpen = jest.fn();
+    mockUseTripForm.mockReturnValue(
+      createHookReturn({
+        formData: { ...baseTripFormData, hotelPrefsOpen: false },
+        setters: { ...createTripFormSetters(), setHotelPrefsOpen },
+      })
+    );
+
+    render(<CreateTripPage />);
+
+    capturedHotelPrefsProps.onToggle?.();
+
+    expect(setHotelPrefsOpen).toHaveBeenCalledWith(true);
+  });
+
+  it("calls setHotelPrefsOpen with false when already open", () => {
+    const setHotelPrefsOpen = jest.fn();
+    mockUseTripForm.mockReturnValue(
+      createHookReturn({
+        formData: { ...baseTripFormData, hotelPrefsOpen: true },
+        setters: { ...createTripFormSetters(), setHotelPrefsOpen },
+      })
+    );
+
+    render(<CreateTripPage />);
+
+    capturedHotelPrefsProps.onToggle?.();
+
+    expect(setHotelPrefsOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("passes searchLocations function to TripDetailsSection", async () => {
+    mockUseTripForm.mockReturnValue(createHookReturn());
+    mockSearchLocations.mockResolvedValue([{ code: "SFO", name: "San Francisco" }]);
+
+    render(<CreateTripPage />);
+
+    expect(capturedTripDetailsProps.searchLocations).toBeDefined();
+
+    const results = await capturedTripDetailsProps.searchLocations?.("SFO");
+
+    expect(mockSearchLocations).toHaveBeenCalledWith("SFO");
+    expect(results).toEqual([{ code: "SFO", name: "San Francisco" }]);
   });
 
 });

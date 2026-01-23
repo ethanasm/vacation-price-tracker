@@ -10,9 +10,11 @@
     "lint": "biome lint .",
     "format": "biome format .",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test": "NODE_NO_WARNINGS=1 jest",
+    "test:watch": "NODE_NO_WARNINGS=1 jest --watch",
+    "test:coverage": "NODE_NO_WARNINGS=1 jest --coverage",
+    "generate:api-types": "cd ../api && uv run python scripts/export_openapi.py ../web/src/lib/api/openapi.json && cd ../web && npx openapi-typescript src/lib/api/openapi.json -o src/lib/api/types.ts",
+    "generate:api-types:check": "cd ../api && uv run python scripts/export_openapi.py /tmp/openapi-check.json && cd ../web && diff -q /tmp/openapi-check.json src/lib/api/openapi.json"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -50,6 +52,7 @@
     "autoprefixer": "^10.4.23",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
+    "openapi-typescript": "^7.10.1",
     "postcss": "^8.5.6",
     "shadcn": "^3.6.3",
     "tailwindcss": "^4.1.18",

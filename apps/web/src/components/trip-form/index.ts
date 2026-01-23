@@ -51,3 +51,6 @@ export type { HotelPrefsSectionProps } from "./hotel-prefs-section";
 
 export { NotificationSection } from "./notification-section";
 export type { NotificationSectionProps } from "./notification-section";
+
+export { AirportAutocomplete } from "./airport-autocomplete";
+export type { AirportAutocompleteProps, Location } from "./airport-autocomplete";

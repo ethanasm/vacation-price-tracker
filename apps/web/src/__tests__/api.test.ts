@@ -4,9 +4,25 @@ import { AuthError, ApiError, api, fetchWithAuth } from "../lib/api";
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
+// Helper to set document.cookie
+function setCookie(name: string, value: string) {
+  Object.defineProperty(document, "cookie", {
+    writable: true,
+    value: `${name}=${encodeURIComponent(value)}`,
+  });
+}
+
+function clearCookie() {
+  Object.defineProperty(document, "cookie", {
+    writable: true,
+    value: "",
+  });
+}
+
 describe("API Client", () => {
   beforeEach(() => {
     mockFetch.mockClear();
+    clearCookie();
   });
 
   describe("fetchWithAuth", () => {
@@ -250,6 +266,76 @@ describe("API Client", () => {
     });
   });
 
+  describe("AuthError", () => {
+    it("creates error with default message when no message provided", () => {
+      const error = new AuthError();
+
+      expect(error.message).toBe("Authentication failed");
+      expect(error.name).toBe("AuthError");
+    });
+
+    it("creates error with custom message when provided", () => {
+      const error = new AuthError("Custom auth error");
+
+      expect(error.message).toBe("Custom auth error");
+      expect(error.name).toBe("AuthError");
+    });
+
+    it("is an instance of Error", () => {
+      const error = new AuthError();
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(AuthError);
+    });
+  });
+
+  describe("fetchWithAuth URL handling", () => {
+    it("uses full URL when provided with http prefix", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      await fetchWithAuth("http://example.com/api/test");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://example.com/api/test",
+        expect.any(Object)
+      );
+    });
+
+    it("uses full URL when provided with https prefix", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      await fetchWithAuth("https://example.com/api/test");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://example.com/api/test",
+        expect.any(Object)
+      );
+    });
+
+    it("prepends API base URL to relative paths", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      await fetchWithAuth("/v1/test");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/test",
+        expect.any(Object)
+      );
+    });
+  });
+
   describe("api.trips.getDetails", () => {
     it("returns trip details on success", async () => {
       const mockTripResponse = {
@@ -438,6 +524,657 @@ describe("API Client", () => {
     });
   });
 
+  describe("api.trips.update", () => {
+    it("updates trip successfully", async () => {
+      const mockResponse = {
+        data: {
+          id: "1",
+          name: "Updated Trip",
+          origin_airport: "SFO",
+          destination_code: "LAX",
+          status: "active",
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const updateData = {
+        name: "Updated Trip",
+        origin_airport: "SFO",
+        destination_code: "LAX",
+      };
+
+      const result = await api.trips.update("1", updateData);
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/1",
+        expect.objectContaining({
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateData),
+        })
+      );
+    });
+
+    it("throws ApiError when trip not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.update("invalid", { name: "Test" })).rejects.toThrow("Trip not found");
+    });
+
+    it("throws ApiError on 400 with detail from server", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: "Bad Request", detail: "Name is required" }),
+      });
+
+      try {
+        await api.trips.update("1", {});
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(400);
+        expect((error as ApiError).message).toBe("Bad Request");
+        expect((error as ApiError).detail).toBe("Name is required");
+      }
+    });
+
+    it("throws ApiError on 409 duplicate name", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ title: "Duplicate Trip Name", detail: "A trip with this name already exists" }),
+      });
+
+      try {
+        await api.trips.update("1", { name: "Existing Name" });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(409);
+        expect((error as ApiError).message).toBe("Duplicate Trip Name");
+      }
+    });
+
+    it("uses default message on 400 when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ detail: "Validation failed" }),
+      });
+
+      try {
+        await api.trips.update("1", {});
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(400);
+        expect((error as ApiError).message).toBe("Invalid trip data");
+        expect((error as ApiError).detail).toBe("Validation failed");
+      }
+    });
+
+    it("uses default message on 409 when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ detail: "Duplicate entry" }),
+      });
+
+      try {
+        await api.trips.update("1", { name: "Existing" });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(409);
+        expect((error as ApiError).message).toBe("Duplicate trip name");
+        expect((error as ApiError).detail).toBe("Duplicate entry");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.update("1", { name: "Test" })).rejects.toThrow("Failed to update trip");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.update("1", { name: "Test" })).rejects.toThrow("Failed to update trip");
+    });
+  });
+
+  describe("api.locations.search", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("returns filtered locations matching query by code", async () => {
+      const searchPromise = api.locations.search("SFO");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].code).toBe("SFO");
+    });
+
+    it("returns filtered locations matching query by name", async () => {
+      const searchPromise = api.locations.search("Heathrow");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results.length).toBe(1);
+      expect(results[0].code).toBe("LHR");
+      expect(results[0].name).toBe("Heathrow");
+    });
+
+    it("returns filtered locations matching query by city", async () => {
+      const searchPromise = api.locations.search("Tokyo");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results.length).toBe(2);
+      expect(results.map(r => r.code)).toContain("NRT");
+      expect(results.map(r => r.code)).toContain("HND");
+    });
+
+    it("returns empty array when no locations match", async () => {
+      const searchPromise = api.locations.search("ZZZZZ");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results).toEqual([]);
+    });
+
+    it("limits results to 8 items", async () => {
+      const searchPromise = api.locations.search("a");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results.length).toBeLessThanOrEqual(8);
+    });
+
+    it("performs case-insensitive search", async () => {
+      const searchPromise = api.locations.search("sfo");
+      jest.advanceTimersByTime(150);
+      const results = await searchPromise;
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].code).toBe("SFO");
+    });
+  });
+
+  describe("api.trips.list", () => {
+    it("lists trips successfully", async () => {
+      const mockResponse = {
+        data: [
+          { id: "1", name: "Trip 1", status: "active" },
+          { id: "2", name: "Trip 2", status: "paused" },
+        ],
+        meta: { page: 1, total: 2 },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.list();
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips?page=1&limit=20",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("passes pagination parameters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [], meta: { page: 2, total: 0 } }),
+      });
+
+      await api.trips.list(2, 10);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips?page=2&limit=10",
+        expect.any(Object)
+      );
+    });
+
+    it("passes status filter when provided", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [], meta: { page: 1, total: 0 } }),
+      });
+
+      await api.trips.list(1, 20, "active");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips?page=1&limit=20&status=active",
+        expect.any(Object)
+      );
+    });
+
+    it("throws ApiError on server error", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database connection failed" }),
+      });
+
+      try {
+        await api.trips.list();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+        expect((error as ApiError).detail).toBe("Database connection failed");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.list()).rejects.toThrow("Failed to load trips");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.list()).rejects.toThrow("Failed to load trips");
+    });
+  });
+
+  describe("api.trips.create", () => {
+    const validTripData = {
+      name: "Test Trip",
+      origin_airport: "SFO",
+      destination_code: "LAX",
+      is_round_trip: true,
+      depart_date: "2025-06-01",
+      return_date: "2025-06-08",
+      adults: 2,
+      flight_prefs: null,
+      hotel_prefs: null,
+      notification_prefs: {
+        threshold_type: "trip_total" as const,
+        threshold_value: 1000,
+        notify_without_threshold: false,
+        email_enabled: true,
+        sms_enabled: false,
+      },
+    };
+
+    it("creates a trip successfully", async () => {
+      const mockResponse = { data: { id: "trip-1", ...validTripData } };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.create(validTripData, "idempotency-key-123");
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": "idempotency-key-123",
+          },
+          body: JSON.stringify(validTripData),
+        })
+      );
+    });
+
+    it("throws ApiError on 400 with detail from server", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: "Validation Error", detail: "Name is required" }),
+      });
+
+      try {
+        await api.trips.create(validTripData, "key");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(400);
+        expect((error as ApiError).message).toBe("Validation Error");
+        expect((error as ApiError).detail).toBe("Name is required");
+      }
+    });
+
+    it("throws ApiError on 409 duplicate request", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ title: "Duplicate Request", detail: "Request already processed" }),
+      });
+
+      try {
+        await api.trips.create(validTripData, "duplicate-key");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(409);
+        expect((error as ApiError).message).toBe("Duplicate Request");
+      }
+    });
+
+    it("uses default message on 400 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.create(validTripData, "key")).rejects.toThrow("Invalid trip data");
+    });
+
+    it("uses default message on 409 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.create(validTripData, "key")).rejects.toThrow("Duplicate request");
+    });
+
+    it("throws generic ApiError for other errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database down" }),
+      });
+
+      try {
+        await api.trips.create(validTripData, "key");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.create(validTripData, "key")).rejects.toThrow("Failed to create trip");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.create(validTripData, "key")).rejects.toThrow("Failed to create trip");
+    });
+  });
+
+  describe("api.trips.refreshAll", () => {
+    it("starts refresh successfully", async () => {
+      const mockResponse = { data: { refresh_group_id: "refresh-123", trip_count: 5 } };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.refreshAll();
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/refresh-all",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError on 409 refresh in progress", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ title: "Conflict", detail: "A refresh is already in progress" }),
+      });
+
+      try {
+        await api.trips.refreshAll();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(409);
+        expect((error as ApiError).message).toBe("Conflict");
+      }
+    });
+
+    it("uses default message on 409 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refreshAll()).rejects.toThrow("Refresh already in progress");
+    });
+
+    it("throws ApiError on 502 workflow failure", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => ({ title: "Bad Gateway", detail: "Temporal workflow failed" }),
+      });
+
+      try {
+        await api.trips.refreshAll();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(502);
+        expect((error as ApiError).message).toBe("Bad Gateway");
+      }
+    });
+
+    it("uses default message on 502 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refreshAll()).rejects.toThrow("Failed to start refresh workflow");
+    });
+
+    it("throws generic ApiError for other errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Internal error" }),
+      });
+
+      try {
+        await api.trips.refreshAll();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refreshAll()).rejects.toThrow("Failed to start refresh");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.refreshAll()).rejects.toThrow("Failed to start refresh");
+    });
+  });
+
+  describe("api.trips.getRefreshStatus", () => {
+    it("returns refresh status successfully", async () => {
+      const mockResponse = {
+        data: {
+          refresh_group_id: "refresh-123",
+          status: "completed",
+          total_trips: 5,
+          completed_trips: 5,
+          failed_trips: 0,
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.getRefreshStatus("refresh-123");
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/refresh-status?refresh_group_id=refresh-123",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("encodes refresh group id in URL", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.getRefreshStatus("id with spaces");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/refresh-status?refresh_group_id=id%20with%20spaces",
+        expect.any(Object)
+      );
+    });
+
+    it("throws ApiError on 404 when refresh group not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ title: "Not Found", detail: "Refresh group not found" }),
+      });
+
+      try {
+        await api.trips.getRefreshStatus("invalid-id");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(404);
+        expect((error as ApiError).message).toBe("Not Found");
+      }
+    });
+
+    it("uses default message on 404 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.getRefreshStatus("invalid")).rejects.toThrow("Refresh group not found");
+    });
+
+    it("throws generic ApiError for other errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database error" }),
+      });
+
+      try {
+        await api.trips.getRefreshStatus("id");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.getRefreshStatus("id")).rejects.toThrow("Failed to get refresh status");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.getRefreshStatus("id")).rejects.toThrow("Failed to get refresh status");
+    });
+  });
+
   describe("api.trips.delete", () => {
     it("deletes trip successfully", async () => {
       mockFetch.mockResolvedValueOnce({
@@ -502,5 +1239,173 @@ describe("API Client", () => {
 
       await expect(api.trips.delete("1")).rejects.toThrow("Failed to delete trip");
     });
+  });
+
+  describe("CSRF token handling", () => {
+    it("adds CSRF token header to POST requests when cookie exists", async () => {
+      setCookie("csrf_token", "test-csrf-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.refreshAll();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.any(Headers),
+        })
+      );
+
+      // Verify the CSRF header was added
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("test-csrf-token");
+    });
+
+    it("adds CSRF token header to PATCH requests when cookie exists", async () => {
+      setCookie("csrf_token", "test-csrf-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+
+      await api.trips.updateStatus("1", "paused");
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("test-csrf-token");
+    });
+
+    it("adds CSRF token header to DELETE requests when cookie exists", async () => {
+      setCookie("csrf_token", "test-csrf-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+      });
+
+      await api.trips.delete("1");
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("test-csrf-token");
+    });
+
+    it("does not add CSRF token header to GET requests", async () => {
+      setCookie("csrf_token", "test-csrf-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [] }),
+      });
+
+      await api.trips.list();
+
+      // GET requests should not have CSRF header added
+      const callArgs = mockFetch.mock.calls[0][1];
+      // For GET, we might not even have a Headers object, or it won't have CSRF
+      if (callArgs.headers instanceof Headers) {
+        expect(callArgs.headers.has("X-CSRF-Token")).toBe(false);
+      }
+    });
+
+    it("does not overwrite existing CSRF token header", async () => {
+      setCookie("csrf_token", "cookie-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      // Make request with pre-set header
+      await fetchWithAuth("/v1/test", {
+        method: "POST",
+        headers: {
+          "X-CSRF-Token": "existing-token",
+        },
+      });
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("existing-token");
+    });
+
+    it("handles cookies with encoded values", async () => {
+      setCookie("csrf_token", "token=with=equals");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.refreshAll();
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("token=with=equals");
+    });
+
+    it("does not add CSRF header when cookie is not present", async () => {
+      clearCookie();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.refreshAll();
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      // Headers should not contain X-CSRF-Token
+      if (callArgs.headers instanceof Headers) {
+        expect(callArgs.headers.has("X-CSRF-Token")).toBe(false);
+      }
+    });
+
+    it("handles multiple cookies and finds the correct one", async () => {
+      // Set multiple cookies
+      Object.defineProperty(document, "cookie", {
+        writable: true,
+        value: "other_cookie=value1; csrf_token=the-right-token; another=value2",
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: {} }),
+      });
+
+      await api.trips.refreshAll();
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("the-right-token");
+    });
+
+    it("handles logout with CSRF token", async () => {
+      setCookie("csrf_token", "logout-csrf-token");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+
+      await api.auth.logout();
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const headers = callArgs.headers as Headers;
+      expect(headers.get("X-CSRF-Token")).toBe("logout-csrf-token");
+    });
+
   });
 });

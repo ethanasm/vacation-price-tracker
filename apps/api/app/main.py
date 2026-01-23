@@ -25,7 +25,9 @@ from app.db.deps import get_db
 from app.db.redis import redis_client
 from app.db.session import async_engine
 from app.db.temporal import close_temporal_client, get_temporal_client, init_temporal_client
+from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
+from app.middleware.rate_limit import rate_limit_middleware
 from app.routers import auth, locations, trips
 
 
@@ -65,12 +67,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.middleware("http")(csrf_middleware)
 app.middleware("http")(idempotency_middleware)
+app.middleware("http")(rate_limit_middleware)
 
 # CORS middleware
+allowed_origins = settings.cors_allowed_origins_list or [settings.frontend_url]
+if settings.is_production:
+    if "*" in allowed_origins or len(allowed_origins) != 1:
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS must be a single, explicit origin in production."
+        )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

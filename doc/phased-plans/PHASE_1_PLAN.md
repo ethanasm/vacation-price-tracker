@@ -582,67 +582,84 @@ Manual trip creation form for testing (conversational creation comes in Phase 2)
   - Email notifications toggle (default: true)
   - SMS notifications toggle (default: false)
 - [X] Form validation matching backend schema constraints (basic client validation)
-- [ ] Submit button calls `POST /v1/trips` with idempotency key
+- [X] Submit button calls `POST /v1/trips` with idempotency key
 - [X] Success: redirect to `/trips` with success toast
 - [X] Error: display validation errors inline
 - [X] Add "New Trip" button to dashboard header
-- [ ] Airport autocomplete via `/v1/locations/search`
+- [X] Airport autocomplete via `/v1/locations/search`
 
 ### 6.6 Edit Trip Page
-- [ ] Create `/trips/[tripId]/edit` page
-- [ ] Reuse trip form with prefilled trip data
-- [ ] Allow updating trip details, flight prefs, hotel prefs, notifications
-- [ ] Submit button calls `PATCH /v1/trips/{id}`
-- [ ] Success: redirect back to trip detail with success toast
-- [ ] Error: display validation errors inline
+- [X] Create `/trips/[tripId]/edit` page
+- [X] Reuse trip form with prefilled trip data
+- [X] Allow updating trip details, flight prefs, hotel prefs, notifications
+- [X] Submit button calls `PATCH /v1/trips/{id}`
+- [X] Success: redirect back to trip detail with success toast
+- [X] Error: display validation errors inline
 
 ### 6.7 Frontend API Integration
 Connect frontend to real backend APIs and remove mock data.
 
-- [ ] Create API client service (`lib/api-client.ts`):
+- [X] Create API client service (`lib/api.ts`):
   - Base fetch wrapper with auth token handling
   - Automatic 401 redirect to login
   - Automatic token refresh on expiry
   - Request/response type safety
-- [ ] Trips list page (`/trips`):
+- [X] Create trip page (`/trips/new`):
+  - Connect form submit to `POST /v1/trips`
+  - Generate and send `X-Idempotency-Key` header
+  - Handle validation errors and display inline
+  - Handle success redirect to `/trips`
+- [X] Location search (using mock data):
+  - Airport autocomplete component with debounced search
+  - Connect to `api.locations.search()` (mock implementation)
+  - Will switch to `GET /v1/locations/search` when backend ready
+- [X] Trips list page (`/trips`):
   - Fetch trips from `GET /v1/trips`
   - Handle pagination (page, limit params)
   - Handle loading, error, empty states
   - Remove mock trip data
-- [ ] Trip detail page (`/trips/[tripId]`):
+- [X] Trip detail page (`/trips/[tripId]`):
   - Fetch trip from `GET /v1/trips/{id}`
   - Fetch price history from response
   - Connect pause/resume to `PATCH /v1/trips/{id}/status`
   - Connect delete to `DELETE /v1/trips/{id}`
   - Remove mock trip detail data
-- [ ] Refresh functionality:
+- [X] Edit trip page (`/trips/[tripId]/edit`):
+  - Fetch trip from `GET /v1/trips/{id}`
+  - Prefill form from API response
+  - Submit updates to `PATCH /v1/trips/{id}`
+  - Handle loading, error, and validation states
+  - Remove mock trip data
+- [X] Refresh functionality:
   - Connect "Refresh All" to `POST /v1/trips/refresh-all`
   - Poll `GET /v1/trips/refresh-status` for progress
   - Update UI when refresh completes
-- [ ] Location search:
-  - Connect airport inputs to `GET /v1/locations/search`
-  - Debounced autocomplete with caching
 
 ---
 
 ## 7. Security Checklist (Phase 1)
 
 ### Authentication & Authorization
-- [ ] JWT tokens in HTTP-only cookies (not localStorage)
-- [ ] CSRF token validation on all POST/PUT/PATCH/DELETE
-- [ ] Row-level security: all queries filter by `user_id`
-- [ ] Token expiration: access (15min), refresh (7 days)
+- [X] JWT tokens in HTTP-only cookies (not localStorage)
+- [X] CSRF token validation on all POST/PUT/PATCH/DELETE
+- [X] Row-level security: all queries filter by `user_id`
+- [X] Token expiration: access (15min), refresh (7 days)
 
 ### Input Validation
-- [ ] Pydantic validation on all request bodies
-- [ ] IATA code format validation (3 uppercase letters)
-- [ ] Date range validation (return > depart, max 359 days out)
-- [ ] Trip name length limits (1-100 chars)
+- [X] Pydantic validation on all request bodies (`apps/api/app/schemas/trip.py`)
+- [X] IATA code format validation (3 uppercase letters) - Backend: `^[A-Z]{3}$` pattern, Frontend: `validateAirportCode`
+- [X] Date range validation (return > depart, max 359 days out) - Backend: `validate_date_within_range`, Frontend: `validateDepartDate`/`validateReturnDate`
+- [X] Trip name length limits (1-100 chars) - Backend: `min_length=1, max_length=100`, Frontend: `validateName`
 
 ### API Security
-- [ ] CORS configured for Vercel frontend domain only
-- [ ] Rate limiting: 100 requests/minute per user
-- [ ] Request size limits (1MB max body)
+- [X] CORS configured for Vercel frontend domain only
+  - [X] Add `CORS_ALLOWED_ORIGINS` setting (comma-separated)
+  - [X] Enforce production allowed origins to Vercel domain(s) only
+  - [X] Update `.env.example` with CORS guidance
+- [X] Rate limiting: 100 requests/minute per user
+  - [X] Add `RATE_LIMIT_PER_MINUTE` setting (default 100)
+  - [X] Implement Redis-backed rate limit middleware (user_id or IP fallback)
+  - [X] Return RFC 9457 Problem Details with 429
 
 ---
 

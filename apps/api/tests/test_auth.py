@@ -206,29 +206,30 @@ class TestTokenRefresh:
         with pytest.raises(JWTError):
             jwt.decode(token, "wrong_secret", algorithms=[settings.jwt_algorithm])
 
-    def test_refresh_returns_401_without_cookie(self, client):
+    def test_refresh_returns_401_without_cookie(self, client_with_csrf, csrf_headers):
         """Test refresh returns 401 when cookie missing."""
-        client.cookies.clear()
-        response = client.post("/v1/auth/refresh")
+        client_with_csrf.cookies.clear()
+        client_with_csrf.cookies.set(CookieNames.CSRF_TOKEN, csrf_headers["X-CSRF-Token"])
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Refresh token not found."
 
-    def test_refresh_returns_401_with_invalid_token(self, client):
+    def test_refresh_returns_401_with_invalid_token(self, client_with_csrf, csrf_headers):
         """Test refresh returns 401 for invalid token."""
-        client.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
-        response = client.post("/v1/auth/refresh")
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid refresh token."
 
-    def test_refresh_returns_401_when_token_rotated(self, client, mock_redis):
+    def test_refresh_returns_401_when_token_rotated(self, client_with_csrf, mock_redis, csrf_headers):
         """Test refresh returns 401 when token doesn't match Redis."""
         refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"})
-        client.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
         mock_redis.get.return_value = "different_token"
 
-        response = client.post("/v1/auth/refresh")
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Refresh token has been rotated or invalidated."
@@ -289,10 +290,10 @@ class TestLogout:
         # Within 1 minute of expected expiration
         assert abs((exp_time - expected_exp).total_seconds()) < 60
 
-    def test_logout_with_invalid_token_still_succeeds(self, client):
+    def test_logout_with_invalid_token_still_succeeds(self, client_with_csrf, csrf_headers):
         """Test logout succeeds even with invalid refresh token."""
-        client.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
-        response = client.post("/v1/auth/logout")
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, "invalid_token_here")
+        response = client_with_csrf.post("/v1/auth/logout", headers=csrf_headers)
 
         assert response.status_code == 200
         assert response.text == "Logged out successfully."

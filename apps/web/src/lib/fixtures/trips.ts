@@ -3,13 +3,14 @@
  * This data simulates API responses for trip tracking.
  */
 
-import type { TripDetailResponse } from "@/lib/api";
+import type { TripDetailResponseExtended } from "@/lib/api";
 
 /**
  * Mock trip detail data keyed by trip ID.
+ * Uses extended response type with flight/hotel offers (Phase 2+ features).
  * Used by the trip detail page and dashboard.
  */
-export const mockTripsData: Record<string, TripDetailResponse> = {
+export const mockTripsData: Record<string, TripDetailResponseExtended> = {
   "1": {
     trip: {
       id: "1",
@@ -39,7 +40,7 @@ export const mockTripsData: Record<string, TripDetailResponse> = {
         preferred_views: [],
       },
       notification_prefs: {
-        threshold_type: "total",
+        threshold_type: "trip_total",
         threshold_value: "2000.00",
         notify_without_threshold: false,
         email_enabled: true,
@@ -205,7 +206,7 @@ export const mockTripsData: Record<string, TripDetailResponse> = {
         preferred_views: ["ocean"],
       },
       notification_prefs: {
-        threshold_type: "total",
+        threshold_type: "trip_total",
         threshold_value: "2500.00",
         notify_without_threshold: true,
         email_enabled: true,

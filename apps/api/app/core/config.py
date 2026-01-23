@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     frontend_url: str = "https://localhost:3000"
     backend_url: str = "https://localhost:8000"
+    cors_allowed_origins: str = ""
     secret_key: str
 
     # Google OAuth
@@ -75,6 +76,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     cache_ttl_seconds: int = 86400
 
+    # Rate Limiting
+    rate_limit_per_minute: int = 100
+
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     log_level: str = "INFO"
@@ -88,6 +92,13 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment."""
         return self.environment == "production"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        """Comma-separated CORS allowed origins from env."""
+        if not self.cors_allowed_origins:
+            return []
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
 
 settings = Settings()

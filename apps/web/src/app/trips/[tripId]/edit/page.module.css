@@ -1,0 +1,105 @@
+/* Page layout */
+.container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding-bottom: 3rem;
+}
+
+/* Page header */
+.pageHeader {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.backButton:hover {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.headerContent {
+  flex: 1;
+}
+
+.title {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.25rem 0;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+/* Form sections */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* Form actions */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+
+/* Loading state */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  gap: 1rem;
+  color: var(--ink-muted);
+}
+
+.loadingState p {
+  font-size: 0.9375rem;
+  margin: 0;
+}
+
+/* Error state */
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  gap: 1rem;
+}
+
+.errorState h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}

@@ -2,7 +2,13 @@
 
 import json
 
-from app.core.errors import http_exception_response, unhandled_exception_response, validation_exception_response
+from app.core.errors import (
+    RateLimitExceeded,
+    http_exception_response,
+    problem_details_response,
+    unhandled_exception_response,
+    validation_exception_response,
+)
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from starlette.requests import Request
@@ -48,3 +54,17 @@ def test_unhandled_exception_response():
     payload = json.loads(response.body)
     assert payload["detail"] == "An unexpected error occurred."
     assert payload["instance"] == "/boom"
+
+
+def test_rate_limit_exceeded_response_includes_retry_after_header():
+    request = _make_request("/v1/trips")
+    exc = RateLimitExceeded(retry_after=45)
+
+    response = problem_details_response(exc, request)
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "45"
+    payload = json.loads(response.body)
+    assert payload["type"] == "https://vacation-price-tracker.dev/problems/rate-limit-exceeded"
+    assert payload["retry_after"] == 45
+    assert payload["instance"] == "/v1/trips"

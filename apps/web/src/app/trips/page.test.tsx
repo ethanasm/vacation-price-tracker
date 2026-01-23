@@ -2,6 +2,7 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import DashboardPage from "./page";
+import { api, ApiError, type TripResponse } from "@/lib/api";
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -15,6 +16,26 @@ jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
+  },
+}));
+
+// Mock the API module
+jest.mock("@/lib/api", () => ({
+  api: {
+    trips: {
+      list: jest.fn(),
+      refreshAll: jest.fn(),
+      getRefreshStatus: jest.fn(),
+    },
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    detail?: string;
+    constructor(status: number, message: string, detail?: string) {
+      super(message);
+      this.status = status;
+      this.detail = detail;
+    }
   },
 }));
 
@@ -49,317 +70,767 @@ jest.mock("./page.module.css", () => ({
   rowLink: "rowLink",
 }));
 
+// Mock trip data that mimics the API response
+const mockApiTrips: TripResponse[] = [
+  {
+    id: "1",
+    name: "Orlando Family Vacation",
+    origin_airport: "SFO",
+    destination_code: "MCO",
+    depart_date: "2025-06-15",
+    return_date: "2025-06-22",
+    status: "active",
+    current_flight_price: "892.50",
+    current_hotel_price: "1245.00",
+    total_price: "2137.50",
+    last_refreshed: "2025-01-21T10:30:00Z",
+  },
+  {
+    id: "2",
+    name: "Hawaii Honeymoon",
+    origin_airport: "LAX",
+    destination_code: "HNL",
+    depart_date: "2025-08-01",
+    return_date: "2025-08-10",
+    status: "active",
+    current_flight_price: "654.00",
+    current_hotel_price: "2100.00",
+    total_price: "2754.00",
+    last_refreshed: "2025-01-21T09:15:00Z",
+  },
+  {
+    id: "3",
+    name: "NYC Weekend",
+    origin_airport: "SFO",
+    destination_code: "JFK",
+    depart_date: "2025-03-14",
+    return_date: "2025-03-16",
+    status: "paused",
+    current_flight_price: "425.00",
+    current_hotel_price: "890.00",
+    total_price: "1315.00",
+    last_refreshed: "2025-01-20T14:00:00Z",
+  },
+];
+
 describe("DashboardPage", () => {
   beforeEach(() => {
     mockPush.mockClear();
     jest.clearAllMocks();
-  });
-
-  it("renders the trips heading", () => {
-    render(<DashboardPage />);
-    expect(screen.getByRole("heading", { name: "Your Trips" })).toBeInTheDocument();
-  });
-
-  it("renders the refresh button", () => {
-    render(<DashboardPage />);
-    expect(screen.getByRole("button", { name: "Refresh All" })).toBeInTheDocument();
-  });
-
-  it("renders the New Trip button", () => {
-    render(<DashboardPage />);
-    expect(screen.getByRole("link", { name: /New Trip/i })).toBeInTheDocument();
-  });
-
-  it("renders the trip table with mock data", () => {
-    render(<DashboardPage />);
-
-    // Check for mock trip names
-    expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
-    expect(screen.getByText("Hawaii Honeymoon")).toBeInTheDocument();
-    expect(screen.getByText("NYC Weekend")).toBeInTheDocument();
-  });
-
-  it("renders the AI assistant placeholder", () => {
-    render(<DashboardPage />);
-
-    expect(screen.getByText("AI Assistant")).toBeInTheDocument();
-    expect(screen.getByText(/Chat interface coming in Phase 2/)).toBeInTheDocument();
-  });
-
-  it("renders trip routes correctly", () => {
-    render(<DashboardPage />);
-
-    // Check airport codes are displayed (SFO appears twice - for Orlando and NYC trips)
-    expect(screen.getAllByText("SFO")).toHaveLength(2);
-    expect(screen.getByText("MCO")).toBeInTheDocument();
-    expect(screen.getByText("LAX")).toBeInTheDocument();
-  });
-
-  it("renders trip status badges", () => {
-    render(<DashboardPage />);
-
-    // Check for status badges
-    expect(screen.getAllByText("ACTIVE")).toHaveLength(2);
-    expect(screen.getByText("PAUSED")).toBeInTheDocument();
-  });
-
-  it("renders table headers", () => {
-    render(<DashboardPage />);
-
-    expect(screen.getByText("Trip Name")).toBeInTheDocument();
-    expect(screen.getByText("Route")).toBeInTheDocument();
-    expect(screen.getByText("Dates")).toBeInTheDocument();
-    expect(screen.getByText("Flight")).toBeInTheDocument();
-    expect(screen.getByText("Hotel")).toBeInTheDocument();
-    expect(screen.getByText("Total")).toBeInTheDocument();
-    expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Updated")).toBeInTheDocument();
-  });
-
-  it("refreshes all trips and shows a success toast", async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    render(<DashboardPage />);
-
-    await user.click(screen.getByRole("button", { name: "Refresh All" }));
-
-    expect(screen.getByRole("button", { name: /Refreshing/ })).toBeInTheDocument();
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
+    // Reset API mocks with default success response
+    (api.trips.list as jest.Mock).mockResolvedValue({
+      data: mockApiTrips,
+      meta: { page: 1, total: 3 },
     });
+    (api.trips.refreshAll as jest.Mock).mockReset();
+    (api.trips.getRefreshStatus as jest.Mock).mockReset();
+  });
 
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith("Prices refreshed", {
-        description: "All trip prices have been updated.",
+  describe("Initial loading and data display", () => {
+    it("renders the trips heading", async () => {
+      render(<DashboardPage />);
+      expect(screen.getByRole("heading", { name: "Your Trips" })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalledTimes(1);
       });
     });
 
-    jest.useRealTimers();
-  });
-
-  it("shows an error toast when refresh fails", async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    const toastSuccess = toast.success as jest.Mock;
-
-    toastSuccess.mockImplementationOnce(() => {
-      throw new Error("boom");
-    });
-
-    render(<DashboardPage />);
-
-    await user.click(screen.getByRole("button", { name: "Refresh All" }));
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
-    });
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Refresh failed", {
-        description: "Could not refresh prices. Please try again.",
+    it("renders the refresh button", async () => {
+      render(<DashboardPage />);
+      expect(screen.getByRole("button", { name: "Refresh All" })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
       });
     });
 
-    jest.useRealTimers();
-  });
-
-  it("has links to individual trip pages", () => {
-    render(<DashboardPage />);
-
-    const tripLink = screen.getByRole("link", { name: "Orlando Family Vacation" });
-    expect(tripLink).toHaveAttribute("href", "/trips/1");
-  });
-
-  it("displays round trip indicator for round trips", () => {
-    render(<DashboardPage />);
-
-    // Round trips should show bidirectional arrow
-    const arrows = screen.getAllByText("↔");
-    expect(arrows.length).toBeGreaterThan(0);
-  });
-
-  it("renders the New Trip link with correct href", () => {
-    render(<DashboardPage />);
-
-    const newTripLink = screen.getByRole("link", { name: /New Trip/i });
-    expect(newTripLink).toHaveAttribute("href", "/trips/new");
-  });
-
-  it("renders prices formatted correctly", () => {
-    render(<DashboardPage />);
-
-    // Check for formatted prices
-    expect(screen.getByText("$893")).toBeInTheDocument();
-    expect(screen.getByText("$1,245")).toBeInTheDocument();
-    expect(screen.getByText("$2,138")).toBeInTheDocument();
-  });
-
-  it("disables refresh button while refreshing", async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    render(<DashboardPage />);
-
-    await user.click(screen.getByRole("button", { name: "Refresh All" }));
-
-    const refreshingButton = screen.getByRole("button", { name: /Refreshing/ });
-    expect(refreshingButton).toBeDisabled();
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
+    it("renders the New Trip button", async () => {
+      render(<DashboardPage />);
+      expect(screen.getByRole("link", { name: /New Trip/i })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
     });
 
-    jest.useRealTimers();
-  });
+    it("fetches trips from API on mount", async () => {
+      render(<DashboardPage />);
 
-  it("re-enables refresh button after refresh completes", async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalledTimes(1);
+      });
 
-    render(<DashboardPage />);
-
-    await user.click(screen.getByRole("button", { name: "Refresh All" }));
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
+      // Check for trip names from API
+      expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      expect(screen.getByText("Hawaii Honeymoon")).toBeInTheDocument();
+      expect(screen.getByText("NYC Weekend")).toBeInTheDocument();
     });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Refresh All" })).not.toBeDisabled();
+    it("renders the AI assistant placeholder", async () => {
+      render(<DashboardPage />);
+
+      expect(screen.getByText("AI Assistant")).toBeInTheDocument();
+      expect(screen.getByText(/Chat interface coming in Phase 2/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
     });
 
-    jest.useRealTimers();
+    it("renders trip routes correctly", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      // Check airport codes are displayed (SFO appears twice - for Orlando and NYC trips)
+      expect(screen.getAllByText("SFO")).toHaveLength(2);
+      expect(screen.getByText("MCO")).toBeInTheDocument();
+      expect(screen.getByText("LAX")).toBeInTheDocument();
+    });
+
+    it("renders trip status badges with uppercase display", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      // Check for status badges (API returns lowercase, displayed as uppercase)
+      expect(screen.getAllByText("ACTIVE")).toHaveLength(2);
+      expect(screen.getByText("PAUSED")).toBeInTheDocument();
+    });
+
+    it("renders table headers", async () => {
+      render(<DashboardPage />);
+
+      expect(screen.getByText("Trip Name")).toBeInTheDocument();
+      expect(screen.getByText("Route")).toBeInTheDocument();
+      expect(screen.getByText("Dates")).toBeInTheDocument();
+      expect(screen.getByText("Flight")).toBeInTheDocument();
+      expect(screen.getByText("Hotel")).toBeInTheDocument();
+      expect(screen.getByText("Total")).toBeInTheDocument();
+      expect(screen.getByText("Status")).toBeInTheDocument();
+      expect(screen.getByText("Updated")).toBeInTheDocument();
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("has links to individual trip pages", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      const tripLink = screen.getByRole("link", { name: "Orlando Family Vacation" });
+      expect(tripLink).toHaveAttribute("href", "/trips/1");
+    });
+
+    it("displays round trip indicator for trips with return dates", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      // All mock trips have return dates, so they show bidirectional arrow
+      const arrows = screen.getAllByText("↔");
+      expect(arrows.length).toBe(3);
+    });
+
+    it("renders the New Trip link with correct href", async () => {
+      render(<DashboardPage />);
+
+      const newTripLink = screen.getByRole("link", { name: /New Trip/i });
+      expect(newTripLink).toHaveAttribute("href", "/trips/new");
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("renders prices formatted correctly", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      // Check for formatted prices
+      expect(screen.getByText("$893")).toBeInTheDocument();
+      expect(screen.getByText("$1,245")).toBeInTheDocument();
+      expect(screen.getByText("$2,138")).toBeInTheDocument();
+    });
+
+    it("renders a table with proper structure after loading", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      const table = screen.getByRole("table");
+      expect(table).toBeInTheDocument();
+
+      // Check that we have expected number of rows (header + 3 trips)
+      const rows = screen.getAllByRole("row");
+      expect(rows.length).toBe(4); // 1 header + 3 data rows
+    });
+
+    it("renders trip dates formatted correctly", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      // Check for date formatting
+      expect(screen.getByText(/Jun 15/)).toBeInTheDocument();
+    });
   });
 
-  it("renders trip dates formatted correctly", () => {
-    render(<DashboardPage />);
+  describe("Loading state", () => {
+    it("shows loading skeleton while fetching trips", async () => {
+      // Make the API call hang
+      let resolveList: (value: unknown) => void;
+      (api.trips.list as jest.Mock).mockReturnValue(
+        new Promise((resolve) => {
+          resolveList = resolve;
+        })
+      );
 
-    // Check for date formatting
-    expect(screen.getByText(/Jun 15/)).toBeInTheDocument();
+      render(<DashboardPage />);
+
+      // Should show skeleton rows during loading
+      const skeletonRows = document.querySelectorAll(".skeletonRow");
+      expect(skeletonRows.length).toBeGreaterThan(0);
+
+      // Resolve the promise to cleanup
+      await act(async () => {
+        resolveList?.({ data: [], meta: { page: 1, total: 0 } });
+      });
+    });
   });
 
-  it("renders a table with proper structure", () => {
-    render(<DashboardPage />);
+  describe("Empty state", () => {
+    it("renders the empty state when there are no trips", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [],
+        meta: { page: 1, total: 0 },
+      });
 
-    const table = screen.getByRole("table");
-    expect(table).toBeInTheDocument();
+      render(<DashboardPage />);
 
-    // Check that we have expected number of rows (header + 3 trips)
-    const rows = screen.getAllByRole("row");
-    expect(rows.length).toBe(4); // 1 header + 3 data rows
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "No trips yet" })).toBeInTheDocument();
+      });
+    });
+
+    it("shows create trip message in empty state", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [],
+        meta: { page: 1, total: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Create your first trip to start tracking prices.")).toBeInTheDocument();
+      });
+    });
   });
 
-  it("renders the empty state when there are no trips", () => {
-    jest.spyOn(require("react"), "useState")
-      .mockImplementationOnce(() => [[], jest.fn()]) // trips
-      .mockImplementationOnce(() => [false, jest.fn()]) // isLoading
-      .mockImplementationOnce(() => [false, jest.fn()]) // isRefreshing
-      .mockImplementationOnce(() => [null, jest.fn()]); // error
+  describe("Error state", () => {
+    it("renders the failed state on API error", async () => {
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      (api.trips.list as jest.Mock).mockRejectedValue(
+        new MockApiError(500, "Server error", "Internal server error")
+      );
 
-    render(<DashboardPage />);
-    expect(screen.getByRole("heading", { name: "No trips yet" })).toBeInTheDocument();
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Failed to load trips" })).toBeInTheDocument();
+      });
+    });
+
+    it("handles network errors gracefully", async () => {
+      (api.trips.list as jest.Mock).mockRejectedValue(new Error("Network error"));
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Failed to load trips" })).toBeInTheDocument();
+      });
+      expect(screen.getByText("We couldn't fetch your trips. Please try again.")).toBeInTheDocument();
+    });
+
+    it("retries fetching trips when retry button is clicked", async () => {
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      (api.trips.list as jest.Mock)
+        .mockRejectedValueOnce(new MockApiError(500, "Server error"))
+        .mockResolvedValueOnce({ data: mockApiTrips, meta: { page: 1, total: 3 } });
+
+      render(<DashboardPage />);
+
+      // Wait for error state
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Failed to load trips" })).toBeInTheDocument();
+      });
+
+      // Click retry
+      const retryButton = screen.getByRole("button", { name: "Retry" });
+      await userEvent.click(retryButton);
+
+      // Should fetch again and show trips
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalledTimes(2);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+    });
   });
 
-  it("renders the skeleton when loading", () => {
-    jest.spyOn(require("react"), "useState")
-      .mockImplementationOnce(() => [[], jest.fn()]) // trips
-      .mockImplementationOnce(() => [true, jest.fn()]) // isLoading
-      .mockImplementationOnce(() => [false, jest.fn()]) // isRefreshing
-      .mockImplementationOnce(() => [null, jest.fn()]); // error
+  describe("Refresh functionality", () => {
+    it("refreshes all trips and shows a success toast", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    render(<DashboardPage />);
-    expect(screen.getAllByRole("row")[1]).toHaveClass("skeletonRow");
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+
+      // First poll returns in-progress, second returns completed
+      mockGetRefreshStatus
+        .mockResolvedValueOnce({
+          data: { status: "in_progress", total: 3, completed: 1, failed: 0 },
+        })
+        .mockResolvedValueOnce({
+          data: { status: "completed", total: 3, completed: 3, failed: 0 },
+        });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      // Button should show "Starting refresh..." initially
+      expect(screen.getByRole("button", { name: /Starting refresh/ })).toBeInTheDocument();
+
+      // Advance timers for polling
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith("Prices refreshed", {
+          description: "All 3 trip prices have been updated.",
+        });
+      });
+
+      // Should refetch trips after refresh completes
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalledTimes(2);
+      });
+
+      jest.useRealTimers();
+    });
+
+    it("shows an error toast when refresh fails", async () => {
+      const user = userEvent.setup();
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      mockRefreshAll.mockRejectedValue(new Error("Network error"));
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Refresh failed", {
+          description: "Could not refresh prices. Please try again.",
+        });
+      });
+    });
+
+    it("shows specific error toast when refresh already in progress", async () => {
+      const user = userEvent.setup();
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      mockRefreshAll.mockRejectedValue(new MockApiError(409, "Conflict", "Refresh already in progress"));
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Refresh already in progress", {
+          description: "Please wait for the current refresh to complete.",
+        });
+      });
+    });
+
+    it("disables refresh button while refreshing", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      // Keep the promise pending to test the disabled state
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: { status: "in_progress", total: 3, completed: 1, failed: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      const refreshingButton = screen.getByRole("button", { name: /Starting refresh|Refreshing/ });
+      expect(refreshingButton).toBeDisabled();
+
+      jest.useRealTimers();
+    });
+
+    it("re-enables refresh button after refresh completes", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: { status: "completed", total: 3, completed: 3, failed: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Refresh All" })).not.toBeDisabled();
+      });
+
+      jest.useRealTimers();
+    });
+
+    it("shows toast with failure count when some refreshes fail", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: { status: "completed", total: 3, completed: 2, failed: 1 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith("Prices refreshed", {
+          description: "2 trips updated, 1 failed.",
+        });
+      });
+
+      jest.useRealTimers();
+    });
+
+    it("handles refresh status polling error gracefully", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+      mockGetRefreshStatus.mockRejectedValue(new Error("Polling error"));
+
+      // Spy on console.error
+      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      // Should log the error
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to poll refresh status:",
+        expect.any(Error)
+      );
+
+      // Button should be re-enabled
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Refresh All" })).not.toBeDisabled();
+      });
+
+      consoleErrorSpy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    it("shows refresh progress during polling", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      const mockRefreshAll = api.trips.refreshAll as jest.Mock;
+      const mockGetRefreshStatus = api.trips.getRefreshStatus as jest.Mock;
+
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "test-group-id" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: { status: "in_progress", total: 3, completed: 1, failed: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      // Wait for the first status poll to complete
+      await waitFor(() => {
+        expect(mockGetRefreshStatus).toHaveBeenCalled();
+      });
+
+      // Should show progress
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Refreshing 1\/3/ })).toBeInTheDocument();
+      });
+
+      jest.useRealTimers();
+    });
+
+    it("shows error toast with detail from ApiError", async () => {
+      const user = userEvent.setup();
+
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      (api.trips.refreshAll as jest.Mock).mockRejectedValue(
+        new MockApiError(500, "Server Error", "Database connection failed")
+      );
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Refresh All" }));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Refresh failed", {
+          description: "Database connection failed",
+        });
+      });
+    });
   });
 
-  it("renders the failed state on error and handles retry", async () => {
-    const setError = jest.fn();
-    jest.spyOn(require("react"), "useState")
-      .mockImplementationOnce(() => [[], jest.fn()]) // trips
-      .mockImplementationOnce(() => [false, jest.fn()]) // isLoading
-      .mockImplementationOnce(() => [false, jest.fn()]) // isRefreshing
-      .mockImplementationOnce(() => ["Failed to fetch", setError]); // error
+  describe("Status handling", () => {
+    it("handles error status from API", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [
+          {
+            id: "4",
+            name: "Error Trip",
+            origin_airport: "AAA",
+            destination_code: "BBB",
+            depart_date: "2025-10-01",
+            return_date: "2025-10-05",
+            status: "error",
+            current_flight_price: "100.00",
+            current_hotel_price: "200.00",
+            total_price: "300.00",
+            last_refreshed: new Date().toISOString(),
+          },
+        ],
+        meta: { page: 1, total: 1 },
+      });
 
-    render(<DashboardPage />);
+      render(<DashboardPage />);
 
-    expect(screen.getByRole("heading", { name: "Failed to load trips" })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("ERROR")).toBeInTheDocument();
+      });
+    });
 
-    const retryButton = screen.getByRole("button", { name: "Retry" });
-    await userEvent.click(retryButton);
+    it("handles unknown status from API with default styling", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [
+          {
+            id: "7",
+            name: "Unknown Status Trip",
+            origin_airport: "GGG",
+            destination_code: "HHH",
+            depart_date: "2025-12-01",
+            return_date: "2025-12-05",
+            status: "unknown",
+            current_flight_price: "100.00",
+            current_hotel_price: "200.00",
+            total_price: "300.00",
+            last_refreshed: new Date().toISOString(),
+          },
+        ],
+        meta: { page: 1, total: 1 },
+      });
 
-    expect(setError).toHaveBeenCalledWith(null);
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
+      });
+    });
   });
 
-  it("defaults to outline variant for unknown trip status", () => {
-    const mockUnknownStatusTrip = [
-      {
-        id: "4",
-        name: "Mystery Trip",
-        origin_airport: "AAA",
-        destination_code: "BBB",
-        depart_date: "2024-10-01",
-        return_date: "2024-10-05",
-        is_round_trip: true,
-        flight_price: 100,
-        hotel_price: 200,
-        total_price: 300,
-        status: "UNKNOWN_STATUS",
-        updated_at: new Date().toISOString(),
-      },
-    ];
+  describe("Price handling", () => {
+    it("handles null prices gracefully", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [
+          {
+            id: "5",
+            name: "No Price Trip",
+            origin_airport: "CCC",
+            destination_code: "DDD",
+            depart_date: "2025-11-01",
+            return_date: "2025-11-05",
+            status: "active",
+            current_flight_price: null,
+            current_hotel_price: null,
+            total_price: null,
+            last_refreshed: null,
+          },
+        ],
+        meta: { page: 1, total: 1 },
+      });
 
-    jest.spyOn(require("react"), "useState")
-      .mockImplementationOnce(() => [mockUnknownStatusTrip, jest.fn()]) // trips
-      .mockImplementationOnce(() => [false, jest.fn()]) // isLoading
-      .mockImplementationOnce(() => [false, jest.fn()]) // isRefreshing
-      .mockImplementationOnce(() => [null, jest.fn()]); // error
+      render(<DashboardPage />);
 
-    render(<DashboardPage />);
-    expect(screen.getByText("UNKNOWN_STATUS")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("No Price Trip")).toBeInTheDocument();
+      });
+
+      // Should display "—" (em dash) for null prices
+      const dashCells = screen.getAllByText("—");
+      expect(dashCells.length).toBeGreaterThan(0);
+    });
+
+    it("handles trips without return date", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [
+          {
+            id: "6",
+            name: "One Way Trip",
+            origin_airport: "EEE",
+            destination_code: "FFF",
+            depart_date: "2025-12-01",
+            return_date: "", // Empty string for one-way
+            status: "active",
+            current_flight_price: "150.00",
+            current_hotel_price: null,
+            total_price: "150.00",
+            last_refreshed: "2025-01-22T12:00:00Z",
+          },
+        ],
+        meta: { page: 1, total: 1 },
+      });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("One Way Trip")).toBeInTheDocument();
+      });
+
+      // Should show one-way arrow
+      expect(screen.getByText("→")).toBeInTheDocument();
+    });
   });
 
-  it("handles one-way and no-return-date trips", () => {
-    const mockTrips = [
-      {
-        id: "5",
-        name: "One-Way Ticket",
-        origin_airport: "CCC",
-        destination_code: "DDD",
-        depart_date: "2024-11-01",
-        is_round_trip: false,
-        flight_price: 150,
-        hotel_price: 0,
-        total_price: 150,
-        status: "ACTIVE",
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: "6",
-        name: "Flexible Return",
-        origin_airport: "EEE",
-        destination_code: "FFF",
-        depart_date: "2024-12-01",
-        return_date: null,
-        is_round_trip: true,
-        flight_price: 250,
-        hotel_price: 300,
-        total_price: 550,
-        status: "ACTIVE",
-        updated_at: new Date().toISOString(),
-      },
-    ];
+  describe("API error detail handling", () => {
+    it("displays API error detail in error state", async () => {
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      (api.trips.list as jest.Mock).mockRejectedValue(
+        new MockApiError(403, "Forbidden", "You do not have access to this resource")
+      );
 
-    jest.spyOn(require("react"), "useState")
-      .mockImplementationOnce(() => [mockTrips, jest.fn()]) // trips
-      .mockImplementationOnce(() => [false, jest.fn()]) // isLoading
-      .mockImplementationOnce(() => [false, jest.fn()]) // isRefreshing
-      .mockImplementationOnce(() => [null, jest.fn()]); // error
+      // Spy on console.error to prevent test output noise
+      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
 
-    render(<DashboardPage />);
+      render(<DashboardPage />);
 
-    expect(screen.getByText("→")).toBeInTheDocument();
-    expect(screen.getByText("Nov 1")).toBeInTheDocument();
-    expect(screen.queryByText(/–/)).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Failed to load trips" })).toBeInTheDocument();
+      });
+
+      consoleErrorSpy.mockRestore();
+    });
   });
 });

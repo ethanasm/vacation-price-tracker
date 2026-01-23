@@ -1,8 +1,66 @@
 /**
  * API client with automatic 401 retry via token refresh.
+ *
+ * Types are imported from the generated OpenAPI types where available.
+ * Extended types for UI-specific features are defined here.
  */
 
+// =============================================================================
+// Re-export generated types for use throughout the app
+// =============================================================================
+export type {
+  UserResponse as User,
+  TripStatus,
+  TripCreate,
+  TripDetail,
+  TripResponse,
+  FlightPrefs,
+  HotelPrefs,
+  NotificationPrefsInput,
+  NotificationPrefsOutput,
+  PriceSnapshotResponse as PriceSnapshot,
+  RefreshStartResponse,
+  RefreshStatusResponse,
+  LocationResult as ApiLocationResult,
+  TripStatusUpdate,
+  CabinClass,
+  StopsMode,
+  RoomSelectionMode,
+  ThresholdType,
+  CreateTripRequest,
+  CreateTripResponse,
+  GetTripDetailsResponse,
+  RefreshAllResponse,
+  ListTripsResponse,
+  SearchLocationsResponse,
+  ListTripsParams,
+} from "./api/index";
+
+import type {
+  UserResponse,
+  TripDetail,
+  TripCreate,
+  TripResponse,
+  TripStatus,
+  PriceSnapshotResponse,
+  RefreshStartResponse,
+  RefreshStatusResponse,
+  TripStatusUpdate,
+  LocationResult as ApiLocationResult,
+  CreateTripResponse as GeneratedCreateTripResponse,
+  GetTripDetailsResponse as GeneratedGetTripDetailsResponse,
+  RefreshAllResponse as GeneratedRefreshAllResponse,
+  GetRefreshStatusResponse as GeneratedGetRefreshStatusResponse,
+  ListTripsResponse as GeneratedListTripsResponse,
+} from "./api/index";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:8000";
+const CSRF_COOKIE_NAME = "csrf_token";
+const CSRF_HEADER_NAME = "X-CSRF-Token";
+
+// =============================================================================
+// Error classes
+// =============================================================================
 
 export class AuthError extends Error {
   constructor(message = "Authentication failed") {
@@ -23,67 +81,19 @@ export class ApiError extends Error {
   }
 }
 
-export interface User {
-  id: string;
-  email: string;
+// =============================================================================
+// Extended types for UI features (not in OpenAPI spec yet)
+// =============================================================================
+
+// Extended location result with city/country for display
+// The API returns a simpler type, but our mock data and UI need city/country
+export interface LocationResult extends ApiLocationResult {
+  city: string;
+  country: string;
+  type: "AIRPORT" | "CITY";  // Override to be more specific than string
 }
 
-// Trip-related types
-export type TripStatus = "active" | "paused" | "error";
-
-export interface FlightPrefs {
-  airlines: string[];
-  stops_mode: string;
-  max_stops: number | null;
-  cabin: string;
-}
-
-export interface HotelPrefs {
-  rooms: number;
-  adults_per_room: number;
-  room_selection_mode: string;
-  preferred_room_types: string[];
-  preferred_views: string[];
-}
-
-export interface NotificationPrefs {
-  threshold_type: string;
-  threshold_value: string;
-  notify_without_threshold: boolean;
-  email_enabled: boolean;
-  sms_enabled: boolean;
-}
-
-export interface TripDetail {
-  id: string;
-  name: string;
-  origin_airport: string;
-  destination_code: string;
-  depart_date: string;
-  return_date: string;
-  is_round_trip: boolean;
-  adults: number;
-  status: TripStatus;
-  current_flight_price: string | null;
-  current_hotel_price: string | null;
-  total_price: string | null;
-  last_refreshed: string | null;
-  flight_prefs: FlightPrefs | null;
-  hotel_prefs: HotelPrefs | null;
-  notification_prefs: NotificationPrefs | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PriceSnapshot {
-  id: string;
-  flight_price: string | null;
-  hotel_price: string | null;
-  total_price: string | null;
-  created_at: string;
-}
-
-// Flight offer from search results
+// Flight offer from search results (Phase 2+ feature)
 export interface FlightOffer {
   id: string;
   airline: string;
@@ -105,7 +115,7 @@ export interface FlightOffer {
   };
 }
 
-// Hotel offer being tracked
+// Hotel offer being tracked (Phase 2+ feature)
 export interface HotelOffer {
   id: string;
   hotel_name: string;
@@ -119,7 +129,7 @@ export interface HotelOffer {
   image_url?: string;
 }
 
-// Price history for a specific hotel
+// Price history for a specific hotel (Phase 2+ feature)
 export interface HotelPriceHistory {
   hotel_id: string;
   snapshots: Array<{
@@ -129,22 +139,96 @@ export interface HotelPriceHistory {
   }>;
 }
 
-export interface TripDetailResponse {
+// Extended trip detail response with flight/hotel offers (Phase 2+ feature)
+export interface TripDetailResponseExtended {
   trip: TripDetail;
   top_flights: FlightOffer[];
   tracked_hotels: HotelOffer[];
-  price_history: PriceSnapshot[];
+  price_history: PriceSnapshotResponse[];
   hotel_price_histories: HotelPriceHistory[];
 }
 
+// Simple trip detail response matching current API
+export interface TripDetailResponse {
+  trip: TripDetail;
+  price_history: PriceSnapshotResponse[];
+}
+
+// Generic API response wrapper
 export interface ApiResponse<T> {
   data: T;
   meta?: {
-    page: number;
-    limit: number;
-    total: number;
-    total_pages: number;
+    page?: number;
+    limit?: number;
+    total?: number;
+    total_pages?: number;
+    [key: string]: unknown;
+  } | null;
+}
+
+// Trip update request (PATCH endpoint - not fully in OpenAPI spec)
+export interface UpdateTripRequest {
+  name?: string;
+  origin_airport?: string;
+  destination_code?: string;
+  is_round_trip?: boolean;
+  depart_date?: string;
+  return_date?: string | null;
+  adults?: number;
+  flight_prefs?: {
+    airlines: string[];
+    stops_mode: string;
+    max_stops: number | null;
+    cabin: string;
+  } | null;
+  hotel_prefs?: {
+    rooms: number;
+    adults_per_room: number;
+    room_selection_mode: string;
+    preferred_room_types: string[];
+    preferred_views: string[];
+  } | null;
+  notification_prefs?: {
+    threshold_type: string;
+    threshold_value: number;
+    notify_without_threshold: boolean;
+    email_enabled: boolean;
+    sms_enabled: boolean;
   };
+}
+
+function getCookieValue(name: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const cookies = document.cookie ? document.cookie.split("; ") : [];
+  for (const cookie of cookies) {
+    const [key, ...rest] = cookie.split("=");
+    if (key === name) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return null;
+}
+
+function withCsrfHeaders(options: RequestInit): RequestInit {
+  const method = (options.method || "GET").toUpperCase();
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    return options;
+  }
+
+  const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+  if (!csrfToken) {
+    return options;
+  }
+
+  const headers = new Headers(options.headers || {});
+  if (!headers.has(CSRF_HEADER_NAME)) {
+    headers.set(CSRF_HEADER_NAME, csrfToken);
+  }
+
+  return { ...options, headers };
 }
 
 /**
@@ -153,10 +237,10 @@ export interface ApiResponse<T> {
  */
 async function refreshAccessToken(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/v1/auth/refresh`, {
+    const response = await fetch(`${API_BASE_URL}/v1/auth/refresh`, withCsrfHeaders({
       method: "POST",
       credentials: "include",
-    });
+    }));
     return response.ok;
   } catch {
     return false;
@@ -174,10 +258,10 @@ export async function fetchWithAuth(
 ): Promise<Response> {
   const fullUrl = url.startsWith("http") ? url : `${API_BASE_URL}${url}`;
 
-  const fetchOptions: RequestInit = {
+  const fetchOptions: RequestInit = withCsrfHeaders({
     ...options,
     credentials: "include",
-  };
+  });
 
   let response: Response;
 
@@ -221,7 +305,7 @@ export const api = {
      * Get the current authenticated user's info.
      * Throws AuthError if not authenticated.
      */
-    async me(): Promise<User> {
+    async me(): Promise<UserResponse> {
       const response = await fetchWithAuth("/v1/auth/me");
 
       if (!response.ok) {
@@ -235,14 +319,151 @@ export const api = {
      * Log out the current user.
      */
     async logout(): Promise<void> {
-      await fetch(`${API_BASE_URL}/v1/auth/logout`, {
+      await fetch(`${API_BASE_URL}/v1/auth/logout`, withCsrfHeaders({
         method: "POST",
         credentials: "include",
-      });
+      }));
+    },
+  },
+
+  locations: {
+    /**
+     * Search for airports and cities by query.
+     * Uses mock data for now, will connect to /v1/locations/search later.
+     */
+    async search(query: string): Promise<LocationResult[]> {
+      // TODO: Replace with actual API call when ready
+      // const response = await fetchWithAuth(`/v1/locations/search?q=${encodeURIComponent(query)}`);
+      // if (!response.ok) {
+      //   throw new ApiError(response.status, "Failed to search locations");
+      // }
+      // const data = await response.json();
+      // return data.data;
+
+      // Mock data for development
+      const mockLocations: LocationResult[] = [
+        { code: "SFO", name: "San Francisco International", city: "San Francisco", country: "United States", type: "AIRPORT" },
+        { code: "LAX", name: "Los Angeles International", city: "Los Angeles", country: "United States", type: "AIRPORT" },
+        { code: "JFK", name: "John F. Kennedy International", city: "New York", country: "United States", type: "AIRPORT" },
+        { code: "ORD", name: "O'Hare International", city: "Chicago", country: "United States", type: "AIRPORT" },
+        { code: "DFW", name: "Dallas/Fort Worth International", city: "Dallas", country: "United States", type: "AIRPORT" },
+        { code: "DEN", name: "Denver International", city: "Denver", country: "United States", type: "AIRPORT" },
+        { code: "SEA", name: "Seattle-Tacoma International", city: "Seattle", country: "United States", type: "AIRPORT" },
+        { code: "ATL", name: "Hartsfield-Jackson Atlanta International", city: "Atlanta", country: "United States", type: "AIRPORT" },
+        { code: "MIA", name: "Miami International", city: "Miami", country: "United States", type: "AIRPORT" },
+        { code: "BOS", name: "Logan International", city: "Boston", country: "United States", type: "AIRPORT" },
+        { code: "MCO", name: "Orlando International", city: "Orlando", country: "United States", type: "AIRPORT" },
+        { code: "HNL", name: "Daniel K. Inouye International", city: "Honolulu", country: "United States", type: "AIRPORT" },
+        { code: "OGG", name: "Kahului Airport", city: "Maui", country: "United States", type: "AIRPORT" },
+        { code: "LIH", name: "Lihue Airport", city: "Kauai", country: "United States", type: "AIRPORT" },
+        { code: "KOA", name: "Kona International", city: "Kailua-Kona", country: "United States", type: "AIRPORT" },
+        { code: "LHR", name: "Heathrow", city: "London", country: "United Kingdom", type: "AIRPORT" },
+        { code: "CDG", name: "Charles de Gaulle", city: "Paris", country: "France", type: "AIRPORT" },
+        { code: "FRA", name: "Frankfurt Airport", city: "Frankfurt", country: "Germany", type: "AIRPORT" },
+        { code: "AMS", name: "Schiphol", city: "Amsterdam", country: "Netherlands", type: "AIRPORT" },
+        { code: "NRT", name: "Narita International", city: "Tokyo", country: "Japan", type: "AIRPORT" },
+        { code: "HND", name: "Haneda Airport", city: "Tokyo", country: "Japan", type: "AIRPORT" },
+        { code: "SYD", name: "Sydney Kingsford Smith", city: "Sydney", country: "Australia", type: "AIRPORT" },
+        { code: "MEL", name: "Melbourne Airport", city: "Melbourne", country: "Australia", type: "AIRPORT" },
+        { code: "SIN", name: "Changi Airport", city: "Singapore", country: "Singapore", type: "AIRPORT" },
+        { code: "HKG", name: "Hong Kong International", city: "Hong Kong", country: "Hong Kong", type: "AIRPORT" },
+        { code: "DXB", name: "Dubai International", city: "Dubai", country: "UAE", type: "AIRPORT" },
+        { code: "CUN", name: "Cancún International", city: "Cancún", country: "Mexico", type: "AIRPORT" },
+        { code: "PVR", name: "Licenciado Gustavo Díaz Ordaz", city: "Puerto Vallarta", country: "Mexico", type: "AIRPORT" },
+        { code: "SJD", name: "Los Cabos International", city: "San José del Cabo", country: "Mexico", type: "AIRPORT" },
+        { code: "YVR", name: "Vancouver International", city: "Vancouver", country: "Canada", type: "AIRPORT" },
+        { code: "YYZ", name: "Toronto Pearson International", city: "Toronto", country: "Canada", type: "AIRPORT" },
+      ];
+
+      // Simulate network delay
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const normalizedQuery = query.toLowerCase();
+      return mockLocations.filter(
+        (loc) =>
+          loc.code.toLowerCase().includes(normalizedQuery) ||
+          loc.name.toLowerCase().includes(normalizedQuery) ||
+          loc.city.toLowerCase().includes(normalizedQuery)
+      ).slice(0, 8);
     },
   },
 
   trips: {
+    /**
+     * List trips for the current user.
+     * @param page - Page number (1-indexed)
+     * @param limit - Number of trips per page
+     * @param status - Filter by trip status
+     */
+    async list(
+      page = 1,
+      limit = 20,
+      status?: TripStatus
+    ): Promise<GeneratedListTripsResponse> {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(limit));
+      if (status) {
+        params.set("status", status);
+      }
+
+      const response = await fetchWithAuth(`/v1/trips?${params.toString()}`);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to load trips",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Create a new trip.
+     * Requires X-Idempotency-Key header for duplicate prevention.
+     */
+    async create(
+      data: TripCreate,
+      idempotencyKey: string
+    ): Promise<GeneratedCreateTripResponse> {
+      const response = await fetchWithAuth("/v1/trips", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 400) {
+          throw new ApiError(
+            400,
+            error.title || "Invalid trip data",
+            error.detail
+          );
+        }
+        if (response.status === 409) {
+          throw new ApiError(
+            409,
+            error.title || "Duplicate request",
+            error.detail
+          );
+        }
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to create trip",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
     /**
      * Get trip details including preferences and price history.
      */
@@ -250,7 +471,7 @@ export const api = {
       tripId: string,
       page = 1,
       limit = 50
-    ): Promise<ApiResponse<TripDetailResponse>> {
+    ): Promise<GeneratedGetTripDetailsResponse> {
       const response = await fetchWithAuth(
         `/v1/trips/${tripId}?page=${page}&limit=${limit}`
       );
@@ -317,6 +538,115 @@ export const api = {
           error.detail
         );
       }
+    },
+
+    /**
+     * Update an existing trip.
+     */
+    async update(
+      tripId: string,
+      data: UpdateTripRequest
+    ): Promise<ApiResponse<TripDetail>> {
+      const response = await fetchWithAuth(`/v1/trips/${tripId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new ApiError(404, "Trip not found");
+        }
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 400) {
+          throw new ApiError(
+            400,
+            error.title || "Invalid trip data",
+            error.detail
+          );
+        }
+        if (response.status === 409) {
+          throw new ApiError(
+            409,
+            error.title || "Duplicate trip name",
+            error.detail
+          );
+        }
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to update trip",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Trigger a refresh of all active trips.
+     * Returns a refresh_group_id for tracking progress.
+     */
+    async refreshAll(): Promise<GeneratedRefreshAllResponse> {
+      const response = await fetchWithAuth("/v1/trips/refresh-all", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 409) {
+          throw new ApiError(
+            409,
+            error.title || "Refresh already in progress",
+            error.detail
+          );
+        }
+        if (response.status === 502) {
+          throw new ApiError(
+            502,
+            error.title || "Failed to start refresh workflow",
+            error.detail
+          );
+        }
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to start refresh",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Get the status of a refresh operation.
+     * @param refreshGroupId - The ID returned from refreshAll()
+     */
+    async getRefreshStatus(
+      refreshGroupId: string
+    ): Promise<GeneratedGetRefreshStatusResponse> {
+      const url = `/v1/trips/refresh-status?refresh_group_id=${encodeURIComponent(refreshGroupId)}`;
+
+      const response = await fetchWithAuth(url);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          throw new ApiError(
+            404,
+            error.title || "Refresh group not found",
+            error.detail
+          );
+        }
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to get refresh status",
+          error.detail
+        );
+      }
+
+      return response.json();
     },
   },
 };

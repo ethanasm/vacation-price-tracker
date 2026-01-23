@@ -175,11 +175,37 @@ class MCPToolError(UpstreamServiceError):
     detail = "MCP tool failed."
 
 
+class RateLimitExceeded(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    title = "Too Many Requests"
+    type = problem_type("rate-limit-exceeded")
+    detail = "Rate limit exceeded. Please retry later."
+
+    def __init__(
+        self,
+        retry_after: int,
+        detail: str | None = None,
+        *,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(detail, extra=extra)
+        self.retry_after = retry_after
+
+    def to_problem_detail(self, instance: str | None = None) -> dict[str, Any]:
+        payload = super().to_problem_detail(instance)
+        payload["retry_after"] = self.retry_after
+        return payload
+
+
 def problem_details_response(exc: AppError, request: Request) -> JSONResponse:
+    headers = {}
+    if isinstance(exc, RateLimitExceeded):
+        headers["Retry-After"] = str(exc.retry_after)
     return JSONResponse(
         status_code=exc.status_code,
         content=exc.to_problem_detail(request.url.path),
         media_type=PROBLEM_JSON_MEDIA_TYPE,
+        headers=headers if headers else None,
     )
 
 

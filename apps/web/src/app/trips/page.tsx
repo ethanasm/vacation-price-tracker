@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { RefreshCw, MessageSquare, Plane, AlertCircle, Plus } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -16,13 +16,54 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { formatPrice, formatShortDate, formatTimestamp } from "@/lib/format";
-import { mockDashboardTrips, type DashboardTrip } from "@/lib/mock-data";
+import { api, ApiError, type TripResponse } from "@/lib/api";
 import styles from "./page.module.css";
 
-type TripStatus = "ACTIVE" | "PAUSED" | "ERROR";
+const REFRESH_POLL_INTERVAL = 2000; // Poll every 2 seconds
+
+type DisplayStatus = "ACTIVE" | "PAUSED" | "ERROR";
+
+/**
+ * Convert API trip data to display format.
+ * The API returns prices as strings and status in lowercase.
+ */
+interface DisplayTrip {
+  id: string;
+  name: string;
+  origin_airport: string;
+  destination_code: string;
+  depart_date: string;
+  return_date: string | null;
+  is_round_trip: boolean;
+  status: DisplayStatus;
+  flight_price: number | null;
+  hotel_price: number | null;
+  total_price: number | null;
+  updated_at: string;
+}
+
+function mapApiTripToDisplayTrip(trip: TripResponse): DisplayTrip {
+  // Infer is_round_trip from return_date: if return_date exists and is non-empty, it's a round trip
+  const isRoundTrip = Boolean(trip.return_date && trip.return_date.trim() !== "");
+
+  return {
+    id: trip.id,
+    name: trip.name,
+    origin_airport: trip.origin_airport,
+    destination_code: trip.destination_code,
+    depart_date: trip.depart_date,
+    return_date: trip.return_date || null,
+    is_round_trip: isRoundTrip,
+    status: trip.status.toUpperCase() as DisplayStatus,
+    flight_price: trip.current_flight_price ? Number.parseFloat(trip.current_flight_price) : null,
+    hotel_price: trip.current_hotel_price ? Number.parseFloat(trip.current_hotel_price) : null,
+    total_price: trip.total_price ? Number.parseFloat(trip.total_price) : null,
+    updated_at: trip.last_refreshed || new Date().toISOString(),
+  };
+}
 
 function getStatusVariant(
-  status: TripStatus
+  status: DisplayStatus
 ): "default" | "secondary" | "outline" {
   switch (status) {
     case "ACTIVE":
@@ -117,32 +158,136 @@ function ChatPlaceholder() {
 }
 
 export default function DashboardPage() {
-  const [trips] = useState<DashboardTrip[]>(mockDashboardTrips);
-  const [isLoading] = useState(false);
+  const [trips, setTrips] = useState<DisplayTrip[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState<{
+    total: number;
+    completed: number;
+    failed: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchTrips = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.trips.list();
+      const displayTrips = response.data.map(mapApiTripToDisplayTrip);
+      setTrips(displayTrips);
+    } catch (err) {
+      console.error("Failed to fetch trips:", err);
+      if (err instanceof ApiError) {
+        setError(err.detail || err.message);
+      } else {
+        setError("Failed to load trips. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Fetch trips on mount
+  useEffect(() => {
+    fetchTrips();
+  }, [fetchTrips]);
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
+
+  const pollRefreshStatus = useCallback(
+    async (refreshGroupId: string) => {
+      try {
+        const response = await api.trips.getRefreshStatus(refreshGroupId);
+        const status = response.data;
+
+        setRefreshProgress({
+          total: status.total,
+          completed: status.completed,
+          failed: status.failed,
+        });
+
+        // Check if refresh is complete
+        if (
+          status.status === "completed" ||
+          status.status === "failed" ||
+          status.completed + status.failed >= status.total
+        ) {
+          stopPolling();
+          setIsRefreshing(false);
+          setRefreshProgress(null);
+
+          if (status.failed > 0) {
+            toast.success("Prices refreshed", {
+              description: `${status.completed} trips updated, ${status.failed} failed.`,
+            });
+          } else {
+            toast.success("Prices refreshed", {
+              description: `All ${status.completed} trip prices have been updated.`,
+            });
+          }
+
+          // Reload trips data to get updated prices
+          fetchTrips();
+        }
+      } catch (err) {
+        // If we can't get status, stop polling but don't show error
+        // (the refresh might still be running)
+        console.error("Failed to poll refresh status:", err);
+        stopPolling();
+        setIsRefreshing(false);
+        setRefreshProgress(null);
+      }
+    },
+    [stopPolling, fetchTrips]
+  );
 
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
+    setRefreshProgress(null);
+
     try {
-      // TODO: Call POST /v1/trips/refresh-all
-      // Simulating API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      toast.success("Prices refreshed", {
-        description: "All trip prices have been updated.",
-      });
-    } catch {
-      toast.error("Refresh failed", {
-        description: "Could not refresh prices. Please try again.",
-      });
-    } finally {
+      const response = await api.trips.refreshAll();
+      const refreshGroupId = response.data.refresh_group_id;
+
+      // Start polling for status
+      pollIntervalRef.current = setInterval(() => {
+        pollRefreshStatus(refreshGroupId);
+      }, REFRESH_POLL_INTERVAL);
+
+      // Do an immediate status check
+      await pollRefreshStatus(refreshGroupId);
+    } catch (err) {
       setIsRefreshing(false);
+      setRefreshProgress(null);
+
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          toast.error("Refresh already in progress", {
+            description: "Please wait for the current refresh to complete.",
+          });
+        } else {
+          toast.error("Refresh failed", {
+            description: err.detail || "Could not refresh prices. Please try again.",
+          });
+        }
+      } else {
+        toast.error("Refresh failed", {
+          description: "Could not refresh prices. Please try again.",
+        });
+      }
     }
   };
 
   const handleRetry = () => {
     setError(null);
-    // TODO: Re-fetch trips from API
+    fetchTrips();
   };
 
   return (
@@ -160,7 +305,11 @@ export default function DashboardPage() {
             <RefreshCw
               className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
             />
-            {isRefreshing ? "Refreshing..." : "Refresh All"}
+            {isRefreshing
+              ? refreshProgress
+                ? `Refreshing ${refreshProgress.completed}/${refreshProgress.total}...`
+                : "Starting refresh..."
+              : "Refresh All"}
           </Button>
           <Button asChild size="sm">
             <Link href="/trips/new">

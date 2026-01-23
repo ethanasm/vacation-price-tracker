@@ -1,6 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import type { TripFormData } from "../components/trip-form/types";
-import { useTripForm } from "../lib/hooks/use-trip-form";
+import { useTripForm, tripDetailToFormData } from "../lib/hooks/use-trip-form";
+import type { TripDetail } from "../lib/api";
 
 type HookRef = {
   current: ReturnType<typeof useTripForm> | null;
@@ -42,7 +43,8 @@ describe("useTripForm", () => {
     expect(payload?.origin_airport).toBe("SFO");
     expect(payload?.destination_code).toBe("LAX");
     expect(payload?.depart_date).toBe("2025-01-02");
-    expect(payload?.return_date).toBeUndefined();
+    // For one-way trips, return_date equals depart_date (API requirement)
+    expect(payload?.return_date).toBe("2025-01-02");
     expect(payload?.adults).toBe(2);
   });
 
@@ -292,6 +294,13 @@ describe("useTripForm", () => {
 
   it("returns valid when form is correct", () => {
     const hookRef: HookRef = { current: null };
+    // Use future dates relative to today
+    const today = new Date();
+    const departDate = new Date(today);
+    departDate.setDate(today.getDate() + 30);
+    const returnDate = new Date(today);
+    returnDate.setDate(today.getDate() + 37);
+
     render(
       <HookHarness
         hookRef={hookRef}
@@ -299,8 +308,8 @@ describe("useTripForm", () => {
           name: "Valid Trip",
           originAirport: "SFO",
           destinationCode: "LAX",
-          departDate: new Date(2025, 5, 15),
-          returnDate: new Date(2025, 5, 22),
+          departDate,
+          returnDate,
           notificationPrefs: {
             thresholdType: "trip_total",
             thresholdValue: "100",
@@ -320,7 +329,7 @@ describe("useTripForm", () => {
     expect(hookRef.current?.errors).toEqual({});
   });
 
-  it("handles undefined depart date in payload", () => {
+  it("throws error when depart date is undefined in payload", () => {
     const hookRef: HookRef = { current: null };
     render(
       <HookHarness
@@ -331,8 +340,165 @@ describe("useTripForm", () => {
       />
     );
 
-    const payload = hookRef.current?.getPayload();
+    // getPayload throws when depart_date is undefined (validation should prevent this)
+    expect(() => hookRef.current?.getPayload()).toThrow(
+      "Date is required but was not provided"
+    );
+  });
+});
 
-    expect(payload?.depart_date).toBeUndefined();
+describe("tripDetailToFormData", () => {
+  const baseTripDetail: TripDetail = {
+    id: "test-trip-1",
+    name: "Hawaii Vacation",
+    origin_airport: "SFO",
+    destination_code: "HNL",
+    depart_date: "2025-06-15",
+    return_date: "2025-06-22",
+    is_round_trip: true,
+    adults: 2,
+    status: "active",
+    current_flight_price: "500.00",
+    current_hotel_price: "700.00",
+    total_price: "1200.00",
+    last_refreshed: "2025-01-21T10:30:00Z",
+    flight_prefs: null,
+    hotel_prefs: null,
+    notification_prefs: null,
+    created_at: "2025-01-15T10:00:00Z",
+    updated_at: "2025-01-20T15:30:00Z",
+  };
+
+  it("converts basic trip details correctly", () => {
+    const formData = tripDetailToFormData(baseTripDetail);
+
+    expect(formData.name).toBe("Hawaii Vacation");
+    expect(formData.originAirport).toBe("SFO");
+    expect(formData.destinationCode).toBe("HNL");
+    expect(formData.isRoundTrip).toBe(true);
+    expect(formData.adults).toBe("2");
+  });
+
+  it("parses dates correctly", () => {
+    const formData = tripDetailToFormData(baseTripDetail);
+
+    // parseISO parses dates as local time, so check year/month/day
+    expect(formData.departDate?.getFullYear()).toBe(2025);
+    expect(formData.departDate?.getMonth()).toBe(5); // June (0-indexed)
+    expect(formData.departDate?.getDate()).toBe(15);
+    expect(formData.returnDate?.getFullYear()).toBe(2025);
+    expect(formData.returnDate?.getMonth()).toBe(5);
+    expect(formData.returnDate?.getDate()).toBe(22);
+  });
+
+  it("handles null dates", () => {
+    const tripWithNullDates: TripDetail = {
+      ...baseTripDetail,
+      depart_date: "",
+      return_date: "",
+    };
+
+    const formData = tripDetailToFormData(tripWithNullDates);
+
+    expect(formData.departDate).toBeUndefined();
+    expect(formData.returnDate).toBeUndefined();
+  });
+
+  it("converts flight preferences correctly", () => {
+    const tripWithFlightPrefs: TripDetail = {
+      ...baseTripDetail,
+      flight_prefs: {
+        cabin: "business",
+        stops_mode: "nonstop",
+        max_stops: null,
+        airlines: ["UA", "DL"],
+      },
+    };
+
+    const formData = tripDetailToFormData(tripWithFlightPrefs);
+
+    expect(formData.flightPrefs.cabin).toBe("business");
+    expect(formData.flightPrefs.stopsMode).toBe("nonstop");
+    expect(formData.flightPrefs.airlines).toEqual(["UA", "DL"]);
+    expect(formData.flightPrefsOpen).toBe(true);
+  });
+
+  it("converts hotel preferences correctly", () => {
+    const tripWithHotelPrefs: TripDetail = {
+      ...baseTripDetail,
+      hotel_prefs: {
+        rooms: 2,
+        adults_per_room: 2,
+        room_selection_mode: "preferred",
+        preferred_room_types: ["King", "Suite"],
+        preferred_views: ["Ocean"],
+      },
+    };
+
+    const formData = tripDetailToFormData(tripWithHotelPrefs);
+
+    expect(formData.hotelPrefs.rooms).toBe("2");
+    expect(formData.hotelPrefs.adultsPerRoom).toBe("2");
+    expect(formData.hotelPrefs.roomSelectionMode).toBe("preferred");
+    expect(formData.hotelPrefs.roomTypes).toEqual(["King", "Suite"]);
+    expect(formData.hotelPrefs.views).toEqual(["Ocean"]);
+    expect(formData.hotelPrefsOpen).toBe(true);
+  });
+
+  it("converts notification preferences correctly", () => {
+    const tripWithNotifPrefs: TripDetail = {
+      ...baseTripDetail,
+      notification_prefs: {
+        threshold_type: "flight_total",
+        threshold_value: "1000",
+        notify_without_threshold: false,
+        email_enabled: true,
+        sms_enabled: true,
+      },
+    };
+
+    const formData = tripDetailToFormData(tripWithNotifPrefs);
+
+    expect(formData.notificationPrefs.thresholdType).toBe("flight_total");
+    expect(formData.notificationPrefs.thresholdValue).toBe("1000");
+    expect(formData.notificationPrefs.emailEnabled).toBe(true);
+    expect(formData.notificationPrefs.smsEnabled).toBe(true);
+  });
+
+  it("uses default values when preferences are null", () => {
+    const formData = tripDetailToFormData(baseTripDetail);
+
+    // Flight prefs defaults
+    expect(formData.flightPrefs.cabin).toBe("economy");
+    expect(formData.flightPrefs.stopsMode).toBe("any");
+    expect(formData.flightPrefs.airlines).toEqual([]);
+    expect(formData.flightPrefsOpen).toBe(false);
+
+    // Hotel prefs defaults
+    expect(formData.hotelPrefs.rooms).toBe("1");
+    expect(formData.hotelPrefs.adultsPerRoom).toBe("2");
+    expect(formData.hotelPrefs.roomSelectionMode).toBe("cheapest");
+    expect(formData.hotelPrefs.roomTypes).toEqual([]);
+    expect(formData.hotelPrefs.views).toEqual([]);
+    expect(formData.hotelPrefsOpen).toBe(false);
+
+    // Notification prefs defaults
+    expect(formData.notificationPrefs.thresholdType).toBe("trip_total");
+    expect(formData.notificationPrefs.thresholdValue).toBe("");
+    expect(formData.notificationPrefs.emailEnabled).toBe(true);
+    expect(formData.notificationPrefs.smsEnabled).toBe(false);
+  });
+
+  it("handles one-way trips", () => {
+    const oneWayTrip: TripDetail = {
+      ...baseTripDetail,
+      is_round_trip: false,
+      return_date: "",
+    };
+
+    const formData = tripDetailToFormData(oneWayTrip);
+
+    expect(formData.isRoundTrip).toBe(false);
+    expect(formData.returnDate).toBeUndefined();
   });
 });

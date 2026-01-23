@@ -114,6 +114,7 @@ class TestAppConfiguration:
     def test_cors_middleware_configured(self, app):
         """Test CORS middleware is configured."""
         from starlette.middleware.cors import CORSMiddleware
+        from app.core.config import settings
 
         cors_middleware = None
         for middleware in app.user_middleware:
@@ -122,6 +123,7 @@ class TestAppConfiguration:
                 break
 
         assert cors_middleware is not None
+        assert cors_middleware.options["allow_origins"] == [settings.frontend_url]
 
     def test_session_middleware_configured(self, app):
         """Test session middleware is configured for OAuth."""

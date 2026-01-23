@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
+from app.core.constants import CookieNames, HeaderNames
 from app.db.deps import get_db
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -82,6 +83,8 @@ def mock_redis():
     mock.get = AsyncMock(return_value=None)
     mock.delete = AsyncMock(return_value=1)
     mock.ping = AsyncMock(return_value=True)
+    # Rate limiting Lua script returns [allowed, remaining, retry_after]
+    mock.eval = AsyncMock(return_value=[1, 99, 0])
     return mock
 
 
@@ -108,10 +111,12 @@ def app(test_session, mock_redis, mock_temporal_client):
     # Mock redis_client globally
     import app.main as main_module
     import app.middleware.idempotency as idempotency_module
+    import app.middleware.rate_limit as rate_limit_module
     import app.routers.auth as auth_module
 
     auth_module.redis_client = mock_redis
     idempotency_module.redis_client = mock_redis
+    rate_limit_module.redis_client = mock_redis
     main_module.redis_client = mock_redis
 
     # Mock temporal_client globally
@@ -130,6 +135,26 @@ def app(test_session, mock_redis, mock_temporal_client):
 def client(app):
     """Create test client."""
     return TestClient(app)
+
+
+@pytest.fixture
+def csrf_token():
+    """Provide a deterministic CSRF token for tests."""
+    return "test-csrf-token"
+
+
+@pytest.fixture
+def csrf_headers(csrf_token):
+    """Standard CSRF headers for unsafe requests."""
+    return {HeaderNames.CSRF_TOKEN: csrf_token}
+
+
+@pytest.fixture
+def client_with_csrf(client, csrf_token):
+    """Test client preloaded with a CSRF cookie."""
+    client.cookies.set(CookieNames.CSRF_TOKEN, csrf_token)
+    client.headers.update({HeaderNames.CSRF_TOKEN: csrf_token})
+    return client
 
 
 @pytest.fixture

@@ -1,12 +1,30 @@
 import type { TripFormData, TripFormErrors, TripPayload } from "@/components/trip-form/types";
 
+// Create dynamic dates that are always valid (30 days and 40 days from now)
+const getBaseDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const getReturnDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 40);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+// Format date as YYYY-MM-DD for API payloads
+const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
 export const baseTripFormData: TripFormData = {
   name: "Summer Trip",
   originAirport: "SFO",
   destinationCode: "LAX",
   isRoundTrip: true,
-  departDate: new Date(2025, 5, 10),
-  returnDate: new Date(2025, 5, 20),
+  departDate: getBaseDate(),
+  returnDate: getReturnDate(),
   adults: "1",
   flightPrefs: {
     cabin: "economy",
@@ -46,8 +64,8 @@ export const tripPayloadFixture: TripPayload = {
   origin_airport: "SFO",
   destination_code: "LAX",
   is_round_trip: true,
-  depart_date: "2025-06-10",
-  return_date: "2025-06-20",
+  depart_date: formatDate(getBaseDate()),
+  return_date: formatDate(getReturnDate()),
   adults: 1,
   flight_prefs: null,
   hotel_prefs: null,
