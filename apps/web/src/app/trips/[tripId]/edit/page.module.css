@@ -21,9 +21,9 @@
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--glass-border);
   color: var(--ink);
   transition: all 0.2s ease;
   cursor: pointer;
@@ -33,6 +33,11 @@
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
+}
+
+:global(.dark) .backButton:hover {
+  background: rgba(40, 40, 60, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .headerContent {

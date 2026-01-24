@@ -188,6 +188,31 @@ class TripDetail(TripResponse):
     updated_at: datetime
 
 
+class FlightOffer(BaseModel):
+    """Schema for a flight offer."""
+
+    id: str
+    airline_code: str | None = None
+    airline_name: str | None = None
+    price: Decimal
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    duration_minutes: int | None = None
+    stops: int = 0
+    return_flight: dict | None = None
+
+
+class HotelOffer(BaseModel):
+    """Schema for a hotel offer."""
+
+    id: str
+    name: str
+    price: Decimal
+    rating: int | None = None
+    address: str | None = None
+    description: str | None = None
+
+
 class PriceSnapshotResponse(BaseModel):
     """Schema for price snapshot in trip history."""
 
@@ -196,6 +221,8 @@ class PriceSnapshotResponse(BaseModel):
     hotel_price: Decimal | None = None
     total_price: Decimal | None = None
     created_at: datetime
+    flight_offers: list[FlightOffer] = Field(default_factory=list)
+    hotel_offers: list[HotelOffer] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

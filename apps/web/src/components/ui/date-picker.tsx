@@ -1,14 +1,13 @@
 "use client"
 
-import * as React from "react"
 import { format } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { cn } from "../../lib/utils"
 import { Button } from "./button"
 import { Calendar } from "./calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "./popover"
-import {useEffect, useState} from "react";
 
 interface DatePickerProps {
   date: Date | undefined
@@ -30,13 +29,14 @@ export function DatePicker({
   className,
 }: DatePickerProps) {
   const [isHydrated, setIsHydrated] = useState(false)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     setIsHydrated(true)
   }, [])
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -55,7 +55,12 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={date}
-          onSelect={onSelect}
+          onSelect={(nextDate) => {
+            onSelect(nextDate)
+            if (nextDate) {
+              setOpen(false)
+            }
+          }}
           disabled={(date) => {
             if (fromDate && date < fromDate) return true
             if (toDate && date > toDate) return true

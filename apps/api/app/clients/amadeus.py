@@ -1,14 +1,12 @@
-"""Amadeus API client for reference data."""
+"""Amadeus API client for hotel data."""
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 import httpx
 
-from app.clients.amadeus_mock import mock_search_locations
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,7 +28,7 @@ class AmadeusRequestError(AmadeusClientError):
 
 
 class AmadeusClient:
-    """Minimal Amadeus client for reference data searches."""
+    """Amadeus client for hotel searches."""
 
     def __init__(self, base_url: str | None = None, timeout_seconds: float = 10.0) -> None:
         self._base_url = (base_url or settings.amadeus_base_url or DEFAULT_BASE_URL).rstrip("/")
@@ -103,29 +101,6 @@ class AmadeusClient:
             raise AmadeusRequestError("Amadeus request failed")
 
         return response
-
-    async def search_locations(self, query: str, limit: int = 10) -> list[dict[str, str]]:
-        if settings.mock_amadeus_api:
-            return mock_search_locations(query, limit)
-
-        params = {
-            "keyword": query,
-            "subType": "AIRPORT,CITY",
-            "page[limit]": str(limit),
-        }
-        response = await self._authorized_get("/v1/reference-data/locations", params)
-        payload: dict[str, Any] = response.json()
-
-        results: list[dict[str, str]] = []
-        for item in payload.get("data", []):
-            code = item.get("iataCode") or item.get("address", {}).get("cityCode")
-            name = item.get("name") or item.get("detailedName")
-            location_type = item.get("subType") or item.get("type")
-            if not code or not name or not location_type:
-                continue
-            results.append({"code": code, "name": name, "type": location_type})
-
-        return results
 
 
 amadeus_client = AmadeusClient()

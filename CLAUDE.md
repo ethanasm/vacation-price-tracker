@@ -105,6 +105,43 @@ vacation-price-tracker/
 
 **Note:** As of this writing, the `apps/` directory has not been created yet. This is a greenfield project with documentation only.
 
+## Local Development (Docker)
+
+All services run in Docker during local development. **Do not ask the user if services are running** - check directly with Docker commands.
+
+### Container Names
+| Container | Service | Port |
+|:----------|:--------|:-----|
+| `web` | Next.js frontend | 3000 |
+| `api` | FastAPI backend | 8000 |
+| `db` | PostgreSQL | 5432 |
+| `redis` | Redis cache | 6379 |
+| `temporal` | Temporal server | 7233 |
+| `temporal-ui` | Temporal dashboard | 8080 |
+
+### Debugging Commands
+```bash
+# Check running containers
+docker ps
+
+# View logs for a service (e.g., api errors)
+docker logs api --tail 50
+
+# Follow logs in real-time
+docker logs -f api
+
+# Restart a service
+docker restart api
+
+# Execute commands in a container
+docker exec db psql -U postgres -d vacation_tracker -c "SELECT 1"
+```
+
+### Common Issues
+- **API connection errors**: Check `docker logs api` for stack traces
+- **Database errors**: Verify schema with `docker exec db psql -U postgres -d vacation_tracker -c "\d tablename"`
+- **Container not running**: Use `docker ps -a` to see stopped containers, then `docker start <name>`
+
 ## Data Model Key Points
 
 - **User:** Identified by `google_sub` (no local passwords)

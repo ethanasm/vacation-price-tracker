@@ -21,7 +21,6 @@ export type {
   PriceSnapshotResponse as PriceSnapshot,
   RefreshStartResponse,
   RefreshStatusResponse,
-  LocationResult as ApiLocationResult,
   TripStatusUpdate,
   CabinClass,
   StopsMode,
@@ -32,8 +31,9 @@ export type {
   GetTripDetailsResponse,
   RefreshAllResponse,
   ListTripsResponse,
-  SearchLocationsResponse,
   ListTripsParams,
+  FlightOffer as ApiFlightOffer,
+  HotelOffer as ApiHotelOffer,
 } from "./api/index";
 
 import type {
@@ -46,13 +46,14 @@ import type {
   RefreshStartResponse,
   RefreshStatusResponse,
   TripStatusUpdate,
-  LocationResult as ApiLocationResult,
   CreateTripResponse as GeneratedCreateTripResponse,
   GetTripDetailsResponse as GeneratedGetTripDetailsResponse,
   RefreshAllResponse as GeneratedRefreshAllResponse,
   GetRefreshStatusResponse as GeneratedGetRefreshStatusResponse,
   ListTripsResponse as GeneratedListTripsResponse,
 } from "./api/index";
+
+import { airports, type Airport } from "../data/airports";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:8000";
 const CSRF_COOKIE_NAME = "csrf_token";
@@ -85,12 +86,14 @@ export class ApiError extends Error {
 // Extended types for UI features (not in OpenAPI spec yet)
 // =============================================================================
 
-// Extended location result with city/country for display
-// The API returns a simpler type, but our mock data and UI need city/country
-export interface LocationResult extends ApiLocationResult {
+// Location result for airport autocomplete
+// Uses static airport data instead of API
+export interface LocationResult {
+  code: string;
+  name: string;
   city: string;
   country: string;
-  type: "AIRPORT" | "CITY";  // Override to be more specific than string
+  type: "AIRPORT";
 }
 
 // Flight offer from search results (Phase 2+ feature)
@@ -328,63 +331,37 @@ export const api = {
 
   locations: {
     /**
-     * Search for airports and cities by query.
-     * Uses mock data for now, will connect to /v1/locations/search later.
+     * Search airports using static data.
+     * Filters locally from ~4500 large/medium airports.
      */
-    async search(query: string): Promise<LocationResult[]> {
-      // TODO: Replace with actual API call when ready
-      // const response = await fetchWithAuth(`/v1/locations/search?q=${encodeURIComponent(query)}`);
-      // if (!response.ok) {
-      //   throw new ApiError(response.status, "Failed to search locations");
-      // }
-      // const data = await response.json();
-      // return data.data;
-
-      // Mock data for development
-      const mockLocations: LocationResult[] = [
-        { code: "SFO", name: "San Francisco International", city: "San Francisco", country: "United States", type: "AIRPORT" },
-        { code: "LAX", name: "Los Angeles International", city: "Los Angeles", country: "United States", type: "AIRPORT" },
-        { code: "JFK", name: "John F. Kennedy International", city: "New York", country: "United States", type: "AIRPORT" },
-        { code: "ORD", name: "O'Hare International", city: "Chicago", country: "United States", type: "AIRPORT" },
-        { code: "DFW", name: "Dallas/Fort Worth International", city: "Dallas", country: "United States", type: "AIRPORT" },
-        { code: "DEN", name: "Denver International", city: "Denver", country: "United States", type: "AIRPORT" },
-        { code: "SEA", name: "Seattle-Tacoma International", city: "Seattle", country: "United States", type: "AIRPORT" },
-        { code: "ATL", name: "Hartsfield-Jackson Atlanta International", city: "Atlanta", country: "United States", type: "AIRPORT" },
-        { code: "MIA", name: "Miami International", city: "Miami", country: "United States", type: "AIRPORT" },
-        { code: "BOS", name: "Logan International", city: "Boston", country: "United States", type: "AIRPORT" },
-        { code: "MCO", name: "Orlando International", city: "Orlando", country: "United States", type: "AIRPORT" },
-        { code: "HNL", name: "Daniel K. Inouye International", city: "Honolulu", country: "United States", type: "AIRPORT" },
-        { code: "OGG", name: "Kahului Airport", city: "Maui", country: "United States", type: "AIRPORT" },
-        { code: "LIH", name: "Lihue Airport", city: "Kauai", country: "United States", type: "AIRPORT" },
-        { code: "KOA", name: "Kona International", city: "Kailua-Kona", country: "United States", type: "AIRPORT" },
-        { code: "LHR", name: "Heathrow", city: "London", country: "United Kingdom", type: "AIRPORT" },
-        { code: "CDG", name: "Charles de Gaulle", city: "Paris", country: "France", type: "AIRPORT" },
-        { code: "FRA", name: "Frankfurt Airport", city: "Frankfurt", country: "Germany", type: "AIRPORT" },
-        { code: "AMS", name: "Schiphol", city: "Amsterdam", country: "Netherlands", type: "AIRPORT" },
-        { code: "NRT", name: "Narita International", city: "Tokyo", country: "Japan", type: "AIRPORT" },
-        { code: "HND", name: "Haneda Airport", city: "Tokyo", country: "Japan", type: "AIRPORT" },
-        { code: "SYD", name: "Sydney Kingsford Smith", city: "Sydney", country: "Australia", type: "AIRPORT" },
-        { code: "MEL", name: "Melbourne Airport", city: "Melbourne", country: "Australia", type: "AIRPORT" },
-        { code: "SIN", name: "Changi Airport", city: "Singapore", country: "Singapore", type: "AIRPORT" },
-        { code: "HKG", name: "Hong Kong International", city: "Hong Kong", country: "Hong Kong", type: "AIRPORT" },
-        { code: "DXB", name: "Dubai International", city: "Dubai", country: "UAE", type: "AIRPORT" },
-        { code: "CUN", name: "Cancún International", city: "Cancún", country: "Mexico", type: "AIRPORT" },
-        { code: "PVR", name: "Licenciado Gustavo Díaz Ordaz", city: "Puerto Vallarta", country: "Mexico", type: "AIRPORT" },
-        { code: "SJD", name: "Los Cabos International", city: "San José del Cabo", country: "Mexico", type: "AIRPORT" },
-        { code: "YVR", name: "Vancouver International", city: "Vancouver", country: "Canada", type: "AIRPORT" },
-        { code: "YYZ", name: "Toronto Pearson International", city: "Toronto", country: "Canada", type: "AIRPORT" },
-      ];
-
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 150));
+    search(query: string): LocationResult[] {
+      if (query.length < 2) {
+        return [];
+      }
 
       const normalizedQuery = query.toLowerCase();
-      return mockLocations.filter(
-        (loc) =>
-          loc.code.toLowerCase().includes(normalizedQuery) ||
-          loc.name.toLowerCase().includes(normalizedQuery) ||
-          loc.city.toLowerCase().includes(normalizedQuery)
-      ).slice(0, 8);
+      const results: LocationResult[] = [];
+
+      for (const airport of airports) {
+        if (
+          airport.code.toLowerCase().includes(normalizedQuery) ||
+          airport.name.toLowerCase().includes(normalizedQuery) ||
+          airport.city?.toLowerCase().includes(normalizedQuery)
+        ) {
+          results.push({
+            code: airport.code,
+            name: airport.name,
+            city: airport.city || "",
+            country: airport.country,
+            type: "AIRPORT",
+          });
+          if (results.length >= 8) {
+            break;
+          }
+        }
+      }
+
+      return results;
     },
   },
 

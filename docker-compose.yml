@@ -114,8 +114,6 @@ services:
         condition: service_healthy
       temporal:
         condition: service_healthy
-    profiles:
-      - worker
 
   web:
     build:

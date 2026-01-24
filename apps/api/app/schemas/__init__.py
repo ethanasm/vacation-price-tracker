@@ -1,9 +1,10 @@
 """Pydantic schemas for request/response validation."""
 
 from app.schemas.base import APIResponse, PaginationMeta
-from app.schemas.location import LocationResult
 from app.schemas.trip import (
+    FlightOffer,
     FlightPrefs,
+    HotelOffer,
     HotelPrefs,
     NotificationPrefs,
     PriceSnapshotResponse,
@@ -21,9 +22,10 @@ __all__ = [
     "APIResponse",
     "PaginationMeta",
     # Trip schemas
+    "FlightOffer",
     "FlightPrefs",
+    "HotelOffer",
     "HotelPrefs",
-    "LocationResult",
     "NotificationPrefs",
     "TripCreate",
     "TripResponse",

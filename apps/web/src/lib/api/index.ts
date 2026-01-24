@@ -36,8 +36,10 @@ export type StopsMode = components["schemas"]["StopsMode"];
 export type RoomSelectionMode = components["schemas"]["RoomSelectionMode"];
 export type ThresholdType = components["schemas"]["ThresholdType"];
 
-// Price snapshots
+// Price snapshots and offers
 export type PriceSnapshotResponse = components["schemas"]["PriceSnapshotResponse"];
+export type FlightOffer = components["schemas"]["FlightOffer"];
+export type HotelOffer = components["schemas"]["HotelOffer"];
 
 // Refresh types
 export type RefreshStartResponse = components["schemas"]["RefreshStartResponse"];

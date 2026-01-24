@@ -38,7 +38,7 @@ jest.mock("../components/ui/select", () => ({
   }) => <div data-value={value}>{children}</div>,
 }));
 
-const mockSearchLocations = jest.fn().mockResolvedValue([]);
+const mockSearchLocations = jest.fn().mockReturnValue([]);
 
 const renderTripDetails = (errors: TripFormErrors) => {
   const handlers = {

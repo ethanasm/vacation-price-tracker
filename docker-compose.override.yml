@@ -17,7 +17,7 @@ services:
     build:
       target: development
     volumes:
-      - ./apps/worker:/app
+      - .:/app
       - /app/.venv  # Exclude virtualenv from mount
     environment:
       - ENVIRONMENT=development

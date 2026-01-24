@@ -28,7 +28,7 @@ from app.db.temporal import close_temporal_client, get_temporal_client, init_tem
 from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
-from app.routers import auth, locations, trips
+from app.routers import auth, trips
 
 
 def _configure_logging() -> None:
@@ -90,7 +90,6 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 # Include routers
 app.include_router(auth.router, tags=["auth"])
 app.include_router(trips.router, tags=["trips"])
-app.include_router(locations.router, tags=["locations"])
 
 
 @app.exception_handler(AppError)

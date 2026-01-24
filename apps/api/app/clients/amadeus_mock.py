@@ -8,30 +8,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Sample airports/cities for location search
-MOCK_LOCATIONS: list[dict[str, str]] = [
-    {"code": "JFK", "name": "John F Kennedy International", "type": "AIRPORT"},
-    {"code": "LAX", "name": "Los Angeles International", "type": "AIRPORT"},
-    {"code": "ORD", "name": "O'Hare International", "type": "AIRPORT"},
-    {"code": "MIA", "name": "Miami International", "type": "AIRPORT"},
-    {"code": "SFO", "name": "San Francisco International", "type": "AIRPORT"},
-    {"code": "SEA", "name": "Seattle-Tacoma International", "type": "AIRPORT"},
-    {"code": "DEN", "name": "Denver International", "type": "AIRPORT"},
-    {"code": "ATL", "name": "Hartsfield-Jackson Atlanta International", "type": "AIRPORT"},
-    {"code": "BOS", "name": "Boston Logan International", "type": "AIRPORT"},
-    {"code": "DFW", "name": "Dallas/Fort Worth International", "type": "AIRPORT"},
-    {"code": "LHR", "name": "London Heathrow", "type": "AIRPORT"},
-    {"code": "CDG", "name": "Paris Charles de Gaulle", "type": "AIRPORT"},
-    {"code": "NRT", "name": "Tokyo Narita International", "type": "AIRPORT"},
-    {"code": "HNL", "name": "Honolulu International", "type": "AIRPORT"},
-    {"code": "CUN", "name": "Cancun International", "type": "AIRPORT"},
-    {"code": "NYC", "name": "New York", "type": "CITY"},
-    {"code": "LON", "name": "London", "type": "CITY"},
-    {"code": "PAR", "name": "Paris", "type": "CITY"},
-    {"code": "TYO", "name": "Tokyo", "type": "CITY"},
-    {"code": "MXP", "name": "Milan Malpensa", "type": "AIRPORT"},
-]
-
 # Sample hotel data for hotel search
 MOCK_HOTELS: list[dict[str, Any]] = [
     {
@@ -99,18 +75,6 @@ MOCK_HOTELS: list[dict[str, Any]] = [
         "address": "1 Airport Terminal Road",
     },
 ]
-
-
-def mock_search_locations(query: str, limit: int = 10) -> list[dict[str, str]]:
-    """Return mock location results matching the query."""
-    query_lower = query.lower()
-    matches = [
-        loc
-        for loc in MOCK_LOCATIONS
-        if query_lower in loc["code"].lower() or query_lower in loc["name"].lower()
-    ]
-    logger.info("Mock Amadeus: Returning %d locations for query '%s'", len(matches[:limit]), query)
-    return matches[:limit]
 
 
 def mock_hotel_search(

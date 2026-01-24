@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AirportAutocomplete } from "../components/trip-form/airport-autocomplete";
 import type { Location } from "../components/trip-form/airport-autocomplete";
 
@@ -37,29 +37,18 @@ const mockLocations: Location[] = [
   },
 ];
 
-const mockCityLocation: Location = {
-  code: "NYC",
-  name: "New York City",
-  city: "New York",
-  country: "United States",
-  type: "CITY",
-};
-
 describe("AirportAutocomplete", () => {
   const defaultProps = {
     id: "test-airport",
     value: "",
     onChange: jest.fn(),
-    searchLocations: jest.fn(),
+    searchLocations: jest.fn().mockReturnValue([]),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
+    // Reset mock to return empty array by default
+    defaultProps.searchLocations.mockReturnValue([]);
   });
 
   describe("rendering", () => {
@@ -123,8 +112,8 @@ describe("AirportAutocomplete", () => {
       expect(onChange).toHaveBeenCalledWith("LA");
     });
 
-    it("debounces search calls", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("searches immediately when typing (no debounce)", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -133,67 +122,16 @@ describe("AirportAutocomplete", () => {
       );
 
       const input = screen.getByRole("textbox");
-
-      // Type multiple characters quickly
-      fireEvent.change(input, { target: { value: "L" } });
-      fireEvent.change(input, { target: { value: "LA" } });
-      fireEvent.change(input, { target: { value: "LAX" } });
-
-      // Search should not be called yet
-      expect(searchLocations).not.toHaveBeenCalled();
-
-      // Fast forward debounce timer and wait for async state updates
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      // Now search should be called with final value
-      expect(searchLocations).toHaveBeenCalledTimes(1);
-      expect(searchLocations).toHaveBeenCalledWith("LAX");
-    });
-
-    it("clears previous debounce timer when typing continues", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
-      render(
-        <AirportAutocomplete
-          {...defaultProps}
-          searchLocations={searchLocations}
-        />
-      );
-
-      const input = screen.getByRole("textbox");
-
       fireEvent.change(input, { target: { value: "LA" } });
 
-      // Advance 200ms (not enough to trigger search)
-      act(() => {
-        jest.advanceTimersByTime(200);
-      });
-
-      // Type again
-      fireEvent.change(input, { target: { value: "LAX" } });
-
-      // Advance 200ms more
-      act(() => {
-        jest.advanceTimersByTime(200);
-      });
-
-      // Search should not have been called yet (timer was reset)
-      expect(searchLocations).not.toHaveBeenCalled();
-
-      // Advance remaining 100ms and wait for async state updates
-      await act(async () => {
-        jest.advanceTimersByTime(100);
-      });
-
-      // Now search should be called
-      expect(searchLocations).toHaveBeenCalledWith("LAX");
+      // Search should be called immediately
+      expect(searchLocations).toHaveBeenCalledWith("LA");
     });
   });
 
   describe("search functionality", () => {
-    it("does not search when query is less than 2 characters", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("does not search when query is less than 2 characters", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -204,15 +142,11 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "L" } });
 
-      act(() => {
-        jest.advanceTimersByTime(300);
-      });
-
       expect(searchLocations).not.toHaveBeenCalled();
     });
 
-    it("searches when query is 2 or more characters", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("searches when query is 2 or more characters", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -222,46 +156,12 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
 
       expect(searchLocations).toHaveBeenCalledWith("LA");
     });
 
-    it("shows loading indicator while searching", async () => {
-      let resolveSearch: (value: Location[]) => void;
-      const searchLocations = jest.fn().mockImplementation(
-        () => new Promise((resolve) => { resolveSearch = resolve; })
-      );
-      const { container } = render(
-        <AirportAutocomplete
-          {...defaultProps}
-          searchLocations={searchLocations}
-        />
-      );
-
-      const input = screen.getByRole("textbox");
-      fireEvent.change(input, { target: { value: "LA" } });
-
-      // Advance debounce timer to trigger search
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      // Loading indicator should be visible (Loader2 icon)
-      const svgs = container.querySelectorAll("svg");
-      expect(svgs.length).toBeGreaterThanOrEqual(1);
-
-      // Complete the search
-      await act(async () => {
-        resolveSearch?.(mockLocations);
-      });
-    });
-
-    it("opens dropdown when search returns results", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("opens dropdown when search returns results", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -272,18 +172,12 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-        expect(screen.getByText("Los Angeles International Airport")).toBeInTheDocument();
-      });
+      expect(screen.getByText("LAX")).toBeInTheDocument();
+      expect(screen.getByText("Los Angeles International Airport")).toBeInTheDocument();
     });
 
-    it("does not open dropdown when search returns empty results", async () => {
-      const searchLocations = jest.fn().mockResolvedValue([]);
+    it("does not open dropdown when search returns empty results", () => {
+      const searchLocations = jest.fn().mockReturnValue([]);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -294,41 +188,13 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "XYZ" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByRole("button")).not.toBeInTheDocument();
-      });
-    });
-
-    it("handles search error gracefully", async () => {
-      const searchLocations = jest.fn().mockRejectedValue(new Error("Network error"));
-      render(
-        <AirportAutocomplete
-          {...defaultProps}
-          searchLocations={searchLocations}
-        />
-      );
-
-      const input = screen.getByRole("textbox");
-      fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        // Should not crash, dropdown should be closed
-        expect(screen.queryByRole("button")).not.toBeInTheDocument();
-      });
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
     });
   });
 
   describe("dropdown and selection", () => {
-    it("displays location details in dropdown", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("displays location details in dropdown", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -339,20 +205,14 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-        expect(screen.getByText("Los Angeles, United States")).toBeInTheDocument();
-      });
+      expect(screen.getByText("LAX")).toBeInTheDocument();
+      expect(screen.getByText("Los Angeles, United States")).toBeInTheDocument();
     });
 
-    it("calls onChange and onSelect when option is clicked", async () => {
+    it("calls onChange and onSelect when option is clicked", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
 
       render(
         <AirportAutocomplete
@@ -365,14 +225,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       // Click on the first option
       const firstOption = screen.getAllByRole("button")[0];
@@ -383,7 +235,7 @@ describe("AirportAutocomplete", () => {
     });
 
     it("closes dropdown after selection", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -393,14 +245,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       const firstOption = screen.getAllByRole("button")[0];
       fireEvent.click(firstOption);
@@ -410,8 +254,8 @@ describe("AirportAutocomplete", () => {
       });
     });
 
-    it("highlights option on mouse enter", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("highlights option on mouse enter", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -422,14 +266,6 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
-
       const secondOption = screen.getAllByRole("button")[1];
       fireEvent.mouseEnter(secondOption);
 
@@ -437,35 +273,13 @@ describe("AirportAutocomplete", () => {
       // We verify the option exists and mouseEnter was handled
       expect(secondOption).toBeInTheDocument();
     });
-
-    it("renders CITY type with MapPin icon", async () => {
-      const searchLocations = jest.fn().mockResolvedValue([mockCityLocation]);
-      render(
-        <AirportAutocomplete
-          {...defaultProps}
-          searchLocations={searchLocations}
-        />
-      );
-
-      const input = screen.getByRole("textbox");
-      fireEvent.change(input, { target: { value: "NY" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("NYC")).toBeInTheDocument();
-        expect(screen.getByText("New York City")).toBeInTheDocument();
-      });
-    });
   });
 
   describe("keyboard navigation", () => {
-    it("navigates down with ArrowDown key", async () => {
+    it("navigates down with ArrowDown key", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -477,14 +291,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       onChange.mockClear();
 
@@ -501,10 +307,10 @@ describe("AirportAutocomplete", () => {
       expect(onSelect).toHaveBeenCalledWith(mockLocations[1]);
     });
 
-    it("navigates up with ArrowUp key", async () => {
+    it("navigates up with ArrowUp key", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -516,14 +322,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       onChange.mockClear();
 
@@ -541,10 +339,10 @@ describe("AirportAutocomplete", () => {
       expect(onSelect).toHaveBeenCalledWith(mockLocations[0]);
     });
 
-    it("does not go below first item with ArrowUp", async () => {
+    it("does not go below first item with ArrowUp", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -556,14 +354,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       onChange.mockClear();
 
@@ -579,10 +369,10 @@ describe("AirportAutocomplete", () => {
       expect(onChange).toHaveBeenCalledWith("LAX");
     });
 
-    it("does not go past last item with ArrowDown", async () => {
+    it("does not go past last item with ArrowDown", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -594,14 +384,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       onChange.mockClear();
 
@@ -618,10 +400,10 @@ describe("AirportAutocomplete", () => {
       expect(onSelect).toHaveBeenCalledWith(mockLocations[2]);
     });
 
-    it("selects highlighted option with Enter key", async () => {
+    it("selects highlighted option with Enter key", () => {
       const onChange = jest.fn();
       const onSelect = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
 
       render(
         <AirportAutocomplete
@@ -635,14 +417,6 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
-
       // Navigate to first item and select
       fireEvent.keyDown(input, { key: "ArrowDown" });
       fireEvent.keyDown(input, { key: "Enter" });
@@ -651,9 +425,9 @@ describe("AirportAutocomplete", () => {
       expect(onSelect).toHaveBeenCalledWith(mockLocations[0]);
     });
 
-    it("does not select when Enter pressed with no highlighted option", async () => {
+    it("does not select when Enter pressed with no highlighted option", () => {
       const onChange = jest.fn();
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
 
       render(
         <AirportAutocomplete
@@ -669,14 +443,6 @@ describe("AirportAutocomplete", () => {
       // Clear onChange call from typing
       onChange.mockClear();
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
-
       // Press Enter without navigating (no highlighted option)
       fireEvent.keyDown(input, { key: "Enter" });
 
@@ -685,7 +451,7 @@ describe("AirportAutocomplete", () => {
     });
 
     it("closes dropdown with Escape key", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -696,14 +462,6 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
-
       // Press Escape
       fireEvent.keyDown(input, { key: "Escape" });
 
@@ -713,7 +471,7 @@ describe("AirportAutocomplete", () => {
     });
 
     it("ignores keyboard navigation when dropdown is closed", () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -736,7 +494,7 @@ describe("AirportAutocomplete", () => {
 
   describe("click outside behavior", () => {
     it("closes dropdown when clicking outside", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <div>
           <div data-testid="outside-element">Outside</div>
@@ -750,14 +508,6 @@ describe("AirportAutocomplete", () => {
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
-
       // Click outside
       fireEvent.mouseDown(screen.getByTestId("outside-element"));
 
@@ -766,8 +516,8 @@ describe("AirportAutocomplete", () => {
       });
     });
 
-    it("does not close dropdown when clicking inside", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("does not close dropdown when clicking inside", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -777,14 +527,6 @@ describe("AirportAutocomplete", () => {
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "LA" } });
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
 
       // Click on input (inside)
       fireEvent.mouseDown(input);
@@ -796,7 +538,7 @@ describe("AirportAutocomplete", () => {
 
   describe("focus behavior", () => {
     it("reopens dropdown on focus if value and results exist", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       const { rerender } = render(
         <AirportAutocomplete
           {...defaultProps}
@@ -810,13 +552,7 @@ describe("AirportAutocomplete", () => {
       // First search to populate results
       fireEvent.change(input, { target: { value: "LA" } });
 
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("LAX")).toBeInTheDocument();
-      });
+      expect(screen.getByText("LAX")).toBeInTheDocument();
 
       // Close dropdown by pressing Escape
       fireEvent.keyDown(input, { key: "Escape" });
@@ -844,8 +580,8 @@ describe("AirportAutocomplete", () => {
       });
     });
 
-    it("does not open dropdown on focus if value is too short", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("does not open dropdown on focus if value is too short", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       render(
         <AirportAutocomplete
           {...defaultProps}
@@ -863,32 +599,8 @@ describe("AirportAutocomplete", () => {
   });
 
   describe("cleanup", () => {
-    it("cleans up debounce timer on unmount", () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
-      const { unmount } = render(
-        <AirportAutocomplete
-          {...defaultProps}
-          searchLocations={searchLocations}
-        />
-      );
-
-      const input = screen.getByRole("textbox");
-      fireEvent.change(input, { target: { value: "LA" } });
-
-      // Unmount before debounce completes
-      unmount();
-
-      // Advance timer - should not cause errors
-      act(() => {
-        jest.advanceTimersByTime(300);
-      });
-
-      // Search should not have been called
-      expect(searchLocations).not.toHaveBeenCalled();
-    });
-
-    it("cleans up event listeners on unmount", async () => {
-      const searchLocations = jest.fn().mockResolvedValue(mockLocations);
+    it("cleans up event listeners on unmount", () => {
+      const searchLocations = jest.fn().mockReturnValue(mockLocations);
       const removeEventListenerSpy = jest.spyOn(document, "removeEventListener");
 
       const { unmount } = render(

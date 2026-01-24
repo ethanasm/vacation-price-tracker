@@ -91,8 +91,8 @@ export default function EditTripPage({
     loadTrip();
   }, [tripId, setters]);
 
-  // Memoized search function that uses the API client
-  const searchLocations = useCallback(async (query: string): Promise<Location[]> => {
+  // Memoized search function that uses static airport data
+  const searchLocations = useCallback((query: string): Location[] => {
     return api.locations.search(query);
   }, []);
 

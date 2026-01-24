@@ -34,7 +34,7 @@ export interface TripDetailsSectionProps {
   onDepartDateChange: (value: Date | undefined) => void;
   onReturnDateChange: (value: Date | undefined) => void;
   onAdultsChange: (value: string) => void;
-  searchLocations: (query: string) => Promise<Location[]>;
+  searchLocations: (query: string) => Location[];
 }
 
 export function TripDetailsSection({

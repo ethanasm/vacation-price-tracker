@@ -69,8 +69,60 @@
   --chart-5: 160 60% 45%;
 }
 
+/* Dark mode theme - active from 6pm to 8am */
+.dark {
+  --ink: #ffffff;
+  --ink-muted: rgba(255, 255, 255, 0.8);
+  --paper: #0d0d14;
+  --panel: rgba(20, 20, 32, 0.85);
+  --shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+
+  --background: 250 20% 6%;
+  --foreground: 0 0% 100%;
+  --card: 250 15% 10%;
+  --card-foreground: 0 0% 100%;
+  --popover: 250 15% 12%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 262 83% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 200 50% 20%;
+  --secondary-foreground: 200 40% 90%;
+  --muted: 250 15% 25%;
+  --muted-foreground: 0 0% 80%;
+  --accent: 340 75% 60%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 45%;
+  --input: 0 0% 40%;
+  --ring: 262 83% 65%;
+
+  /* Dark mode gradients */
+  --gradient-warm: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+  --gradient-cool: linear-gradient(135deg, #7c8cf8 0%, #b06ab3 50%, #5dade2 100%);
+  --gradient-ocean: linear-gradient(135deg, #8093f1 0%, #9b6dff 100%);
+  --glass-bg: rgba(20, 20, 32, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.3);
+
+  /* Dark mode chart colors - slightly brighter for visibility */
+  --chart-1: 262 83% 68%;
+  --chart-2: 190 60% 55%;
+  --chart-3: 340 75% 62%;
+  --chart-4: 30 80% 60%;
+  --chart-5: 160 60% 50%;
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 html,
@@ -138,14 +190,15 @@ body {
 
 /* Outline button - frosted glass */
 .btn-outline {
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--glass-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--glass-border);
   color: var(--ink);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-outline:hover {
@@ -157,15 +210,28 @@ body {
   transform: translateY(-1px);
 }
 
+.dark .btn-outline:hover {
+  background: rgba(40, 40, 60, 0.9);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 /* Ghost button */
 .btn-ghost {
   background: transparent;
   border: none;
   color: var(--ink);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-ghost:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+.dark .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Size variants */
@@ -177,4 +243,20 @@ body {
 .btn-lg {
   padding: 0.75rem 1.5rem;
   font-size: 1rem;
+}
+
+/* Dark mode helper text - must be clearly visible */
+.dark .fieldHint,
+.dark .fieldError,
+.dark .toggleDescription,
+.dark [class*="Hint"],
+.dark [class*="hint"],
+.dark [class*="Description"] {
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-weight: 500;
+}
+
+/* Dark mode muted text override */
+.dark [class*="muted"] {
+  color: rgba(255, 255, 255, 0.75);
 }

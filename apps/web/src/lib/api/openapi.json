@@ -677,6 +677,98 @@
         "title": "CabinClass",
         "description": "Flight cabin class options."
       },
+      "FlightOffer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "airline_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Airline Code"
+          },
+          "airline_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Airline Name"
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price"
+          },
+          "departure_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departure Time"
+          },
+          "arrival_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Time"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "stops": {
+            "type": "integer",
+            "title": "Stops",
+            "default": 0
+          },
+          "return_flight": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Flight"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "price"
+        ],
+        "title": "FlightOffer",
+        "description": "Schema for a flight offer."
+      },
       "FlightPrefs": {
         "properties": {
           "airlines": {
@@ -728,6 +820,64 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HotelOffer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price"
+        ],
+        "title": "HotelOffer",
+        "description": "Schema for a hotel offer."
       },
       "HotelPrefs": {
         "properties": {
@@ -933,6 +1083,20 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "flight_offers": {
+            "items": {
+              "$ref": "#/components/schemas/FlightOffer"
+            },
+            "type": "array",
+            "title": "Flight Offers"
+          },
+          "hotel_offers": {
+            "items": {
+              "$ref": "#/components/schemas/HotelOffer"
+            },
+            "type": "array",
+            "title": "Hotel Offers"
           }
         },
         "type": "object",

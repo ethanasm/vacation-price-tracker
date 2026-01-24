@@ -1,11 +1,15 @@
 .section {
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--glass-bg);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--glass-border);
   border-radius: 1rem;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
   width: 100%;
+}
+
+:global(.dark) .section {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
 }
 
 .sectionHeader {
@@ -21,6 +25,10 @@
 
 .sectionHeader:hover {
   background: rgba(255, 255, 255, 0.5);
+}
+
+:global(.dark) .sectionHeader:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .sectionTitle {

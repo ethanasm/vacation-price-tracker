@@ -205,9 +205,10 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
     logger.info("Saving price snapshot for trip_id=%s", payload["trip_id"])
     flight_price = _extract_min_price(payload["flights"])
     hotel_price = _extract_min_price(payload["hotels"])
+    # Calculate total from whatever prices are available
     total_price = None
-    if flight_price is not None and hotel_price is not None:
-        total_price = flight_price + hotel_price
+    if flight_price is not None or hotel_price is not None:
+        total_price = (flight_price or Decimal(0)) + (hotel_price or Decimal(0))
     logger.debug(
         "Snapshot prices for trip_id=%s flight=%s hotel=%s total=%s",
         payload["trip_id"],

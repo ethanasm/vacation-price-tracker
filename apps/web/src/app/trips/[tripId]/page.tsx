@@ -38,9 +38,9 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import type { TripDetail, PriceSnapshot } from "@/lib/api";
+import type { TripDetail, PriceSnapshot, ApiFlightOffer, ApiHotelOffer } from "@/lib/api";
 import { api, ApiError } from "@/lib/api";
-import { formatPrice, formatShortDate } from "@/lib/format";
+import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderStars } from "@/lib/format";
 import styles from "./page.module.css";
 
 const parsePrice = (value: string | null | undefined): number | null => {
@@ -188,6 +188,136 @@ function PriceTrend({
   );
 }
 
+function FlightsList({ flights }: { flights: ApiFlightOffer[] }) {
+  if (flights.length === 0) {
+    return (
+      <div className={styles.emptyChart}>
+        <Plane className={styles.emptyChartIcon} />
+        <p>No flight offers available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.flightsListCompact}>
+      {flights.map((flight, index) => {
+        const returnFlight = flight.return_flight as {
+          departure_time?: string;
+          arrival_time?: string;
+        } | null;
+        return (
+          <div
+            key={flight.id}
+            className={`${styles.flightCard} ${index === 0 ? styles.bestFlight : ""}`}
+          >
+            <div className={styles.flightRow}>
+              <div className={styles.flightLegs}>
+                <div className={styles.flightLeg}>
+                  <span className={styles.airlineCode}>
+                    {flight.airline_code || "—"}
+                  </span>
+                  <span className={styles.flightTimes}>
+                    {flight.departure_time
+                      ? formatFlightTime(flight.departure_time)
+                      : "—"}{" "}
+                    →{" "}
+                    {flight.arrival_time
+                      ? formatFlightTime(flight.arrival_time)
+                      : "—"}
+                  </span>
+                  <span className={styles.flightMeta}>
+                    {flight.duration_minutes
+                      ? formatDuration(flight.duration_minutes)
+                      : ""}{" "}
+                    · {flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
+                  </span>
+                </div>
+                {returnFlight && (
+                  <div className={styles.flightLeg}>
+                    <span className={styles.airlineCode}>
+                      {flight.airline_code || "—"}
+                    </span>
+                    <span className={styles.flightTimes}>
+                      {returnFlight.departure_time
+                        ? formatFlightTime(returnFlight.departure_time)
+                        : "—"}{" "}
+                      →{" "}
+                      {returnFlight.arrival_time
+                        ? formatFlightTime(returnFlight.arrival_time)
+                        : "—"}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className={styles.flightPriceCol}>
+                {index === 0 && <span className={styles.bestLabel}>Best</span>}
+                <span className={styles.flightPrice}>
+                  {formatPrice(flight.price)}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HotelsList({
+  hotels,
+  selectedHotelId,
+  onSelectHotel,
+}: {
+  hotels: ApiHotelOffer[];
+  selectedHotelId: string | null;
+  onSelectHotel: (hotelId: string) => void;
+}) {
+  if (hotels.length === 0) {
+    return (
+      <div className={styles.emptyChart}>
+        <Hotel className={styles.emptyChartIcon} />
+        <p>No hotel offers available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.hotelsListCompact}>
+      {hotels.map((hotel) => {
+        const isSelected = hotel.id === selectedHotelId;
+        return (
+          <button
+            key={hotel.id}
+            type="button"
+            className={`${styles.hotelCardCompact} ${isSelected ? styles.hotelSelected : ""}`}
+            onClick={() => onSelectHotel(hotel.id)}
+          >
+            <div className={styles.hotelRadioCompact}>
+              <div
+                className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}
+              >
+                {isSelected && <div className={styles.radioInner} />}
+              </div>
+            </div>
+            <span className={styles.hotelNameCompact} title={hotel.name}>
+              {hotel.name}
+              {hotel.rating && (
+                <span className={styles.hotelRating}>
+                  {" "}
+                  {renderStars(hotel.rating)}
+                </span>
+              )}
+            </span>
+            <span className={styles.hotelPriceCompact}>
+              {formatPrice(hotel.price)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function LoadingSkeleton() {
   return (
     <div className={styles.containerCompact}>
@@ -253,6 +383,7 @@ export default function TripDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
 
   const fetchTripDetails = useCallback(async () => {
     try {
@@ -338,12 +469,19 @@ export default function TripDetailPage({
 
   const isActive = trip.status.toLowerCase() === "active";
 
-  // Calculate trend from price history
+  // Calculate trend from price history (API returns descending order - newest first)
   const hasTrend = priceHistory.length >= 2;
   const currentTotal = totalPriceValue ?? 0;
   const previousTotal = hasTrend
-    ? parsePrice(priceHistory[priceHistory.length - 2]?.total_price)
+    ? parsePrice(priceHistory[1]?.total_price)
     : null;
+
+  // Get offers from the latest snapshot
+  const latestSnapshot = priceHistory[0];
+  const latestOffers = {
+    flights: (latestSnapshot?.flight_offers ?? []) as ApiFlightOffer[],
+    hotels: (latestSnapshot?.hotel_offers ?? []) as ApiHotelOffer[],
+  };
 
   return (
     <div className={styles.containerCompact}>
@@ -482,95 +620,31 @@ export default function TripDetailPage({
           </CardContent>
         </Card>
 
-        {/* Trip Details Card */}
+        {/* Hotels List */}
+        <Card className={styles.listCard}>
+          <CardContent className={styles.listCardContent}>
+            <div className={styles.listHeader}>
+              <Hotel className="h-4 w-4" />
+              <span>Hotels</span>
+            </div>
+            <HotelsList
+              hotels={latestOffers.hotels}
+              selectedHotelId={selectedHotelId}
+              onSelectHotel={setSelectedHotelId}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Flights List */}
         <Card className={styles.listCard}>
           <CardContent className={styles.listCardContent}>
             <div className={styles.listHeader}>
               <Plane className="h-4 w-4" />
-              <span>Trip Details</span>
+              <span>Flights</span>
             </div>
-            <div className={styles.detailsList}>
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Travelers</span>
-                <span className={styles.detailValue}>
-                  {trip.adults} adult{trip.adults !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Trip Type</span>
-                <span className={styles.detailValue}>
-                  {trip.is_round_trip ? "Round trip" : "One way"}
-                </span>
-              </div>
-              {trip.flight_prefs && (
-                <>
-                  <div className={styles.detailRow}>
-                    <span className={styles.detailLabel}>Cabin</span>
-                    <span className={styles.detailValue}>
-                      {trip.flight_prefs.cabin
-                        ? trip.flight_prefs.cabin.charAt(0).toUpperCase() +
-                          trip.flight_prefs.cabin.slice(1)
-                        : "Economy"}
-                    </span>
-                  </div>
-                  {trip.flight_prefs.airlines &&
-                    trip.flight_prefs.airlines.length > 0 && (
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Airlines</span>
-                        <span className={styles.detailValue}>
-                          {trip.flight_prefs.airlines.join(", ")}
-                        </span>
-                      </div>
-                    )}
-                </>
-              )}
-            </div>
+            <FlightsList flights={latestOffers.flights} />
           </CardContent>
         </Card>
-
-        {/* Hotel Preferences Card */}
-        {trip.hotel_prefs && (
-          <Card className={styles.listCard}>
-            <CardContent className={styles.listCardContent}>
-              <div className={styles.listHeader}>
-                <Hotel className="h-4 w-4" />
-                <span>Hotel Preferences</span>
-              </div>
-              <div className={styles.detailsList}>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Rooms</span>
-                  <span className={styles.detailValue}>
-                    {trip.hotel_prefs.rooms}
-                  </span>
-                </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Adults/Room</span>
-                  <span className={styles.detailValue}>
-                    {trip.hotel_prefs.adults_per_room}
-                  </span>
-                </div>
-                {trip.hotel_prefs.preferred_room_types &&
-                  trip.hotel_prefs.preferred_room_types.length > 0 && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Room Types</span>
-                      <span className={styles.detailValue}>
-                        {trip.hotel_prefs.preferred_room_types.join(", ")}
-                      </span>
-                    </div>
-                  )}
-                {trip.hotel_prefs.preferred_views &&
-                  trip.hotel_prefs.preferred_views.length > 0 && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Views</span>
-                      <span className={styles.detailValue}>
-                        {trip.hotel_prefs.preferred_views.join(", ")}
-                      </span>
-                    </div>
-                  )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );

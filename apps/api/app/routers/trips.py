@@ -31,7 +31,9 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.routers.auth import UserResponse, get_current_user
 from app.schemas.base import APIResponse, PaginationMeta
 from app.schemas.trip import (
+    FlightOffer,
     FlightPrefs,
+    HotelOffer,
     HotelPrefs,
     NotificationPrefs,
     PriceSnapshotResponse,
@@ -135,6 +137,77 @@ async def _get_latest_snapshot(db: AsyncSession, trip_id: uuid.UUID) -> PriceSna
         .limit(1)
     )
     return result.scalars().first()
+
+
+def _extract_price(item: dict) -> str | None:
+    """Extract price from various API response formats."""
+    if "price" in item:
+        price_val = item["price"]
+        if isinstance(price_val, dict):
+            return price_val.get("total") or price_val.get("grandTotal") or price_val.get("amount")
+        return str(price_val)
+    if "total_price" in item:
+        return str(item["total_price"])
+    return None
+
+
+def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
+    """Convert a snapshot to response, extracting offers from raw_data."""
+    flight_offers: list[FlightOffer] = []
+    hotel_offers: list[HotelOffer] = []
+
+    raw = snapshot.raw_data or {}
+
+    # Extract flight offers
+    flights_data = raw.get("flights", {})
+    if isinstance(flights_data, dict):
+        flight_list = flights_data.get("data") or flights_data.get("offers") or []
+        for i, item in enumerate(flight_list[:10]):  # Limit to top 10
+            if not isinstance(item, dict):
+                continue
+            price = _extract_price(item)
+            if price is None:
+                continue
+            flight_offers.append(FlightOffer(
+                id=item.get("id") or str(i),
+                airline_code=item.get("carrier") or item.get("operating_carrier") or item.get("airline"),
+                airline_name=item.get("airline_name") or item.get("carrierName"),
+                price=price,
+                departure_time=item.get("departure_time") or item.get("departureTime"),
+                arrival_time=item.get("arrival_time") or item.get("arrivalTime"),
+                duration_minutes=item.get("duration") or item.get("duration_minutes"),
+                stops=item.get("stops", 0),
+                return_flight=item.get("return_flight"),
+            ))
+
+    # Extract hotel offers
+    hotels_data = raw.get("hotels", {})
+    if isinstance(hotels_data, dict):
+        hotel_list = hotels_data.get("data") or hotels_data.get("offers") or []
+        for i, item in enumerate(hotel_list[:10]):  # Limit to top 10
+            if not isinstance(item, dict):
+                continue
+            price = _extract_price(item)
+            if price is None:
+                continue
+            hotel_offers.append(HotelOffer(
+                id=item.get("id") or item.get("hotelId") or str(i),
+                name=item.get("name") or item.get("hotel", {}).get("name", f"Hotel {i + 1}"),
+                price=price,
+                rating=item.get("rating") or item.get("hotel", {}).get("rating"),
+                address=item.get("address") or item.get("hotel", {}).get("address"),
+                description=item.get("description") or item.get("room", {}).get("description"),
+            ))
+
+    return PriceSnapshotResponse(
+        id=snapshot.id,
+        flight_price=snapshot.flight_price,
+        hotel_price=snapshot.hotel_price,
+        total_price=snapshot.total_price,
+        created_at=snapshot.created_at,
+        flight_offers=flight_offers,
+        hotel_offers=hotel_offers,
+    )
 
 
 @router.get("/v1/trips", response_model=APIResponse[list[TripResponse]])
@@ -355,7 +428,7 @@ async def get_trip_details(
 
     data = TripDetailResponse(
         trip=detail,
-        price_history=[PriceSnapshotResponse.model_validate(snapshot) for snapshot in snapshots],
+        price_history=[_snapshot_to_response(snapshot) for snapshot in snapshots],
     )
     return APIResponse(
         data=data,

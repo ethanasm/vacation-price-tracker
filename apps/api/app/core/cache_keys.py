@@ -26,12 +26,6 @@ class CacheKeys:
         """Key for hotel search results."""
         return f"hotel:{location}:{checkin}:{checkout}"
 
-    @staticmethod
-    def location_search(query: str) -> str:
-        """Key for cached location search results."""
-        normalized = query.strip().lower().replace(" ", "_")
-        return f"locations:search:{normalized}"
-
     # User session management
     @staticmethod
     def user_session(user_id: str) -> str:
@@ -63,5 +57,4 @@ class CacheTTL:
     SESSION = 3600  # 1 hour
     REFRESH_TOKEN = 604800  # 7 days
     RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
-    LOCATION_SEARCH = 2592000  # 30 days
     REFRESH_LOCK = 1800  # 30 minutes

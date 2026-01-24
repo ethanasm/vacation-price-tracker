@@ -20,10 +20,16 @@ export function formatPrice(price: number | string | null): string {
 
 /**
  * Format a date string as short date (e.g., "Jan 15").
+ * Handles both date-only (YYYY-MM-DD) and full ISO timestamps.
  * Parses as local date to avoid timezone hydration mismatches.
  */
 export function formatShortDate(dateString: string): string {
-  const [year, month, day] = dateString.split("-").map(Number);
+  // Handle full ISO timestamps by extracting just the date part
+  const datePart = dateString.split("T")[0];
+  const [year, month, day] = datePart.split("-").map(Number);
+  if (!year || !month || !day) {
+    return "—";
+  }
   const date = new Date(year, month - 1, day);
   return date.toLocaleDateString("en-US", {
     month: "short",

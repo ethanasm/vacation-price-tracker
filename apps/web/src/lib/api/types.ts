@@ -301,6 +301,35 @@ export interface components {
          */
         CabinClass: "economy" | "premium_economy" | "business" | "first";
         /**
+         * FlightOffer
+         * @description Schema for a flight offer.
+         */
+        FlightOffer: {
+            /** Id */
+            id: string;
+            /** Airline Code */
+            airline_code?: string | null;
+            /** Airline Name */
+            airline_name?: string | null;
+            /** Price */
+            price: string;
+            /** Departure Time */
+            departure_time?: string | null;
+            /** Arrival Time */
+            arrival_time?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /**
+             * Stops
+             * @default 0
+             */
+            stops: number;
+            /** Return Flight */
+            return_flight?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * FlightPrefs
          * @description Flight preferences for a trip.
          */
@@ -330,6 +359,24 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HotelOffer
+         * @description Schema for a hotel offer.
+         */
+        HotelOffer: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Price */
+            price: string;
+            /** Rating */
+            rating?: number | null;
+            /** Address */
+            address?: string | null;
+            /** Description */
+            description?: string | null;
         };
         /**
          * HotelPrefs
@@ -474,6 +521,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Flight Offers */
+            flight_offers?: components["schemas"]["FlightOffer"][];
+            /** Hotel Offers */
+            hotel_offers?: components["schemas"]["HotelOffer"][];
         };
         /**
          * RefreshStartResponse

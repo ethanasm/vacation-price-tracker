@@ -160,11 +160,6 @@ class TemporalServiceError(UpstreamServiceError):
     detail = "Temporal service error."
 
 
-class LocationSearchFailed(UpstreamServiceError):
-    type = problem_type("location-search-failed")
-    detail = "Failed to fetch locations."
-
-
 class MCPServerUnavailable(ServiceUnavailableError):
     type = problem_type("mcp-server-unavailable")
     detail = "MCP server is unavailable."

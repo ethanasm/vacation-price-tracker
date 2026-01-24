@@ -681,17 +681,17 @@ Connect frontend to real backend APIs and remove mock data.
 - [X] Temporal workflow with mocked activities
 
 ### Manual Testing
-- [ ] End-to-end OAuth login flow
-- [ ] Create trip, verify in database
+- [X] End-to-end OAuth login flow
+- [X] Create trip, verify in database
 - [ ] Manual refresh, verify snapshot created
-- [ ] Delete trip, verify cascade delete
+- [X] Delete trip, verify cascade delete
 
 ---
 
 ## 9. Definition of Done
 
 Phase 1 is complete when:
-- [ ] User can sign in with Google OAuth
+- [X] User can sign in with Google OAuth
 - [ ] User can create a trip via form with flight and hotel preferences
 - [ ] User can view all their trips in a dashboard table
 - [ ] User can manually trigger a price refresh

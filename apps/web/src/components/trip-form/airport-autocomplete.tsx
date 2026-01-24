@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plane, Loader2, MapPin } from "lucide-react";
+import { Plane, MapPin } from "lucide-react";
 import { Input } from "../ui/input";
 import type { LocationResult } from "../../lib/api";
 import styles from "./airport-autocomplete.module.css";
@@ -16,7 +16,7 @@ export interface AirportAutocompleteProps {
   onSelect?: (location: Location) => void;
   placeholder?: string;
   icon?: "departure" | "arrival";
-  searchLocations: (query: string) => Promise<Location[]>;
+  searchLocations: (query: string) => Location[];
   disabled?: boolean;
 }
 
@@ -31,34 +31,24 @@ export function AirportAutocomplete({
   disabled = false,
 }: AirportAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<Location[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Search with debounce
+  // Search immediately (static data, no network delay)
   const search = useCallback(
-    async (query: string) => {
+    (query: string) => {
       if (query.length < 2) {
         setResults([]);
         setIsOpen(false);
         return;
       }
 
-      setIsLoading(true);
-      try {
-        const locations = await searchLocations(query);
-        setResults(locations);
-        setIsOpen(locations.length > 0);
-        setHighlightedIndex(-1);
-      } catch {
-        setResults([]);
-        setIsOpen(false);
-      } finally {
-        setIsLoading(false);
-      }
+      const locations = searchLocations(query);
+      setResults(locations);
+      setIsOpen(locations.length > 0);
+      setHighlightedIndex(-1);
     },
     [searchLocations]
   );
@@ -66,14 +56,7 @@ export function AirportAutocomplete({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value.toUpperCase();
     onChange(newValue);
-
-    // Debounce search
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    debounceRef.current = setTimeout(() => {
-      search(newValue);
-    }, 300);
+    search(newValue);
   };
 
   const handleSelect = (location: Location) => {
@@ -125,15 +108,6 @@ export function AirportAutocomplete({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Cleanup debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
-
   return (
     <div className={styles.container} ref={containerRef}>
       <div className={styles.inputWrapper}>
@@ -154,9 +128,6 @@ export function AirportAutocomplete({
           className={styles.input}
           autoComplete="off"
         />
-        {isLoading && (
-          <Loader2 className={styles.loadingIcon} />
-        )}
       </div>
 
       {isOpen && results.length > 0 && (

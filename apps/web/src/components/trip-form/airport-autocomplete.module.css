@@ -19,29 +19,17 @@
   z-index: 1;
 }
 
+:global(.dark) .inputIcon {
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .input {
   padding-left: 40px;
   text-transform: uppercase;
 }
 
-.loadingIcon {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
-  color: var(--ink-muted);
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: translateY(-50%) rotate(0deg);
-  }
-  to {
-    transform: translateY(-50%) rotate(360deg);
-  }
+.input::placeholder {
+  text-transform: none;
 }
 
 .dropdown {
@@ -57,6 +45,11 @@
   border-radius: 0.5rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   z-index: 50;
+}
+
+:global(.dark) .dropdown {
+  background: rgba(20, 20, 35, 0.95);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .option {

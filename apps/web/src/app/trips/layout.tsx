@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Plane, LogOut } from "lucide-react";
 import { Button } from "../../components/ui/button";
+import { ThemeToggle } from "../../components/ui/theme-toggle";
 import { useAuth } from "../../context/AuthContext";
 import styles from "./page.module.css";
 
@@ -61,6 +62,7 @@ export default function DashboardLayout({
 
         {/* User section - show skeleton while loading */}
         <div className={styles.userSection}>
+          <ThemeToggle />
           {isLoading || !user ? (
             <div className={styles.userCard}>
               <div className={styles.avatar}>--</div>

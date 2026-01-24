@@ -403,6 +403,12 @@
   flex-shrink: 0;
 }
 
+.hotelRating {
+  font-size: 0.625rem;
+  color: hsl(45 93% 47%);
+  margin-left: 0.25rem;
+}
+
 /* Details List */
 .detailsList {
   display: flex;

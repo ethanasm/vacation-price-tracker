@@ -18,6 +18,15 @@ jest.mock("../context/AuthContext", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+// Mock ThemeContext
+jest.mock("../context/ThemeContext", () => ({
+  useTheme: () => ({
+    mode: "system",
+    theme: "light",
+    setMode: jest.fn(),
+  }),
+}));
+
 // Mock CSS modules
 jest.mock("../app/trips/page.module.css", () => ({
   main: "main",

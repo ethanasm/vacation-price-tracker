@@ -70,6 +70,19 @@ jest.mock("@/lib/format", () => ({
     const d = new Date(date);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   },
+  formatDuration: (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  },
+  formatFlightTime: (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  },
+  renderStars: (rating: number) => "★".repeat(rating) + "☆".repeat(5 - rating),
 }));
 
 // Mock API module
@@ -139,20 +152,65 @@ const baseTripData = {
   updated_at: "2025-01-21T10:30:00Z",
 };
 
+// Latest snapshot is first (index 0) - matches API response order
 const basePriceHistory = [
-  {
-    id: "ph1",
-    flight_price: "550.00",
-    hotel_price: "750.00",
-    total_price: "1300.00",
-    created_at: "2025-01-19T10:00:00Z",
-  },
   {
     id: "ph2",
     flight_price: "500.00",
     hotel_price: "700.00",
     total_price: "1200.00",
     created_at: "2025-01-21T10:30:00Z",
+    flight_offers: [
+      {
+        id: "f2",
+        airline_code: "DL",
+        airline_name: "Delta",
+        price: "250.00",
+        departure_time: "2025-06-15T09:00:00Z",
+        arrival_time: "2025-06-15T11:30:00Z",
+        duration_minutes: 150,
+        stops: 0,
+      },
+    ],
+    hotel_offers: [
+      {
+        id: "h2",
+        name: "City Hotel",
+        price: "700.00",
+        rating: 3,
+        address: "456 Downtown St",
+        description: "Standard room",
+      },
+    ],
+  },
+  {
+    id: "ph1",
+    flight_price: "550.00",
+    hotel_price: "750.00",
+    total_price: "1300.00",
+    created_at: "2025-01-19T10:00:00Z",
+    flight_offers: [
+      {
+        id: "f1",
+        airline_code: "UA",
+        airline_name: "United",
+        price: "275.00",
+        departure_time: "2025-06-15T08:00:00Z",
+        arrival_time: "2025-06-15T10:30:00Z",
+        duration_minutes: 150,
+        stops: 0,
+      },
+    ],
+    hotel_offers: [
+      {
+        id: "h1",
+        name: "Beach Resort",
+        price: "750.00",
+        rating: 4,
+        address: "123 Ocean Ave",
+        description: "Oceanfront suite",
+      },
+    ],
   },
 ];
 
@@ -306,36 +364,34 @@ describe("TripDetailPage", () => {
 
       await waitFor(() => {
         expect(screen.getByText("$500")).toBeInTheDocument(); // Flight
-        expect(screen.getByText("$700")).toBeInTheDocument(); // Hotel
+        // $700 appears in both price summary and hotel list
+        expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("$1200")).toBeInTheDocument(); // Total
       });
     });
 
-    it("displays trip details card", async () => {
+    it("displays hotels list", async () => {
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Trip Details")).toBeInTheDocument();
-        expect(screen.getByText("2 adults")).toBeInTheDocument();
-        expect(screen.getByText("Round trip")).toBeInTheDocument();
-        expect(screen.getByText("Economy")).toBeInTheDocument();
-        expect(screen.getByText("United, Delta")).toBeInTheDocument();
+        expect(screen.getByText("Hotels")).toBeInTheDocument();
+        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+        // $700 appears in both price summary and hotel list
+        expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
       });
     });
 
-    it("displays hotel preferences card", async () => {
+    it("displays flights list", async () => {
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Hotel Preferences")).toBeInTheDocument();
-        expect(screen.getByText("Rooms")).toBeInTheDocument();
-        expect(screen.getByText("Adults/Room")).toBeInTheDocument();
-        expect(screen.getByText("King, Queen")).toBeInTheDocument();
-        expect(screen.getByText("Ocean")).toBeInTheDocument();
+        expect(screen.getByText("Flights")).toBeInTheDocument();
+        expect(screen.getByText("DL")).toBeInTheDocument();
+        expect(screen.getByText("$250")).toBeInTheDocument();
       });
     });
 
@@ -343,7 +399,7 @@ describe("TripDetailPage", () => {
       mockGetDetails.mockResolvedValue({
         data: {
           trip: { ...baseTripData, is_round_trip: false },
-          price_history: [],
+          price_history: basePriceHistory,
         },
       });
 
@@ -352,16 +408,22 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("One way")).toBeInTheDocument();
-        expect(screen.getByText(/→/)).toBeInTheDocument();
+        // Find the route span that shows "SFO → LAX" (one-way) instead of "SFO ↔ LAX" (round-trip)
+        expect(screen.getByText(/SFO.*→.*LAX/)).toBeInTheDocument();
       });
     });
 
-    it("handles trip without hotel prefs", async () => {
+    it("shows empty state when no hotel offers", async () => {
       mockGetDetails.mockResolvedValue({
         data: {
-          trip: { ...baseTripData, hotel_prefs: null },
-          price_history: [],
+          trip: baseTripData,
+          price_history: [
+            {
+              ...basePriceHistory[0],
+              hotel_offers: [],
+              flight_offers: basePriceHistory[0].flight_offers,
+            },
+          ],
         },
       });
 
@@ -370,58 +432,21 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Trip Details")).toBeInTheDocument();
-      });
-
-      // Hotel Preferences card should not be rendered
-      expect(screen.queryByText("Hotel Preferences")).not.toBeInTheDocument();
-    });
-
-    it("handles trip without flight prefs", async () => {
-      mockGetDetails.mockResolvedValue({
-        data: {
-          trip: { ...baseTripData, flight_prefs: null },
-          price_history: [],
-        },
-      });
-
-      await act(async () => {
-        render(<TestWrapper tripId="test-trip" />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Trip Details")).toBeInTheDocument();
-      });
-
-      // Cabin row should not be rendered without flight prefs
-      expect(screen.queryByText("Cabin")).not.toBeInTheDocument();
-    });
-
-    it("falls back to Economy when cabin is missing", async () => {
-      mockGetDetails.mockResolvedValue({
-        data: {
-          trip: {
-            ...baseTripData,
-            flight_prefs: { ...baseTripData.flight_prefs, cabin: "" },
-          },
-          price_history: [],
-        },
-      });
-
-      await act(async () => {
-        render(<TestWrapper tripId="test-trip" />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Economy")).toBeInTheDocument();
+        expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
       });
     });
 
-    it("handles single adult correctly", async () => {
+    it("shows empty state when no flight offers", async () => {
       mockGetDetails.mockResolvedValue({
         data: {
-          trip: { ...baseTripData, adults: 1 },
-          price_history: [],
+          trip: baseTripData,
+          price_history: [
+            {
+              ...basePriceHistory[0],
+              flight_offers: [],
+              hotel_offers: basePriceHistory[0].hotel_offers,
+            },
+          ],
         },
       });
 
@@ -430,7 +455,7 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("1 adult")).toBeInTheDocument();
+        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
       });
     });
   });
@@ -900,23 +925,26 @@ describe("TripDetailPage", () => {
     });
 
     it("shows positive trend when prices increase", async () => {
+      // Price history in descending order (newest first)
+      // Current total from trip = 1200, previous (index 1) = 1100
+      // diff = 1200 - 1100 = +100 = +9.1% (positive trend)
       mockGetDetails.mockResolvedValue({
         data: {
-          trip: baseTripData,
+          trip: baseTripData, // total_price: "1200.00"
           price_history: [
-            {
-              id: "ph1",
-              flight_price: "450.00",
-              hotel_price: "650.00",
-              total_price: "1100.00",
-              created_at: "2025-01-19T10:00:00Z",
-            },
             {
               id: "ph2",
               flight_price: "500.00",
               hotel_price: "700.00",
               total_price: "1200.00",
               created_at: "2025-01-21T10:30:00Z",
+            },
+            {
+              id: "ph1",
+              flight_price: "450.00",
+              hotel_price: "650.00",
+              total_price: "1100.00",
+              created_at: "2025-01-19T10:00:00Z",
             },
           ],
         },
@@ -953,23 +981,25 @@ describe("TripDetailPage", () => {
     });
 
     it("does not show trend when previous price is zero", async () => {
+      // Price history in descending order (newest first)
+      // Previous (index 1) = 0.00, which should not calculate a trend
       mockGetDetails.mockResolvedValue({
         data: {
           trip: baseTripData,
           price_history: [
-            {
-              id: "ph1",
-              flight_price: "0.00",
-              hotel_price: "0.00",
-              total_price: "0.00",
-              created_at: "2025-01-19T10:00:00Z",
-            },
             {
               id: "ph2",
               flight_price: "500.00",
               hotel_price: "700.00",
               total_price: "1200.00",
               created_at: "2025-01-21T10:30:00Z",
+            },
+            {
+              id: "ph1",
+              flight_price: "0.00",
+              hotel_price: "0.00",
+              total_price: "0.00",
+              created_at: "2025-01-19T10:00:00Z",
             },
           ],
         },
@@ -988,23 +1018,24 @@ describe("TripDetailPage", () => {
     });
 
     it("does not show trend when current and previous are equal", async () => {
+      // Price history in descending order (newest first)
       mockGetDetails.mockResolvedValue({
         data: {
           trip: baseTripData,
           price_history: [
-            {
-              id: "ph1",
-              flight_price: "500.00",
-              hotel_price: "700.00",
-              total_price: "1200.00",
-              created_at: "2025-01-19T10:00:00Z",
-            },
             {
               id: "ph2",
               flight_price: "500.00",
               hotel_price: "700.00",
               total_price: "1200.00",
               created_at: "2025-01-21T10:30:00Z",
+            },
+            {
+              id: "ph1",
+              flight_price: "500.00",
+              hotel_price: "700.00",
+              total_price: "1200.00",
+              created_at: "2025-01-19T10:00:00Z",
             },
           ],
         },
@@ -1120,13 +1151,10 @@ describe("TripDetailPage", () => {
       });
     });
 
-    it("handles empty airlines array", async () => {
+    it("handles empty price history", async () => {
       mockGetDetails.mockResolvedValue({
         data: {
-          trip: {
-            ...baseTripData,
-            flight_prefs: { ...baseTripData.flight_prefs, airlines: [] },
-          },
+          trip: baseTripData,
           price_history: [],
         },
       });
@@ -1136,39 +1164,9 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Trip Details")).toBeInTheDocument();
+        expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
+        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
       });
-
-      // Airlines row should not be rendered
-      expect(screen.queryByText("Airlines")).not.toBeInTheDocument();
-    });
-
-    it("handles empty room types and views arrays", async () => {
-      mockGetDetails.mockResolvedValue({
-        data: {
-          trip: {
-            ...baseTripData,
-            hotel_prefs: {
-              ...baseTripData.hotel_prefs,
-              preferred_room_types: [],
-              preferred_views: [],
-            },
-          },
-          price_history: [],
-        },
-      });
-
-      await act(async () => {
-        render(<TestWrapper tripId="test-trip" />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Hotel Preferences")).toBeInTheDocument();
-      });
-
-      // Room Types and Views rows should not be rendered
-      expect(screen.queryByText("Room Types")).not.toBeInTheDocument();
-      expect(screen.queryByText("Views")).not.toBeInTheDocument();
     });
   });
 });

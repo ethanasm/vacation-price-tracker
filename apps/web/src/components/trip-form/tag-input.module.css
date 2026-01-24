@@ -7,7 +7,7 @@
   min-height: 42px;
   border: 1px solid hsl(var(--border) / 0.6);
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg);
   backdrop-filter: blur(8px);
 }
 
@@ -18,16 +18,26 @@
   background: rgba(255, 255, 255, 0.8);
 }
 
+:global(.dark) .tagInput:focus-within {
+  background: rgba(40, 40, 60, 0.9);
+}
+
 .tag {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
-  background: hsl(var(--primary) / 0.1);
+  background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
   border-radius: 0.375rem;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+:global(.dark) .tag {
+  background: hsl(var(--primary) / 0.25);
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .tagRemove {
@@ -56,4 +66,13 @@
   outline: none;
   font-size: 0.875rem;
   padding: 0.25rem;
+  color: inherit;
+}
+
+:global(.dark) .tagInputField {
+  color: #ffffff;
+}
+
+:global(.dark) .tagInputField::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
