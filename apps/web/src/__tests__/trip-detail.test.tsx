@@ -102,6 +102,14 @@ jest.mock("@/lib/format", () => ({
     if (!returnDate) return depart;
     return `${depart} → ${formatCompact(returnDate)}`;
   },
+  formatDateTime: (dateString: string) => {
+    return new Date(dateString).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  },
   getAirlineName: (carrierCode: string | null | undefined) => {
     if (!carrierCode) return "—";
     const names: Record<string, string> = { UA: "United", AA: "American", DL: "Delta" };

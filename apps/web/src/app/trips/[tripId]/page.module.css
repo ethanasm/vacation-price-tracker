@@ -490,14 +490,21 @@
   margin-left: auto;
 }
 
-.segmentDirect {
-  font-size: 10px;
-  font-weight: 600;
-  color: hsl(142 55% 42%);
+.layoverRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0;
 }
 
-:global(.dark) .segmentDirect {
-  color: hsl(142 50% 55%);
+.layoverText {
+  font-size: 11px;
+  color: var(--ink-muted);
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  padding: 2px 12px;
+  width: 100%;
+  text-align: center;
 }
 
 .segmentDuration {

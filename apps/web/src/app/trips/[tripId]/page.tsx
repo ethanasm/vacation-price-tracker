@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect, useCallback } from "react";
+import React, { use, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/chart";
 import type { TripDetail, PriceSnapshot, ApiFlightOffer, ApiHotelOffer } from "@/lib/api";
 import { api, ApiError } from "@/lib/api";
-import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
+import { formatPrice, formatShortDate, formatDateTime, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
 import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
 import styles from "./page.module.css";
 
@@ -82,7 +82,7 @@ function PriceHistoryChart({
   }
 
   const chartData = priceHistory.map((snapshot) => ({
-    date: formatShortDate(snapshot.created_at),
+    date: formatDateTime(snapshot.created_at),
     total: parsePrice(snapshot.total_price) ?? 0,
     flight: parsePrice(snapshot.flight_price) ?? 0,
     hotel: parsePrice(snapshot.hotel_price) ?? 0,
@@ -223,7 +223,6 @@ function SegmentRow({
         <span className={styles.segmentAirport}>{segment.arrival_airport || "—"}</span>
       </div>
       <div className={styles.segmentMetaCol}>
-        <span className={styles.segmentDirect}>Direct</span>
         {duration && <span className={styles.segmentDuration}>{duration}</span>}
       </div>
     </div>
@@ -251,9 +250,33 @@ function ItinerarySection({
         <span className={styles.itineraryLabel}>{isReturn ? "Return" : "Outbound"}</span>
         {totalDuration && <span className={styles.itineraryDuration}>{totalDuration} total</span>}
       </div>
-      {segments.map((segment, idx) => (
-        <SegmentRow key={`${segment.flight_number || idx}`} segment={segment} />
-      ))}
+      {segments.map((segment, idx) => {
+        // Calculate layover time from previous segment
+        let layover: string | null = null;
+        if (idx > 0) {
+          const prevArrival = segments[idx - 1].arrival_time;
+          const curDeparture = segment.departure_time;
+          if (prevArrival && curDeparture) {
+            const arrDate = new Date(prevArrival);
+            const depDate = new Date(curDeparture);
+            const diffMs = depDate.getTime() - arrDate.getTime();
+            if (diffMs > 0 && !Number.isNaN(diffMs)) {
+              const diffMins = Math.round(diffMs / 60000);
+              layover = formatDuration(diffMins);
+            }
+          }
+        }
+        return (
+          <React.Fragment key={`${segment.flight_number || idx}`}>
+            {layover && (
+              <div className={styles.layoverRow}>
+                <span className={styles.layoverText}>{layover} layover in {segments[idx - 1].arrival_airport || "—"}</span>
+              </div>
+            )}
+            <SegmentRow segment={segment} />
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
