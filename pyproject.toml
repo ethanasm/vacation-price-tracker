@@ -18,6 +18,7 @@ dependencies = [
     "greenlet",
     "itsdangerous",
     "pyasn1>=0.6.2",
+    "fast-flights>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ dev = [
     "aiosqlite",
     "ruff",
     "pip-audit",
+    "pydevd-pycharm~=253.29346.308",
 ]
 
 [build-system]

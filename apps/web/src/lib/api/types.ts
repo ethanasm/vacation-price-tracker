@@ -301,6 +301,43 @@ export interface components {
          */
         CabinClass: "economy" | "premium_economy" | "business" | "first";
         /**
+         * FlightSegment
+         * @description A single flight segment.
+         */
+        FlightSegment: {
+            /** Carrier Code */
+            carrier_code?: string | null;
+            /** Flight Number */
+            flight_number?: string | null;
+            /** Departure Airport */
+            departure_airport?: string | null;
+            /** Arrival Airport */
+            arrival_airport?: string | null;
+            /** Departure Time */
+            departure_time?: string | null;
+            /** Arrival Time */
+            arrival_time?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+        };
+        /**
+         * FlightItinerary
+         * @description Complete itinerary (outbound or return) with all segments.
+         */
+        FlightItinerary: {
+            /** Direction */
+            direction: string;
+            /** Segments */
+            segments?: components["schemas"]["FlightSegment"][];
+            /** Total Duration Minutes */
+            total_duration_minutes?: number | null;
+            /**
+             * Stops
+             * @default 0
+             */
+            stops: number;
+        };
+        /**
          * FlightOffer
          * @description Schema for a flight offer.
          */
@@ -309,6 +346,8 @@ export interface components {
             id: string;
             /** Airline Code */
             airline_code?: string | null;
+            /** Flight Number */
+            flight_number?: string | null;
             /** Airline Name */
             airline_name?: string | null;
             /** Price */
@@ -328,6 +367,8 @@ export interface components {
             return_flight?: {
                 [key: string]: unknown;
             } | null;
+            /** Itineraries */
+            itineraries?: components["schemas"]["FlightItinerary"][];
         };
         /**
          * FlightPrefs

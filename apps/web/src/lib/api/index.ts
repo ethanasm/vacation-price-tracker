@@ -38,6 +38,8 @@ export type ThresholdType = components["schemas"]["ThresholdType"];
 
 // Price snapshots and offers
 export type PriceSnapshotResponse = components["schemas"]["PriceSnapshotResponse"];
+export type FlightSegment = components["schemas"]["FlightSegment"];
+export type FlightItinerary = components["schemas"]["FlightItinerary"];
 export type FlightOffer = components["schemas"]["FlightOffer"];
 export type HotelOffer = components["schemas"]["HotelOffer"];
 

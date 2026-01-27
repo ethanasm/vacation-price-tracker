@@ -63,6 +63,7 @@ class PriceCheckWorkflow:
                 "raw_data": filtered["raw_data"],
             },
             start_to_close_timeout=timedelta(seconds=10),
+            retry_policy=RetryPolicy(maximum_attempts=1),  # Prevent duplicate snapshots
         )
 
         return {

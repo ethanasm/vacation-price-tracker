@@ -4,10 +4,12 @@ import { use, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ChevronDown,
   Loader2,
   Pencil,
   Plane,
   Hotel,
+  RefreshCw,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -40,7 +42,8 @@ import {
 } from "@/components/ui/chart";
 import type { TripDetail, PriceSnapshot, ApiFlightOffer, ApiHotelOffer } from "@/lib/api";
 import { api, ApiError } from "@/lib/api";
-import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderStars } from "@/lib/format";
+import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
+import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
 import styles from "./page.module.css";
 
 const parsePrice = (value: string | null | undefined): number | null => {
@@ -188,7 +191,84 @@ function PriceTrend({
   );
 }
 
-function FlightsList({ flights }: { flights: ApiFlightOffer[] }) {
+/** Render a single flight segment */
+function SegmentRow({
+  segment,
+}: {
+  segment: ApiFlightSegment;
+}) {
+  const airlineName = getAirlineName(segment.carrier_code);
+  const duration = segment.duration_minutes
+    ? formatDuration(segment.duration_minutes)
+    : null;
+  const depTime = segment.departure_time ? formatFlightTime(segment.departure_time) : "—";
+  const arrTime = segment.arrival_time ? formatFlightTime(segment.arrival_time) : "—";
+  const flightNum = segment.flight_number || (segment.carrier_code ? `${segment.carrier_code}` : "—");
+
+  return (
+    <div className={styles.segmentRow}>
+      <div className={styles.segmentAirlineCol}>
+        <span className={styles.segmentAirline}>{airlineName}</span>
+        <span className={styles.segmentFlightNum}>{flightNum}</span>
+      </div>
+      <div className={styles.segmentTimeCol}>
+        <span className={styles.segmentTime}>{depTime}</span>
+        <span className={styles.segmentAirport}>{segment.departure_airport || "—"}</span>
+      </div>
+      <div className={styles.segmentArrowCol}>
+        <span className={styles.segmentArrow}>→</span>
+      </div>
+      <div className={styles.segmentTimeCol}>
+        <span className={styles.segmentTime}>{arrTime}</span>
+        <span className={styles.segmentAirport}>{segment.arrival_airport || "—"}</span>
+      </div>
+      <div className={styles.segmentMetaCol}>
+        <span className={styles.segmentDirect}>Direct</span>
+        {duration && <span className={styles.segmentDuration}>{duration}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Render an itinerary section (outbound or return) */
+function ItinerarySection({
+  itinerary,
+  isReturn,
+}: {
+  itinerary: ApiFlightItinerary;
+  isReturn?: boolean;
+}) {
+  const segments = itinerary.segments || [];
+  if (segments.length === 0) return null;
+
+  const totalDuration = itinerary.total_duration_minutes
+    ? formatDuration(itinerary.total_duration_minutes)
+    : null;
+
+  return (
+    <div className={styles.itinerarySection}>
+      <div className={styles.itineraryHeader}>
+        <span className={styles.itineraryLabel}>{isReturn ? "Return" : "Outbound"}</span>
+        {totalDuration && <span className={styles.itineraryDuration}>{totalDuration} total</span>}
+      </div>
+      {segments.map((segment, idx) => (
+        <SegmentRow key={`${segment.flight_number || idx}`} segment={segment} />
+      ))}
+    </div>
+  );
+}
+
+function FlightsList({
+  flights,
+  departDate,
+  returnDate,
+}: {
+  flights: ApiFlightOffer[];
+  departDate: string;
+  returnDate: string | null;
+}) {
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
   if (flights.length === 0) {
     return (
       <div className={styles.emptyChart}>
@@ -198,64 +278,66 @@ function FlightsList({ flights }: { flights: ApiFlightOffer[] }) {
     );
   }
 
+  const toggleCard = (id: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   return (
-    <div className={styles.flightsListCompact}>
+    <div className={styles.flightsList}>
       {flights.map((flight, index) => {
-        const returnFlight = flight.return_flight as {
-          departure_time?: string;
-          arrival_time?: string;
-        } | null;
+        const isBest = index === 0;
+        const isExpanded = expandedCards.has(flight.id);
+        const isDirect = flight.stops === 0;
+        const outbound = flight.itineraries?.[0];
+        const returnItinerary = flight.itineraries?.[1];
+
         return (
           <div
             key={flight.id}
-            className={`${styles.flightCard} ${index === 0 ? styles.bestFlight : ""}`}
+            className={`${styles.flightCardExpandable} ${isBest ? styles.flightCardBest : ""}`}
           >
-            <div className={styles.flightRow}>
-              <div className={styles.flightLegs}>
-                <div className={styles.flightLeg}>
-                  <span className={styles.airlineCode}>
-                    {flight.airline_code || "—"}
-                  </span>
-                  <span className={styles.flightTimes}>
-                    {flight.departure_time
-                      ? formatFlightTime(flight.departure_time)
-                      : "—"}{" "}
-                    →{" "}
-                    {flight.arrival_time
-                      ? formatFlightTime(flight.arrival_time)
-                      : "—"}
-                  </span>
-                  <span className={styles.flightMeta}>
-                    {flight.duration_minutes
-                      ? formatDuration(flight.duration_minutes)
-                      : ""}{" "}
-                    · {flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
-                  </span>
-                </div>
-                {returnFlight && (
-                  <div className={styles.flightLeg}>
-                    <span className={styles.airlineCode}>
-                      {flight.airline_code || "—"}
-                    </span>
-                    <span className={styles.flightTimes}>
-                      {returnFlight.departure_time
-                        ? formatFlightTime(returnFlight.departure_time)
-                        : "—"}{" "}
-                      →{" "}
-                      {returnFlight.arrival_time
-                        ? formatFlightTime(returnFlight.arrival_time)
-                        : "—"}
-                    </span>
-                  </div>
+            {isBest && <span className={styles.bestBadge}>Best</span>}
+
+            {/* Collapsed Header - Always Visible */}
+            <button
+              type="button"
+              className={styles.cardHeader}
+              onClick={() => toggleCard(flight.id)}
+              aria-expanded={isExpanded}
+            >
+              <span className={styles.dateRange}>
+                {formatDateRange(departDate, returnDate)}
+              </span>
+              <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
+                <Plane className="h-3 w-3" />
+                {isDirect ? "Direct" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
+              </span>
+              <span className={styles.cardPrice}>
+                {formatPrice(flight.price)}
+              </span>
+              <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
+            </button>
+
+            {/* Expanded Content */}
+            {isExpanded && (
+              <div className={styles.cardContent}>
+                {outbound && <ItinerarySection itinerary={outbound} />}
+                {returnItinerary && (
+                  <>
+                    <div className={styles.itineraryDivider} />
+                    <ItinerarySection itinerary={returnItinerary} isReturn />
+                  </>
                 )}
               </div>
-              <div className={styles.flightPriceCol}>
-                {index === 0 && <span className={styles.bestLabel}>Best</span>}
-                <span className={styles.flightPrice}>
-                  {formatPrice(flight.price)}
-                </span>
-              </div>
-            </div>
+            )}
           </div>
         );
       })}
@@ -383,6 +465,7 @@ export default function TripDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
 
   const fetchTripDetails = useCallback(async () => {
@@ -444,6 +527,51 @@ export default function TripDetailPage({
         toast.error("Failed to delete trip");
       }
       setIsDeleting(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!tripId) return;
+    setIsRefreshing(true);
+    const currentSnapshotCount = priceHistory.length;
+    const currentLatestId = priceHistory[0]?.id;
+
+    try {
+      await api.trips.refresh(tripId);
+      toast.success("Refresh started");
+
+      // Poll for new snapshot (up to 30 seconds)
+      const maxAttempts = 15;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
+
+        try {
+          const response = await api.trips.getDetails(tripId);
+          const newHistory = response.data.price_history;
+
+          // Check if we have a new snapshot
+          if (newHistory.length > currentSnapshotCount || (newHistory[0]?.id && newHistory[0].id !== currentLatestId)) {
+            setTrip(response.data.trip);
+            setPriceHistory(newHistory);
+            toast.success("Prices updated");
+            return;
+          }
+        } catch {
+          // Ignore errors during polling, continue trying
+        }
+      }
+
+      // If we get here, no new snapshot was detected - refresh anyway
+      await fetchTripDetails();
+      toast.info("Refresh complete");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail || "Failed to refresh trip");
+      } else {
+        toast.error("Failed to refresh trip");
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -515,6 +643,19 @@ export default function TripDetailPage({
               {trip.status.toUpperCase()}
             </Badge>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            title="Refresh prices"
+          >
+            {isRefreshing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -642,7 +783,11 @@ export default function TripDetailPage({
               <Plane className="h-4 w-4" />
               <span>Flights</span>
             </div>
-            <FlightsList flights={latestOffers.flights} />
+            <FlightsList
+              flights={latestOffers.flights}
+              departDate={trip.depart_date}
+              returnDate={trip.return_date}
+            />
           </CardContent>
         </Card>
       </div>

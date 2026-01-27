@@ -14,11 +14,14 @@ jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
+    warning: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
 const mockToastSuccess = toast.success as jest.Mock;
 const mockToastError = toast.error as jest.Mock;
+const mockToastWarning = toast.warning as jest.Mock;
 
 // Mock CSS module
 jest.mock("../app/trips/page.module.css", () =>
@@ -224,7 +227,7 @@ describe("DashboardPage", () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith("Prices refreshed", {
+        expect(mockToastWarning).toHaveBeenCalledWith("Prices partially refreshed", {
           description: "2 trips updated, 1 failed.",
         });
       });

@@ -188,11 +188,33 @@ class TripDetail(TripResponse):
     updated_at: datetime
 
 
+class FlightSegment(BaseModel):
+    """A single flight segment."""
+
+    carrier_code: str | None = None
+    flight_number: str | None = None  # e.g., "UA200"
+    departure_airport: str | None = None
+    arrival_airport: str | None = None
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    duration_minutes: int | None = None
+
+
+class FlightItinerary(BaseModel):
+    """Complete itinerary (outbound or return) with all segments."""
+
+    direction: str  # "outbound" or "return"
+    segments: list[FlightSegment] = Field(default_factory=list)
+    total_duration_minutes: int | None = None
+    stops: int = 0
+
+
 class FlightOffer(BaseModel):
     """Schema for a flight offer."""
 
     id: str
     airline_code: str | None = None
+    flight_number: str | None = None  # e.g., "UA1234"
     airline_name: str | None = None
     price: Decimal
     departure_time: str | None = None
@@ -200,6 +222,7 @@ class FlightOffer(BaseModel):
     duration_minutes: int | None = None
     stops: int = 0
     return_flight: dict | None = None
+    itineraries: list[FlightItinerary] = Field(default_factory=list)
 
 
 class HotelOffer(BaseModel):

@@ -223,13 +223,30 @@ export default function DashboardPage() {
           setIsRefreshing(false);
           setRefreshProgress(null);
 
-          if (status.failed > 0) {
-            toast.success("Prices refreshed", {
+          // Show appropriate toast based on results
+          if (status.total === 0) {
+            toast.info("No trips to refresh", {
+              description: "Create a trip to start tracking prices.",
+            });
+          } else if (status.completed === 0 && status.failed > 0) {
+            toast.error("Refresh failed", {
+              description: `All ${status.failed} trips failed to update.`,
+            });
+          } else if (status.failed > 0) {
+            toast.warning("Prices partially refreshed", {
               description: `${status.completed} trips updated, ${status.failed} failed.`,
             });
-          } else {
+          } else if (status.completed > 0) {
             toast.success("Prices refreshed", {
-              description: `All ${status.completed} trip prices have been updated.`,
+              description:
+                status.completed === 1
+                  ? "Trip prices have been updated."
+                  : `All ${status.completed} trip prices have been updated.`,
+            });
+          } else {
+            // completed === 0, failed === 0, total > 0: unusual state
+            toast.info("Refresh completed", {
+              description: "No price updates were found.",
             });
           }
 
@@ -255,6 +272,9 @@ export default function DashboardPage() {
     try {
       const response = await api.trips.refreshAll();
       const refreshGroupId = response.data.refresh_group_id;
+
+      // Wait a moment for the workflow to start and set initial state
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Start polling for status
       pollIntervalRef.current = setInterval(() => {

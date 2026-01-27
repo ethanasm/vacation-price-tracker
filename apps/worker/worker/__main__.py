@@ -18,7 +18,7 @@ from worker.activities.price_check import (
     load_trip_details,
     save_snapshot_activity,
 )
-from worker.activities.trips import get_active_trips
+from worker.activities.trips import clear_refresh_lock, get_active_trips
 from worker.workflows.price_check import PriceCheckWorkflow
 from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
 
@@ -42,6 +42,7 @@ async def main() -> None:
         workflows=[RefreshAllTripsWorkflow, PriceCheckWorkflow],
         activities=[
             get_active_trips,
+            clear_refresh_lock,
             load_trip_details,
             fetch_flights_activity,
             fetch_hotels_activity,

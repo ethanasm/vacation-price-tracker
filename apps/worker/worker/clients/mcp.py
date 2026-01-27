@@ -130,22 +130,6 @@ class MCPClient:
         self._process = None
 
 
-def build_kiwi_client() -> MCPClient | None:
-    if not settings.kiwi_mcp_path:
-        return None
-    env = {}
-    if settings.kiwi_api_key:
-        env["KIWI_API_KEY"] = settings.kiwi_api_key
-    return MCPClient(
-        name="Kiwi",
-        command=settings.mcp_node_path,
-        args=[settings.kiwi_mcp_path],
-        env=env,
-        timeout_seconds=settings.mcp_timeout_seconds,
-        max_restart_attempts=settings.mcp_max_restart_attempts,
-    )
-
-
 def build_amadeus_client() -> MCPClient | None:
     if not settings.amadeus_mcp_path:
         return None

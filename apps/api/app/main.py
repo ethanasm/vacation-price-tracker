@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -41,6 +42,20 @@ def _configure_logging() -> None:
 
 _configure_logging()
 logger = logging.getLogger(__name__)
+
+# Remote debugging: set DEBUG=1 and start PyCharm's debug server first
+if os.getenv("DEBUG") == "1":
+    try:
+        import pydevd_pycharm
+
+        pydevd_pycharm.settrace(
+            "host.docker.internal",
+            port=5678,
+            suspend=False,
+        )
+        logger.info("Connected to PyCharm debug server on host:5678")
+    except Exception as e:
+        logger.warning(f"PyCharm debug connection failed: {e}")
 
 
 @asynccontextmanager

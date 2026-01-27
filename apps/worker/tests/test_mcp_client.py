@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from app.core.config import settings
-from worker.clients.mcp import MCPClient, MCPClientError, build_amadeus_client, build_kiwi_client
+from worker.clients.mcp import MCPClient, MCPClientError, build_amadeus_client
 
 
 class DummyStdin:
@@ -180,21 +180,10 @@ async def test_ensure_process_passes_env(monkeypatch):
     assert captured["env"]["CUSTOM_ENV"] == "1"
 
 
-def test_build_kiwi_client_none(monkeypatch):
-    monkeypatch.setattr(settings, "kiwi_mcp_path", None)
-    assert build_kiwi_client() is None
-
-
-def test_build_mcp_clients(monkeypatch):
-    monkeypatch.setattr(settings, "kiwi_mcp_path", "/tmp/kiwi.js")
+def test_build_amadeus_client_configured(monkeypatch):
     monkeypatch.setattr(settings, "amadeus_mcp_path", "/tmp/amadeus.js")
-
-    kiwi_client = build_kiwi_client()
     amadeus_client = build_amadeus_client()
-
-    assert kiwi_client is not None
     assert amadeus_client is not None
-    assert kiwi_client.is_configured is True
     assert amadeus_client.is_configured is True
 
 

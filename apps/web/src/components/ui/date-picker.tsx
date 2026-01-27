@@ -42,12 +42,12 @@ export function DatePicker({
           variant="outline"
           disabled={disabled}
           className={cn(
-            "w-full justify-start text-left font-normal",
-            !date && "text-muted-foreground",
+            "w-full !justify-start text-left font-normal !bg-white/60 dark:!bg-white/10 !border-border/60 dark:!border-white/30 text-gray-900 dark:text-white relative !pl-10",
+            !date && "!text-gray-400 dark:!text-gray-300",
             className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
+          <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--ink-muted, #6b7280)' }} />
           {isHydrated && date ? format(date, "PPP") : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>

@@ -16,6 +16,8 @@ jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
+    warning: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
@@ -406,14 +408,10 @@ describe("DashboardPage", () => {
         data: { refresh_group_id: "test-group-id" },
       });
 
-      // First poll returns in-progress, second returns completed
-      mockGetRefreshStatus
-        .mockResolvedValueOnce({
-          data: { status: "in_progress", total: 3, completed: 1, failed: 0 },
-        })
-        .mockResolvedValueOnce({
-          data: { status: "completed", total: 3, completed: 3, failed: 0 },
-        });
+      // Poll returns completed immediately
+      mockGetRefreshStatus.mockResolvedValue({
+        data: { status: "completed", total: 3, completed: 3, failed: 0 },
+      });
 
       render(<DashboardPage />);
 
@@ -427,9 +425,9 @@ describe("DashboardPage", () => {
       // Button should show "Starting refresh..." initially
       expect(screen.getByRole("button", { name: /Starting refresh/ })).toBeInTheDocument();
 
-      // Advance timers for polling
+      // Advance past the 500ms initial delay and then trigger the immediate status check
       await act(async () => {
-        jest.advanceTimersByTime(2000);
+        jest.advanceTimersByTime(500);
       });
 
       await waitFor(() => {
@@ -447,7 +445,8 @@ describe("DashboardPage", () => {
     });
 
     it("shows an error toast when refresh fails", async () => {
-      const user = userEvent.setup();
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       const mockRefreshAll = api.trips.refreshAll as jest.Mock;
       mockRefreshAll.mockRejectedValue(new Error("Network error"));
@@ -466,10 +465,13 @@ describe("DashboardPage", () => {
           description: "Could not refresh prices. Please try again.",
         });
       });
+
+      jest.useRealTimers();
     });
 
     it("shows specific error toast when refresh already in progress", async () => {
-      const user = userEvent.setup();
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       const mockRefreshAll = api.trips.refreshAll as jest.Mock;
       const MockApiError = jest.requireMock("@/lib/api").ApiError;
@@ -489,6 +491,8 @@ describe("DashboardPage", () => {
           description: "Please wait for the current refresh to complete.",
         });
       });
+
+      jest.useRealTimers();
     });
 
     it("disables refresh button while refreshing", async () => {
@@ -502,9 +506,8 @@ describe("DashboardPage", () => {
       mockRefreshAll.mockResolvedValue({
         data: { refresh_group_id: "test-group-id" },
       });
-      mockGetRefreshStatus.mockResolvedValue({
-        data: { status: "in_progress", total: 3, completed: 1, failed: 0 },
-      });
+      // Make getRefreshStatus hang to keep the refresh in progress
+      mockGetRefreshStatus.mockImplementation(() => new Promise(() => {}));
 
       render(<DashboardPage />);
 
@@ -544,8 +547,9 @@ describe("DashboardPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
 
+      // Advance past the 500ms delay
       await act(async () => {
-        jest.advanceTimersByTime(2000);
+        jest.advanceTimersByTime(500);
       });
 
       await waitFor(() => {
@@ -578,12 +582,13 @@ describe("DashboardPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
 
+      // Advance past 500ms delay
       await act(async () => {
-        jest.advanceTimersByTime(2000);
+        jest.advanceTimersByTime(500);
       });
 
       await waitFor(() => {
-        expect(toast.success).toHaveBeenCalledWith("Prices refreshed", {
+        expect(toast.warning).toHaveBeenCalledWith("Prices partially refreshed", {
           description: "2 trips updated, 1 failed.",
         });
       });
@@ -615,15 +620,18 @@ describe("DashboardPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
 
+      // Advance past 500ms delay
       await act(async () => {
-        jest.advanceTimersByTime(2000);
+        jest.advanceTimersByTime(500);
       });
 
       // Should log the error
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to poll refresh status:",
-        expect.any(Error)
-      );
+      await waitFor(() => {
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          "Failed to poll refresh status:",
+          expect.any(Error)
+        );
+      });
 
       // Button should be re-enabled
       await waitFor(() => {
@@ -657,6 +665,11 @@ describe("DashboardPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
 
+      // Advance past 500ms delay to trigger the immediate status check
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+      });
+
       // Wait for the first status poll to complete
       await waitFor(() => {
         expect(mockGetRefreshStatus).toHaveBeenCalled();
@@ -671,7 +684,8 @@ describe("DashboardPage", () => {
     });
 
     it("shows error toast with detail from ApiError", async () => {
-      const user = userEvent.setup();
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       const MockApiError = jest.requireMock("@/lib/api").ApiError;
       (api.trips.refreshAll as jest.Mock).mockRejectedValue(
@@ -692,6 +706,8 @@ describe("DashboardPage", () => {
           description: "Database connection failed",
         });
       });
+
+      jest.useRealTimers();
     });
   });
 

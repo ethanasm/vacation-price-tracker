@@ -25,16 +25,26 @@ Vacation Price Tracker is a full-stack web application that tracks flight and ho
 
 Use kebab-case for new files in the web app (`apps/web/`).
 
-## External MCP Server Architecture
+## Amadeus API Integration
 
-This project uses a **hybrid MCP architecture** that leverages existing open-source MCP servers rather than building custom ones:
+Both flights and hotels are fetched via the **Amadeus API** (developers.amadeus.com). Free tier: ~2,000 calls/month shared between all endpoints.
 
-### Pre-Built External MCP Servers
-- **Kiwi MCP Server** (Flights): Provides `search-flight` tool. Free, no API key required.
-- **Amadeus MCP Server** (Hotels): Provides `amadeus_hotel_list`, `amadeus_hotel_search`, `amadeus_hotel_offer`, `amadeus_hotel_booking`. Source: [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp). Free tier ~2,000 calls/month.
+### Flight Search APIs
+
+| API | Use Case | Data Type |
+|-----|----------|-----------|
+| `search_flights()` | User has specific dates, ready to see/book flights | Real-time, full details |
+| `search_flight_cheapest_dates()` | User has flexible dates, wants to find best day to fly | Cached, date-price grid |
+
+**Recommended Flow:**
+1. User creates trip with flexible dates → `search_flight_cheapest_dates()` for price calendar
+2. User picks specific dates → `search_flights()` for real-time offers with full details
+
+### Hotel Search APIs
+Hotels use the Amadeus MCP Server (stdio subprocess): `amadeus_hotel_search`. Source: [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp).
 
 ### Custom MCP Server (Trip Management Only)
-Since flights and hotels are covered externally, our custom MCP server only implements:
+Our custom MCP server implements trip management tools:
 - `create_trip` - Create new price tracking trip
 - `list_trips` - List user's tracked trips
 - `get_trip_details` - Get price history and offers
@@ -42,22 +52,45 @@ Since flights and hotels are covered externally, our custom MCP server only impl
 - `pause_trip` / `resume_trip` - Toggle tracking
 - `trigger_refresh` - Force price check
 
-**Do NOT build custom flight/hotel search tools** - use the external MCP servers instead.
+### Flight Display Requirements
+
+Each flight offer card must show ALL segments for the complete itinerary:
+
+**Structure:**
+- **Outbound**: All segments from origin to destination (including connections)
+- **Return**: All segments from destination back to origin (for round trips)
+
+**Per-segment display:**
+- Flight number (e.g., "UA200")
+- Route (e.g., "SFO → DEN")
+- Departure and arrival times
+- Duration
+
+**Layovers:** Show time and airport between connecting segments (e.g., "1h 30m layover in DEN").
+
+**Price:** Total for entire itinerary (all segments combined).
+
+**Implementation:**
+- Backend extracts full segment data via `_extract_itineraries()` in `apps/api/app/routers/trips.py`
+- Schema models: `FlightSegment`, `FlightItinerary` in `apps/api/app/schemas/trip.py`
+- Frontend renders via `ItinerarySection` and `SegmentRow` components in `apps/web/src/app/trips/[tripId]/page.tsx`
 
 ## Data Provider Strategy
 
 | Phase | Flights | Hotels | Optimizer | Monthly Cost |
 |:------|:--------|:-------|:----------|:-------------|
-| MVP (Phase 1-3) | Kiwi MCP | Amadeus MCP | N/A | $0 |
-| Phase 4 | Kiwi MCP | Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
+| MVP (Phase 1-3) | Amadeus HTTP | Amadeus MCP | N/A | $0 |
+| Phase 4 | Amadeus HTTP (`search_flight_cheapest_dates`) | Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
 
-**Phase 4 SearchAPI Rationale:** The flexible date optimizer needs to survey 90+ date combinations. Amadeus free tier (2,000 calls/month) is insufficient for this bulk querying. SearchAPI provides $40/month for 10,000 searches, making it cost-effective for date-range surveying.
+**Phase 4 SearchAPI Rationale:** The flexible date optimizer needs to survey 90+ date combinations for hotels. SearchAPI provides $40/month for 10,000 searches, making it cost-effective for date-range surveying. For flights, the `search_flight_cheapest_dates` API provides cached date-price grids.
+
+**Amadeus Limitations:** The free tier doesn't include some major carriers (American, Delta, British Airways) and most low-cost carriers. The 2,000 calls/month limit is shared between flights and hotels.
 
 ## Post-Fetch Filtering Strategy
 
 Both airline and room type/view preferences require **post-fetch filtering** because the underlying APIs don't support these filters natively:
 
-1. **Airline Filtering:** Kiwi MCP returns all airlines. The `PriceCheckWorkflow` (Temporal worker) filters results in-memory against `trip.flight_prefs.airlines`.
+1. **Airline Filtering:** Amadeus returns flights from multiple airlines. The `PriceCheckWorkflow` (Temporal worker) filters results in-memory against `trip.flight_prefs.airlines` using the `validatingAirlineCodes` and `itineraries.segments[].carrierCode` fields.
 
 2. **Room Type/View Filtering:** No hotel API supports query-level room filtering. The worker parses `room.description` text for keywords like "King", "Suite", "Ocean View", etc.
 
@@ -65,7 +98,7 @@ Implementation is in the Temporal worker's `filter_results_activity`.
 
 ## Core Architectural Patterns
 
-- **Saga Pattern:** Managed via Temporal. Multi-step price fetches (Kiwi + Amadeus) either complete or fail gracefully with automatic retries.
+- **Saga Pattern:** Managed via Temporal. Multi-step price fetches (flights + hotels via Amadeus) either complete or fail gracefully with automatic retries.
 - **Strategy Pattern:** Different hotel providers (Amadeus for MVP, SearchAPI for Phase 4) use unified `HotelProvider` interface.
 - **Outbox Pattern:** Notification events queued in database during price runs, processed by dedicated activity for at-least-once delivery.
 - **Idempotency:** `X-Idempotency-Key` header required for `POST /v1/trips`. Stored in Redis with 24-hour TTL.
@@ -78,12 +111,12 @@ Copy `.env.example` to `.env` and configure:
 - `DATABASE_URL` - PostgreSQL connection string
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - OAuth credentials
 - `GROQ_API_KEY` - LLM chat functionality
-- `AMADEUS_API_KEY` / `AMADEUS_API_SECRET` - Hotel data
+- `AMADEUS_API_KEY` / `AMADEUS_API_SECRET` - Flights and hotels data
 
 **Optional:**
-- `KIWI_API_KEY` - Higher rate limits (not required for basic usage)
 - `SEARCHAPI_KEY` - Phase 4 flexible date optimizer only
 - `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` - Email notifications
+- `MOCK_AMADEUS_API` - Set to `true` to use mock data in development
 
 **Feature Flags:**
 - `ENABLE_BETA_OPTIMIZER` - Set to `true` only after configuring SearchAPI
@@ -160,7 +193,7 @@ Orchestrates updating all active trips for a user. Called by:
 
 ### PriceCheckWorkflow
 Fetches data for a single trip:
-1. Call Kiwi MCP `search-flight` (parallel)
+1. Call Amadeus HTTP `search_flights` (parallel)
 2. Call Amadeus MCP `amadeus_hotel_search` (parallel)
 3. Apply post-fetch filters (airlines, room types, views)
 4. Save `PriceSnapshot` to database
@@ -191,7 +224,7 @@ This app runs on a home server without port forwarding. Google OAuth callbacks r
 ## Rate Limit Management
 
 - **Aggressive Caching:** 24-hour TTL for identical route/date queries (Redis)
-- **Token Bucket Throttling:** Per-user limits to stay within Amadeus/Kiwi free tiers
+- **Token Bucket Throttling:** Per-user limits to stay within Amadeus free tier (2,000 calls/month)
 - **SearchAPI Hourly Limit:** Phase 4 optimizer spreads queries across hours (20% of plan credits/hour)
 
 ## Development Phases
@@ -206,10 +239,11 @@ Refer to `doc/PROJECT_PLAN.md` for detailed checklists.
 ## Important Constraints
 
 - Max 10 trips per user (configurable via `MAX_TRIPS_PER_USER`)
-- Amadeus free tier: ~2,000 calls/month
+- Amadeus free tier: ~2,000 calls/month (shared between flights and hotels)
 - Amadeus max check-in date: 359 days out
 - No room images in Amadeus V3 API
-- Kiwi MCP returns all airlines (requires post-fetch filtering)
+- Amadeus doesn't include some major carriers (AA, DL, BA) and most low-cost carriers
+- Airline filtering requires post-fetch processing using `validatingAirlineCodes`
 
 ## Pre-Commit Validation
 

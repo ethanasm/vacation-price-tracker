@@ -32,6 +32,8 @@ export type {
   RefreshAllResponse,
   ListTripsResponse,
   ListTripsParams,
+  FlightSegment as ApiFlightSegment,
+  FlightItinerary as ApiFlightItinerary,
   FlightOffer as ApiFlightOffer,
   HotelOffer as ApiHotelOffer,
 } from "./api/index";
@@ -619,6 +621,37 @@ export const api = {
         throw new ApiError(
           response.status,
           error.title || "Failed to get refresh status",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Trigger a refresh for a single trip.
+     * @param tripId - The trip ID to refresh
+     */
+    async refresh(tripId: string): Promise<GeneratedRefreshAllResponse> {
+      const response = await fetchWithAuth(`/v1/trips/${tripId}/refresh`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new ApiError(404, "Trip not found");
+        }
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 502) {
+          throw new ApiError(
+            502,
+            error.title || "Failed to start refresh workflow",
+            error.detail
+          );
+        }
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to start refresh",
           error.detail
         );
       }

@@ -113,7 +113,7 @@ export function AirportAutocomplete({
       <div className={styles.inputWrapper}>
         <Plane
           className={styles.inputIcon}
-          style={icon === "arrival" ? { transform: "rotate(90deg)" } : undefined}
+          style={icon === "arrival" ? { transform: "translateY(-50%) rotate(90deg)" } : undefined}
         />
         <Input
           ref={inputRef}

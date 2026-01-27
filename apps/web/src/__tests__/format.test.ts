@@ -12,6 +12,9 @@ import {
   formatRoomSelection,
   formatThresholdType,
   renderStars,
+  formatCompactDate,
+  formatDateRange,
+  getAirlineName,
 } from "../lib/format";
 
 describe("format utilities", () => {
@@ -124,10 +127,36 @@ describe("format utilities", () => {
   });
 
   describe("formatFlightTime", () => {
-    it("formats ISO datetime to time of day", () => {
-      const result = formatFlightTime("2025-06-15T08:30:00");
-      // Should contain time in 12-hour format with AM/PM
-      expect(result).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/i);
+    it("formats morning time correctly", () => {
+      expect(formatFlightTime("2025-06-15T08:30:00")).toBe("8:30 AM");
+    });
+
+    it("formats afternoon time correctly", () => {
+      expect(formatFlightTime("2025-06-15T14:45:00")).toBe("2:45 PM");
+    });
+
+    it("formats evening time correctly", () => {
+      expect(formatFlightTime("2025-06-15T22:48:00")).toBe("10:48 PM");
+    });
+
+    it("formats midnight correctly", () => {
+      expect(formatFlightTime("2025-06-15T00:15:00")).toBe("12:15 AM");
+    });
+
+    it("formats noon correctly", () => {
+      expect(formatFlightTime("2025-06-15T12:00:00")).toBe("12:00 PM");
+    });
+
+    it("handles time without seconds", () => {
+      expect(formatFlightTime("2025-06-15T09:30")).toBe("9:30 AM");
+    });
+
+    it("handles simple time string", () => {
+      expect(formatFlightTime("16:45")).toBe("4:45 PM");
+    });
+
+    it("returns original for unparseable input", () => {
+      expect(formatFlightTime("invalid")).toBe("invalid");
     });
   });
 
@@ -268,6 +297,62 @@ describe("format utilities", () => {
 
     it("renders 0 star rating", () => {
       expect(renderStars(0)).toBe("☆☆☆☆☆");
+    });
+  });
+
+  describe("formatCompactDate", () => {
+    it("formats date as M/D", () => {
+      expect(formatCompactDate("2025-02-15")).toBe("2/15");
+    });
+
+    it("formats date with T timestamp", () => {
+      expect(formatCompactDate("2025-12-01T10:30:00")).toBe("12/1");
+    });
+
+    it("returns dash for empty string", () => {
+      expect(formatCompactDate("")).toBe("—");
+    });
+
+    it("returns dash for invalid date", () => {
+      expect(formatCompactDate("invalid")).toBe("—");
+    });
+  });
+
+  describe("formatDateRange", () => {
+    it("formats date range with return date", () => {
+      expect(formatDateRange("2025-02-15", "2025-02-22")).toBe("2/15 → 2/22");
+    });
+
+    it("formats single date when no return", () => {
+      expect(formatDateRange("2025-02-15", null)).toBe("2/15");
+    });
+
+    it("handles dates with timestamps", () => {
+      expect(formatDateRange("2025-06-01T00:00:00", "2025-06-10T00:00:00")).toBe("6/1 → 6/10");
+    });
+  });
+
+  describe("getAirlineName", () => {
+    it("returns airline name for known code", () => {
+      expect(getAirlineName("UA")).toBe("United");
+      expect(getAirlineName("AA")).toBe("American");
+      expect(getAirlineName("DL")).toBe("Delta");
+    });
+
+    it("handles lowercase codes", () => {
+      expect(getAirlineName("ua")).toBe("United");
+    });
+
+    it("returns code for unknown airline", () => {
+      expect(getAirlineName("XY")).toBe("XY");
+    });
+
+    it("returns dash for null", () => {
+      expect(getAirlineName(null)).toBe("—");
+    });
+
+    it("returns dash for undefined", () => {
+      expect(getAirlineName(undefined)).toBe("—");
     });
   });
 });

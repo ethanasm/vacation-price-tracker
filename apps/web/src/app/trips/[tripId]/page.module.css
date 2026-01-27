@@ -244,89 +244,267 @@
   height: 16px;
 }
 
-/* Compact Flights */
-.flightsListCompact {
+/* Flights List - Expandable Cards */
+.flightsList {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
-.flightCard {
-  padding: 0.5rem 0.625rem;
+.flightCardExpandable {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border) / 0.5);
   background: hsl(var(--muted) / 0.3);
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-}
-
-.flightCard.bestFlight {
-  background: hsl(var(--primary) / 0.05);
-  border-color: hsl(var(--primary) / 0.3);
-}
-
-.flightRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.flightLegs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.flightLeg {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-}
-
-.airlineCode {
-  font-weight: 600;
-  color: var(--ink);
-  min-width: 28px;
-}
-
-.flightTimes {
-  font-family: var(--font-mono, monospace);
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.flightMeta {
-  color: var(--ink-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-
-.flightPriceCol {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
   flex-shrink: 0;
 }
 
-.flightPrice {
+:global(.dark) .flightCardExpandable {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.flightCardExpandable.flightCardBest {
+  background: hsl(var(--primary) / 0.08);
+  border-color: hsl(var(--primary) / 0.4);
+}
+
+:global(.dark) .flightCardExpandable.flightCardBest {
+  background: hsl(var(--primary) / 0.12);
+}
+
+.bestBadge {
+  position: absolute;
+  top: -1px;
+  right: 8px;
+  padding: 2px 6px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 9px;
   font-weight: 700;
-  font-size: 0.9375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 0 0 4px 4px;
+  z-index: 1;
+}
+
+/* Card Header - Clickable collapsed view */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.cardHeader:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+:global(.dark) .cardHeader:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dateRange {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.directBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: hsl(var(--muted) / 0.6);
+  color: var(--ink-muted);
+}
+
+.directBadge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.directBadgeGreen {
+  background: hsl(142 55% 42% / 0.15);
+  color: hsl(142 55% 42%);
+}
+
+:global(.dark) .directBadgeGreen {
+  background: hsl(142 55% 55% / 0.2);
+  color: hsl(142 50% 55%);
+}
+
+.cardPrice {
+  margin-left: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
-.bestLabel {
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: hsl(var(--primary));
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+.chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
+
+.chevronUp {
+  transform: rotate(180deg);
+}
+
+/* Card Content - Expanded view */
+.cardContent {
+  border-top: 1px solid hsl(var(--border) / 0.4);
+  padding: 10px 12px;
+  background: hsl(var(--muted) / 0.15);
+}
+
+:global(.dark) .cardContent {
+  background: rgba(255, 255, 255, 0.02);
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Itinerary Section */
+.itinerarySection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.itineraryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.itineraryLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+
+.itineraryDuration {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.itineraryDivider {
+  height: 1px;
+  background: hsl(var(--border) / 0.4);
+  margin: 8px 0;
+}
+
+:global(.dark) .itineraryDivider {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Segment Row - Cleaner horizontal layout */
+.segmentRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+/* Airline + Flight Number Column */
+.segmentAirlineCol {
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+
+.segmentAirline {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.segmentFlightNum {
+  font-size: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--ink-muted);
+}
+
+/* Time Column */
+.segmentTimeCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 55px;
+}
+
+.segmentTime {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.segmentAirport {
+  font-size: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--ink-muted);
+}
+
+/* Arrow Column */
+.segmentArrowCol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.segmentArrow {
+  color: hsl(142 55% 42%);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+:global(.dark) .segmentArrow {
+  color: hsl(142 50% 55%);
+}
+
+/* Meta Column */
+.segmentMetaCol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.segmentDirect {
+  font-size: 10px;
+  font-weight: 600;
+  color: hsl(142 55% 42%);
+}
+
+:global(.dark) .segmentDirect {
+  color: hsl(142 50% 55%);
+}
+
+.segmentDuration {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
 
 /* Compact Hotels */
 .hotelsListCompact {
@@ -351,8 +529,16 @@
   transition: all 0.1s ease;
 }
 
+:global(.dark) .hotelCardCompact {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .hotelCardCompact:hover {
   background: hsl(var(--muted) / 0.5);
+}
+
+:global(.dark) .hotelCardCompact:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .hotelCardCompact.hotelSelected {

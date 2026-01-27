@@ -1,9 +1,10 @@
-"""Amadeus API client for hotel data."""
+"""Amadeus API client for flight and hotel data."""
 
 from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 import httpx
 
@@ -28,9 +29,9 @@ class AmadeusRequestError(AmadeusClientError):
 
 
 class AmadeusClient:
-    """Amadeus client for hotel searches."""
+    """Amadeus client for flight and hotel searches."""
 
-    def __init__(self, base_url: str | None = None, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, base_url: str | None = None, timeout_seconds: float = 30.0) -> None:
         self._base_url = (base_url or settings.amadeus_base_url or DEFAULT_BASE_URL).rstrip("/")
         self._timeout = httpx.Timeout(timeout_seconds)
         self._access_token: str | None = None
@@ -101,6 +102,100 @@ class AmadeusClient:
             raise AmadeusRequestError("Amadeus request failed")
 
         return response
+
+    async def search_flights(
+        self,
+        origin: str,
+        destination: str,
+        departure_date: str,
+        return_date: str | None = None,
+        adults: int = 1,
+        travel_class: str = "ECONOMY",
+        non_stop: bool = False,
+        max_results: int = 10,
+    ) -> dict[str, Any]:
+        """
+        Search for flight offers using Amadeus Flight Offers Search API v2.
+
+        Use this for specific date searches when the user has decided on travel dates.
+        Returns real-time pricing and availability with full flight details.
+
+        Args:
+            origin: IATA airport code (e.g., "SFO")
+            destination: IATA airport code (e.g., "MCO")
+            departure_date: ISO format date (e.g., "2026-02-01")
+            return_date: ISO format date for round trip, None for one-way
+            adults: Number of adult passengers (1-9)
+            travel_class: ECONOMY, PREMIUM_ECONOMY, BUSINESS, or FIRST
+            non_stop: If True, only return non-stop flights
+            max_results: Maximum number of flight offers to return (1-250)
+
+        Returns:
+            dict with "data" array of flight offers and "meta" metadata
+
+        Raises:
+            AmadeusRequestError: If the API request fails
+        """
+        params = {
+            "originLocationCode": origin.upper(),
+            "destinationLocationCode": destination.upper(),
+            "departureDate": departure_date,
+            "adults": str(adults),
+            "travelClass": travel_class.upper(),
+            "max": str(max_results),
+            "currencyCode": "USD",
+        }
+        if return_date:
+            params["returnDate"] = return_date
+        if non_stop:
+            params["nonStop"] = "true"
+
+        response = await self._authorized_get("/v2/shopping/flight-offers", params)
+        return response.json()
+
+    async def search_flight_cheapest_dates(
+        self,
+        origin: str,
+        destination: str,
+        departure_date: str,
+        one_way: bool = False,
+        non_stop: bool = False,
+        max_price: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Search for cheapest flight dates using Amadeus Flight Cheapest Date Search API v1.
+
+        Use this for flexible date searches when the user wants to find the best day to fly.
+        Returns a calendar grid of prices by date. Note: Uses cached data, not all routes available.
+
+        Args:
+            origin: IATA airport code
+            destination: IATA airport code
+            departure_date: Start of date range to search (ISO format)
+            one_way: If True, search one-way only
+            non_stop: If True, only non-stop flights
+            max_price: Maximum price filter in USD
+
+        Returns:
+            dict with "data" array of date-price combinations
+
+        Raises:
+            AmadeusRequestError: If the API request fails
+        """
+        params = {
+            "origin": origin.upper(),
+            "destination": destination.upper(),
+            "departureDate": departure_date,
+        }
+        if one_way:
+            params["oneWay"] = "true"
+        if non_stop:
+            params["nonStop"] = "true"
+        if max_price:
+            params["maxPrice"] = str(max_price)
+
+        response = await self._authorized_get("/v1/shopping/flight-dates", params)
+        return response.json()
 
 
 amadeus_client = AmadeusClient()

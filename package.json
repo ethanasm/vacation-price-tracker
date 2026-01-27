@@ -11,7 +11,7 @@
     "verify:py:lint": "uv run ruff check apps/api apps/worker",
     "verify:py:test:api": "uv run pytest apps/api/tests -v --cov=app --cov-fail-under=95 --cov-report=term --cov-report=xml:apps/api/coverage.xml",
     "verify:py:test:worker": "uv run pytest apps/worker/tests -v --cov=worker --cov-fail-under=95 --cov-report=term --cov-report=xml:apps/worker/coverage.xml",
-    "verify:py:audit": "uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994",
+    "verify:py:audit": "uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --skip-editable",
     "sonar": "sonar-scanner",
     "web:validate": "pnpm web:build && pnpm web:lint",
     "web:validate:all": "pnpm validate:web && pnpm sonar",

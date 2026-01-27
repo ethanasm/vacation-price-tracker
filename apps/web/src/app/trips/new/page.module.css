@@ -3,7 +3,10 @@
   width: 100%;
   max-width: 800px;
   margin: 0 auto;
-  padding-bottom: 3rem;
+  padding: 0 1rem 3rem;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 /* Page header */

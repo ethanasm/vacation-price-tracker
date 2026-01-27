@@ -480,6 +480,270 @@ async def test_trip_helpers_handle_missing_data(test_session):
     assert latest_snapshot is None
 
 
+def test_amadeus_flight_parsing_helpers():
+    """Test Amadeus flight data extraction helpers."""
+    # Test _extract_amadeus_airline_code
+    # From validatingAirlineCodes
+    item_with_validating = {"validatingAirlineCodes": ["UA", "AA"]}
+    assert trips_module._extract_amadeus_airline_code(item_with_validating) == "UA"
+
+    # From itineraries
+    item_with_itineraries = {
+        "itineraries": [{"segments": [{"carrierCode": "DL"}]}]
+    }
+    assert trips_module._extract_amadeus_airline_code(item_with_itineraries) == "DL"
+
+    # Fallback to legacy fields
+    item_legacy = {"carrier": "AA"}
+    assert trips_module._extract_amadeus_airline_code(item_legacy) == "AA"
+
+    # Empty item
+    assert trips_module._extract_amadeus_airline_code({}) is None
+
+    # Test _extract_amadeus_flight_number
+    item_with_number = {
+        "itineraries": [{"segments": [{"carrierCode": "UA", "number": "1234"}]}]
+    }
+    assert trips_module._extract_amadeus_flight_number(item_with_number) == "UA1234"
+
+    # Missing number
+    item_no_number = {
+        "itineraries": [{"segments": [{"carrierCode": "UA"}]}]
+    }
+    assert trips_module._extract_amadeus_flight_number(item_no_number) is None
+
+    # Empty itineraries
+    assert trips_module._extract_amadeus_flight_number({}) is None
+    assert trips_module._extract_amadeus_flight_number({"itineraries": []}) is None
+
+    # Legacy fallback
+    item_legacy_number = {"flight_number": "DL567"}
+    assert trips_module._extract_amadeus_flight_number(item_legacy_number) == "DL567"
+
+    # Test _extract_amadeus_times
+    item_with_times = {
+        "itineraries": [{
+            "segments": [
+                {"departure": {"at": "2024-03-15T09:30:00"}, "arrival": {"at": "2024-03-15T10:00:00"}},
+                {"departure": {"at": "2024-03-15T11:00:00"}, "arrival": {"at": "2024-03-15T12:30:00"}},
+            ]
+        }]
+    }
+    dep, arr = trips_module._extract_amadeus_times(item_with_times)
+    assert dep == "2024-03-15T09:30:00"
+    assert arr == "2024-03-15T12:30:00"
+
+    # Legacy fields fallback
+    item_legacy_times = {"departure_time": "10:00", "arrival_time": "12:00"}
+    dep, arr = trips_module._extract_amadeus_times(item_legacy_times)
+    assert dep == "10:00"
+    assert arr == "12:00"
+
+    # Empty item
+    dep, arr = trips_module._extract_amadeus_times({})
+    assert dep is None
+    assert arr is None
+
+    # Test _parse_amadeus_duration
+    item_duration = {"itineraries": [{"duration": "PT1H6M"}]}
+    assert trips_module._parse_amadeus_duration(item_duration) == 66
+
+    item_hours_only = {"itineraries": [{"duration": "PT2H"}]}
+    assert trips_module._parse_amadeus_duration(item_hours_only) == 120
+
+    item_minutes_only = {"itineraries": [{"duration": "PT45M"}]}
+    assert trips_module._parse_amadeus_duration(item_minutes_only) == 45
+
+    # Invalid duration
+    item_invalid = {"itineraries": [{"duration": "invalid"}]}
+    assert trips_module._parse_amadeus_duration(item_invalid) is None
+
+    # Legacy int fallback
+    item_legacy_duration = {"duration": 90}
+    assert trips_module._parse_amadeus_duration(item_legacy_duration) == 90
+
+    # Empty item
+    assert trips_module._parse_amadeus_duration({}) is None
+
+    # Test _count_amadeus_stops
+    item_nonstop = {"itineraries": [{"segments": [{"carrierCode": "UA"}]}]}
+    assert trips_module._count_amadeus_stops(item_nonstop) == 0
+
+    item_one_stop = {"itineraries": [{"segments": [{"carrierCode": "UA"}, {"carrierCode": "UA"}]}]}
+    assert trips_module._count_amadeus_stops(item_one_stop) == 1
+
+    item_two_stops = {"itineraries": [{"segments": [{}, {}, {}]}]}
+    assert trips_module._count_amadeus_stops(item_two_stops) == 2
+
+    # Legacy fallback
+    item_legacy_stops = {"stops": 3}
+    assert trips_module._count_amadeus_stops(item_legacy_stops) == 3
+
+    # Empty item
+    assert trips_module._count_amadeus_stops({}) == 0
+
+    # Test _get_airline_name
+    flights_data = {
+        "dictionaries": {"carriers": {"UA": "United Airlines", "DL": "Delta Air Lines"}}
+    }
+    item = {"validatingAirlineCodes": ["UA"]}
+    assert trips_module._get_airline_name(item, flights_data) == "United Airlines"
+
+    # From item itself
+    item_with_name = {"validatingAirlineCodes": ["XX"], "airline_name": "Unknown Airline"}
+    assert trips_module._get_airline_name(item_with_name, {}) == "Unknown Airline"
+
+    # Test _extract_return_flight
+    item_round_trip = {
+        "itineraries": [
+            {"segments": [{"departure": {"at": "2024-03-15T09:00:00"}, "arrival": {"at": "2024-03-15T11:00:00"}}]},
+            {
+                "duration": "PT2H30M",
+                "segments": [
+                    {"carrierCode": "DL", "number": "456", "departure": {"at": "2024-03-20T14:00:00"}, "arrival": {"at": "2024-03-20T15:00:00"}},
+                    {"departure": {"at": "2024-03-20T16:00:00"}, "arrival": {"at": "2024-03-20T17:30:00"}},
+                ]
+            }
+        ]
+    }
+    return_flight = trips_module._extract_return_flight(item_round_trip)
+    assert return_flight is not None
+    assert return_flight["flight_number"] == "DL456"
+    assert return_flight["departure_time"] == "2024-03-20T14:00:00"
+    assert return_flight["arrival_time"] == "2024-03-20T17:30:00"
+    assert return_flight["duration_minutes"] == 150
+    assert return_flight["stops"] == 1
+
+    # One-way flight (no return)
+    item_one_way = {"itineraries": [{"segments": [{}]}]}
+    assert trips_module._extract_return_flight(item_one_way) is None
+
+    # Legacy fallback
+    item_legacy_return = {"return_flight": {"departure": "15:00"}}
+    assert trips_module._extract_return_flight(item_legacy_return) == {"departure": "15:00"}
+
+
+def test_extract_price_helper():
+    """Test _extract_price helper."""
+    # From price.total
+    assert trips_module._extract_price({"price": {"total": "199.99"}}) == "199.99"
+
+    # From price.grandTotal
+    assert trips_module._extract_price({"price": {"grandTotal": "299.99"}}) == "299.99"
+
+    # From price.amount
+    assert trips_module._extract_price({"price": {"amount": "399.99"}}) == "399.99"
+
+    # Direct price value
+    assert trips_module._extract_price({"price": "99.99"}) == "99.99"
+
+    # From total_price
+    assert trips_module._extract_price({"total_price": 149.99}) == "149.99"
+
+    # Missing price
+    assert trips_module._extract_price({}) is None
+
+
+def test_snapshot_to_response_with_amadeus_data(test_session):
+    """Test _snapshot_to_response extracts Amadeus flight data correctly."""
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=Decimal("350.00"),
+        hotel_price=Decimal("500.00"),
+        total_price=Decimal("850.00"),
+        created_at=datetime.now(UTC),
+        raw_data={
+            "flights": {
+                "data": [
+                    {
+                        "id": "1",
+                        "price": {"total": "350.00"},
+                        "validatingAirlineCodes": ["UA"],
+                        "itineraries": [
+                            {
+                                "duration": "PT1H6M",
+                                "segments": [
+                                    {
+                                        "carrierCode": "UA",
+                                        "number": "1234",
+                                        "departure": {"at": "2024-03-15T21:30:00"},
+                                        "arrival": {"at": "2024-03-15T22:36:00"},
+                                    }
+                                ]
+                            },
+                            {
+                                "duration": "PT1H10M",
+                                "segments": [
+                                    {
+                                        "carrierCode": "UA",
+                                        "number": "5678",
+                                        "departure": {"at": "2024-03-20T14:00:00"},
+                                        "arrival": {"at": "2024-03-20T15:10:00"},
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "dictionaries": {"carriers": {"UA": "United Airlines"}}
+            },
+            "hotels": {
+                "data": [
+                    {
+                        "id": "H1",
+                        "price": {"total": "500.00"},
+                        "name": "Grand Hotel",
+                        "rating": 4,
+                    }
+                ]
+            }
+        }
+    )
+
+    response = trips_module._snapshot_to_response(snapshot)
+
+    assert len(response.flight_offers) == 1
+    flight = response.flight_offers[0]
+    assert flight.id == "1"
+    assert flight.airline_code == "UA"
+    assert flight.flight_number == "UA1234"
+    assert flight.airline_name == "United Airlines"
+    assert flight.price == Decimal("350.00")
+    assert flight.departure_time == "2024-03-15T21:30:00"
+    assert flight.arrival_time == "2024-03-15T22:36:00"
+    assert flight.duration_minutes == 66
+    assert flight.stops == 0
+    assert flight.return_flight is not None
+    assert flight.return_flight["flight_number"] == "UA5678"
+    assert flight.return_flight["departure_time"] == "2024-03-20T14:00:00"
+
+    assert len(response.hotel_offers) == 1
+    hotel = response.hotel_offers[0]
+    assert hotel.id == "H1"
+    assert hotel.name == "Grand Hotel"
+    assert hotel.price == Decimal("500.00")
+    assert hotel.rating == 4
+
+
+def test_snapshot_to_response_handles_empty_raw_data():
+    """Test _snapshot_to_response handles missing/empty raw_data."""
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=Decimal("100.00"),
+        hotel_price=Decimal("200.00"),
+        total_price=Decimal("300.00"),
+        created_at=datetime.now(UTC),
+        raw_data=None,
+    )
+
+    response = trips_module._snapshot_to_response(snapshot)
+
+    assert len(response.flight_offers) == 0
+    assert len(response.hotel_offers) == 0
+
+
 @pytest.mark.asyncio
 async def test_trip_routes_direct_calls(test_session, monkeypatch):
     user = await _create_user(test_session, email="direct@example.com")
@@ -716,3 +980,93 @@ async def test_refresh_status_clears_lock_on_completion(client_with_csrf, test_s
 
     assert response.status_code == 200
     mock_redis.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_refresh_trip_starts_workflow(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="refresh-single@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    trigger_mock = AsyncMock()
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_mock)
+
+    payload = _build_trip_payload(name="Refresh Single Trip")
+    create_response = _create_trip(client_with_csrf, payload, "trip-refresh-single-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.post(f"/v1/trips/{trip_id}/refresh")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert "refresh_group_id" in data
+    assert data["refresh_group_id"].startswith("refresh-trip-")
+    trigger_mock.assert_called()
+    called_trip_id = trigger_mock.call_args.args[0]
+    assert str(called_trip_id) == trip_id
+
+
+@pytest.mark.asyncio
+async def test_refresh_trip_not_found(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="refresh-single-missing@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+
+    response = client_with_csrf.post(f"/v1/trips/{uuid.uuid4()}/refresh")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Trip not found."
+
+
+@pytest.mark.asyncio
+async def test_refresh_trip_workflow_failure(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="refresh-single-fail@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+
+    # First create a trip successfully
+    trigger_mock = AsyncMock()
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_mock)
+
+    payload = _build_trip_payload(name="Refresh Fail Trip")
+    create_response = _create_trip(client_with_csrf, payload, "trip-refresh-fail-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    # Now make the trigger fail for the refresh call
+    async def trigger_error(trip_id):
+        raise PriceCheckWorkflowStartFailed(extra={"trip_id": str(trip_id)})
+
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_error)
+
+    response = client_with_csrf.post(f"/v1/trips/{trip_id}/refresh")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Trip created, but initial price check failed to start."
+
+
+@pytest.mark.asyncio
+async def test_refresh_trip_direct_call(test_session, monkeypatch):
+    user = await _create_user(test_session, email="refresh-direct@example.com")
+    user_response = trips_module.UserResponse(id=str(user.id), email=user.email)
+    trigger_mock = AsyncMock()
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", trigger_mock)
+
+    payload = TripCreate(**_build_trip_payload(name="Direct Refresh Trip"))
+    create_response = await trips_module.create_trip(
+        payload,
+        db=test_session,
+        current_user=user_response,
+    )
+    trip_id = create_response.data.id
+
+    refresh_response = await trips_module.refresh_trip(
+        trip_id=trip_id,
+        db=test_session,
+        current_user=user_response,
+    )
+
+    assert refresh_response.data.refresh_group_id.startswith("refresh-trip-")
+    # trigger was called twice: once for create, once for refresh
+    assert trigger_mock.call_count == 2

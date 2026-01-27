@@ -1239,6 +1239,101 @@ describe("API Client", () => {
     });
   });
 
+  describe("api.trips.refresh", () => {
+    it("triggers refresh successfully", async () => {
+      const mockResponse = { data: { refresh_group_id: "refresh-trip-123" } };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.refresh("trip-123");
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips/trip-123/refresh",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError when trip not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refresh("invalid")).rejects.toThrow("Trip not found");
+    });
+
+    it("throws ApiError on 502 workflow failure", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => ({ title: "Bad Gateway", detail: "Temporal workflow failed" }),
+      });
+
+      try {
+        await api.trips.refresh("1");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(502);
+        expect((error as ApiError).message).toBe("Bad Gateway");
+      }
+    });
+
+    it("uses default message on 502 when no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refresh("1")).rejects.toThrow("Failed to start refresh workflow");
+    });
+
+    it("throws generic ApiError for other errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Internal error" }),
+      });
+
+      try {
+        await api.trips.refresh("1");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.refresh("1")).rejects.toThrow("Failed to start refresh");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.trips.refresh("1")).rejects.toThrow("Failed to start refresh");
+    });
+  });
+
   describe("CSRF token handling", () => {
     it("adds CSRF token header to POST requests when cookie exists", async () => {
       setCookie("csrf_token", "test-csrf-token");

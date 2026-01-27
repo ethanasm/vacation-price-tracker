@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -31,8 +32,10 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.routers.auth import UserResponse, get_current_user
 from app.schemas.base import APIResponse, PaginationMeta
 from app.schemas.trip import (
+    FlightItinerary,
     FlightOffer,
     FlightPrefs,
+    FlightSegment,
     HotelOffer,
     HotelPrefs,
     NotificationPrefs,
@@ -151,6 +154,229 @@ def _extract_price(item: dict) -> str | None:
     return None
 
 
+def _extract_amadeus_airline_code(item: dict) -> str | None:
+    """Extract airline code from Amadeus flight offer structure."""
+    # Try validatingAirlineCodes first (primary carrier)
+    validating_codes = item.get("validatingAirlineCodes")
+    if validating_codes and isinstance(validating_codes, list) and len(validating_codes) > 0:
+        return validating_codes[0]
+    # Fall back to first segment's carrier code
+    itineraries = item.get("itineraries")
+    if itineraries and isinstance(itineraries, list) and len(itineraries) > 0:
+        segments = itineraries[0].get("segments")
+        if segments and isinstance(segments, list) and len(segments) > 0:
+            return segments[0].get("carrierCode")
+    # Legacy flat fields
+    return item.get("carrier") or item.get("operating_carrier") or item.get("airline")
+
+
+def _extract_amadeus_flight_number(item: dict) -> str | None:
+    """Extract flight number (e.g., 'UA1234') from Amadeus flight offer structure."""
+    itineraries = item.get("itineraries")
+    if not itineraries or not isinstance(itineraries, list) or len(itineraries) == 0:
+        # Fall back to legacy flat field
+        return item.get("flight_number")
+
+    first_itinerary = itineraries[0]
+    segments = first_itinerary.get("segments")
+    if not segments or not isinstance(segments, list) or len(segments) == 0:
+        return None
+
+    # Get first segment's carrier code and flight number
+    first_segment = segments[0]
+    carrier_code = first_segment.get("carrierCode")
+    number = first_segment.get("number")
+
+    if carrier_code and number:
+        return f"{carrier_code}{number}"
+    return None
+
+
+def _extract_amadeus_times(item: dict) -> tuple[str | None, str | None]:
+    """Extract departure and arrival times from Amadeus flight offer structure."""
+    itineraries = item.get("itineraries")
+    if not itineraries or not isinstance(itineraries, list) or len(itineraries) == 0:
+        # Fall back to legacy flat fields
+        return item.get("departure_time") or item.get("departureTime"), item.get("arrival_time") or item.get("arrivalTime")
+
+    first_itinerary = itineraries[0]
+    segments = first_itinerary.get("segments")
+    if not segments or not isinstance(segments, list) or len(segments) == 0:
+        return None, None
+
+    # Departure time from first segment
+    first_segment = segments[0]
+    departure = first_segment.get("departure", {})
+    departure_time = departure.get("at") if isinstance(departure, dict) else None
+
+    # Arrival time from last segment
+    last_segment = segments[-1]
+    arrival = last_segment.get("arrival", {})
+    arrival_time = arrival.get("at") if isinstance(arrival, dict) else None
+
+    return departure_time, arrival_time
+
+
+def _parse_amadeus_duration(item: dict) -> int | None:
+    """Parse Amadeus ISO 8601 duration (e.g., 'PT1H6M') to minutes."""
+    itineraries = item.get("itineraries")
+    if not itineraries or not isinstance(itineraries, list) or len(itineraries) == 0:
+        # Fall back to legacy flat field
+        duration = item.get("duration") or item.get("duration_minutes")
+        if isinstance(duration, int):
+            return duration
+        return None
+
+    duration_str = itineraries[0].get("duration")
+    if not duration_str or not isinstance(duration_str, str):
+        return None
+
+    # Parse ISO 8601 duration format (e.g., "PT1H6M", "PT2H", "PT45M")
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
+    if not match:
+        return None
+
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    return hours * 60 + minutes
+
+
+def _count_amadeus_stops(item: dict) -> int:
+    """Count total stops from Amadeus flight offer structure."""
+    itineraries = item.get("itineraries")
+    if not itineraries or not isinstance(itineraries, list) or len(itineraries) == 0:
+        # Fall back to legacy flat field
+        return item.get("stops", 0)
+
+    # Count stops in outbound itinerary only for display
+    first_itinerary = itineraries[0]
+    segments = first_itinerary.get("segments")
+    if not segments or not isinstance(segments, list):
+        return 0
+
+    # Number of stops = number of segments - 1
+    return max(0, len(segments) - 1)
+
+
+def _get_airline_name(item: dict, flights_data: dict) -> str | None:
+    """Get airline name from dictionaries or item itself."""
+    airline_code = _extract_amadeus_airline_code(item)
+    if not airline_code:
+        return item.get("airline_name") or item.get("carrierName")
+
+    # Check dictionaries in the response
+    dictionaries = flights_data.get("dictionaries", {})
+    carriers = dictionaries.get("carriers", {})
+    if airline_code in carriers:
+        return carriers[airline_code]
+
+    return item.get("airline_name") or item.get("carrierName")
+
+
+def _extract_return_flight(item: dict) -> dict | None:
+    """Extract return leg info from second itinerary if present."""
+    itineraries = item.get("itineraries")
+    if not itineraries or not isinstance(itineraries, list) or len(itineraries) < 2:
+        return item.get("return_flight")
+
+    return_itinerary = itineraries[1]
+    segments = return_itinerary.get("segments")
+    if not segments or not isinstance(segments, list) or len(segments) == 0:
+        return None
+
+    first_segment = segments[0]
+    last_segment = segments[-1]
+
+    departure = first_segment.get("departure", {})
+    arrival = last_segment.get("arrival", {})
+
+    departure_time = departure.get("at") if isinstance(departure, dict) else None
+    arrival_time = arrival.get("at") if isinstance(arrival, dict) else None
+
+    # Extract flight number (carrier + number)
+    carrier_code = first_segment.get("carrierCode")
+    number = first_segment.get("number")
+    flight_number = f"{carrier_code}{number}" if carrier_code and number else None
+
+    # Parse return duration
+    duration_str = return_itinerary.get("duration")
+    duration_minutes = None
+    if duration_str and isinstance(duration_str, str):
+        match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
+        if match:
+            hours = int(match.group(1)) if match.group(1) else 0
+            minutes = int(match.group(2)) if match.group(2) else 0
+            duration_minutes = hours * 60 + minutes
+
+    stops = max(0, len(segments) - 1)
+
+    return {
+        "flight_number": flight_number,
+        "departure_time": departure_time,
+        "arrival_time": arrival_time,
+        "duration_minutes": duration_minutes,
+        "stops": stops,
+    }
+
+
+def _extract_itineraries(item: dict) -> list[FlightItinerary]:
+    """Extract full itinerary data with all segments."""
+    itineraries_data = item.get("itineraries", [])
+    if not itineraries_data or not isinstance(itineraries_data, list):
+        return []
+
+    result = []
+    directions = ["outbound", "return"]
+
+    for idx, itinerary in enumerate(itineraries_data):
+        segments = itinerary.get("segments", [])
+        if not segments:
+            continue
+
+        # Parse total duration for this itinerary
+        duration_str = itinerary.get("duration")
+        total_duration = None
+        if duration_str and isinstance(duration_str, str):
+            match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
+            if match:
+                hours = int(match.group(1)) if match.group(1) else 0
+                minutes = int(match.group(2)) if match.group(2) else 0
+                total_duration = hours * 60 + minutes
+
+        extracted_segments = []
+        for seg in segments:
+            dep = seg.get("departure", {})
+            arr = seg.get("arrival", {})
+            carrier = seg.get("carrierCode")
+            number = seg.get("number")
+
+            # Parse segment duration
+            seg_dur = None
+            if seg.get("duration"):
+                match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", seg.get("duration", ""))
+                if match:
+                    seg_dur = (int(match.group(1) or 0) * 60) + int(match.group(2) or 0)
+
+            extracted_segments.append(FlightSegment(
+                carrier_code=carrier,
+                flight_number=f"{carrier}{number}" if carrier and number else None,
+                departure_airport=dep.get("iataCode"),
+                arrival_airport=arr.get("iataCode"),
+                departure_time=dep.get("at"),
+                arrival_time=arr.get("at"),
+                duration_minutes=seg_dur,
+            ))
+
+        result.append(FlightItinerary(
+            direction=directions[idx] if idx < len(directions) else f"leg_{idx}",
+            segments=extracted_segments,
+            total_duration_minutes=total_duration,
+            stops=len(extracted_segments) - 1,
+        ))
+
+    return result
+
+
 def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
     """Convert a snapshot to response, extracting offers from raw_data."""
     flight_offers: list[FlightOffer] = []
@@ -168,16 +394,19 @@ def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
             price = _extract_price(item)
             if price is None:
                 continue
+            departure_time, arrival_time = _extract_amadeus_times(item)
             flight_offers.append(FlightOffer(
                 id=item.get("id") or str(i),
-                airline_code=item.get("carrier") or item.get("operating_carrier") or item.get("airline"),
-                airline_name=item.get("airline_name") or item.get("carrierName"),
+                airline_code=_extract_amadeus_airline_code(item),
+                flight_number=_extract_amadeus_flight_number(item),
+                airline_name=_get_airline_name(item, flights_data),
                 price=price,
-                departure_time=item.get("departure_time") or item.get("departureTime"),
-                arrival_time=item.get("arrival_time") or item.get("arrivalTime"),
-                duration_minutes=item.get("duration") or item.get("duration_minutes"),
-                stops=item.get("stops", 0),
-                return_flight=item.get("return_flight"),
+                departure_time=departure_time,
+                arrival_time=arrival_time,
+                duration_minutes=_parse_amadeus_duration(item),
+                stops=_count_amadeus_stops(item),
+                return_flight=_extract_return_flight(item),
+                itineraries=_extract_itineraries(item),
             ))
 
     # Extract hotel offers
@@ -475,3 +704,131 @@ async def update_trip_status(
 
     latest_snapshot = await _get_latest_snapshot(db, trip_id)
     return APIResponse(data=_build_trip_response(trip, latest_snapshot))
+
+
+@router.post("/v1/trips/{trip_id}/refresh", response_model=APIResponse[RefreshStartResponse])
+async def refresh_trip(
+    trip_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Trigger a manual price refresh for a single trip."""
+    user_id = uuid.UUID(current_user.id)
+    result = await db.execute(select(Trip).where(Trip.id == trip_id, Trip.user_id == user_id))
+    trip = result.scalars().first()
+    if not trip:
+        raise TripNotFound()
+
+    refresh_group_id = f"refresh-trip-{trip_id}-{uuid.uuid4()}"
+
+    try:
+        await trigger_price_check_workflow(trip_id)
+    except PriceCheckWorkflowStartFailed:
+        raise
+
+    return APIResponse(data=RefreshStartResponse(refresh_group_id=refresh_group_id))
+
+
+# =============================================================================
+# DEBUG ENDPOINTS (for API testing)
+# =============================================================================
+
+
+@router.get("/v1/debug/fast-flights")
+async def debug_fast_flights(
+    origin: str = Query(..., description="Origin airport code (e.g., SFO)"),
+    destination: str = Query(..., description="Destination airport code (e.g., MCO)"),
+    departure_date: str = Query(..., description="Departure date (YYYY-MM-DD)"),
+    return_date: str | None = Query(None, description="Return date for round trip (YYYY-MM-DD)"),
+    adults: int = Query(1, ge=1, le=9, description="Number of adults"),
+    cabin: str = Query("ECONOMY", description="Cabin class: ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST"),
+    max_results: int = Query(10, ge=1, le=50, description="Max number of results"),
+    fetch_mode: str = Query(
+        "common",
+        description="Fetch mode: 'common' (direct requests), 'fallback' (tries direct first, serverless if fails), 'local' (local Playwright)"
+    ),
+):
+    """
+    Debug endpoint to test fast-flights (Google Flights scraper) directly.
+
+    Returns raw fast-flights response in Amadeus-compatible format.
+
+    Fetch modes:
+    - common: Direct requests only (your IP exposed)
+    - fallback: Tries direct first, serverless if fails
+    - local: Uses local Playwright installation
+    """
+    from app.clients.google_flights import GoogleFlightsClient, GoogleFlightsError
+
+    try:
+        client = GoogleFlightsClient(fetch_mode=fetch_mode)
+        result = await client.search_flights(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            return_date=return_date,
+            adults=adults,
+            travel_class=cabin.upper(),
+            max_results=max_results,
+        )
+        return result
+    except GoogleFlightsError as e:
+        return {
+            "error": True,
+            "provider": "fast-flights",
+            "fetch_mode": fetch_mode,
+            "message": str(e),
+        }
+    except Exception as e:
+        return {
+            "error": True,
+            "provider": "fast-flights",
+            "fetch_mode": fetch_mode,
+            "message": str(e),
+            "type": type(e).__name__,
+        }
+
+
+@router.get("/v1/debug/amadeus")
+async def debug_amadeus(
+    origin: str = Query(..., description="Origin airport code (e.g., SFO)"),
+    destination: str = Query(..., description="Destination airport code (e.g., MCO)"),
+    departure_date: str = Query(..., description="Departure date (YYYY-MM-DD)"),
+    return_date: str | None = Query(None, description="Return date for round trip (YYYY-MM-DD)"),
+    adults: int = Query(1, ge=1, le=9, description="Number of adults"),
+    cabin: str = Query("ECONOMY", description="Cabin class: ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST"),
+    non_stop: bool = Query(False, description="Only return non-stop flights"),
+    max_results: int = Query(10, ge=1, le=50, description="Max number of results"),
+):
+    """
+    Debug endpoint to test Amadeus Flight Offers Search API directly.
+
+    Returns raw Amadeus response.
+    """
+    from app.clients.amadeus import AmadeusClientError, amadeus_client
+
+    try:
+        result = await amadeus_client.search_flights(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            return_date=return_date,
+            adults=adults,
+            travel_class=cabin.upper(),
+            non_stop=non_stop,
+            max_results=max_results,
+        )
+        return result
+    except AmadeusClientError as e:
+        return {
+            "error": True,
+            "provider": "amadeus",
+            "message": str(e),
+        }
+    except Exception as e:
+        return {
+            "error": True,
+            "provider": "amadeus",
+            "message": str(e),
+            "type": type(e).__name__,
+        }

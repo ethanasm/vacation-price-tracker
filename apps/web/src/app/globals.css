@@ -123,22 +123,44 @@ html {
 
 html.dark {
   color-scheme: dark;
+
+  /* Override Tailwind v4 theme colors for dark mode */
+  --color-background: hsl(250 20% 6%);
+  --color-foreground: hsl(0 0% 100%);
+  --color-card: hsl(250 15% 10%);
+  --color-card-foreground: hsl(0 0% 100%);
+  --color-popover: hsl(250 15% 12%);
+  --color-popover-foreground: hsl(0 0% 100%);
+  --color-primary: hsl(262 83% 65%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(200 50% 20%);
+  --color-secondary-foreground: hsl(200 40% 90%);
+  --color-muted: hsl(250 15% 25%);
+  --color-muted-foreground: hsl(0 0% 80%);
+  --color-accent: hsl(340 75% 60%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(0 72% 55%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+  --color-border: hsl(0 0% 45%);
+  --color-input: hsl(0 0% 40%);
+  --color-ring: hsl(262 83% 65%);
 }
 
 html,
 body {
   padding: 0;
   margin: 0;
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
   font-family: var(--font-body), "Manrope", "Helvetica Neue", sans-serif;
   color: var(--ink);
   background: var(--paper);
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Modern button styles */
@@ -259,4 +281,195 @@ body {
 /* Dark mode muted text override */
 .dark [class*="muted"] {
   color: rgba(255, 255, 255, 0.75);
+}
+
+/* ============================================
+   COMPREHENSIVE THEME FIX FOR ALL FORM ELEMENTS
+   ============================================ */
+
+/* ===================
+   LIGHT MODE DEFAULTS
+   =================== */
+
+/* All text inputs */
+input,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+textarea {
+  color: #1a1a2e !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* All buttons and select triggers */
+button {
+  color: #1a1a2e;
+}
+
+button[role="combobox"],
+button[data-state] {
+  color: #1a1a2e !important;
+}
+
+button[role="combobox"] span,
+button[data-state] span {
+  color: #1a1a2e !important;
+}
+
+button [data-placeholder] {
+  color: #6b7280 !important;
+}
+
+/* Icons in form fields */
+button svg,
+.inputIcon,
+[class*="inputIcon"] {
+  color: #6b7280 !important;
+}
+
+/* Portal content (dropdowns, popovers, menus) */
+[data-radix-popper-content-wrapper] {
+  color: #1a1a2e !important;
+}
+
+[data-radix-popper-content-wrapper] * {
+  color: inherit;
+}
+
+[data-radix-popper-content-wrapper] [role="listbox"],
+[data-radix-popper-content-wrapper] [role="menu"],
+[data-radix-popper-content-wrapper] [role="dialog"] {
+  background-color: white !important;
+  color: #1a1a2e !important;
+}
+
+[data-radix-popper-content-wrapper] [role="option"],
+[data-radix-popper-content-wrapper] [role="menuitem"],
+[data-radix-popper-content-wrapper] button {
+  color: #1a1a2e !important;
+}
+
+[data-radix-popper-content-wrapper] [role="option"]:focus,
+[data-radix-popper-content-wrapper] [role="option"]:hover,
+[data-radix-popper-content-wrapper] [role="menuitem"]:focus,
+[data-radix-popper-content-wrapper] [role="menuitem"]:hover,
+[data-radix-popper-content-wrapper] [data-highlighted] {
+  background-color: rgba(124, 58, 237, 0.1) !important;
+  color: #1a1a2e !important;
+}
+
+/* Calendar specific */
+[data-radix-popper-content-wrapper] table {
+  color: #1a1a2e !important;
+}
+
+[data-radix-popper-content-wrapper] table button {
+  color: #1a1a2e !important;
+}
+
+/* ===================
+   DARK MODE OVERRIDES
+   =================== */
+
+/* All text inputs */
+.dark input,
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="search"],
+.dark input[type="number"],
+.dark textarea {
+  color: white !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* All buttons and select triggers */
+.dark button {
+  color: white;
+}
+
+.dark button[role="combobox"],
+.dark button[data-state] {
+  color: white !important;
+}
+
+.dark button[role="combobox"] span,
+.dark button[data-state] span {
+  color: white !important;
+}
+
+.dark button [data-placeholder] {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Icons in form fields */
+.dark button svg,
+.dark .inputIcon,
+.dark [class*="inputIcon"] {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* Portal content (dropdowns, popovers, menus) */
+.dark [data-radix-popper-content-wrapper] {
+  color: white !important;
+}
+
+.dark [data-radix-popper-content-wrapper] * {
+  color: inherit;
+}
+
+.dark [data-radix-popper-content-wrapper] [role="listbox"],
+.dark [data-radix-popper-content-wrapper] [role="menu"],
+.dark [data-radix-popper-content-wrapper] [role="dialog"] {
+  background-color: rgb(18, 18, 28) !important;
+  color: white !important;
+}
+
+.dark [data-radix-popper-content-wrapper] [role="option"],
+.dark [data-radix-popper-content-wrapper] [role="menuitem"],
+.dark [data-radix-popper-content-wrapper] button {
+  color: white !important;
+}
+
+.dark [data-radix-popper-content-wrapper] [role="option"]:focus,
+.dark [data-radix-popper-content-wrapper] [role="option"]:hover,
+.dark [data-radix-popper-content-wrapper] [role="menuitem"]:focus,
+.dark [data-radix-popper-content-wrapper] [role="menuitem"]:hover,
+.dark [data-radix-popper-content-wrapper] [data-highlighted] {
+  background-color: rgba(124, 58, 237, 0.2) !important;
+  color: white !important;
+}
+
+/* Calendar specific */
+.dark [data-radix-popper-content-wrapper] table {
+  color: white !important;
+}
+
+.dark [data-radix-popper-content-wrapper] table button {
+  color: white !important;
+}
+
+/* Ensure primary buttons keep white text */
+.btn-primary,
+button[class*="btn-primary"] {
+  color: white !important;
+}
+
+/* Chevron icons in selects */
+button[role="combobox"] svg {
+  color: #6b7280 !important;
+}
+
+.dark button[role="combobox"] svg {
+  color: rgba(255, 255, 255, 0.5) !important;
 }

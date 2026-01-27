@@ -1,9 +1,12 @@
 import logging
 import uuid
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.clients.amadeus_mock import mock_hotel_search
+from app.clients.amadeus import AmadeusClientError
+from app.clients.amadeus_mock import mock_flight_search, mock_hotel_search
+from app.clients.flight_provider import get_provider_name
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
@@ -12,7 +15,7 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from sqlmodel import select
 from temporalio import activity
 
-from worker.clients.mcp import build_amadeus_client, build_kiwi_client
+from worker.clients.mcp import build_amadeus_client
 from worker.types import FetchResult, FilterInput, FilterOutput, SaveSnapshotInput, TripDetails
 
 logger = logging.getLogger(__name__)
@@ -26,8 +29,29 @@ VIEW_KEYWORDS = {
 PRICE_FIELDS = ("price", "total_price", "amount")
 NESTED_PRICE_FIELDS = ("total", "total_price", "amount", "grandTotal", "base")
 
-KIWI_CLIENT = build_kiwi_client()
-AMADEUS_CLIENT = build_amadeus_client()
+# Cabin class mapping from internal format to Amadeus API format
+CABIN_CLASS_MAP = {
+    "economy": "ECONOMY",
+    "premium_economy": "PREMIUM_ECONOMY",
+    "business": "BUSINESS",
+    "first": "FIRST",
+}
+
+# Flight provider is lazily initialized to avoid import errors when fast-flights isn't installed
+_flight_provider = None
+
+
+def _get_flight_provider():
+    """Lazily get the flight provider to avoid import errors at module load time."""
+    global _flight_provider
+    if _flight_provider is None:
+        from app.clients.flight_provider import get_flight_provider
+        _flight_provider = get_flight_provider()
+    return _flight_provider
+
+
+# MCP client for Amadeus hotel searches (until migrated to HTTP)
+AMADEUS_MCP_CLIENT = build_amadeus_client()
 
 
 @activity.defn
@@ -40,11 +64,11 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             raise ValueError(f"Trip not found for id={trip_id}")
 
         flight_prefs = (
-            await session.execute(select(TripFlightPrefs).where(TripFlightPrefs.trip_id == trip.id))
-        ).scalars().first()
+            (await session.execute(select(TripFlightPrefs).where(TripFlightPrefs.trip_id == trip.id))).scalars().first()
+        )
         hotel_prefs = (
-            await session.execute(select(TripHotelPrefs).where(TripHotelPrefs.trip_id == trip.id))
-        ).scalars().first()
+            (await session.execute(select(TripHotelPrefs).where(TripHotelPrefs.trip_id == trip.id))).scalars().first()
+        )
 
         return {
             "trip_id": str(trip.id),
@@ -56,18 +80,14 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "adults": trip.adults,
             "flight_prefs": {
                 "airlines": flight_prefs.airlines if flight_prefs else [],
-                "stops_mode": (
-                    flight_prefs.stops_mode.value if flight_prefs else "any"
-                ),
+                "stops_mode": (flight_prefs.stops_mode.value if flight_prefs else "any"),
                 "max_stops": flight_prefs.max_stops if flight_prefs else None,
                 "cabin": flight_prefs.cabin.value if flight_prefs else "economy",
             },
             "hotel_prefs": {
                 "rooms": hotel_prefs.rooms if hotel_prefs else 1,
                 "adults_per_room": hotel_prefs.adults_per_room if hotel_prefs else 2,
-                "room_selection_mode": (
-                    hotel_prefs.room_selection_mode.value if hotel_prefs else "cheapest"
-                ),
+                "room_selection_mode": (hotel_prefs.room_selection_mode.value if hotel_prefs else "cheapest"),
                 "preferred_room_types": hotel_prefs.preferred_room_types if hotel_prefs else [],
                 "preferred_views": hotel_prefs.preferred_views if hotel_prefs else [],
             },
@@ -76,49 +96,89 @@ async def load_trip_details(trip_id: str) -> TripDetails:
 
 @activity.defn
 async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
-    if not KIWI_CLIENT:
-        logger.info(
-            "Skipping flight fetch for trip_id=%s; Kiwi MCP server not configured",
-            trip["trip_id"],
+    """Fetch flight offers from configured flight provider or mock data."""
+    travel_class = _map_cabin_class(trip["flight_prefs"]["cabin"])
+    non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
+    provider_name = get_provider_name()
+
+    # Use mock data if configured (only for Amadeus provider)
+    if settings.mock_amadeus_api and provider_name == "amadeus":
+        logger.info("Using mock Amadeus flights for trip_id=%s", trip["trip_id"])
+        response = mock_flight_search(
+            origin=trip["origin_airport"],
+            destination=trip["destination_code"],
+            departure_date=trip["depart_date"],
+            return_date=trip["return_date"] if trip["is_round_trip"] else None,
+            adults=trip["adults"],
+            travel_class=travel_class,
+            non_stop=non_stop,
         )
+        offers = _extract_offers(response)
         return {
-            "offers": [],
-            "raw": {"status": "not_configured", "provider": "kiwi"},
-            "error": "Kiwi MCP server is not configured",
+            "offers": offers,
+            "raw": _normalize_raw(response, "amadeus_mock"),
+            "error": None,
         }
 
-    logger.info("Fetching flights for trip_id=%s", trip["trip_id"])
-    args = {
-        "flyFrom": trip["origin_airport"],
-        "flyTo": trip["destination_code"],
-        "departureDate": _format_kiwi_date(trip["depart_date"]),
-        "adults": trip["adults"],
-    }
-    if trip["is_round_trip"]:
-        args["returnDate"] = _format_kiwi_date(trip["return_date"])
-    logger.debug("Flight search args for trip_id=%s: %s", trip["trip_id"], args)
-
+    # Use configured flight provider
+    logger.info(
+        "Fetching flights for trip_id=%s via %s provider",
+        trip["trip_id"],
+        provider_name,
+    )
     try:
-        response = await KIWI_CLIENT.call_tool("search-flight", args)
-    except Exception as exc:
+        response = await _get_flight_provider().search_flights(
+            origin=trip["origin_airport"],
+            destination=trip["destination_code"],
+            departure_date=trip["depart_date"],
+            return_date=trip["return_date"] if trip["is_round_trip"] else None,
+            adults=trip["adults"],
+            travel_class=travel_class,
+            non_stop=non_stop,
+        )
+    except AmadeusClientError as exc:
         logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
             "offers": [],
-            "raw": {"status": "error", "provider": "kiwi"},
+            "raw": {"status": "error", "provider": provider_name},
+            "error": str(exc),
+        }
+    except Exception as exc:
+        # Catch errors from other providers (e.g., GoogleFlightsError)
+        logger.warning(
+            "Flight fetch failed for trip_id=%s (provider=%s)",
+            trip["trip_id"],
+            provider_name,
+            exc_info=exc,
+        )
+        return {
+            "offers": [],
+            "raw": {"status": "error", "provider": provider_name},
             "error": str(exc),
         }
 
     offers = _extract_offers(response)
-    logger.info("Fetched %d flight offers for trip_id=%s", len(offers), trip["trip_id"])
+    logger.info(
+        "Fetched %d flight offers for trip_id=%s via %s",
+        len(offers),
+        trip["trip_id"],
+        provider_name,
+    )
     return {
         "offers": offers,
-        "raw": _normalize_raw(response, "kiwi"),
+        "raw": _normalize_raw(response, provider_name),
         "error": None,
     }
 
 
+def _map_cabin_class(cabin: str) -> str:
+    """Map internal cabin class to Amadeus travelClass parameter."""
+    return CABIN_CLASS_MAP.get(cabin.lower(), "ECONOMY")
+
+
 @activity.defn
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
+    """Fetch hotel offers from Amadeus MCP server or mock data."""
     if settings.mock_amadeus_api:
         logger.info("Using mock Amadeus hotels for trip_id=%s", trip["trip_id"])
         adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
@@ -136,7 +196,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
-    if not AMADEUS_CLIENT:
+    if not AMADEUS_MCP_CLIENT:
         logger.info(
             "Skipping hotel fetch for trip_id=%s; Amadeus MCP server not configured",
             trip["trip_id"],
@@ -159,7 +219,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     logger.debug("Hotel search args for trip_id=%s: %s", trip["trip_id"], args)
 
     try:
-        response = await AMADEUS_CLIENT.call_tool("amadeus_hotel_search", args)
+        response = await AMADEUS_MCP_CLIENT.call_tool("amadeus_hotel_search", args)
     except Exception as exc:
         logger.warning("Hotel fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
@@ -200,31 +260,72 @@ async def filter_results_activity(payload: FilterInput) -> FilterOutput:
     return {"flights": flights, "hotels": hotels, "raw_data": raw_data}
 
 
+# Deduplication window to prevent duplicate snapshots when workflows run in quick succession
+SNAPSHOT_DEDUP_WINDOW_SECONDS = 60
+
+
 @activity.defn
 async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
     logger.info("Saving price snapshot for trip_id=%s", payload["trip_id"])
-    flight_price = _extract_min_price(payload["flights"])
-    hotel_price = _extract_min_price(payload["hotels"])
-    # Calculate total from whatever prices are available
-    total_price = None
-    if flight_price is not None or hotel_price is not None:
-        total_price = (flight_price or Decimal(0)) + (hotel_price or Decimal(0))
-    logger.debug(
-        "Snapshot prices for trip_id=%s flight=%s hotel=%s total=%s",
-        payload["trip_id"],
-        flight_price,
-        hotel_price,
-        total_price,
-    )
+    trip_uuid = uuid.UUID(payload["trip_id"])
 
-    snapshot = PriceSnapshot(
-        trip_id=uuid.UUID(payload["trip_id"]),
-        flight_price=flight_price,
-        hotel_price=hotel_price,
-        total_price=total_price,
-        raw_data=payload["raw_data"],
-    )
     async with AsyncSessionLocal() as session:
+        # Check for recent snapshots to prevent duplicates
+        cutoff = datetime.utcnow() - timedelta(seconds=SNAPSHOT_DEDUP_WINDOW_SECONDS)
+        existing_result = await session.execute(
+            select(PriceSnapshot)
+            .where(PriceSnapshot.trip_id == trip_uuid)
+            .where(PriceSnapshot.created_at >= cutoff)
+            .order_by(PriceSnapshot.created_at.desc())
+            .limit(1)
+        )
+        recent_snapshot = existing_result.scalars().first()
+
+        if recent_snapshot:
+            seconds_ago = (datetime.utcnow() - recent_snapshot.created_at).total_seconds()
+
+            # Check if recent snapshot contains errors - if so, allow retry with better data
+            raw_data = recent_snapshot.raw_data or {}
+            has_errors = bool(raw_data.get("errors"))
+
+            if has_errors:
+                logger.info(
+                    "Recent snapshot %s had errors; allowing new snapshot for trip_id=%s",
+                    recent_snapshot.id,
+                    payload["trip_id"],
+                )
+            else:
+                # Recent snapshot was successful - skip duplicate
+                logger.warning(
+                    "Skipping duplicate snapshot for trip_id=%s; existing snapshot_id=%s created %.1f seconds ago",
+                    payload["trip_id"],
+                    recent_snapshot.id,
+                    seconds_ago,
+                )
+                return str(recent_snapshot.id)
+
+        # Proceed with normal snapshot creation
+        flight_price = _extract_min_price(payload["flights"])
+        hotel_price = _extract_min_price(payload["hotels"])
+        # Calculate total from whatever prices are available
+        total_price = None
+        if flight_price is not None or hotel_price is not None:
+            total_price = (flight_price or Decimal(0)) + (hotel_price or Decimal(0))
+        logger.debug(
+            "Snapshot prices for trip_id=%s flight=%s hotel=%s total=%s",
+            payload["trip_id"],
+            flight_price,
+            hotel_price,
+            total_price,
+        )
+
+        snapshot = PriceSnapshot(
+            trip_id=trip_uuid,
+            flight_price=flight_price,
+            hotel_price=hotel_price,
+            total_price=total_price,
+            raw_data=payload["raw_data"],
+        )
         session.add(snapshot)
         await session.commit()
         await session.refresh(snapshot)
@@ -236,44 +337,57 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
         return str(snapshot.id)
 
 
+def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
+    """Extract all carrier codes from a flight offer.
+
+    Supports both Amadeus format (validatingAirlineCodes, itineraries.segments.carrierCode)
+    and legacy formats (carrier, operating_carrier, airline).
+    """
+    carrier_codes: list[str] = []
+
+    # Amadeus format: validatingAirlineCodes array
+    validating_codes = flight.get("validatingAirlineCodes", [])
+    if isinstance(validating_codes, list):
+        carrier_codes.extend([str(code).upper() for code in validating_codes])
+
+    # Amadeus format: extract from itinerary segments
+    for itinerary in flight.get("itineraries", []):
+        for segment in itinerary.get("segments", []):
+            if segment.get("carrierCode"):
+                carrier_codes.append(str(segment["carrierCode"]).upper())
+            operating = segment.get("operating", {})
+            if operating.get("carrierCode"):
+                carrier_codes.append(str(operating["carrierCode"]).upper())
+
+    # Legacy format fallback
+    if not carrier_codes:
+        carrier = flight.get("operating_carrier") or flight.get("carrier") or flight.get("airline")
+        if isinstance(carrier, list):
+            carrier_codes = [str(code).upper() for code in carrier]
+        elif carrier:
+            carrier_codes = [str(carrier).upper()]
+
+    return carrier_codes
+
+
 def _filter_flights(flights: list[dict[str, Any]], prefs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Filter flights by preferred airlines."""
     airlines = [code.upper() for code in prefs.get("airlines", []) if isinstance(code, str)]
     if not airlines:
         return flights
 
-    filtered: list[dict[str, Any]] = []
-    for flight in flights:
-        carrier = flight.get("operating_carrier") or flight.get("carrier") or flight.get("airline")
-        if isinstance(carrier, list):
-            carriers = [str(code).upper() for code in carrier]
-        elif carrier:
-            carriers = [str(carrier).upper()]
-        else:
-            carriers = []
-
-        if any(code in carriers for code in airlines):
-            filtered.append(flight)
-
-    return filtered
+    return [flight for flight in flights if any(code in _extract_carrier_codes(flight) for code in airlines)]
 
 
 def _filter_hotels(hotels: list[dict[str, Any]], prefs: dict[str, Any]) -> list[dict[str, Any]]:
     filtered = hotels
     preferred_room_types = [t.lower() for t in prefs.get("preferred_room_types", []) if isinstance(t, str)]
     if preferred_room_types:
-        filtered = [
-            room
-            for room in filtered
-            if _matches_keywords(room.get("description"), preferred_room_types)
-        ]
+        filtered = [room for room in filtered if _matches_keywords(room.get("description"), preferred_room_types)]
 
     preferred_views = [v.lower() for v in prefs.get("preferred_views", []) if isinstance(v, str)]
     if preferred_views:
-        filtered = [
-            room
-            for room in filtered
-            if _matches_view(room.get("description"), preferred_views)
-        ]
+        filtered = [room for room in filtered if _matches_view(room.get("description"), preferred_views)]
 
     return filtered
 
@@ -356,8 +470,3 @@ def _extract_offers(response: Any) -> list[dict[str, Any]]:
                 return [item for item in value if isinstance(item, dict)]
 
     return []
-
-
-def _format_kiwi_date(value: str) -> str:
-    year, month, day = value.split("-")
-    return f"{day}/{month}/{year}"

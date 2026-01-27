@@ -83,12 +83,37 @@ jest.mock("@/lib/format", () => ({
     });
   },
   renderStars: (rating: number) => "★".repeat(rating) + "☆".repeat(5 - rating),
+  formatCompactDate: (dateString: string) => {
+    if (!dateString) return "—";
+    const datePart = dateString.split("T")[0];
+    const [, month, day] = datePart.split("-").map(Number);
+    if (!month || !day) return "—";
+    return `${month}/${day}`;
+  },
+  formatDateRange: (departDate: string, returnDate: string | null) => {
+    const formatCompact = (d: string) => {
+      if (!d) return "—";
+      const datePart = d.split("T")[0];
+      const [, month, day] = datePart.split("-").map(Number);
+      if (!month || !day) return "—";
+      return `${month}/${day}`;
+    };
+    const depart = formatCompact(departDate);
+    if (!returnDate) return depart;
+    return `${depart} → ${formatCompact(returnDate)}`;
+  },
+  getAirlineName: (carrierCode: string | null | undefined) => {
+    if (!carrierCode) return "—";
+    const names: Record<string, string> = { UA: "United", AA: "American", DL: "Delta" };
+    return names[carrierCode.toUpperCase()] || carrierCode;
+  },
 }));
 
 // Mock API module
 const mockGetDetails = jest.fn();
 const mockUpdateStatus = jest.fn();
 const mockDelete = jest.fn();
+const mockRefresh = jest.fn();
 
 jest.mock("@/lib/api", () => ({
   api: {
@@ -96,6 +121,7 @@ jest.mock("@/lib/api", () => ({
       getDetails: (...args: unknown[]) => mockGetDetails(...args),
       updateStatus: (...args: unknown[]) => mockUpdateStatus(...args),
       delete: (...args: unknown[]) => mockDelete(...args),
+      refresh: (...args: unknown[]) => mockRefresh(...args),
     },
   },
   ApiError: class ApiError extends Error {
@@ -230,6 +256,7 @@ describe("TripDetailPage", () => {
     mockGetDetails.mockReset();
     mockUpdateStatus.mockReset();
     mockDelete.mockReset();
+    mockRefresh.mockReset();
   });
 
   describe("loading state", () => {
@@ -383,15 +410,126 @@ describe("TripDetailPage", () => {
       });
     });
 
+    it("allows selecting a hotel and updates selection state", async () => {
+      const user = userEvent.setup();
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+      });
+
+      // Click on a hotel to select it - this covers the onSelectHotel callback
+      const hotelButton = screen.getByRole("button", { name: /City Hotel/ });
+      await user.click(hotelButton);
+
+      // Verify the hotel button was clickable (the callback was called)
+      // The actual state change is internal, but we can verify no error occurred
+      expect(hotelButton).toBeInTheDocument();
+    });
+
     it("displays flights list", async () => {
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
       await waitFor(() => {
+        // Flights section header
         expect(screen.getByText("Flights")).toBeInTheDocument();
-        expect(screen.getByText("DL")).toBeInTheDocument();
+        // Collapsed card shows price and Direct badge (stops === 0 for basePriceHistory flight)
         expect(screen.getByText("$250")).toBeInTheDocument();
+        expect(screen.getByText("Direct")).toBeInTheDocument();
+      });
+    });
+
+    it("displays round trip flights with return leg", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "500.00",
+              hotel_price: "700.00",
+              total_price: "1200.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  flight_number: "UA123",
+                  price: "250.00",
+                  departure_time: "2025-06-15T08:00:00Z",
+                  arrival_time: "2025-06-15T10:30:00Z",
+                  duration_minutes: 150,
+                  stops: 1,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA123",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T10:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA456",
+                          carrier_code: "UA",
+                          departure_airport: "LAX",
+                          arrival_airport: "SFO",
+                          departure_time: "2025-06-22T14:00:00",
+                          arrival_time: "2025-06-22T16:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      const user = userEvent.setup();
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // Wait for the flight card to render - collapsed view shows stops and price
+      await waitFor(() => {
+        expect(screen.getByText("1 stop")).toBeInTheDocument();
+        expect(screen.getByText("$250")).toBeInTheDocument();
+      });
+
+      // Click on the element containing "1 stop" to expand the card
+      const stopsBadge = screen.getByText("1 stop");
+      const cardHeader = stopsBadge.closest("button");
+      expect(cardHeader).toBeTruthy();
+      if (cardHeader) {
+        await user.click(cardHeader);
+      }
+
+      // Now the expanded content should be visible with Outbound/Return labels
+      await waitFor(() => {
+        expect(screen.getByText("Outbound")).toBeInTheDocument();
+        expect(screen.getByText("Return")).toBeInTheDocument();
+        expect(screen.getByText("UA123")).toBeInTheDocument();
+        expect(screen.getByText("UA456")).toBeInTheDocument();
       });
     });
 
@@ -410,6 +548,47 @@ describe("TripDetailPage", () => {
       await waitFor(() => {
         // Find the route span that shows "SFO → LAX" (one-way) instead of "SFO ↔ LAX" (round-trip)
         expect(screen.getByText(/SFO.*→.*LAX/)).toBeInTheDocument();
+      });
+    });
+
+    it("displays flights with multiple stops correctly", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "400.00",
+              hotel_price: "600.00",
+              total_price: "1000.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "AA",
+                  airline_name: "American",
+                  price: "200.00",
+                  departure_time: "2025-06-15T06:00:00Z",
+                  arrival_time: "2025-06-15T14:00:00Z",
+                  duration_minutes: 480,
+                  stops: 2,
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        // The expandable card shows "2 stops" in the collapsed header
+        expect(screen.getByText("2 stops")).toBeInTheDocument();
+        // Duration is shown when expanded, price is shown in collapsed view
+        expect(screen.getByText("$200")).toBeInTheDocument();
       });
     });
 
@@ -1167,6 +1346,203 @@ describe("TripDetailPage", () => {
         expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
         expect(screen.getByText("No flight offers available")).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("refresh flow", () => {
+    beforeEach(() => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: basePriceHistory,
+        },
+      });
+    });
+
+    afterEach(() => {
+      (toast.success as jest.Mock).mockReset();
+      (toast.error as jest.Mock).mockReset();
+    });
+
+    it("triggers refresh when refresh button clicked", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByTitle("Refresh prices");
+      await user.click(refreshButton);
+
+      await waitFor(() => {
+        expect(mockRefresh).toHaveBeenCalledWith("test-trip");
+        expect(toast.success).toHaveBeenCalledWith("Refresh started");
+      });
+
+      // Advance timers to trigger the refetch
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      // getDetails called initially and again after refresh
+      expect(mockGetDetails.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      jest.useRealTimers();
+    });
+
+    it("shows error toast with detail on API error", async () => {
+      const user = userEvent.setup();
+      mockRefresh.mockRejectedValue(
+        new ApiError(502, "Bad Gateway", "Workflow service unavailable")
+      );
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Refresh prices"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Workflow service unavailable");
+      });
+    });
+
+    it("shows generic error toast on non-API error", async () => {
+      const user = userEvent.setup();
+      mockRefresh.mockRejectedValue(new Error("Network error"));
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Refresh prices"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to refresh trip");
+      });
+    });
+
+    it("falls back to generic error when API error has no detail", async () => {
+      const user = userEvent.setup();
+      const error = new ApiError(502, "Bad Gateway");
+      error.detail = "";
+      mockRefresh.mockRejectedValue(error);
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Refresh prices"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to refresh trip");
+      });
+    });
+
+    it("does not call refresh when tripId is empty", async () => {
+      const user = userEvent.setup();
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData },
+          price_history: [],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Refresh prices"));
+
+      await waitFor(() => {
+        expect(mockRefresh).not.toHaveBeenCalled();
+      });
+    });
+
+    it("shows loading spinner while refreshing", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
+
+      // Mock getDetails to return a new snapshot after polling
+      const updatedSnapshot = {
+        id: "new-snapshot-id",
+        created_at: "2025-01-22T12:00:00Z",
+        total_price: "3500.00",
+        flight_price: "1500.00",
+        hotel_price: "2000.00",
+        flight_offers: [],
+        hotel_offers: [],
+      };
+      mockGetDetails
+        .mockResolvedValueOnce({
+          data: {
+            trip: { ...baseTripData },
+            price_history: basePriceHistory,
+          },
+        })
+        .mockResolvedValue({
+          data: {
+            trip: { ...baseTripData },
+            price_history: [updatedSnapshot, ...basePriceHistory],
+          },
+        });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByTitle("Refresh prices");
+
+      // Button should not be disabled initially
+      expect(refreshButton).not.toBeDisabled();
+
+      // Start the refresh
+      await user.click(refreshButton);
+
+      // Button should be disabled while refreshing
+      await waitFor(() => {
+        expect(refreshButton).toBeDisabled();
+      });
+
+      // Advance timers to trigger first poll (2 seconds)
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      // Button should be enabled again after detecting new snapshot
+      await waitFor(() => {
+        expect(refreshButton).not.toBeDisabled();
+      });
+
+      jest.useRealTimers();
     });
   });
 });

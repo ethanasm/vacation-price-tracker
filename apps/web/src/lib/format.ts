@@ -92,13 +92,28 @@ export function formatDuration(minutes: number): string {
 
 /**
  * Format an ISO datetime string as time of day (e.g., "10:30 AM").
+ * Parses the time directly from the string to avoid timezone conversion.
+ * Amadeus returns times in local airport time, so we display as-is.
  */
 export function formatFlightTime(dateString: string): string {
-  return new Date(dateString).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  // Extract time part from ISO string (e.g., "2024-02-13T22:48:00" -> "22:48")
+  const timePart = dateString.includes("T")
+    ? dateString.split("T")[1].substring(0, 5)
+    : dateString;
+
+  const [hoursStr, minutesStr] = timePart.split(":");
+  const hours = Number.parseInt(hoursStr, 10);
+  const minutes = minutesStr || "00";
+
+  if (Number.isNaN(hours)) {
+    return dateString; // Return as-is if we can't parse
+  }
+
+  // Convert 24h to 12h format
+  const period = hours >= 12 ? "PM" : "AM";
+  const hours12 = hours % 12 || 12;
+
+  return `${hours12}:${minutes} ${period}`;
 }
 
 /**
@@ -171,4 +186,98 @@ export function formatThresholdType(type: string): string {
  */
 export function renderStars(rating: number): string {
   return "★".repeat(rating) + "☆".repeat(5 - rating);
+}
+
+/**
+ * Format a date as US compact "M/D" format (e.g., "2/15" for Feb 15).
+ */
+export function formatCompactDate(dateString: string): string {
+  if (!dateString) return "—";
+  const datePart = dateString.split("T")[0];
+  const [_year, month, day] = datePart.split("-").map(Number);
+  if (!month || !day) return "—";
+  return `${month}/${day}`;
+}
+
+/**
+ * Format a date range as US compact format (e.g., "2/15 → 2/22").
+ */
+export function formatDateRange(departDate: string, returnDate: string | null): string {
+  const depart = formatCompactDate(departDate);
+  if (!returnDate) return depart;
+  const ret = formatCompactDate(returnDate);
+  return `${depart} → ${ret}`;
+}
+
+/**
+ * Map airline IATA codes to display names.
+ * Falls back to the carrier code if not found.
+ */
+const AIRLINE_NAMES: Record<string, string> = {
+  UA: "United",
+  AA: "American",
+  DL: "Delta",
+  WN: "Southwest",
+  B6: "JetBlue",
+  AS: "Alaska",
+  NK: "Spirit",
+  F9: "Frontier",
+  HA: "Hawaiian",
+  SY: "Sun Country",
+  BA: "British Airways",
+  LH: "Lufthansa",
+  AF: "Air France",
+  KL: "KLM",
+  EK: "Emirates",
+  QR: "Qatar Airways",
+  SQ: "Singapore",
+  CX: "Cathay Pacific",
+  NH: "ANA",
+  JL: "JAL",
+  KE: "Korean Air",
+  AC: "Air Canada",
+  WS: "WestJet",
+  QF: "Qantas",
+  VS: "Virgin Atlantic",
+  VA: "Virgin Australia",
+  FI: "Icelandair",
+  DY: "Norwegian",
+  FR: "Ryanair",
+  U2: "easyJet",
+  VY: "Vueling",
+  IB: "Iberia",
+  TP: "TAP Portugal",
+  LX: "Swiss",
+  OS: "Austrian",
+  SN: "Brussels",
+  EI: "Aer Lingus",
+  AY: "Finnair",
+  SK: "SAS",
+  TK: "Turkish",
+  EY: "Etihad",
+  RJ: "Royal Jordanian",
+  LY: "El Al",
+  MS: "EgyptAir",
+  SA: "South African",
+  CM: "Copa",
+  AV: "Avianca",
+  LA: "LATAM",
+  AM: "Aeromexico",
+};
+
+export function getAirlineName(carrierCode: string | null | undefined): string {
+  if (!carrierCode) return "—";
+  const code = carrierCode.toUpperCase();
+  return AIRLINE_NAMES[code] || code;
+}
+
+/**
+ * Format multiple airline codes to a display string.
+ * E.g., ["UA", "AA"] -> "United | American"
+ */
+export function formatAirlines(carrierCodes: (string | null | undefined)[]): string {
+  const names = carrierCodes
+    .filter((code): code is string => !!code)
+    .map(getAirlineName);
+  return names.length > 0 ? names.join(" | ") : "—";
 }

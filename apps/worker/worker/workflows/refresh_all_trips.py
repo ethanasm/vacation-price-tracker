@@ -5,7 +5,8 @@ from typing import TypedDict
 
 from temporalio import workflow
 
-from worker.activities.trips import get_active_trips
+with workflow.unsafe.imports_passed_through():
+    from worker.activities.trips import clear_refresh_lock, get_active_trips
 
 PRICE_CHECK_WORKFLOW_NAME = "PriceCheckWorkflow"
 MAX_PARALLEL_PRICE_CHECKS = 5
@@ -45,25 +46,33 @@ class RefreshAllTripsWorkflow:
 
     @workflow.run
     async def run(self, user_id: str) -> RefreshResult:
-        trip_ids = await workflow.execute_activity(
-            get_active_trips,
-            user_id,
-            start_to_close_timeout=timedelta(seconds=30),
-        )
+        try:
+            trip_ids = await workflow.execute_activity(
+                get_active_trips,
+                user_id,
+                start_to_close_timeout=timedelta(seconds=30),
+            )
 
-        self._total = len(trip_ids)
-        if not trip_ids:
-            return {"total": 0, "successful": 0, "failed": 0}
+            self._total = len(trip_ids)
+            if not trip_ids:
+                return {"total": 0, "successful": 0, "failed": 0}
 
-        for start in range(0, len(trip_ids), MAX_PARALLEL_PRICE_CHECKS):
-            batch = trip_ids[start : start + MAX_PARALLEL_PRICE_CHECKS]
-            await asyncio.gather(*(self._run_child(trip_id) for trip_id in batch))
+            for start in range(0, len(trip_ids), MAX_PARALLEL_PRICE_CHECKS):
+                batch = trip_ids[start : start + MAX_PARALLEL_PRICE_CHECKS]
+                await asyncio.gather(*(self._run_child(trip_id) for trip_id in batch))
 
-        return {
-            "total": self._total,
-            "successful": self._successful,
-            "failed": self._failed,
-        }
+            return {
+                "total": self._total,
+                "successful": self._successful,
+                "failed": self._failed,
+            }
+        finally:
+            # Always clear the refresh lock when workflow completes
+            await workflow.execute_activity(
+                clear_refresh_lock,
+                user_id,
+                start_to_close_timeout=timedelta(seconds=10),
+            )
 
     async def _run_child(self, trip_id: str) -> None:
         self._in_progress += 1
