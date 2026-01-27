@@ -53,7 +53,7 @@ uv run pytest apps/api/tests/ -v
 
 **If dependencies changed (pyproject.toml or uv.lock modified):**
 ```bash
-uv run pip-audit
+uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994
 ```
 
 **Type checking (optional but recommended):**

@@ -11,7 +11,9 @@
 
 All critical dependencies are up-to-date with no exploitable vulnerabilities affecting this project's implementation.
 
-**pip-audit Results:** 1 advisory found (ecdsa CVE-2024-23342) - **Risk accepted** (does not affect our HS256 JWT implementation)
+**pip-audit Results:** 2 advisories found - **Risk accepted**
+- ecdsa CVE-2024-23342: does not affect our HS256 JWT implementation
+- protobuf CVE-2026-0994 (v6.33.4, via temporalio/fast-flights): no fix version available yet; monitoring for upstream patch
 **pnpm audit Results:** No known vulnerabilities found (apps/web)
 
 ---
@@ -111,9 +113,9 @@ No high-priority security actions required!
    ```bash
    uv run pip-audit
    ```
-   - To suppress ecdsa warning (accepted risk):
+   - To suppress accepted-risk warnings:
    ```bash
-   uv run pip-audit --ignore-vuln CVE-2024-23342
+   uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994
    ```
 
 2. **Monitor security advisories**

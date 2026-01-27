@@ -185,7 +185,7 @@ uv run ruff check apps/api/app/ --fix && uv run ruff format apps/api/app/
 uv run pip-audit
 
 # Ignore accepted risks (see SECURITY_AUDIT.md)
-uv run pip-audit --ignore-vuln CVE-2024-23342
+uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994
 ```
 
 #### Security Scanning (pnpm audit)
