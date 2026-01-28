@@ -317,6 +317,24 @@ export default function DashboardPage() {
     []
   );
 
+  const handleStatusChange = useCallback(
+    (tripId: string, newStatus: DisplayStatus) => {
+      setTrips((prev) =>
+        prev.map((t) => (t.id === tripId ? { ...t, status: newStatus } : t))
+      );
+    },
+    []
+  );
+
+  const handleUpdatedAtChange = useCallback(
+    (tripId: string, updatedAt: string) => {
+      setTrips((prev) =>
+        prev.map((t) => (t.id === tripId ? { ...t, updated_at: updatedAt } : t))
+      );
+    },
+    []
+  );
+
   const handleRetry = () => {
     setError(null);
     fetchTrips();
@@ -403,8 +421,11 @@ export default function DashboardPage() {
                       key={trip.id}
                       tripId={trip.id}
                       tripName={trip.name}
+                      tripStatus={trip.status}
                       onRefresh={fetchTrips}
                       onDeleted={() => handleTripDeleted(trip.id)}
+                      onStatusChange={handleStatusChange}
+                      onUpdatedAtChange={handleUpdatedAtChange}
                     >
                       <TableRow className={styles.clickableRow}>
                         <TableCell className="font-medium">
@@ -447,8 +468,11 @@ export default function DashboardPage() {
                         <TripRowKebab
                           tripId={trip.id}
                           tripName={trip.name}
+                          tripStatus={trip.status}
                           onRefresh={fetchTrips}
                           onDeleted={() => handleTripDeleted(trip.id)}
+                          onStatusChange={handleStatusChange}
+                          onUpdatedAtChange={handleUpdatedAtChange}
                         />
                       </TableRow>
                     </TripRowContextMenu>

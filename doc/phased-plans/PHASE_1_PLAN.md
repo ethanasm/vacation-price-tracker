@@ -683,7 +683,7 @@ Connect frontend to real backend APIs and remove mock data.
 ### Manual Testing
 - [X] End-to-end OAuth login flow
 - [X] Create trip, verify in database
-- [ ] Manual refresh, verify snapshot created
+- [X] Manual refresh, verify snapshot created
 - [X] Delete trip, verify cascade delete
 
 ---
@@ -692,15 +692,15 @@ Connect frontend to real backend APIs and remove mock data.
 
 Phase 1 is complete when:
 - [X] User can sign in with Google OAuth
-- [ ] User can create a trip via form with flight and hotel preferences
-- [ ] User can view all their trips in a dashboard table
-- [ ] User can manually trigger a price refresh
-- [ ] Price snapshots are stored with raw API data
-- [ ] User can view price history for a trip
-- [ ] User can pause/resume trip tracking
-- [ ] User can delete a trip
-- [ ] Frontend is connected to real backend APIs (no mock data)
-- [ ] All endpoints return envelope-wrapped responses
-- [ ] Error responses follow RFC 9457 format
-- [ ] Unit tests pass with >=95% coverage on API + worker logic
-- [ ] Docker Compose brings up entire stack with one command
+- [X] User can create a trip via form with flight and hotel preferences
+- [X] User can view all their trips in a dashboard table
+- [X] User can manually trigger a price refresh
+- [X] Price snapshots are stored with raw API data
+- [X] User can view price history for a trip
+- [X] User can pause/resume trip tracking
+- [X] User can delete a trip
+- [X] Frontend is connected to real backend APIs (no mock data)
+- [X] All endpoints return envelope-wrapped responses
+- [X] Error responses follow RFC 9457 format
+- [X] Unit tests pass with >=95% coverage on API + worker logic
+- [X] Docker Compose brings up entire stack with one command

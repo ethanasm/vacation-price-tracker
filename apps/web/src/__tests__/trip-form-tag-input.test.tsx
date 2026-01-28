@@ -97,4 +97,22 @@ describe("TagInput", () => {
     );
     expect(values).toEqual(["UA"]);
   });
+
+  it("does not add a duplicate tag", async () => {
+    const user = userEvent.setup();
+    const onTagsChange = jest.fn();
+
+    render(
+      <TagInput
+        tags={["UA"]}
+        onTagsChange={onTagsChange}
+        placeholder="Add tag"
+      />
+    );
+
+    const input = screen.getByRole("textbox");
+    await user.type(input, "UA{enter}");
+
+    expect(onTagsChange).not.toHaveBeenCalled();
+  });
 });

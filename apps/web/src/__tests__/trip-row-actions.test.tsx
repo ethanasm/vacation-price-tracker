@@ -22,6 +22,7 @@ jest.mock("sonner", () => ({
 const mockRefresh = jest.fn();
 const mockDelete = jest.fn();
 const mockGetRefreshStatus = jest.fn();
+const mockUpdateStatus = jest.fn();
 
 jest.mock("../lib/api", () => {
   class ApiError extends Error {
@@ -39,6 +40,7 @@ jest.mock("../lib/api", () => {
         refresh: (...args: unknown[]) => mockRefresh(...args),
         delete: (...args: unknown[]) => mockDelete(...args),
         getRefreshStatus: (...args: unknown[]) => mockGetRefreshStatus(...args),
+        updateStatus: (...args: unknown[]) => mockUpdateStatus(...args),
       },
     },
     ApiError,
@@ -58,8 +60,11 @@ jest.mock("../components/ui/table", () => ({
 const defaultProps = {
   tripId: "trip-1",
   tripName: "Test Trip",
+  tripStatus: "ACTIVE" as const,
   onRefresh: jest.fn(),
   onDeleted: jest.fn(),
+  onStatusChange: jest.fn(),
+  onUpdatedAtChange: jest.fn(),
 };
 
 describe("TripRowKebab", () => {
@@ -92,8 +97,24 @@ describe("TripRowKebab", () => {
     await user.click(screen.getByLabelText("Trip actions"));
     await waitFor(() => {
       expect(screen.getByText("Refresh")).toBeInTheDocument();
+      expect(screen.getByText("Pause")).toBeInTheDocument();
       expect(screen.getByText("Edit")).toBeInTheDocument();
       expect(screen.getByText("Delete")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Resume instead of Pause when trip is paused", async () => {
+    jest.useRealTimers();
+    const user = userEvent.setup();
+    render(
+      <table><tbody><tr>
+        <TripRowKebab {...defaultProps} tripStatus="PAUSED" />
+      </tr></tbody></table>
+    );
+    await user.click(screen.getByLabelText("Trip actions"));
+    await waitFor(() => {
+      expect(screen.getByText("Resume")).toBeInTheDocument();
+      expect(screen.queryByText("Pause")).not.toBeInTheDocument();
     });
   });
 
@@ -119,7 +140,33 @@ describe("TripRowKebab", () => {
       expect(toast.success).toHaveBeenCalledWith("Refresh started");
     });
 
-    // Poll completes and calls onRefresh
+    // Poll completes and calls onRefresh + onUpdatedAtChange
+    await waitFor(() => {
+      expect(defaultProps.onUpdatedAtChange).toHaveBeenCalledWith("trip-1", expect.any(String));
+      expect(defaultProps.onRefresh).toHaveBeenCalled();
+    }, { timeout: 5000 });
+  });
+
+  it("handles poll error gracefully and calls onRefresh", async () => {
+    jest.useRealTimers();
+    const user = userEvent.setup();
+    mockRefresh.mockResolvedValue({ data: { refresh_group_id: "rg-1" } });
+    mockGetRefreshStatus.mockRejectedValue(new Error("Poll failed"));
+
+    render(
+      <table><tbody><tr>
+        <TripRowKebab {...defaultProps} />
+      </tr></tbody></table>
+    );
+    await user.click(screen.getByLabelText("Trip actions"));
+    await waitFor(() => screen.getByText("Refresh"));
+    await user.click(screen.getByText("Refresh"));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Refresh started");
+    });
+
+    // Poll fails, should still call onRefresh
     await waitFor(() => {
       expect(defaultProps.onRefresh).toHaveBeenCalled();
     }, { timeout: 5000 });
@@ -246,6 +293,107 @@ describe("TripRowKebab", () => {
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Failed to delete trip");
+    });
+  });
+
+  describe("pause/resume", () => {
+    it("pauses an active trip", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockResolvedValue(undefined);
+
+      render(
+        <table><tbody><tr>
+          <TripRowKebab {...defaultProps} tripStatus="ACTIVE" />
+        </tr></tbody></table>
+      );
+      await user.click(screen.getByLabelText("Trip actions"));
+      await waitFor(() => screen.getByText("Pause"));
+      await user.click(screen.getByText("Pause"));
+
+      await waitFor(() => {
+        expect(mockUpdateStatus).toHaveBeenCalledWith("trip-1", "paused");
+        expect(defaultProps.onStatusChange).toHaveBeenCalledWith("trip-1", "PAUSED");
+        expect(toast.success).toHaveBeenCalledWith("Trip paused");
+      });
+    });
+
+    it("resumes a paused trip", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockResolvedValue(undefined);
+
+      render(
+        <table><tbody><tr>
+          <TripRowKebab {...defaultProps} tripStatus="PAUSED" />
+        </tr></tbody></table>
+      );
+      await user.click(screen.getByLabelText("Trip actions"));
+      await waitFor(() => screen.getByText("Resume"));
+      await user.click(screen.getByText("Resume"));
+
+      await waitFor(() => {
+        expect(mockUpdateStatus).toHaveBeenCalledWith("trip-1", "active");
+        expect(defaultProps.onStatusChange).toHaveBeenCalledWith("trip-1", "ACTIVE");
+        expect(toast.success).toHaveBeenCalledWith("Trip resumed");
+      });
+    });
+
+    it("shows error toast on pause ApiError", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockRejectedValue(new ApiError(500, "Server error", "Cannot pause"));
+
+      render(
+        <table><tbody><tr>
+          <TripRowKebab {...defaultProps} tripStatus="ACTIVE" />
+        </tr></tbody></table>
+      );
+      await user.click(screen.getByLabelText("Trip actions"));
+      await waitFor(() => screen.getByText("Pause"));
+      await user.click(screen.getByText("Pause"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Cannot pause");
+      });
+    });
+
+    it("shows generic error toast on pause non-ApiError", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockRejectedValue(new Error("Network error"));
+
+      render(
+        <table><tbody><tr>
+          <TripRowKebab {...defaultProps} tripStatus="ACTIVE" />
+        </tr></tbody></table>
+      );
+      await user.click(screen.getByLabelText("Trip actions"));
+      await waitFor(() => screen.getByText("Pause"));
+      await user.click(screen.getByText("Pause"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to pause trip");
+      });
+    });
+
+    it("shows generic error toast on resume non-ApiError", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockRejectedValue(new Error("Network error"));
+
+      render(
+        <table><tbody><tr>
+          <TripRowKebab {...defaultProps} tripStatus="PAUSED" />
+        </tr></tbody></table>
+      );
+      await user.click(screen.getByLabelText("Trip actions"));
+      await waitFor(() => screen.getByText("Resume"));
+      await user.click(screen.getByText("Resume"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to resume trip");
+      });
     });
   });
 });

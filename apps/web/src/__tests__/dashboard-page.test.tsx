@@ -1,4 +1,5 @@
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 
 // Mock next/navigation
@@ -38,6 +39,9 @@ jest.mock("../app/trips/page.module.css", () =>
 const mockList = jest.fn();
 const mockRefreshAll = jest.fn();
 const mockGetRefreshStatus = jest.fn();
+const mockUpdateStatus = jest.fn();
+const mockRefreshTrip = jest.fn();
+const mockDeleteTrip = jest.fn();
 
 jest.mock("../lib/api", () => {
   class ApiError extends Error {
@@ -55,6 +59,9 @@ jest.mock("../lib/api", () => {
         list: () => mockList(),
         refreshAll: () => mockRefreshAll(),
         getRefreshStatus: (id: string) => mockGetRefreshStatus(id),
+        updateStatus: (...args: unknown[]) => mockUpdateStatus(...args),
+        refresh: (...args: unknown[]) => mockRefreshTrip(...args),
+        delete: (...args: unknown[]) => mockDeleteTrip(...args),
       },
     },
     ApiError,
@@ -104,6 +111,19 @@ const mockTripsData = [
     status: "error",
     last_refreshed: "2025-01-19T12:00:00Z",
   },
+  {
+    id: "trip-4",
+    name: "One Way Trip",
+    origin_airport: "SFO",
+    destination_code: "LAX",
+    depart_date: "2025-09-01",
+    return_date: null,
+    current_flight_price: "150.00",
+    current_hotel_price: null,
+    total_price: "150.00",
+    status: "active",
+    last_refreshed: null,
+  },
 ];
 
 // Import after mocks
@@ -129,7 +149,7 @@ describe("DashboardPage", () => {
       render(<DashboardPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+        expect(screen.getAllByText("ACTIVE").length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -467,20 +487,81 @@ describe("DashboardPage", () => {
       expect(screen.getByRole("link", { name: /new trip/i })).toBeInTheDocument();
     });
 
-    it("renders trip table with data", async () => {
+    it("renders trip table with data including one-way trips", async () => {
       render(<DashboardPage />);
 
       await waitFor(() => {
         expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
         expect(screen.getByText("Paris Trip")).toBeInTheDocument();
         expect(screen.getByText("Error Trip")).toBeInTheDocument();
+        expect(screen.getByText("One Way Trip")).toBeInTheDocument();
       });
+    });
+
+    it("renders one-way arrow for one-way trips", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("One Way Trip")).toBeInTheDocument();
+      });
+
+      // One-way trip should show → not ↔
+      expect(screen.getByText("→")).toBeInTheDocument();
     });
 
     it("renders chat placeholder", () => {
       render(<DashboardPage />);
 
       expect(screen.getByText("AI Assistant")).toBeInTheDocument();
+    });
+  });
+
+  describe("error and empty states", () => {
+    it("shows failed state and retries on button click", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockList.mockRejectedValueOnce(new ApiError(500, "Server Error", "DB down"));
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load trips")).toBeInTheDocument();
+      });
+
+      // Now fix the mock and retry
+      mockList.mockResolvedValueOnce({
+        data: mockTripsData,
+        meta: { page: 1, total: 4 },
+      });
+
+      await user.click(screen.getByRole("button", { name: /retry/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+    });
+
+    it("shows failed state for non-ApiError", async () => {
+      mockList.mockRejectedValueOnce(new Error("Network error"));
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load trips")).toBeInTheDocument();
+      });
+    });
+
+    it("shows empty state when no trips", async () => {
+      mockList.mockResolvedValueOnce({
+        data: [],
+        meta: { page: 1, total: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("No trips yet")).toBeInTheDocument();
+      });
     });
   });
 
@@ -494,6 +575,65 @@ describe("DashboardPage", () => {
       // ERROR status renders with outline variant, confirming the variant logic works
       await waitFor(() => {
         expect(screen.getByText("ERROR")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("inline trip actions", () => {
+    it("updates status badge inline when a trip is paused", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockResolvedValue(undefined);
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      // Hawaii Vacation is ACTIVE - click its kebab to pause
+      const actionButtons = screen.getAllByLabelText("Trip actions");
+      await user.click(actionButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Pause")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Pause"));
+
+      await waitFor(() => {
+        expect(mockUpdateStatus).toHaveBeenCalledWith("trip-1", "paused");
+      });
+
+      // Both Hawaii and Paris should now show PAUSED (Paris was already paused)
+      await waitFor(() => {
+        expect(screen.getAllByText("PAUSED")).toHaveLength(2);
+      });
+    });
+
+    it("updates status badge inline when a trip is resumed", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockUpdateStatus.mockResolvedValue(undefined);
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Paris Trip")).toBeInTheDocument();
+      });
+
+      // Paris Trip is PAUSED - click its kebab to resume
+      const actionButtons = screen.getAllByLabelText("Trip actions");
+      await user.click(actionButtons[1]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Resume")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Resume"));
+
+      await waitFor(() => {
+        expect(mockUpdateStatus).toHaveBeenCalledWith("trip-2", "active");
       });
     });
   });

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { MoreVertical, RefreshCw, Pencil, Trash2 } from "lucide-react";
+import { MoreVertical, RefreshCw, Pencil, Trash2, Pause, Play } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -32,20 +32,26 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TableCell } from "@/components/ui/table";
 
+type TripStatus = "ACTIVE" | "PAUSED" | "ERROR";
+
 interface TripActionsProps {
   tripId: string;
   tripName: string;
+  tripStatus: TripStatus;
   onRefresh: () => void;
   onDeleted: () => void;
+  onStatusChange: (tripId: string, newStatus: TripStatus) => void;
+  onUpdatedAtChange: (tripId: string, updatedAt: string) => void;
 }
 
 const REFRESH_POLL_INTERVAL = 2000;
 const REFRESH_POLL_MAX_ATTEMPTS = 30; // 60 seconds max
 
-function useTripActions({ tripId, tripName, onRefresh, onDeleted }: TripActionsProps) {
+function useTripActions({ tripId, tripName, tripStatus, onRefresh, onDeleted, onStatusChange, onUpdatedAtChange }: TripActionsProps) {
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -72,6 +78,7 @@ function useTripActions({ tripId, tripName, onRefresh, onDeleted }: TripActionsP
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
             setIsRefreshing(false);
+            onUpdatedAtChange(tripId, new Date().toISOString());
             onRefresh();
           }
         } catch {
@@ -89,7 +96,7 @@ function useTripActions({ tripId, tripName, onRefresh, onDeleted }: TripActionsP
       }
       setIsRefreshing(false);
     }
-  }, [tripId, onRefresh]);
+  }, [tripId, onRefresh, onUpdatedAtChange]);
 
   const handleEdit = useCallback(() => {
     router.push(`/trips/${tripId}/edit`);
@@ -111,14 +118,38 @@ function useTripActions({ tripId, tripName, onRefresh, onDeleted }: TripActionsP
     }
   }, [tripId, onDeleted]);
 
+  const handleToggleStatus = useCallback(async () => {
+    const newStatus = tripStatus === "PAUSED" ? "active" : "paused";
+    setIsTogglingStatus(true);
+    try {
+      await api.trips.updateStatus(tripId, newStatus);
+      const displayStatus = newStatus.toUpperCase() as TripStatus;
+      onStatusChange(tripId, displayStatus);
+      toast.success(newStatus === "paused" ? "Trip paused" : "Trip resumed");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail || `Failed to ${newStatus === "paused" ? "pause" : "resume"} trip`);
+      } else {
+        toast.error(`Failed to ${newStatus === "paused" ? "pause" : "resume"} trip`);
+      }
+    } finally {
+      setIsTogglingStatus(false);
+    }
+  }, [tripId, tripStatus, onStatusChange]);
+
+  const isPaused = tripStatus === "PAUSED";
+
   return {
     isRefreshing,
     isDeleting,
+    isTogglingStatus,
+    isPaused,
     showDeleteDialog,
     setShowDeleteDialog,
     handleRefresh,
     handleEdit,
     handleDelete,
+    handleToggleStatus,
   };
 }
 
@@ -163,11 +194,14 @@ function DeleteConfirmDialog({
 export function TripRowContextMenu({
   tripId,
   tripName,
+  tripStatus,
   onRefresh,
   onDeleted,
+  onStatusChange,
+  onUpdatedAtChange,
   children,
 }: TripActionsProps & { children: React.ReactNode }) {
-  const actions = useTripActions({ tripId, tripName, onRefresh, onDeleted });
+  const actions = useTripActions({ tripId, tripName, tripStatus, onRefresh, onDeleted, onStatusChange, onUpdatedAtChange });
 
   return (
     <>
@@ -177,6 +211,10 @@ export function TripRowContextMenu({
           <ContextMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
+          </ContextMenuItem>
+          <ContextMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
+            {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+            {actions.isPaused ? "Resume" : "Pause"}
           </ContextMenuItem>
           <ContextMenuItem onClick={actions.handleEdit}>
             <Pencil className="mr-2 h-4 w-4" />
@@ -211,10 +249,13 @@ export function TripRowContextMenu({
 export function TripRowKebab({
   tripId,
   tripName,
+  tripStatus,
   onRefresh,
   onDeleted,
+  onStatusChange,
+  onUpdatedAtChange,
 }: TripActionsProps) {
-  const actions = useTripActions({ tripId, tripName, onRefresh, onDeleted });
+  const actions = useTripActions({ tripId, tripName, tripStatus, onRefresh, onDeleted, onStatusChange, onUpdatedAtChange });
 
   return (
     <TableCell className="relative z-10">
@@ -234,6 +275,10 @@ export function TripRowKebab({
           <DropdownMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
+            {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+            {actions.isPaused ? "Resume" : "Pause"}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={actions.handleEdit}>
             <Pencil className="mr-2 h-4 w-4" />
