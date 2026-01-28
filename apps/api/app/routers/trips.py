@@ -32,6 +32,7 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.routers.auth import UserResponse, get_current_user
 from app.schemas.base import APIResponse, PaginationMeta
 from app.schemas.trip import (
+    BulkDeleteResponse,
     FlightItinerary,
     FlightOffer,
     FlightPrefs,
@@ -690,6 +691,23 @@ async def delete_trip(
     await db.delete(trip)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/v1/trips", response_model=APIResponse[BulkDeleteResponse])
+async def delete_all_trips(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Delete all trips for the current user."""
+    user_id = uuid.UUID(current_user.id)
+    result = await db.execute(select(Trip).where(Trip.user_id == user_id))
+    trips = result.scalars().all()
+
+    for trip in trips:
+        await db.delete(trip)
+
+    await db.commit()
+    return APIResponse(data=BulkDeleteResponse(deleted_count=len(trips)))
 
 
 @router.patch("/v1/trips/{trip_id}/status", response_model=APIResponse[TripResponse])

@@ -28,6 +28,10 @@ jest.mock("@/lib/api", () => ({
       list: jest.fn(),
       refreshAll: jest.fn(),
       getRefreshStatus: jest.fn(),
+      delete: jest.fn(),
+      deleteAll: jest.fn(),
+      updateStatus: jest.fn(),
+      refresh: jest.fn(),
     },
   },
   ApiError: class ApiError extends Error {
@@ -415,9 +419,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalledTimes(1);
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -453,9 +457,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -479,9 +483,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -511,9 +515,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -540,9 +544,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -575,9 +579,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -613,9 +617,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -658,9 +662,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));
@@ -694,9 +698,9 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
-      // Wait for initial load
+      // Wait for trips to render
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole("button", { name: "Refresh All" }));

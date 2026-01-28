@@ -274,6 +274,12 @@ class RefreshStatusResponse(BaseModel):
     in_progress: int
 
 
+class BulkDeleteResponse(BaseModel):
+    """Schema for bulk delete response."""
+
+    deleted_count: int
+
+
 class TripStatusUpdate(BaseModel):
     """Schema for updating trip status (pause/resume)."""
 

@@ -1266,6 +1266,54 @@ describe("API Client", () => {
     });
   });
 
+  describe("api.trips.deleteAll", () => {
+    it("deletes all trips successfully", async () => {
+      const mockResponse = { data: { deleted_count: 3 } };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.trips.deleteAll();
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/trips",
+        expect.objectContaining({
+          method: "DELETE",
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database error" }),
+      });
+
+      try {
+        await api.trips.deleteAll();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).detail).toBe("Database error");
+      }
+    });
+
+    it("uses default message when response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.trips.deleteAll()).rejects.toThrow("Failed to delete trips");
+    });
+  });
+
   describe("api.trips.refresh", () => {
     it("triggers refresh successfully", async () => {
       const mockResponse = { data: { refresh_group_id: "refresh-trip-123" } };

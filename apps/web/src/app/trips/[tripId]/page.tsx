@@ -46,6 +46,20 @@ import { formatPrice, formatShortDate, formatDateTime, formatDuration, formatFli
 import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
 import styles from "./page.module.css";
 
+/** Build a stable flight signature from itinerary segments: e.g. "B6-100+B6-200" */
+const flightSignature = (flight: ApiFlightOffer): string => {
+  const segments = (flight.itineraries ?? []).flatMap((it) => it.segments ?? []);
+  if (segments.length === 0) {
+    // Fallback for flat structure
+    const code = flight.airline_code ?? "";
+    const num = flight.flight_number ?? "";
+    return code && num ? `${code}-${num}` : flight.id;
+  }
+  return segments
+    .map((s) => `${s.carrier_code ?? ""}-${s.flight_number ?? ""}`)
+    .join("+");
+};
+
 const parsePrice = (value: string | null | undefined): number | null => {
   if (value === null || value === undefined) return null;
   const parsed = Number.parseFloat(value);
@@ -69,8 +83,12 @@ function getStatusVariant(
 
 function PriceHistoryChart({
   priceHistory,
+  selectedHotelId,
+  selectedFlightSignature,
 }: {
   priceHistory: PriceSnapshot[];
+  selectedHotelId: string | null;
+  selectedFlightSignature: string | null;
 }) {
   if (priceHistory.length === 0) {
     return (
@@ -81,12 +99,35 @@ function PriceHistoryChart({
     );
   }
 
-  const chartData = [...priceHistory].reverse().map((snapshot) => ({
-    date: formatDateTime(snapshot.created_at),
-    total: parsePrice(snapshot.total_price) ?? 0,
-    flight: parsePrice(snapshot.flight_price) ?? 0,
-    hotel: parsePrice(snapshot.hotel_price) ?? 0,
-  }));
+  const chartData = [...priceHistory].reverse().map((snapshot) => {
+    const defaultFlight = parsePrice(snapshot.flight_price) ?? 0;
+    const defaultHotel = parsePrice(snapshot.hotel_price) ?? 0;
+
+    // Look up selected hotel price in this snapshot
+    let hotel = defaultHotel;
+    if (selectedHotelId && snapshot.hotel_offers) {
+      const match = (snapshot.hotel_offers as ApiHotelOffer[]).find(
+        (h) => h.id === selectedHotelId
+      );
+      if (match) hotel = parsePrice(match.price) ?? defaultHotel;
+    }
+
+    // Look up selected flight price in this snapshot
+    let flight = defaultFlight;
+    if (selectedFlightSignature && snapshot.flight_offers) {
+      const match = (snapshot.flight_offers as ApiFlightOffer[]).find(
+        (f) => flightSignature(f) === selectedFlightSignature
+      );
+      if (match) flight = parsePrice(match.price) ?? defaultFlight;
+    }
+
+    return {
+      date: formatDateTime(snapshot.created_at),
+      total: flight + hotel,
+      flight,
+      hotel,
+    };
+  });
 
   const chartConfig = {
     total: { label: "Total", color: "hsl(var(--chart-1))" },
@@ -285,10 +326,14 @@ function FlightsList({
   flights,
   departDate,
   returnDate,
+  selectedFlightSignature,
+  onSelectFlight,
 }: {
   flights: ApiFlightOffer[];
   departDate: string;
   returnDate: string | null;
+  selectedFlightSignature: string | null;
+  onSelectFlight: (signature: string) => void;
 }) {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
@@ -315,8 +360,9 @@ function FlightsList({
 
   return (
     <div className={styles.flightsList}>
-      {flights.map((flight, index) => {
-        const isBest = index === 0;
+      {flights.map((flight) => {
+        const sig = flightSignature(flight);
+        const isSelected = sig === selectedFlightSignature;
         const isExpanded = expandedCards.has(flight.id);
         const isDirect = flight.stops === 0;
         const outbound = flight.itineraries?.[0];
@@ -350,10 +396,8 @@ function FlightsList({
         return (
           <div
             key={flight.id}
-            className={`${styles.flightCardExpandable} ${isBest ? styles.flightCardBest : ""}`}
+            className={`${styles.flightCardExpandable} ${isSelected ? styles.flightCardBest : ""}`}
           >
-            {isBest && <span className={styles.bestBadge}>Best</span>}
-
             {/* Collapsed Header - Two-row layout showing outbound + return */}
             <button
               type="button"
@@ -363,6 +407,18 @@ function FlightsList({
             >
               {/* Row 1: Outbound */}
               <div className={styles.cardHeaderRow}>
+                <div
+                  className={styles.flightRadio}
+                  onClick={(e) => { e.stopPropagation(); onSelectFlight(sig); }}
+                  onKeyDown={() => {}}
+                  role="radio"
+                  aria-checked={isSelected}
+                  tabIndex={-1}
+                >
+                  <div className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}>
+                    {isSelected && <div className={styles.radioInner} />}
+                  </div>
+                </div>
                 <span className={styles.headerAirline}>{airlineName}</span>
                 {outboundDepTime && (
                   <span className={styles.headerTimes}>
@@ -412,10 +468,12 @@ function HotelsList({
   hotels,
   selectedHotelId,
   onSelectHotel,
+  nights,
 }: {
   hotels: ApiHotelOffer[];
   selectedHotelId: string | null;
   onSelectHotel: (hotelId: string) => void;
+  nights: number;
 }) {
   if (hotels.length === 0) {
     return (
@@ -454,7 +512,14 @@ function HotelsList({
               )}
             </span>
             <span className={styles.hotelPriceCompact}>
-              {formatPrice(hotel.price)}
+              {nights > 0 ? (
+                <>
+                  <span className={styles.hotelPerNight}>{formatPrice((parsePrice(hotel.price) ?? 0) / nights)} / night</span>
+                  <span className={styles.hotelTotalSub}>{formatPrice(hotel.price)}</span>
+                </>
+              ) : (
+                formatPrice(hotel.price)
+              )}
             </span>
           </button>
         );
@@ -530,6 +595,7 @@ export default function TripDetailPage({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+  const [selectedFlightSignature, setSelectedFlightSignature] = useState<string | null>(null);
 
   const fetchTripDetails = useCallback(async () => {
     try {
@@ -654,25 +720,47 @@ export default function TripDetailPage({
     return <ErrorState error="Trip not found" onBack={handleBack} />;
   }
 
+  // Calculate nights from trip dates
+  const nights = (() => {
+    if (!trip.depart_date || !trip.return_date) return 0;
+    const d = new Date(trip.depart_date);
+    const r = new Date(trip.return_date);
+    return Math.max(0, Math.round((r.getTime() - d.getTime()) / 86400000));
+  })();
+
   const flightPriceValue = parsePrice(trip.current_flight_price);
   const hotelPriceValue = parsePrice(trip.current_hotel_price);
-  const totalPriceValue = parsePrice(trip.total_price);
 
-  const isActive = trip.status.toLowerCase() === "active";
-
-  // Calculate trend from price history (API returns descending order - newest first)
-  const hasTrend = priceHistory.length >= 2;
-  const currentTotal = totalPriceValue ?? 0;
-  const previousTotal = hasTrend
-    ? parsePrice(priceHistory[1]?.total_price)
-    : null;
-
-  // Get offers from the latest snapshot
+  // Get offers from the latest snapshot (moved up for price derivation)
   const latestSnapshot = priceHistory[0];
   const latestOffers = {
     flights: (latestSnapshot?.flight_offers ?? []) as ApiFlightOffer[],
     hotels: (latestSnapshot?.hotel_offers ?? []) as ApiHotelOffer[],
   };
+
+  // Derive effective prices from selections (fall back to aggregate minimum)
+  const selectedHotel = selectedHotelId
+    ? latestOffers.hotels.find((h) => h.id === selectedHotelId)
+    : null;
+  const selectedFlight = selectedFlightSignature
+    ? latestOffers.flights.find((f) => flightSignature(f) === selectedFlightSignature)
+    : null;
+
+  const effectiveHotelPrice = selectedHotel ? parsePrice(selectedHotel.price) : hotelPriceValue;
+  const effectiveFlightPrice = selectedFlight ? parsePrice(selectedFlight.price) : flightPriceValue;
+  const effectiveTotalPrice =
+    effectiveFlightPrice != null && effectiveHotelPrice != null
+      ? effectiveFlightPrice + effectiveHotelPrice
+      : effectiveFlightPrice ?? effectiveHotelPrice;
+
+  const isActive = trip.status.toLowerCase() === "active";
+
+  // Calculate trend from price history (API returns descending order - newest first)
+  const hasTrend = priceHistory.length >= 2;
+  const currentTotal = effectiveTotalPrice ?? 0;
+  const previousTotal = hasTrend
+    ? parsePrice(priceHistory[1]?.total_price)
+    : null;
 
   return (
     <div className={styles.containerCompact}>
@@ -692,6 +780,7 @@ export default function TripDetailPage({
             {trip.origin_airport} {trip.is_round_trip ? "↔" : "→"}{" "}
             {trip.destination_code} · {formatShortDate(trip.depart_date)}–
             {trip.return_date ? formatShortDate(trip.return_date) : ""}
+            {nights > 0 && <span className={styles.nightsBadge}>{nights} nights</span>}
           </span>
         </div>
         <div className={styles.headerActions}>
@@ -762,7 +851,7 @@ export default function TripDetailPage({
           <Plane className="h-4 w-4" />
           <span className={styles.priceItemLabel}>Flight</span>
           <span className={styles.priceItemValue}>
-            {formatPrice(flightPriceValue)}
+            {formatPrice(effectiveFlightPrice)}
           </span>
         </div>
         <span className={styles.pricePlus}>+</span>
@@ -770,13 +859,13 @@ export default function TripDetailPage({
           <Hotel className="h-4 w-4" />
           <span className={styles.priceItemLabel}>Hotel</span>
           <span className={styles.priceItemValue}>
-            {formatPrice(hotelPriceValue)}
+            {formatPrice(effectiveHotelPrice)}
           </span>
         </div>
         <span className={styles.priceEquals}>=</span>
         <div className={styles.priceTotal}>
           <span className={styles.priceTotalValue}>
-            {formatPrice(totalPriceValue)}
+            {formatPrice(effectiveTotalPrice)}
           </span>
           {hasTrend &&
             previousTotal !== null &&
@@ -820,7 +909,11 @@ export default function TripDetailPage({
                 </span>
               </div>
             </div>
-            <PriceHistoryChart priceHistory={priceHistory} />
+            <PriceHistoryChart
+              priceHistory={priceHistory}
+              selectedHotelId={selectedHotelId}
+              selectedFlightSignature={selectedFlightSignature}
+            />
           </CardContent>
         </Card>
 
@@ -835,6 +928,7 @@ export default function TripDetailPage({
               hotels={latestOffers.hotels}
               selectedHotelId={selectedHotelId}
               onSelectHotel={setSelectedHotelId}
+              nights={nights}
             />
           </CardContent>
         </Card>
@@ -850,6 +944,8 @@ export default function TripDetailPage({
               flights={latestOffers.flights}
               departDate={trip.depart_date}
               returnDate={trip.return_date}
+              selectedFlightSignature={selectedFlightSignature}
+              onSelectFlight={setSelectedFlightSignature}
             />
           </CardContent>
         </Card>

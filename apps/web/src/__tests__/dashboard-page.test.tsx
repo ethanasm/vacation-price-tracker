@@ -42,6 +42,7 @@ const mockGetRefreshStatus = jest.fn();
 const mockUpdateStatus = jest.fn();
 const mockRefreshTrip = jest.fn();
 const mockDeleteTrip = jest.fn();
+const mockDeleteAll = jest.fn();
 
 jest.mock("../lib/api", () => {
   class ApiError extends Error {
@@ -62,6 +63,7 @@ jest.mock("../lib/api", () => {
         updateStatus: (...args: unknown[]) => mockUpdateStatus(...args),
         refresh: (...args: unknown[]) => mockRefreshTrip(...args),
         delete: (...args: unknown[]) => mockDeleteTrip(...args),
+        deleteAll: () => mockDeleteAll(),
       },
     },
     ApiError,
@@ -187,6 +189,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -212,6 +218,10 @@ describe("DashboardPage", () => {
       });
 
       render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
 
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
@@ -241,6 +251,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -268,6 +282,10 @@ describe("DashboardPage", () => {
       });
 
       render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
 
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
@@ -297,6 +315,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -325,6 +347,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -352,6 +378,10 @@ describe("DashboardPage", () => {
       });
 
       render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
 
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
@@ -386,6 +416,10 @@ describe("DashboardPage", () => {
         .mockRejectedValueOnce(new Error("Network error"));
 
       render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
 
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
@@ -423,6 +457,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -442,6 +480,10 @@ describe("DashboardPage", () => {
 
       render(<DashboardPage />);
 
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
       await act(async () => {
@@ -459,6 +501,10 @@ describe("DashboardPage", () => {
       mockRefreshAll.mockRejectedValue(new Error("Network error"));
 
       render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
 
       const refreshButton = screen.getByRole("button", { name: /refresh all/i });
 
@@ -563,6 +609,17 @@ describe("DashboardPage", () => {
         expect(screen.getByText("No trips yet")).toBeInTheDocument();
       });
     });
+
+    it("shows Refresh All button disabled when no trips", async () => {
+      mockList.mockResolvedValue({ data: [], meta: { page: 1, total: 0 } });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        const refreshBtn = screen.getByRole("button", { name: /refresh all/i });
+        expect(refreshBtn).toBeDisabled();
+      });
+    });
   });
 
   describe("default status handling", () => {
@@ -634,6 +691,164 @@ describe("DashboardPage", () => {
 
       await waitFor(() => {
         expect(mockUpdateStatus).toHaveBeenCalledWith("trip-2", "active");
+      });
+    });
+  });
+
+  describe("single trip deletion from dashboard", () => {
+    it("removes a trip from the table when deleted via kebab menu", async () => {
+      jest.useRealTimers();
+      const user = userEvent.setup();
+      mockDeleteTrip.mockResolvedValue(undefined);
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      // Click the first trip's kebab menu
+      const actionButtons = screen.getAllByLabelText("Trip actions");
+      await user.click(actionButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Delete")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Delete"));
+
+      // Confirm deletion in dialog
+      await waitFor(() => {
+        expect(screen.getByText(/permanently delete/i)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: /delete$/i }));
+
+      await waitFor(() => {
+        expect(mockDeleteTrip).toHaveBeenCalledWith("trip-1");
+      });
+
+      // Trip should be removed from the table
+      await waitFor(() => {
+        expect(screen.queryByText("Hawaii Vacation")).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("delete all trips", () => {
+    it("shows Delete All button disabled when no trips", async () => {
+      mockList.mockResolvedValue({ data: [], meta: { page: 1, total: 0 } });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        const deleteAllBtn = screen.getByRole("button", { name: /delete all/i });
+        expect(deleteAllBtn).toBeDisabled();
+      });
+    });
+
+    it("shows Delete All button enabled when trips exist", async () => {
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        const deleteAllBtn = screen.getByRole("button", { name: /delete all/i });
+        expect(deleteAllBtn).toBeEnabled();
+      });
+    });
+
+    it("shows confirmation dialog when Delete All is clicked", async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: /delete all/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Delete all trips?")).toBeInTheDocument();
+        expect(screen.getByText(/permanently delete all 4 trips/i)).toBeInTheDocument();
+      });
+    });
+
+    it("deletes all trips on confirmation", async () => {
+      mockDeleteAll.mockResolvedValue({ data: { deleted_count: 4 } });
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: /delete all/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Delete all trips?")).toBeInTheDocument();
+      });
+
+      // Click the confirm "Delete All" button in the dialog
+      const confirmButtons = screen.getAllByRole("button", { name: /delete all/i });
+      const dialogConfirm = confirmButtons[confirmButtons.length - 1];
+      await user.click(dialogConfirm);
+
+      await waitFor(() => {
+        expect(mockDeleteAll).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith("4 trips deleted");
+      });
+    });
+
+    it("shows error toast when delete all fails with non-ApiError", async () => {
+      mockDeleteAll.mockRejectedValue(new Error("Network failure"));
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: /delete all/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Delete all trips?")).toBeInTheDocument();
+      });
+
+      const confirmButtons = screen.getAllByRole("button", { name: /delete all/i });
+      const dialogConfirm = confirmButtons[confirmButtons.length - 1];
+      await user.click(dialogConfirm);
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith("Failed to delete trips");
+      });
+    });
+
+    it("shows error toast when delete all fails", async () => {
+      mockDeleteAll.mockRejectedValue(new ApiError(500, "Server error", "Internal server error"));
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hawaii Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: /delete all/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Delete all trips?")).toBeInTheDocument();
+      });
+
+      const confirmButtons = screen.getAllByRole("button", { name: /delete all/i });
+      const dialogConfirm = confirmButtons[confirmButtons.length - 1];
+      await user.click(dialogConfirm);
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith("Internal server error");
       });
     });
   });

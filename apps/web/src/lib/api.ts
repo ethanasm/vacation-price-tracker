@@ -540,6 +540,26 @@ export const api = {
     },
 
     /**
+     * Delete all trips for the current user.
+     */
+    async deleteAll(): Promise<{ data: { deleted_count: number } }> {
+      const response = await fetchWithAuth("/v1/trips", {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to delete trips",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
      * Update an existing trip.
      */
     async update(

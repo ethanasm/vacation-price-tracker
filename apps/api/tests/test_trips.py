@@ -471,6 +471,73 @@ async def test_delete_trip_not_found(client_with_csrf, test_session, mock_redis,
 
 
 @pytest.mark.asyncio
+async def test_delete_all_trips(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="delete-all@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    # Create 3 trips
+    for i in range(3):
+        _create_trip(client_with_csrf, _build_trip_payload(name=f"Trip {i}"), f"bulk-del-{i}")
+
+    # Verify they exist
+    list_response = client_with_csrf.get("/v1/trips")
+    assert len(list_response.json()["data"]) == 3
+
+    # Delete all
+    delete_response = client_with_csrf.delete("/v1/trips")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["data"]["deleted_count"] == 3
+
+    # Verify none remain
+    list_response = client_with_csrf.get("/v1/trips")
+    assert len(list_response.json()["data"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_all_trips_empty(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="delete-all-empty@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+
+    delete_response = client_with_csrf.delete("/v1/trips")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["data"]["deleted_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_all_trips_only_own(client_with_csrf, test_session, mock_redis, monkeypatch):
+    """Bulk delete should only delete the current user's trips."""
+    user_a = await _create_user(test_session, email="bulk-a@example.com")
+    user_b = await _create_user(test_session, email="bulk-b@example.com")
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    # User A creates 2 trips
+    _authorize_client(client_with_csrf, user_a)
+    _create_trip(client_with_csrf, _build_trip_payload(name="A Trip 1"), "bulk-own-a1")
+    _create_trip(client_with_csrf, _build_trip_payload(name="A Trip 2"), "bulk-own-a2")
+
+    # User B creates 1 trip
+    _authorize_client(client_with_csrf, user_b)
+    _create_trip(client_with_csrf, _build_trip_payload(name="B Trip 1"), "bulk-own-b1")
+
+    # User B deletes all — should only delete their 1 trip
+    delete_response = client_with_csrf.delete("/v1/trips")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["data"]["deleted_count"] == 1
+
+    # User A's trips should still exist
+    _authorize_client(client_with_csrf, user_a)
+    list_response = client_with_csrf.get("/v1/trips")
+    assert len(list_response.json()["data"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_trip_helpers_handle_missing_data(test_session):
     assert trips_module._flight_prefs_to_schema(None) is None
     assert trips_module._hotel_prefs_to_schema(None) is None

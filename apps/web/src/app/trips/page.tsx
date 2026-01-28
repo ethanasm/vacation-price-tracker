@@ -2,12 +2,23 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
-import { RefreshCw, MessageSquare, Plane, AlertCircle, Plus } from "lucide-react";
+import { RefreshCw, MessageSquare, Plane, AlertCircle, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -172,6 +183,7 @@ export default function DashboardPage() {
     failed: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchTrips = useCallback(async () => {
@@ -335,6 +347,26 @@ export default function DashboardPage() {
     []
   );
 
+  const handleDeleteAll = async () => {
+    setIsDeletingAll(true);
+    try {
+      const response = await api.trips.deleteAll();
+      const count = response.data.deleted_count;
+      setTrips([]);
+      toast.success(
+        count === 1 ? "1 trip deleted" : `${count} trips deleted`
+      );
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail || "Failed to delete trips");
+      } else {
+        toast.error("Failed to delete trips");
+      }
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   const handleRetry = () => {
     setError(null);
     fetchTrips();
@@ -350,7 +382,7 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={handleRefreshAll}
-            disabled={isRefreshing}
+            disabled={isRefreshing || trips.length === 0}
           >
             <RefreshCw
               className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -361,6 +393,33 @@ export default function DashboardPage() {
                 : "Starting refresh..."
               : "Refresh All"}
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isDeletingAll || trips.length === 0}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete All
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete all trips?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all {trips.length} trip{trips.length !== 1 ? "s" : ""} and their
+                  price history. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeletingAll}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteAll} disabled={isDeletingAll}>
+                  {isDeletingAll ? "Deleting..." : "Delete All"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button asChild size="sm">
             <Link href="/trips/new">
               <Plus className="h-4 w-4" />
