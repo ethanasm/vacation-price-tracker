@@ -398,10 +398,11 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("$500")).toBeInTheDocument(); // Flight
+        // $250 appears in both price summary (pre-selected cheapest flight) and flight card
+        expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
         // $700 appears in both price summary and hotel list
         expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText("$1200")).toBeInTheDocument(); // Total
+        expect(screen.getByText("$950")).toBeInTheDocument(); // Total (250 + 700)
       });
     });
 
@@ -447,7 +448,7 @@ describe("TripDetailPage", () => {
         // Flights section header
         expect(screen.getByText("Flights")).toBeInTheDocument();
         // Collapsed card shows price and Direct badge (stops === 0 for basePriceHistory flight)
-        expect(screen.getByText("$250")).toBeInTheDocument();
+        expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("Direct")).toBeInTheDocument();
       });
     });
@@ -579,7 +580,7 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("$250")).toBeInTheDocument();
+        expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
       });
 
       // No return row should be shown
@@ -655,7 +656,7 @@ describe("TripDetailPage", () => {
       // Wait for the flight card to render - collapsed view shows stops and price
       await waitFor(() => {
         expect(screen.getByText("1 stop")).toBeInTheDocument();
-        expect(screen.getByText("$250")).toBeInTheDocument();
+        expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
       });
 
       // Click on the element containing "1 stop" to expand the card
@@ -731,7 +732,7 @@ describe("TripDetailPage", () => {
         // The expandable card shows "2 stops" in the collapsed header
         expect(screen.getByText("2 stops")).toBeInTheDocument();
         // Duration is shown when expanded, price is shown in collapsed view
-        expect(screen.getByText("$200")).toBeInTheDocument();
+        expect(screen.getAllByText("$200").length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -881,7 +882,7 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("$250")).toBeInTheDocument();
+        expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
       });
 
       // Find and click the card header to expand

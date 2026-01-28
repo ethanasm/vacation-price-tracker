@@ -604,6 +604,27 @@ export default function TripDetailPage({
       const response = await api.trips.getDetails(tripId);
       setTrip(response.data.trip);
       setPriceHistory(response.data.price_history);
+
+      // Pre-select the cheapest flight and hotel from the latest snapshot
+      const latest = response.data.price_history[0];
+      if (latest) {
+        const flights = (latest.flight_offers ?? []) as ApiFlightOffer[];
+        const hotels = (latest.hotel_offers ?? []) as ApiHotelOffer[];
+
+        if (flights.length > 0) {
+          const cheapest = flights.reduce((best, f) =>
+            (parsePrice(f.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? f : best
+          );
+          setSelectedFlightSignature(flightSignature(cheapest));
+        }
+
+        if (hotels.length > 0) {
+          const cheapest = hotels.reduce((best, h) =>
+            (parsePrice(h.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? h : best
+          );
+          setSelectedHotelId(cheapest.id);
+        }
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
