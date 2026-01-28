@@ -614,14 +614,14 @@ export default function TripDetailPage({
         if (flights.length > 0) {
           const cheapest = flights.reduce((best, f) =>
             (parsePrice(f.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? f : best
-          );
+          , flights[0]);
           setSelectedFlightSignature(flightSignature(cheapest));
         }
 
         if (hotels.length > 0) {
           const cheapest = hotels.reduce((best, h) =>
             (parsePrice(h.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? h : best
-          );
+          , hotels[0]);
           setSelectedHotelId(cheapest.id);
         }
       }
