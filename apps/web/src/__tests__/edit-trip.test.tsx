@@ -659,9 +659,7 @@ describe("EditTripPage", () => {
   });
 
   describe("validation", () => {
-    it("shows error toast when form validation fails", async () => {
-      // Use trip-without-prefs which has null notification_prefs
-      // This means thresholdValue will be empty string (default), which fails validation
+    it("disables save button when form has validation errors", async () => {
       await act(async () => {
         render(<TestWrapper tripId="trip-without-prefs" />);
       });
@@ -671,16 +669,13 @@ describe("EditTripPage", () => {
         expect(screen.getByRole("button", { name: "Save Changes" })).toBeInTheDocument();
       });
 
-      // Click Save Changes - should fail validation because threshold value is empty
-      const saveButton = screen.getByRole("button", { name: "Save Changes" });
-      await act(async () => {
-        fireEvent.click(saveButton);
-      });
+      // Clear the trip name to make the form invalid
+      const nameInput = screen.getByDisplayValue("Basic Trip");
+      fireEvent.change(nameInput, { target: { value: "" } });
 
-      // Should show validation error toast (tests lines 110-111)
-      await waitFor(() => {
-        expect(mockToastError).toHaveBeenCalledWith("Please fix the errors before submitting");
-      });
+      // Save button should be disabled because form is invalid
+      const saveButton = screen.getByRole("button", { name: "Save Changes" });
+      expect(saveButton).toBeDisabled();
 
       // Should NOT call the update API
       expect(mockUpdateTrip).not.toHaveBeenCalled();

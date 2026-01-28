@@ -22,6 +22,7 @@ jest.mock("sonner", () => ({
 const mockToastSuccess = toast.success as jest.Mock;
 const mockToastError = toast.error as jest.Mock;
 const mockToastWarning = toast.warning as jest.Mock;
+const mockToastInfo = toast.info as jest.Mock;
 
 // Mock CSS module
 jest.mock("../app/trips/page.module.css", () =>
@@ -229,6 +230,118 @@ describe("DashboardPage", () => {
       await waitFor(() => {
         expect(mockToastWarning).toHaveBeenCalledWith("Prices partially refreshed", {
           description: "2 trips updated, 1 failed.",
+        });
+      });
+    });
+
+    it("shows info toast when no trips to refresh", async () => {
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "refresh-123" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          status: "completed",
+          total: 0,
+          completed: 0,
+          failed: 0,
+        },
+      });
+
+      render(<DashboardPage />);
+
+      const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+
+      await act(async () => {
+        fireEvent.click(refreshButton);
+      });
+
+      await waitFor(() => {
+        expect(mockToastInfo).toHaveBeenCalledWith("No trips to refresh", {
+          description: "Create a trip to start tracking prices.",
+        });
+      });
+    });
+
+    it("shows error toast when all trips fail", async () => {
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "refresh-123" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          status: "failed",
+          total: 2,
+          completed: 0,
+          failed: 2,
+        },
+      });
+
+      render(<DashboardPage />);
+
+      const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+
+      await act(async () => {
+        fireEvent.click(refreshButton);
+      });
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith("Refresh failed", {
+          description: "All 2 trips failed to update.",
+        });
+      });
+    });
+
+    it("shows success toast for single trip refresh", async () => {
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "refresh-123" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          status: "completed",
+          total: 1,
+          completed: 1,
+          failed: 0,
+        },
+      });
+
+      render(<DashboardPage />);
+
+      const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+
+      await act(async () => {
+        fireEvent.click(refreshButton);
+      });
+
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith("Prices refreshed", {
+          description: "Trip prices have been updated.",
+        });
+      });
+    });
+
+    it("shows info toast for unusual zero-update state", async () => {
+      mockRefreshAll.mockResolvedValue({
+        data: { refresh_group_id: "refresh-123" },
+      });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          status: "completed",
+          total: 2,
+          completed: 0,
+          failed: 0,
+        },
+      });
+
+      render(<DashboardPage />);
+
+      const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+
+      await act(async () => {
+        fireEvent.click(refreshButton);
+      });
+
+      await waitFor(() => {
+        expect(mockToastInfo).toHaveBeenCalledWith("Refresh completed", {
+          description: "No price updates were found.",
         });
       });
     });

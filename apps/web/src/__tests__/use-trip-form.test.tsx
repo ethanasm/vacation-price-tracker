@@ -90,7 +90,7 @@ describe("useTripForm", () => {
           notificationPrefs: {
             thresholdType: "trip_total",
             thresholdValue: "",
-            emailEnabled: true,
+            emailEnabled: false,
             smsEnabled: false,
           },
         }}
@@ -108,7 +108,8 @@ describe("useTripForm", () => {
       expect(hookRef.current?.errors.originAirport).toBeDefined();
       expect(hookRef.current?.errors.destinationCode).toBeDefined();
       expect(hookRef.current?.errors.departDate).toBeDefined();
-      expect(hookRef.current?.errors.thresholdValue).toBeDefined();
+      // thresholdValue error only shown when email/sms enabled
+      expect(hookRef.current?.errors.thresholdValue).toBeUndefined();
     });
   });
 
@@ -284,6 +285,7 @@ describe("useTripForm", () => {
     render(<HookHarness hookRef={hookRef} />);
 
     act(() => {
+      hookRef.current?.setters.setEmailEnabled(true);
       hookRef.current?.setters.setThresholdValue("250.50");
     });
 
@@ -313,7 +315,7 @@ describe("useTripForm", () => {
           notificationPrefs: {
             thresholdType: "trip_total",
             thresholdValue: "100",
-            emailEnabled: true,
+            emailEnabled: false,
             smsEnabled: false,
           },
         }}
@@ -485,7 +487,7 @@ describe("tripDetailToFormData", () => {
     // Notification prefs defaults
     expect(formData.notificationPrefs.thresholdType).toBe("trip_total");
     expect(formData.notificationPrefs.thresholdValue).toBe("");
-    expect(formData.notificationPrefs.emailEnabled).toBe(true);
+    expect(formData.notificationPrefs.emailEnabled).toBe(false);
     expect(formData.notificationPrefs.smsEnabled).toBe(false);
   });
 

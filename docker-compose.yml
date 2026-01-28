@@ -107,6 +107,7 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-vacation-price-tracker-tasks}
+      AMADEUS_MCP_PATH: /opt/mcp/node_modules/@modelcontextprotocol/server-amadeus-travel/dist/index.js
     depends_on:
       db:
         condition: service_healthy

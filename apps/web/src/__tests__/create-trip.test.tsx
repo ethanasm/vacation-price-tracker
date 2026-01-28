@@ -114,6 +114,7 @@ const createHookReturn = (overrides?: Partial<ReturnType<typeof mockUseTripForm>
   formData: baseTripFormData,
   setters: createTripFormSetters(),
   errors: emptyTripFormErrors,
+  isValid: true,
   validate: jest.fn().mockReturnValue(true),
   getPayload: jest.fn().mockReturnValue(tripPayloadFixture),
   ...overrides,
@@ -234,7 +235,7 @@ describe("CreateTripPage", () => {
     await user.click(screen.getByRole("button", { name: "Create Trip" }));
 
     const { toast } = jest.requireMock("sonner");
-    expect(toast.error).toHaveBeenCalledWith("This request was already processed. Please try again.");
+    expect(toast.error).toHaveBeenCalledWith("Already processed");
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();

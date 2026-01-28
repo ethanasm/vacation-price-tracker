@@ -16,6 +16,7 @@ interface DatePickerProps {
   disabled?: boolean
   fromDate?: Date
   toDate?: Date
+  defaultMonth?: Date
   className?: string
 }
 
@@ -26,6 +27,7 @@ export function DatePicker({
   disabled = false,
   fromDate,
   toDate,
+  defaultMonth,
   className,
 }: DatePickerProps) {
   const [isHydrated, setIsHydrated] = useState(false)
@@ -55,6 +57,7 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={date}
+          defaultMonth={defaultMonth}
           onSelect={(nextDate) => {
             onSelect(nextDate)
             if (nextDate) {

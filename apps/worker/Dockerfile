@@ -23,7 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    # Node.js for Amadeus MCP server (hotel search)
+    nodejs \
+    npm \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Amadeus MCP server for hotel search (from GitHub)
+# Use /opt/mcp to avoid being overwritten by development volume mounts
+RUN npm install --prefix /opt/mcp github:soren-olympus/amadeus-mcp
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

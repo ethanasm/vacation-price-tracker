@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+
 import { RefreshCw, MessageSquare, Plane, AlertCircle, Plus } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -17,6 +18,7 @@ import {
 } from "../../components/ui/table";
 import { formatPrice, formatShortDate, formatTimestamp } from "@/lib/format";
 import { api, ApiError, type TripResponse } from "@/lib/api";
+import { TripRowContextMenu, TripRowKebab } from "@/components/trip-row-actions";
 import styles from "./page.module.css";
 
 const REFRESH_POLL_INTERVAL = 2000; // Poll every 2 seconds
@@ -105,6 +107,9 @@ function TripTableSkeleton() {
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-12" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-8 rounded" />
           </TableCell>
         </TableRow>
       ))}
@@ -305,6 +310,13 @@ export default function DashboardPage() {
     }
   };
 
+  const handleTripDeleted = useCallback(
+    (tripId: string) => {
+      setTrips((prev) => prev.filter((t) => t.id !== tripId));
+    },
+    []
+  );
+
   const handleRetry = () => {
     setError(null);
     fetchTrips();
@@ -359,6 +371,7 @@ export default function DashboardPage() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Updated</TableHead>
+                    <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -381,52 +394,64 @@ export default function DashboardPage() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Updated</TableHead>
+                    <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {trips.map((trip) => (
-                    <TableRow
+                    <TripRowContextMenu
                       key={trip.id}
-                      className={styles.clickableRow}
+                      tripId={trip.id}
+                      tripName={trip.name}
+                      onRefresh={fetchTrips}
+                      onDeleted={() => handleTripDeleted(trip.id)}
                     >
-                      <TableCell className="font-medium">
-                        <Link href={`/trips/${trip.id}`} className={styles.rowLink}>
-                          {trip.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <div className={styles.route}>
-                          <span>{trip.origin_airport}</span>
-                          <span className={styles.routeArrow}>
-                            {trip.is_round_trip ? "↔" : "→"}
-                          </span>
-                          <span>{trip.destination_code}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className={styles.dates}>
-                        {formatShortDate(trip.depart_date)}
-                        {trip.return_date && ` – ${formatShortDate(trip.return_date)}`}
-                      </TableCell>
-                      <TableCell className={`text-right ${styles.price}`}>
-                        {formatPrice(trip.flight_price)}
-                      </TableCell>
-                      <TableCell className={`text-right ${styles.price}`}>
-                        {formatPrice(trip.hotel_price)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right ${styles.price} ${styles.priceTotal}`}
-                      >
-                        {formatPrice(trip.total_price)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusVariant(trip.status)}>
-                          {trip.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className={styles.timestamp}>
-                        {formatTimestamp(trip.updated_at)}
-                      </TableCell>
-                    </TableRow>
+                      <TableRow className={styles.clickableRow}>
+                        <TableCell className="font-medium">
+                          <Link href={`/trips/${trip.id}`} className={styles.rowLink}>
+                            {trip.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <div className={styles.route}>
+                            <span>{trip.origin_airport}</span>
+                            <span className={styles.routeArrow}>
+                              {trip.is_round_trip ? "↔" : "→"}
+                            </span>
+                            <span>{trip.destination_code}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className={styles.dates}>
+                          {formatShortDate(trip.depart_date)}
+                          {trip.return_date && ` – ${formatShortDate(trip.return_date)}`}
+                        </TableCell>
+                        <TableCell className={`text-right ${styles.price}`}>
+                          {formatPrice(trip.flight_price)}
+                        </TableCell>
+                        <TableCell className={`text-right ${styles.price}`}>
+                          {formatPrice(trip.hotel_price)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right ${styles.price} ${styles.priceTotal}`}
+                        >
+                          {formatPrice(trip.total_price)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusVariant(trip.status)}>
+                            {trip.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className={styles.timestamp}>
+                          {formatTimestamp(trip.updated_at)}
+                        </TableCell>
+                        <TripRowKebab
+                          tripId={trip.id}
+                          tripName={trip.name}
+                          onRefresh={fetchTrips}
+                          onDeleted={() => handleTripDeleted(trip.id)}
+                        />
+                      </TableRow>
+                    </TripRowContextMenu>
                   ))}
                 </TableBody>
               </Table>

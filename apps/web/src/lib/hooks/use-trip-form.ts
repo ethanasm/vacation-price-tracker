@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { addDays, parseISO } from "date-fns";
 import type {
   TripFormData,
   TripFormErrors,
   TripFormSetters,
+  TripFormTouched,
   TripPayload,
 } from "../../components/trip-form/types";
 import { validateTripForm, hasErrors } from "../../components/trip-form/validation";
@@ -15,6 +16,7 @@ interface UseTripFormReturn {
   formData: TripFormData;
   setters: TripFormSetters;
   errors: TripFormErrors;
+  isValid: boolean;
   validate: () => boolean;
   reset: () => void;
   getPayload: () => TripPayload;
@@ -26,8 +28,8 @@ const getDefaultFormData = (): TripFormData => ({
   originAirport: "",
   destinationCode: "",
   isRoundTrip: true,
-  departDate: addDays(new Date(), 30),
-  returnDate: addDays(new Date(), 37),
+  departDate: addDays(new Date(), 1),
+  returnDate: addDays(new Date(), 8),
   adults: "1",
 
   // Flight preferences
@@ -50,7 +52,7 @@ const getDefaultFormData = (): TripFormData => ({
   notificationPrefs: {
     thresholdType: "trip_total",
     thresholdValue: "",
-    emailEnabled: true,
+    emailEnabled: false,
     smsEnabled: false,
   },
 
@@ -97,7 +99,7 @@ export function tripDetailToFormData(trip: TripDetail): TripFormData {
     notificationPrefs: {
       thresholdType: trip.notification_prefs?.threshold_type ?? "trip_total",
       thresholdValue: trip.notification_prefs?.threshold_value ?? "",
-      emailEnabled: trip.notification_prefs?.email_enabled ?? true,
+      emailEnabled: trip.notification_prefs?.email_enabled ?? false,
       smsEnabled: trip.notification_prefs?.sms_enabled ?? false,
     },
 
@@ -138,21 +140,34 @@ export function useTripForm(
     ...initialData,
   }));
   const [errors, setErrors] = useState<TripFormErrors>({});
+  const [touched, setTouched] = useState<TripFormTouched>({});
+  const allTouchedRef = useRef(false);
+
+  const touch = useCallback((field: keyof TripFormTouched) => {
+    setTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  }, []);
 
   // Create individual setters (memoized to prevent re-creation on every render)
   const setName = useCallback(
-    (value: string) => setFormData((prev) => ({ ...prev, name: value })),
-    []
+    (value: string) => {
+      touch("name");
+      setFormData((prev) => ({ ...prev, name: value }));
+    },
+    [touch]
   );
   const setOriginAirport = useCallback(
-    (value: string) =>
-      setFormData((prev) => ({ ...prev, originAirport: value })),
-    []
+    (value: string) => {
+      touch("originAirport");
+      setFormData((prev) => ({ ...prev, originAirport: value }));
+    },
+    [touch]
   );
   const setDestinationCode = useCallback(
-    (value: string) =>
-      setFormData((prev) => ({ ...prev, destinationCode: value })),
-    []
+    (value: string) => {
+      touch("destinationCode");
+      setFormData((prev) => ({ ...prev, destinationCode: value }));
+    },
+    [touch]
   );
   const setIsRoundTrip = useCallback(
     (value: boolean) =>
@@ -160,14 +175,18 @@ export function useTripForm(
     []
   );
   const setDepartDate = useCallback(
-    (value: Date | undefined) =>
-      setFormData((prev) => ({ ...prev, departDate: value })),
-    []
+    (value: Date | undefined) => {
+      touch("departDate");
+      setFormData((prev) => ({ ...prev, departDate: value }));
+    },
+    [touch]
   );
   const setReturnDate = useCallback(
-    (value: Date | undefined) =>
-      setFormData((prev) => ({ ...prev, returnDate: value })),
-    []
+    (value: Date | undefined) => {
+      touch("returnDate");
+      setFormData((prev) => ({ ...prev, returnDate: value }));
+    },
+    [touch]
   );
   const setAdults = useCallback(
     (value: string) => setFormData((prev) => ({ ...prev, adults: value })),
@@ -246,15 +265,17 @@ export function useTripForm(
     []
   );
   const setThresholdValue = useCallback(
-    (value: string) =>
+    (value: string) => {
+      touch("thresholdValue");
       setFormData((prev) => ({
         ...prev,
         notificationPrefs: {
           ...prev.notificationPrefs,
           thresholdValue: value,
         },
-      })),
-    []
+      }));
+    },
+    [touch]
   );
   const setEmailEnabled = useCallback(
     (value: boolean) =>
@@ -333,7 +354,28 @@ export function useTripForm(
     ]
   );
 
+  // Live validation: re-validate on every form change, only show errors for touched fields
+  const allErrors = useMemo(() => validateTripForm(formData), [formData]);
+
+  useEffect(() => {
+    if (allTouchedRef.current) {
+      setErrors(allErrors);
+    } else {
+      // Only show errors for touched fields
+      const visibleErrors: TripFormErrors = {};
+      for (const key of Object.keys(touched) as (keyof TripFormTouched)[]) {
+        if (touched[key] && allErrors[key]) {
+          visibleErrors[key] = allErrors[key];
+        }
+      }
+      setErrors(visibleErrors);
+    }
+  }, [allErrors, touched]);
+
+  const isValid = !hasErrors(allErrors);
+
   const validate = useCallback((): boolean => {
+    allTouchedRef.current = true;
     const newErrors = validateTripForm(formData);
     setErrors(newErrors);
     return !hasErrors(newErrors);
@@ -342,12 +384,17 @@ export function useTripForm(
   const reset = useCallback(() => {
     setFormData(getDefaultFormData());
     setErrors({});
+    setTouched({});
+    allTouchedRef.current = false;
   }, []);
 
   const getPayload = useCallback((): TripPayload => {
     const { flightPrefs, hotelPrefs, notificationPrefs, flightPrefsOpen, hotelPrefsOpen } =
       formData;
-    const thresholdValue = Number.parseFloat(notificationPrefs.thresholdValue);
+    const notificationsEnabled = notificationPrefs.emailEnabled || notificationPrefs.smsEnabled;
+    const thresholdValue = notificationsEnabled
+      ? Number.parseFloat(notificationPrefs.thresholdValue)
+      : 0;
 
     const hasFlightPrefs = flightPrefsOpen || flightPrefs.airlines.length > 0;
     const hasHotelPrefs =
@@ -397,6 +444,7 @@ export function useTripForm(
     formData,
     setters,
     errors,
+    isValid,
     validate,
     reset,
     getPayload,

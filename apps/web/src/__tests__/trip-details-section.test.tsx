@@ -104,7 +104,7 @@ describe("TripDetailsSection", () => {
     ).toBeInTheDocument();
   });
 
-  it("normalizes airport codes on change", () => {
+  it("passes raw airport input value on change", () => {
     const handlers = renderTripDetails(emptyTripFormErrors);
 
     fireEvent.change(screen.getByLabelText("From (Airport)"), {
@@ -114,9 +114,45 @@ describe("TripDetailsSection", () => {
       target: { value: "hnl" },
     });
 
-    // The autocomplete component converts to uppercase
-    expect(handlers.onOriginAirportChange).toHaveBeenCalledWith("SFO");
-    expect(handlers.onDestinationCodeChange).toHaveBeenCalledWith("HNL");
+    // Raw value is passed through; uppercase normalization happens at validation/payload
+    expect(handlers.onOriginAirportChange).toHaveBeenCalledWith("sfo");
+    expect(handlers.onDestinationCodeChange).toHaveBeenCalledWith("hnl");
+  });
+
+  it("renders return date picker with today as fromDate when departDate is undefined", () => {
+    const handlers = {
+      onNameChange: jest.fn(),
+      onOriginAirportChange: jest.fn(),
+      onDestinationCodeChange: jest.fn(),
+      onIsRoundTripChange: jest.fn(),
+      onDepartDateChange: jest.fn(),
+      onReturnDateChange: jest.fn(),
+      onAdultsChange: jest.fn(),
+    };
+
+    render(
+      <TripDetailsSection
+        name={baseTripFormData.name}
+        originAirport={baseTripFormData.originAirport}
+        destinationCode={baseTripFormData.destinationCode}
+        isRoundTrip={true}
+        departDate={undefined}
+        returnDate={undefined}
+        adults={baseTripFormData.adults}
+        errors={emptyTripFormErrors}
+        onNameChange={handlers.onNameChange}
+        onOriginAirportChange={handlers.onOriginAirportChange}
+        onDestinationCodeChange={handlers.onDestinationCodeChange}
+        onIsRoundTripChange={handlers.onIsRoundTripChange}
+        onDepartDateChange={handlers.onDepartDateChange}
+        onReturnDateChange={handlers.onReturnDateChange}
+        onAdultsChange={handlers.onAdultsChange}
+        searchLocations={mockSearchLocations}
+      />
+    );
+
+    // Return date picker should still render
+    expect(screen.getByText("Return Date")).toBeInTheDocument();
   });
 
   it("updates the trip name", () => {

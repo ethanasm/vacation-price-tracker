@@ -320,6 +320,24 @@
   color: var(--ink);
 }
 
+.headerAirline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.headerDepartTime {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
 .directBadge {
   display: inline-flex;
   align-items: center;

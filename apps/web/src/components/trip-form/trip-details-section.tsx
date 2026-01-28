@@ -143,6 +143,7 @@ export function TripDetailsSection({
               placeholder="Select return"
               fromDate={departDate || today}
               toDate={maxDate}
+              defaultMonth={departDate}
             />
             {errors.returnDate && (
               <span className={styles.fieldError}>{errors.returnDate}</span>

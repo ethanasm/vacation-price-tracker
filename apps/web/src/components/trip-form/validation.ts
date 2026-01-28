@@ -91,10 +91,12 @@ export function validateTripForm(data: TripFormData): TripFormErrors {
     if (returnError) errors.returnDate = returnError;
   }
 
-  const thresholdError = validateThresholdValue(
-    data.notificationPrefs.thresholdValue
-  );
-  if (thresholdError) errors.thresholdValue = thresholdError;
+  if (data.notificationPrefs.emailEnabled || data.notificationPrefs.smsEnabled) {
+    const thresholdError = validateThresholdValue(
+      data.notificationPrefs.thresholdValue
+    );
+    if (thresholdError) errors.thresholdValue = thresholdError;
+  }
 
   return errors;
 }

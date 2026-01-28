@@ -27,7 +27,7 @@ function generateIdempotencyKey(): string {
 export default function CreateTripPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { formData, setters, errors, validate, getPayload } = useTripForm();
+  const { formData, setters, errors, isValid, validate, getPayload } = useTripForm();
 
   // Memoized search function that uses static airport data
   const searchLocations = useCallback((query: string): Location[] => {
@@ -55,7 +55,7 @@ export default function CreateTripPage() {
       console.error("Failed to create trip:", error);
       if (error instanceof ApiError) {
         if (error.status === 409) {
-          toast.error("This request was already processed. Please try again.");
+          toast.error(error.detail || "A trip with this name already exists. Please choose a different name.");
         } else {
           toast.error(error.detail || "Failed to create trip. Please try again.");
         }
@@ -154,7 +154,7 @@ export default function CreateTripPage() {
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || !isValid}>
             {isSubmitting ? "Creating..." : "Create Trip"}
           </Button>
         </div>

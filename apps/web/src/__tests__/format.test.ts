@@ -15,6 +15,7 @@ import {
   formatCompactDate,
   formatDateRange,
   getAirlineName,
+  formatAirlines,
 } from "../lib/format";
 
 describe("format utilities", () => {
@@ -353,6 +354,38 @@ describe("format utilities", () => {
 
     it("returns dash for undefined", () => {
       expect(getAirlineName(undefined)).toBe("—");
+    });
+  });
+
+  describe("formatShortDate edge cases", () => {
+    it("returns dash for invalid date string", () => {
+      expect(formatShortDate("not-a-date")).toBe("—");
+    });
+
+    it("returns dash for empty string", () => {
+      expect(formatShortDate("")).toBe("—");
+    });
+  });
+
+  describe("formatAirlines", () => {
+    it("formats multiple airline codes", () => {
+      expect(formatAirlines(["UA", "AA"])).toBe("United | American");
+    });
+
+    it("filters out null and undefined codes", () => {
+      expect(formatAirlines(["UA", null, undefined, "DL"])).toBe("United | Delta");
+    });
+
+    it("returns dash for empty array", () => {
+      expect(formatAirlines([])).toBe("—");
+    });
+
+    it("returns dash for array of only nulls", () => {
+      expect(formatAirlines([null, undefined])).toBe("—");
+    });
+
+    it("formats single airline code", () => {
+      expect(formatAirlines(["UA"])).toBe("United");
     });
   });
 });

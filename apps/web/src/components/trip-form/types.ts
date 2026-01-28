@@ -59,6 +59,8 @@ export interface TripFormErrors {
   thresholdValue?: string;
 }
 
+export type TripFormTouched = Partial<Record<keyof TripFormErrors, boolean>>;
+
 export interface TripFormSetters {
   setName: (value: string) => void;
   setOriginAirport: (value: string) => void;

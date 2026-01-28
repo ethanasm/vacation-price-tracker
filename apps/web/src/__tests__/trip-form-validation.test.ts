@@ -129,6 +129,7 @@ describe("validateTripForm and hasErrors", () => {
       notificationPrefs: {
         ...baseTripFormData.notificationPrefs,
         thresholdValue: "",
+        emailEnabled: true,
       },
     });
 
@@ -154,5 +155,47 @@ describe("validateTripForm and hasErrors", () => {
   it("reports no errors for valid data", () => {
     const errors = validateTripForm(baseTripFormData);
     expect(hasErrors(errors)).toBe(false);
+  });
+
+  it("skips threshold validation when notifications are disabled", () => {
+    const errors = validateTripForm({
+      ...baseTripFormData,
+      notificationPrefs: {
+        ...baseTripFormData.notificationPrefs,
+        thresholdValue: "",
+        emailEnabled: false,
+        smsEnabled: false,
+      },
+    });
+
+    expect(errors.thresholdValue).toBeUndefined();
+  });
+
+  it("validates threshold when email notifications are enabled", () => {
+    const errors = validateTripForm({
+      ...baseTripFormData,
+      notificationPrefs: {
+        ...baseTripFormData.notificationPrefs,
+        thresholdValue: "",
+        emailEnabled: true,
+        smsEnabled: false,
+      },
+    });
+
+    expect(errors.thresholdValue).toBeDefined();
+  });
+
+  it("validates threshold when SMS notifications are enabled", () => {
+    const errors = validateTripForm({
+      ...baseTripFormData,
+      notificationPrefs: {
+        ...baseTripFormData.notificationPrefs,
+        thresholdValue: "",
+        emailEnabled: false,
+        smsEnabled: true,
+      },
+    });
+
+    expect(errors.thresholdValue).toBeDefined();
   });
 });

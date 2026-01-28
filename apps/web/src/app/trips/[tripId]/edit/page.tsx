@@ -31,7 +31,7 @@ export default function EditTripPage({
   const [trip, setTrip] = useState<TripDetail | null>(null);
 
   // Initialize form with empty state; will be populated after loading trip
-  const { formData, setters, errors, validate, getPayload } = useTripForm();
+  const { formData, setters, errors, isValid, validate, getPayload } = useTripForm();
 
   // Load trip data on mount
   useEffect(() => {
@@ -244,7 +244,7 @@ export default function EditTripPage({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || !isValid}>
             {isSubmitting ? "Saving..." : "Save Changes"}
           </Button>
         </div>

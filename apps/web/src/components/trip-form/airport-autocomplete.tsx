@@ -54,7 +54,7 @@ export function AirportAutocomplete({
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value.toUpperCase();
+    const newValue = e.target.value;
     onChange(newValue);
     search(newValue);
   };
@@ -123,7 +123,6 @@ export function AirportAutocomplete({
           onKeyDown={handleKeyDown}
           onFocus={() => value.length >= 2 && results.length > 0 && setIsOpen(true)}
           placeholder={placeholder}
-          maxLength={3}
           disabled={disabled}
           className={styles.input}
           autoComplete="off"

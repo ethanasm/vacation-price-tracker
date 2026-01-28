@@ -722,6 +722,33 @@ describe("API Client", () => {
         expect(result.type).toBe("AIRPORT");
       }
     });
+
+    it("ranks exact city match before partial name match", () => {
+      // "San Francisco" should return SFO first (city match),
+      // not OAK (which has "San Francisco Bay" in its name)
+      const results = api.locations.search("San Francisco");
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].code).toBe("SFO");
+    });
+
+    it("ranks exact code match highest", () => {
+      const results = api.locations.search("SFO");
+
+      expect(results[0].code).toBe("SFO");
+    });
+
+    it("ranks city starts-with before airport name contains", () => {
+      // "Orlando" should return MCO (city: Orlando) before airports
+      // that merely have "Orlando" in their name
+      const results = api.locations.search("Orlando");
+
+      expect(results.length).toBeGreaterThan(0);
+      const mcoIndex = results.findIndex(r => r.code === "MCO");
+      expect(mcoIndex).toBeGreaterThanOrEqual(0);
+      // MCO should be near the top (within first 3 results)
+      expect(mcoIndex).toBeLessThan(3);
+    });
   });
 
   describe("api.trips.list", () => {

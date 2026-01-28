@@ -81,7 +81,7 @@ function PriceHistoryChart({
     );
   }
 
-  const chartData = priceHistory.map((snapshot) => ({
+  const chartData = [...priceHistory].reverse().map((snapshot) => ({
     date: formatDateTime(snapshot.created_at),
     total: parsePrice(snapshot.total_price) ?? 0,
     flight: parsePrice(snapshot.flight_price) ?? 0,
@@ -321,6 +321,13 @@ function FlightsList({
         const isDirect = flight.stops === 0;
         const outbound = flight.itineraries?.[0];
         const returnItinerary = flight.itineraries?.[1];
+        const firstSegment = outbound?.segments?.[0];
+        const airlineName = firstSegment?.carrier_code
+          ? getAirlineName(firstSegment.carrier_code)
+          : (flight.airline_name ?? "Unknown");
+        const departureTime = firstSegment?.departure_time
+          ? formatFlightTime(firstSegment.departure_time)
+          : null;
 
         return (
           <div
@@ -336,8 +343,9 @@ function FlightsList({
               onClick={() => toggleCard(flight.id)}
               aria-expanded={isExpanded}
             >
-              <span className={styles.dateRange}>
-                {formatDateRange(departDate, returnDate)}
+              <span className={styles.headerAirline}>
+                {airlineName}
+                {departureTime && <span className={styles.headerDepartTime}>{departureTime}</span>}
               </span>
               <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
                 <Plane className="h-3 w-3" />

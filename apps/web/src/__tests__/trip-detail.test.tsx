@@ -600,6 +600,179 @@ describe("TripDetailPage", () => {
       });
     });
 
+    it("displays layover information for connecting flights", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "350.00",
+              hotel_price: "600.00",
+              total_price: "950.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  price: "350.00",
+                  departure_time: "2025-06-15T08:00:00",
+                  arrival_time: "2025-06-15T16:00:00",
+                  duration_minutes: 480,
+                  stops: 1,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA100",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "DEN",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T11:30:00",
+                          duration_minutes: 210,
+                        },
+                        {
+                          flight_number: "UA200",
+                          carrier_code: "UA",
+                          departure_airport: "DEN",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T13:00:00",
+                          arrival_time: "2025-06-15T16:00:00",
+                          duration_minutes: 180,
+                        },
+                      ],
+                      total_duration_minutes: 480,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      const user = userEvent.setup();
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // Wait for the card to render, then expand it
+      await waitFor(() => {
+        expect(screen.getByText("1 stop")).toBeInTheDocument();
+      });
+
+      const stopsBadge = screen.getByText("1 stop");
+      const cardHeader = stopsBadge.closest("button");
+      expect(cardHeader).toBeTruthy();
+      if (cardHeader) {
+        await user.click(cardHeader);
+      }
+
+      // Expanded view should show both segments and layover info
+      await waitFor(() => {
+        expect(screen.getByText("UA100")).toBeInTheDocument();
+        expect(screen.getByText("UA200")).toBeInTheDocument();
+        expect(screen.getByText(/layover in DEN/)).toBeInTheDocument();
+      });
+    });
+
+    it("collapses an expanded flight card on second click", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "250.00",
+              hotel_price: "0",
+              total_price: "250.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  price: "250.00",
+                  departure_time: "2025-06-15T08:00:00",
+                  arrival_time: "2025-06-15T10:30:00",
+                  duration_minutes: 150,
+                  stops: 1,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA123",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T10:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA456",
+                          carrier_code: "UA",
+                          departure_airport: "LAX",
+                          arrival_airport: "SFO",
+                          departure_time: "2025-06-22T14:00:00",
+                          arrival_time: "2025-06-22T16:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      const user = userEvent.setup();
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("$250")).toBeInTheDocument();
+      });
+
+      // Find and click the card header to expand
+      const stopsBadge = screen.getByText("1 stop");
+      const cardHeader = stopsBadge.closest("button");
+      expect(cardHeader).toBeTruthy();
+      if (cardHeader) {
+        await user.click(cardHeader);
+      }
+
+      // Should be expanded now
+      await waitFor(() => {
+        expect(screen.getByText("Outbound")).toBeInTheDocument();
+      });
+
+      // Click again to collapse
+      if (cardHeader) {
+        await user.click(cardHeader);
+      }
+
+      // Outbound label should disappear
+      await waitFor(() => {
+        expect(screen.queryByText("Outbound")).not.toBeInTheDocument();
+      });
+    });
+
     it("shows empty state when no hotel offers", async () => {
       mockGetDetails.mockResolvedValue({
         data: {

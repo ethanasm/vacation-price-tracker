@@ -102,14 +102,14 @@ describe("AirportAutocomplete", () => {
   });
 
   describe("input handling", () => {
-    it("calls onChange with uppercase value when user types", () => {
+    it("calls onChange with raw value when user types", () => {
       const onChange = jest.fn();
       render(<AirportAutocomplete {...defaultProps} onChange={onChange} />);
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "la" } });
 
-      expect(onChange).toHaveBeenCalledWith("LA");
+      expect(onChange).toHaveBeenCalledWith("la");
     });
 
     it("searches immediately when typing (no debounce)", () => {

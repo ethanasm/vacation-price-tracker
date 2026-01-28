@@ -41,7 +41,7 @@ export const baseTripFormData: TripFormData = {
   notificationPrefs: {
     thresholdType: "trip_total",
     thresholdValue: "1000",
-    emailEnabled: true,
+    emailEnabled: false,
     smsEnabled: false,
   },
   flightPrefsOpen: false,
