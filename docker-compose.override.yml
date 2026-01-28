@@ -23,6 +23,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - LOG_LEVEL=DEBUG
+    command: ["sh", "-c", "pip install watchfiles && watchfiles --filter python 'python -m worker' /app/apps/worker /app/apps/api/app"]
 
   web:
     build:

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.clients.amadeus import AmadeusClientError
+from app.clients.amadeus import AmadeusClient, AmadeusClientError
 from app.clients.amadeus_mock import mock_flight_search, mock_hotel_search
 from app.clients.flight_provider import get_provider_name
 from app.core.config import settings
@@ -15,7 +15,6 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from sqlmodel import select
 from temporalio import activity
 
-from worker.clients.mcp import build_amadeus_client
 from worker.types import FetchResult, FilterInput, FilterOutput, SaveSnapshotInput, TripDetails
 
 logger = logging.getLogger(__name__)
@@ -50,8 +49,8 @@ def _get_flight_provider():
     return _flight_provider
 
 
-# MCP client for Amadeus hotel searches (until migrated to HTTP)
-AMADEUS_MCP_CLIENT = build_amadeus_client()
+# Amadeus HTTP client for hotel searches
+_amadeus_client = AmadeusClient()
 
 
 @activity.defn
@@ -178,7 +177,7 @@ def _map_cabin_class(cabin: str) -> str:
 
 @activity.defn
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
-    """Fetch hotel offers from Amadeus MCP server or mock data."""
+    """Fetch hotel offers from Amadeus HTTP API or mock data."""
     if settings.mock_amadeus_api:
         logger.info("Using mock Amadeus hotels for trip_id=%s", trip["trip_id"])
         adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
@@ -196,31 +195,18 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
-    if not AMADEUS_MCP_CLIENT:
-        logger.info(
-            "Skipping hotel fetch for trip_id=%s; Amadeus MCP server not configured",
-            trip["trip_id"],
-        )
-        return {
-            "offers": [],
-            "raw": {"status": "not_configured", "provider": "amadeus"},
-            "error": "Amadeus MCP server is not configured",
-        }
-
-    logger.info("Fetching hotels for trip_id=%s", trip["trip_id"])
-    adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
-    args = {
-        "cityCode": trip["destination_code"],
-        "checkInDate": trip["depart_date"],
-        "checkOutDate": trip["return_date"],
-        "adults": adults,
-        "rooms": trip["hotel_prefs"]["rooms"],
-    }
-    logger.debug("Hotel search args for trip_id=%s: %s", trip["trip_id"], args)
+    logger.info("Fetching hotels for trip_id=%s via Amadeus HTTP", trip["trip_id"])
+    adults = trip["hotel_prefs"]["adults_per_room"]
 
     try:
-        response = await AMADEUS_MCP_CLIENT.call_tool("amadeus_hotel_search", args)
-    except Exception as exc:
+        response = await _amadeus_client.search_hotels(
+            city_code=trip["destination_code"],
+            check_in_date=trip["depart_date"],
+            check_out_date=trip["return_date"],
+            adults=adults,
+            rooms=trip["hotel_prefs"]["rooms"],
+        )
+    except AmadeusClientError as exc:
         logger.warning("Hotel fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
             "offers": [],
@@ -419,15 +405,29 @@ def _extract_min_price(items: list[dict[str, Any]]) -> Decimal | None:
     return min(prices) if prices else None
 
 
-def _extract_price_value(item: dict[str, Any]) -> Decimal | None:
+def _extract_from_fields(obj: dict[str, Any]) -> Decimal | None:
+    """Extract a price decimal from known price fields in a dict."""
     for field in PRICE_FIELDS:
-        if field in item:
-            value = item.get(field)
+        if field in obj:
+            value = obj.get(field)
             if isinstance(value, dict):
                 for nested in NESTED_PRICE_FIELDS:
                     if nested in value:
                         return _to_decimal(value.get(nested))
             return _to_decimal(value)
+    return None
+
+
+def _extract_price_value(item: dict[str, Any]) -> Decimal | None:
+    result = _extract_from_fields(item)
+    if result is not None:
+        return result
+    # Amadeus V3 hotel-offers: price is nested in offers[0].price.total
+    offers = item.get("offers")
+    if isinstance(offers, list) and offers:
+        first_offer = offers[0]
+        if isinstance(first_offer, dict):
+            return _extract_from_fields(first_offer)
     return None
 
 

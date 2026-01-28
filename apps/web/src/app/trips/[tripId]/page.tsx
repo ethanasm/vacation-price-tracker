@@ -325,8 +325,26 @@ function FlightsList({
         const airlineName = firstSegment?.carrier_code
           ? getAirlineName(firstSegment.carrier_code)
           : (flight.airline_name ?? "Unknown");
-        const departureTime = firstSegment?.departure_time
+
+        const returnFirstSegment = returnItinerary?.segments?.[0];
+        const returnLastSegment = returnItinerary?.segments?.length
+          ? returnItinerary.segments[returnItinerary.segments.length - 1]
+          : null;
+        const outboundLastSegment = outbound?.segments?.length
+          ? outbound.segments[outbound.segments.length - 1]
+          : null;
+
+        const outboundDepTime = firstSegment?.departure_time
           ? formatFlightTime(firstSegment.departure_time)
+          : null;
+        const outboundArrTime = outboundLastSegment?.arrival_time
+          ? formatFlightTime(outboundLastSegment.arrival_time)
+          : null;
+        const returnDepTime = returnFirstSegment?.departure_time
+          ? formatFlightTime(returnFirstSegment.departure_time)
+          : null;
+        const returnArrTime = returnLastSegment?.arrival_time
+          ? formatFlightTime(returnLastSegment.arrival_time)
           : null;
 
         return (
@@ -336,25 +354,39 @@ function FlightsList({
           >
             {isBest && <span className={styles.bestBadge}>Best</span>}
 
-            {/* Collapsed Header - Always Visible */}
+            {/* Collapsed Header - Two-row layout showing outbound + return */}
             <button
               type="button"
               className={styles.cardHeader}
               onClick={() => toggleCard(flight.id)}
               aria-expanded={isExpanded}
             >
-              <span className={styles.headerAirline}>
-                {airlineName}
-                {departureTime && <span className={styles.headerDepartTime}>{departureTime}</span>}
-              </span>
-              <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
-                <Plane className="h-3 w-3" />
-                {isDirect ? "Direct" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
-              </span>
-              <span className={styles.cardPrice}>
-                {formatPrice(flight.price)}
-              </span>
-              <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
+              {/* Row 1: Outbound */}
+              <div className={styles.cardHeaderRow}>
+                <span className={styles.headerAirline}>{airlineName}</span>
+                {outboundDepTime && (
+                  <span className={styles.headerTimes}>
+                    {outboundDepTime}{outboundArrTime ? ` → ${outboundArrTime}` : ""}
+                  </span>
+                )}
+                <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
+                  <Plane className="h-3 w-3" />
+                  {isDirect ? "Direct" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
+                </span>
+                <span className={styles.cardPrice}>
+                  {formatPrice(flight.price)}
+                </span>
+                <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
+              </div>
+              {/* Row 2: Return (if round trip) */}
+              {returnFirstSegment && (
+                <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowReturn}`}>
+                  <span className={styles.headerReturnLabel}>Return</span>
+                  <span className={styles.headerTimes}>
+                    {returnDepTime}{returnArrTime ? ` → ${returnArrTime}` : ""}
+                  </span>
+                </div>
+              )}
             </button>
 
             {/* Expanded Content */}

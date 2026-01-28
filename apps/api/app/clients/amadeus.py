@@ -198,4 +198,126 @@ class AmadeusClient:
         return response.json()
 
 
+    async def search_hotels_by_city(
+        self,
+        city_code: str,
+        radius: int = 20,
+        radius_unit: str = "KM",
+        hotel_source: str = "ALL",
+    ) -> dict[str, Any]:
+        """
+        List hotels in a city using Amadeus Hotel List API v1.
+
+        Returns hotel IDs that can be passed to search_hotel_offers().
+
+        Args:
+            city_code: IATA city code (e.g., "MCO", "NYC")
+            radius: Search radius from city center
+            radius_unit: "KM" or "MILE"
+            hotel_source: "ALL", "GDS", or "DIRECTCHAIN"
+
+        Returns:
+            dict with "data" array of hotel entries (each has "hotelId", "name", etc.)
+        """
+        params = {
+            "cityCode": city_code.upper(),
+            "radius": str(radius),
+            "radiusUnit": radius_unit.upper(),
+            "hotelSource": hotel_source.upper(),
+        }
+        response = await self._authorized_get("/v1/reference-data/locations/hotels/by-city", params)
+        return response.json()
+
+    async def search_hotel_offers(
+        self,
+        hotel_ids: list[str],
+        check_in_date: str,
+        check_out_date: str,
+        adults: int = 1,
+        rooms: int = 1,
+        currency: str = "USD",
+    ) -> dict[str, Any]:
+        """
+        Search for hotel offers using Amadeus Hotel Search API v3.
+
+        Args:
+            hotel_ids: List of Amadeus hotel IDs (from search_hotels_by_city)
+            check_in_date: ISO format date (e.g., "2026-03-12")
+            check_out_date: ISO format date (e.g., "2026-03-14")
+            adults: Number of adult guests per room (1-9)
+            rooms: Number of rooms (1-9)
+            currency: Currency code for pricing
+
+        Returns:
+            dict with "data" array of hotel offers
+        """
+        if not hotel_ids:
+            return {"data": []}
+
+        params = {
+            "hotelIds": ",".join(hotel_ids),
+            "checkInDate": check_in_date,
+            "checkOutDate": check_out_date,
+            "adults": str(adults),
+            "roomQuantity": str(rooms),
+            "currency": currency,
+        }
+        response = await self._authorized_get("/v3/shopping/hotel-offers", params)
+        return response.json()
+
+    async def search_hotels(
+        self,
+        city_code: str,
+        check_in_date: str,
+        check_out_date: str,
+        adults: int = 1,
+        rooms: int = 1,
+        max_hotels: int = 20,
+    ) -> dict[str, Any]:
+        """
+        Combined hotel search: finds hotels in a city then fetches offers.
+
+        This is the main entry point for hotel searches, combining the two-step
+        Amadeus hotel API flow into a single call.
+
+        Args:
+            city_code: IATA city code (e.g., "MCO")
+            check_in_date: ISO check-in date
+            check_out_date: ISO check-out date
+            adults: Guests per room
+            rooms: Number of rooms
+            max_hotels: Max hotel IDs to query for offers
+
+        Returns:
+            dict with "data" array of hotel offers and metadata
+        """
+        # Step 1: Get hotel IDs in the city
+        hotel_list = await self.search_hotels_by_city(city_code)
+        hotels = hotel_list.get("data", [])
+
+        if not hotels:
+            return {"data": [], "meta": {"count": 0, "provider": "amadeus"}}
+
+        # Extract hotel IDs, capped at max_hotels
+        hotel_ids = [h["hotelId"] for h in hotels if h.get("hotelId")][:max_hotels]
+
+        if not hotel_ids:
+            return {"data": [], "meta": {"count": 0, "provider": "amadeus"}}
+
+        # Step 2: Get offers for those hotels
+        offers_response = await self.search_hotel_offers(
+            hotel_ids=hotel_ids,
+            check_in_date=check_in_date,
+            check_out_date=check_out_date,
+            adults=adults,
+            rooms=rooms,
+        )
+
+        offers_data = offers_response.get("data", [])
+        offers_response.setdefault("meta", {})
+        offers_response["meta"]["count"] = len(offers_data)
+        offers_response["meta"]["provider"] = "amadeus"
+        return offers_response
+
+
 amadeus_client = AmadeusClient()

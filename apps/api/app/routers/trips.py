@@ -151,6 +151,15 @@ def _extract_price(item: dict) -> str | None:
         return str(price_val)
     if "total_price" in item:
         return str(item["total_price"])
+    # Amadeus V3 hotel-offers: price is nested in offers[0].price.total
+    offers = item.get("offers")
+    if isinstance(offers, list) and offers:
+        first_offer = offers[0]
+        if isinstance(first_offer, dict) and "price" in first_offer:
+            price_val = first_offer["price"]
+            if isinstance(price_val, dict):
+                return price_val.get("total") or price_val.get("grandTotal")
+            return str(price_val)
     return None
 
 

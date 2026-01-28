@@ -129,7 +129,7 @@
   color: hsl(0 72% 50%);
 }
 
-/* Compact Grid - 50% chart, 25% hotels, 25% flights */
+/* Compact Grid - 40% chart, 30% hotels, 30% flights */
 .gridCompact {
   display: grid;
   grid-template-columns: 1fr;
@@ -140,7 +140,7 @@
 
 @media (min-width: 900px) {
   .gridCompact {
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: 4fr 3fr 3fr;
   }
 }
 
@@ -291,12 +291,12 @@
   z-index: 1;
 }
 
-/* Card Header - Clickable collapsed view */
+/* Card Header - Clickable collapsed view (two-row layout) */
 .cardHeader {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 12px;
   width: 100%;
   background: transparent;
   border: none;
@@ -313,6 +313,18 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Each itinerary row in the collapsed header */
+.cardHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.cardHeaderRowReturn {
+  opacity: 0.6;
+}
+
 .dateRange {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 13px;
@@ -321,13 +333,23 @@
 }
 
 .headerAirline {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink);
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 64px;
+}
+
+.headerTimes {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
 }
 
 .headerDepartTime {
@@ -336,6 +358,15 @@
   font-weight: 500;
   color: var(--ink-muted);
   white-space: nowrap;
+}
+
+.headerReturnLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+  flex-shrink: 0;
 }
 
 .directBadge {

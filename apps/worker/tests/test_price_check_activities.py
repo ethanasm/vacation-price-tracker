@@ -169,24 +169,15 @@ async def test_fetch_flights_activity_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_hotels_activity_not_configured(monkeypatch):
-    """Test that missing MCP client returns appropriate error."""
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "AMADEUS_MCP_CLIENT", None)
-    result = await pc.fetch_hotels_activity(_trip_details())
-    assert result["error"] == "Amadeus MCP server is not configured"
-
-
-@pytest.mark.asyncio
 async def test_fetch_hotels_activity_success(monkeypatch):
-    """Test successful hotel search via Amadeus MCP client."""
+    """Test successful hotel search via Amadeus HTTP client."""
 
     class DummyClient:
-        async def call_tool(self, _tool, _args):
+        async def search_hotels(self, **_kwargs):
             return {"data": [{"price": {"total": "499.99"}, "description": "Ocean view suite"}]}
 
     monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "AMADEUS_MCP_CLIENT", DummyClient())
+    monkeypatch.setattr(pc, "_amadeus_client", DummyClient())
     result = await pc.fetch_hotels_activity(_trip_details())
 
     assert result["offers"][0]["price"]["total"] == "499.99"
@@ -195,17 +186,17 @@ async def test_fetch_hotels_activity_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_error(monkeypatch):
-    """Test error handling when Amadeus MCP fails."""
+    """Test error handling when Amadeus HTTP client fails."""
 
     class DummyClient:
-        async def call_tool(self, _tool, _args):
-            raise RuntimeError("boom")
+        async def search_hotels(self, **_kwargs):
+            raise pc.AmadeusClientError("API error")
 
     monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "AMADEUS_MCP_CLIENT", DummyClient())
+    monkeypatch.setattr(pc, "_amadeus_client", DummyClient())
     result = await pc.fetch_hotels_activity(_trip_details())
 
-    assert result["error"] == "boom"
+    assert result["error"] == "API error"
 
 
 @pytest.mark.asyncio
@@ -411,3 +402,9 @@ def test_filter_helpers_and_price_extraction():
     assert pc._matches_view(None, ["ocean"]) is False
     assert pc._to_decimal(None) is None
     assert pc._to_decimal("nope") is None
+    # Amadeus V3 hotel-offers nested price extraction
+    v3_hotel = {"hotel": {"name": "Test"}, "offers": [{"price": {"total": "289.00"}}]}
+    assert pc._extract_price_value(v3_hotel) == Decimal("289.00")
+    assert pc._extract_min_price([v3_hotel]) == Decimal("289.00")
+    # No offers array
+    assert pc._extract_price_value({"hotel": {"name": "Test"}}) is None

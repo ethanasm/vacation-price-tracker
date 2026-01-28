@@ -452,6 +452,140 @@ describe("TripDetailPage", () => {
       });
     });
 
+    it("shows outbound and return times in collapsed flight card", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "500.00",
+              hotel_price: "700.00",
+              total_price: "1200.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  price: "250.00",
+                  departure_time: "2025-06-15T08:00:00",
+                  arrival_time: "2025-06-15T10:30:00",
+                  duration_minutes: 150,
+                  stops: 0,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA123",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T10:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA456",
+                          carrier_code: "UA",
+                          departure_airport: "LAX",
+                          arrival_airport: "SFO",
+                          departure_time: "2025-06-22T14:00:00",
+                          arrival_time: "2025-06-22T16:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // Collapsed card should show outbound dep → arr times
+      await waitFor(() => {
+        // Outbound times visible in collapsed header
+        expect(screen.getByText(/8:00\s*AM/)).toBeInTheDocument();
+        expect(screen.getByText(/10:30\s*AM/)).toBeInTheDocument();
+      });
+
+      // Return row should be visible in collapsed state (not expanded)
+      expect(screen.getByText("Return")).toBeInTheDocument();
+      // Return times
+      expect(screen.getByText(/2:00\s*PM/)).toBeInTheDocument();
+      expect(screen.getByText(/4:30\s*PM/)).toBeInTheDocument();
+    });
+
+    it("does not show return row for one-way flights", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, is_round_trip: false, return_date: null },
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "250.00",
+              hotel_price: "0",
+              total_price: "250.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  price: "250.00",
+                  departure_time: "2025-06-15T08:00:00",
+                  arrival_time: "2025-06-15T10:30:00",
+                  duration_minutes: 150,
+                  stops: 0,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA123",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T10:30:00",
+                          duration_minutes: 150,
+                        },
+                      ],
+                      total_duration_minutes: 150,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("$250")).toBeInTheDocument();
+      });
+
+      // No return row should be shown
+      expect(screen.queryByText("Return")).not.toBeInTheDocument();
+    });
+
     it("displays round trip flights with return leg", async () => {
       mockGetDetails.mockResolvedValue({
         data: {
@@ -533,9 +667,10 @@ describe("TripDetailPage", () => {
       }
 
       // Now the expanded content should be visible with Outbound/Return labels
+      // "Return" appears both in collapsed header row and expanded itinerary section
       await waitFor(() => {
         expect(screen.getByText("Outbound")).toBeInTheDocument();
-        expect(screen.getByText("Return")).toBeInTheDocument();
+        expect(screen.getAllByText("Return").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("UA123")).toBeInTheDocument();
         expect(screen.getByText("UA456")).toBeInTheDocument();
       });

@@ -643,6 +643,12 @@ def test_extract_price_helper():
     # Missing price
     assert trips_module._extract_price({}) is None
 
+    # Amadeus V3 hotel-offers nested price
+    assert trips_module._extract_price({"hotel": {"name": "Test"}, "offers": [{"price": {"total": "289.00"}}]}) == "289.00"
+
+    # No offers array
+    assert trips_module._extract_price({"hotel": {"name": "Test"}}) is None
+
 
 def test_snapshot_to_response_with_amadeus_data(test_session):
     """Test _snapshot_to_response extracts Amadeus flight data correctly."""

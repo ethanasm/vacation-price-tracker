@@ -215,6 +215,267 @@ def test_mock_hotel_search_multiplies_price_by_rooms():
     assert len(result_2_rooms["data"]) == 8
 
 
+# --- Hotel Search Tests ---
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_by_city_success(monkeypatch):
+    """Test search_hotels_by_city returns hotel list with correct params."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[
+            _DummyResponse(
+                status_code=200,
+                payload={
+                    "data": [
+                        {"hotelId": "HLMCO001", "name": "Grand Hotel"},
+                        {"hotelId": "HLMCO002", "name": "Beach Resort"},
+                    ]
+                },
+            )
+        ]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    result = await client.search_hotels_by_city(city_code="MCO")
+
+    assert len(result["data"]) == 2
+    assert result["data"][0]["hotelId"] == "HLMCO001"
+
+    params = dummy_client.get_calls[0]["params"]
+    assert params["cityCode"] == "MCO"
+    assert params["radius"] == "20"
+    assert params["radiusUnit"] == "KM"
+    assert params["hotelSource"] == "ALL"
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_by_city_custom_params(monkeypatch):
+    """Test search_hotels_by_city passes custom params."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[_DummyResponse(status_code=200, payload={"data": []})]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    await client.search_hotels_by_city(
+        city_code="nyc", radius=50, radius_unit="MILE", hotel_source="GDS"
+    )
+
+    params = dummy_client.get_calls[0]["params"]
+    assert params["cityCode"] == "NYC"
+    assert params["radius"] == "50"
+    assert params["radiusUnit"] == "MILE"
+    assert params["hotelSource"] == "GDS"
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_by_city_request_error(monkeypatch):
+    """Test search_hotels_by_city raises on API failure."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[_DummyResponse(status_code=500, text="Server Error")]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    with pytest.raises(AmadeusRequestError):
+        await client.search_hotels_by_city(city_code="MCO")
+
+
+@pytest.mark.asyncio
+async def test_search_hotel_offers_success(monkeypatch):
+    """Test search_hotel_offers returns offers with correct params."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[
+            _DummyResponse(
+                status_code=200,
+                payload={
+                    "data": [
+                        {
+                            "hotel": {"hotelId": "HLMCO001", "name": "Grand Hotel"},
+                            "offers": [{"price": {"total": "289.00", "currency": "USD"}}],
+                        }
+                    ]
+                },
+            )
+        ]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    result = await client.search_hotel_offers(
+        hotel_ids=["HLMCO001", "HLMCO002"],
+        check_in_date="2026-03-12",
+        check_out_date="2026-03-14",
+        adults=2,
+        rooms=1,
+    )
+
+    assert len(result["data"]) == 1
+    params = dummy_client.get_calls[0]["params"]
+    assert params["hotelIds"] == "HLMCO001,HLMCO002"
+    assert params["checkInDate"] == "2026-03-12"
+    assert params["checkOutDate"] == "2026-03-14"
+    assert params["adults"] == "2"
+    assert params["roomQuantity"] == "1"
+    assert params["currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_search_hotel_offers_empty_ids():
+    """Test search_hotel_offers returns empty data for no hotel IDs."""
+    client = AmadeusClient(base_url="https://example.test")
+    result = await client.search_hotel_offers(
+        hotel_ids=[], check_in_date="2026-03-12", check_out_date="2026-03-14"
+    )
+    assert result == {"data": []}
+
+
+@pytest.mark.asyncio
+async def test_search_hotel_offers_request_error(monkeypatch):
+    """Test search_hotel_offers raises on API failure."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[_DummyResponse(status_code=400, text="Bad Request")]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    with pytest.raises(AmadeusRequestError):
+        await client.search_hotel_offers(
+            hotel_ids=["HLMCO001"], check_in_date="2026-03-12", check_out_date="2026-03-14"
+        )
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_combined_success(monkeypatch):
+    """Test search_hotels combines by-city and offers into one call."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    # First call: hotel list, second call: offers
+    dummy_client = _DummyAsyncClient(
+        get_responses=[
+            _DummyResponse(
+                status_code=200,
+                payload={
+                    "data": [
+                        {"hotelId": "HLMCO001", "name": "Grand Hotel"},
+                        {"hotelId": "HLMCO002", "name": "Beach Resort"},
+                    ]
+                },
+            ),
+            _DummyResponse(
+                status_code=200,
+                payload={
+                    "data": [
+                        {
+                            "hotel": {"hotelId": "HLMCO001"},
+                            "offers": [{"price": {"total": "289.00"}}],
+                        }
+                    ]
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    result = await client.search_hotels(
+        city_code="MCO",
+        check_in_date="2026-03-12",
+        check_out_date="2026-03-14",
+        adults=2,
+        rooms=1,
+    )
+
+    assert len(result["data"]) == 1
+    assert result["meta"]["count"] == 1
+    assert result["meta"]["provider"] == "amadeus"
+    # Verify two API calls were made
+    assert len(dummy_client.get_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_no_hotels_in_city(monkeypatch):
+    """Test search_hotels returns empty when no hotels found in city."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[_DummyResponse(status_code=200, payload={"data": []})]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    result = await client.search_hotels(
+        city_code="XYZ", check_in_date="2026-03-12", check_out_date="2026-03-14"
+    )
+
+    assert result["data"] == []
+    assert result["meta"]["count"] == 0
+    # Only one call (hotel list), no offers call
+    assert len(dummy_client.get_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_no_hotel_ids_in_response(monkeypatch):
+    """Test search_hotels handles hotels without hotelId field."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    dummy_client = _DummyAsyncClient(
+        get_responses=[
+            _DummyResponse(
+                status_code=200,
+                payload={"data": [{"name": "No ID Hotel"}]},
+            )
+        ]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    result = await client.search_hotels(
+        city_code="MCO", check_in_date="2026-03-12", check_out_date="2026-03-14"
+    )
+
+    assert result["data"] == []
+    assert result["meta"]["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_search_hotels_respects_max_hotels(monkeypatch):
+    """Test search_hotels caps hotel IDs at max_hotels."""
+    client = AmadeusClient(base_url="https://example.test")
+    monkeypatch.setattr(client, "_get_access_token", AsyncMock(return_value="token"))
+
+    hotels = [{"hotelId": f"HL{i:03d}", "name": f"Hotel {i}"} for i in range(50)]
+    dummy_client = _DummyAsyncClient(
+        get_responses=[
+            _DummyResponse(status_code=200, payload={"data": hotels}),
+            _DummyResponse(status_code=200, payload={"data": []}),
+        ]
+    )
+    monkeypatch.setattr("app.clients.amadeus.httpx.AsyncClient", lambda timeout=None: dummy_client)
+
+    await client.search_hotels(
+        city_code="MCO",
+        check_in_date="2026-03-12",
+        check_out_date="2026-03-14",
+        max_hotels=5,
+    )
+
+    # The offers call should only have 5 hotel IDs
+    offers_params = dummy_client.get_calls[1]["params"]
+    assert len(offers_params["hotelIds"].split(",")) == 5
+
+
 # --- Flight Search Tests ---
 
 
