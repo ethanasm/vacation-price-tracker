@@ -28,6 +28,8 @@ async def test_engine():
     """Create a test database engine for each test."""
     # Import all models so SQLAlchemy registers them with metadata
     from app.models import (
+        Conversation,
+        Message,
         NotificationRule,
         PriceSnapshot,
         Trip,
@@ -37,7 +39,7 @@ async def test_engine():
     )
 
     # Reference models to avoid unused import warnings
-    _ = (User, Trip, TripFlightPrefs, TripHotelPrefs, PriceSnapshot, NotificationRule)
+    _ = (User, Trip, TripFlightPrefs, TripHotelPrefs, PriceSnapshot, NotificationRule, Conversation, Message)
 
     # Remove old test DB if exists
     if os.path.exists(TEST_DB_FILE):

@@ -30,7 +30,7 @@
 - [X] Create token counting utility for usage tracking
 
 ### 1.2 Conversation Management
-- [ ] Create `Conversation` model in database:
+- [X] Create `Conversation` model in database:
   ```python
   class Conversation(SQLModel, table=True):
       id: uuid.UUID (PK)
@@ -47,9 +47,9 @@
       tool_call_id: Optional[str]
       created_at: datetime
   ```
-- [ ] Implement conversation context window management
-- [ ] Add message persistence for conversation history
-- [ ] Create conversation pruning for context limits
+- [X] Implement conversation context window management
+- [X] Add message persistence for conversation history
+- [X] Create conversation pruning for context limits
 
 ### 1.3 System Prompt Design
 - [X] Create travel assistant persona prompt:

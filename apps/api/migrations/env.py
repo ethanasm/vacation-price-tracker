@@ -15,6 +15,8 @@ load_dotenv()
 from alembic import context
 from app.core.config import settings
 from app.models import (  # noqa: F401
+    Conversation,
+    Message,
     NotificationRule,
     PriceSnapshot,
     Trip,
