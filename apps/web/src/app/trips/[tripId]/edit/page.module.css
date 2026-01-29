@@ -1,9 +1,17 @@
-/* Page layout */
+/* Page layout - scroll at page level for edge scrollbar */
 .container {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 1rem 3rem;
+}
+
+/* Inner wrapper for max-width centering */
+.container > * {
   max-width: 800px;
-  margin: 0 auto;
-  padding-bottom: 3rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Page header */

@@ -9,8 +9,8 @@
 ## 1. LLM Infrastructure
 
 ### 1.1 Groq Client Setup
-- [ ] Install dependencies: `groq`, `httpx`
-- [ ] Create Groq client wrapper with configuration:
+- [X] Install dependencies: `groq`, `httpx`
+- [X] Create Groq client wrapper with configuration:
   ```python
   class GroqClient:
       def __init__(self):
@@ -25,9 +25,9 @@
       ) -> AsyncGenerator[ChatChunk, None]:
           ...
   ```
-- [ ] Implement streaming response handling
-- [ ] Add retry logic with exponential backoff for rate limits
-- [ ] Create token counting utility for usage tracking
+- [X] Implement streaming response handling
+- [X] Add retry logic with exponential backoff for rate limits
+- [X] Create token counting utility for usage tracking
 
 ### 1.2 Conversation Management
 - [ ] Create `Conversation` model in database:
