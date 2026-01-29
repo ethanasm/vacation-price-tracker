@@ -1,0 +1,233 @@
+"""
+System prompts for the LLM chat interface.
+
+This module contains the system prompt templates and context builders
+for the travel assistant persona.
+"""
+
+from dataclasses import dataclass
+from datetime import date
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.trip import Trip
+    from app.models.user import User
+
+# =============================================================================
+# SYSTEM PROMPT TEMPLATE
+# =============================================================================
+
+TRAVEL_ASSISTANT_PROMPT = """You are a helpful travel assistant for Vacation Price Tracker.
+You help users track flight and hotel prices for their vacations.
+
+## Your Capabilities
+
+You can help users with:
+- Creating new price tracking trips
+- Listing and managing existing trips
+- Viewing trip details and price history
+- Setting price alert thresholds
+- Pausing and resuming trip tracking
+- Triggering manual price refreshes
+
+## When Creating Trips
+
+Always confirm the following information before creating a trip:
+
+**Required:**
+- Trip name (a friendly name like "Hawaii Spring 2026")
+- Origin airport (use IATA codes like SFO, LAX, JFK)
+- Destination airport (use IATA codes like HNL, CDG, NRT)
+- Departure date
+- Return date
+
+**Optional (will use defaults if not specified):**
+- Number of adults (default: 1)
+- Flight preferences:
+  - Preferred airlines (default: any)
+  - Cabin class: economy, premium_economy, business, first (default: economy)
+  - Stops preference: nonstop, 1-stop, any (default: any)
+- Hotel preferences:
+  - Number of rooms (default: 1)
+  - Room type preferences (e.g., king, suite)
+  - View preferences (e.g., ocean, garden)
+- Price alert threshold
+
+## Important Guidelines
+
+1. **IATA Codes**: Always use 3-letter IATA airport codes. If a user mentions a city name, help them find the correct airport code. Common examples:
+   - San Francisco: SFO
+   - Los Angeles: LAX
+   - New York JFK: JFK, Newark: EWR, LaGuardia: LGA
+   - Honolulu: HNL
+   - London Heathrow: LHR, Gatwick: LGW
+   - Paris Charles de Gaulle: CDG
+   - Tokyo Narita: NRT, Haneda: HND
+
+2. **Date Format**: Dates should be in YYYY-MM-DD format (e.g., 2026-03-15).
+
+3. **Trip Limits**: Users can have up to 10 active trips. If they've reached the limit, suggest pausing or deleting an existing trip.
+
+4. **Price Alerts**: When setting notification thresholds, you can alert on:
+   - Total trip price (flights + hotels)
+   - Flight price only
+   - Hotel price only
+
+5. **Be Conversational**: Ask clarifying questions when needed. Don't require all information upfront - gather details naturally through conversation.
+
+6. **Confirmation**: Before creating a trip, summarize the details and ask for confirmation.
+
+## Example Interactions
+
+**Creating a trip:**
+User: "I want to track prices for a trip to Hawaii"
+Assistant: "I'd love to help you track prices for a Hawaii trip! Let me get a few details:
+- Which airport will you be flying from?
+- What dates are you planning to travel?
+- How many people will be traveling?"
+
+**After gathering info:**
+Assistant: "Great! Here's what I have for your trip:
+- **Name**: Hawaii Vacation
+- **Route**: SFO → HNL (round trip)
+- **Dates**: March 15-22, 2026
+- **Travelers**: 2 adults
+
+Would you like me to create this trip? I can also add flight or hotel preferences if you have any."
+
+**Listing trips:**
+User: "What trips am I tracking?"
+Assistant: [Uses list_trips tool, then presents results in a friendly format]
+
+**Setting alerts:**
+User: "Alert me if my Hawaii trip drops below $2000"
+Assistant: "I'll set up an alert to notify you when your Hawaii Vacation trip total drops below $2,000. You'll receive an email when prices hit your target!"
+
+{user_context}"""
+
+
+# =============================================================================
+# USER CONTEXT BUILDER
+# =============================================================================
+
+
+@dataclass
+class TripSummary:
+    """Summary of a trip for context injection."""
+
+    id: str
+    name: str
+    route: str
+    dates: str
+    status: str
+    current_price: float | None = None
+
+
+def format_trip_summary(trip: "Trip", current_price: float | None = None) -> TripSummary:
+    """Format a trip into a summary for context injection."""
+    return TripSummary(
+        id=str(trip.id),
+        name=trip.name,
+        route=f"{trip.origin_airport} → {trip.destination_code}",
+        dates=f"{trip.depart_date} to {trip.return_date}",
+        status=trip.status.value,
+        current_price=current_price,
+    )
+
+
+def build_user_context(
+    user: "User",
+    trips: list["Trip"] | None = None,
+    trip_prices: dict[str, float] | None = None,
+) -> str:
+    """
+    Build the user context section of the system prompt.
+
+    Args:
+        user: The current user
+        trips: Optional list of user's trips (for context about existing trips)
+        trip_prices: Optional dict mapping trip_id to current price
+
+    Returns:
+        Formatted user context string to inject into the system prompt
+    """
+    trip_prices = trip_prices or {}
+    context_parts = []
+
+    context_parts.append("\n## Current User Context\n")
+    context_parts.append(f"- **User Email**: {user.email}")
+    context_parts.append(f"- **Account Created**: {user.created_at.strftime('%B %d, %Y')}")
+
+    if trips:
+        active_trips = [t for t in trips if t.status.value == "active"]
+        paused_trips = [t for t in trips if t.status.value == "paused"]
+
+        context_parts.append(f"\n### User's Trips ({len(trips)} total)")
+
+        if active_trips:
+            context_parts.append("\n**Active Trips:**")
+            for trip in active_trips:
+                price = trip_prices.get(str(trip.id))
+                price_str = f" - Current price: ${price:,.2f}" if price else ""
+                context_parts.append(
+                    f"- {trip.name}: {trip.origin_airport} → {trip.destination_code}, "
+                    f"{trip.depart_date} to {trip.return_date}{price_str}"
+                )
+
+        if paused_trips:
+            context_parts.append("\n**Paused Trips:**")
+            for trip in paused_trips:
+                context_parts.append(
+                    f"- {trip.name}: {trip.origin_airport} → {trip.destination_code}, "
+                    f"{trip.depart_date} to {trip.return_date}"
+                )
+
+        # Add trip limit context
+        remaining_slots = 10 - len(trips)
+        if remaining_slots <= 3:
+            context_parts.append(f"\n*Note: User has {remaining_slots} trip slots remaining.*")
+    else:
+        context_parts.append("\n### User's Trips")
+        context_parts.append("- No trips created yet")
+
+    return "\n".join(context_parts)
+
+
+def build_system_prompt(
+    user: "User",
+    trips: list["Trip"] | None = None,
+    trip_prices: dict[str, float] | None = None,
+) -> str:
+    """
+    Build the complete system prompt with user context.
+
+    Args:
+        user: The current user
+        trips: Optional list of user's trips
+        trip_prices: Optional dict mapping trip_id to current price
+
+    Returns:
+        Complete system prompt string
+    """
+    user_context = build_user_context(user, trips, trip_prices)
+    return TRAVEL_ASSISTANT_PROMPT.format(user_context=user_context)
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+
+def get_date_context() -> str:
+    """Get current date context for date-related queries."""
+    today = date.today()
+    return f"Today's date is {today.strftime('%B %d, %Y')} ({today.isoformat()})."
+
+
+def build_minimal_system_prompt() -> str:
+    """
+    Build a minimal system prompt without user context.
+
+    Useful for testing or when user context is not available.
+    """
+    return TRAVEL_ASSISTANT_PROMPT.format(user_context="")

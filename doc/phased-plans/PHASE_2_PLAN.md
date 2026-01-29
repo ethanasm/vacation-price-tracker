@@ -52,7 +52,7 @@
 - [ ] Create conversation pruning for context limits
 
 ### 1.3 System Prompt Design
-- [ ] Create travel assistant persona prompt:
+- [X] Create travel assistant persona prompt:
   ```
   You are a helpful travel assistant for Vacation Price Tracker.
   You help users track flight and hotel prices for their vacations.
@@ -74,8 +74,8 @@
 
   Be conversational and helpful. Ask clarifying questions when needed.
   ```
-- [ ] Add context about current user's trips
-- [ ] Include examples of successful tool calls
+- [X] Add context about current user's trips
+- [X] Include examples of successful tool calls
 
 ---
 
