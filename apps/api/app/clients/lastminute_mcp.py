@@ -398,16 +398,23 @@ class LastMinuteMCPClient:
         if not value:
             return None
 
+        # Limit input length to prevent ReDoS attacks on malformed input
+        if len(value) > 100:
+            logger.warning("Duration string too long, truncating: %d chars", len(value))
+            value = value[:100]
+
         total_minutes = 0
         value = value.lower()
 
-        # Extract hours
-        hours_match = re.search(r"(\d+)\s*(?:hours?|h)", value)
+        # Extract hours using simple patterns to avoid backtracking
+        # Match: "2 hours", "2hours", "2h" (with optional whitespace)
+        hours_match = re.search(r"(\d{1,4}) *(hours?|h)\b", value)
         if hours_match:
             total_minutes += int(hours_match.group(1)) * 60
 
-        # Extract minutes
-        mins_match = re.search(r"(\d+)\s*(?:min(?:utes?)?|m(?!\w))", value)
+        # Extract minutes using simple patterns to avoid backtracking
+        # Match: "5 minutes", "5 min", "5m" (with optional whitespace)
+        mins_match = re.search(r"(\d{1,4}) *(minutes?|min|m)\b", value)
         if mins_match:
             total_minutes += int(mins_match.group(1))
 
