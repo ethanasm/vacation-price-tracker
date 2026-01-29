@@ -6,13 +6,13 @@ export default function TripDetailLoading() {
   return (
     <div className={styles.containerCompact}>
       {/* Header */}
-      <div className={styles.headerCompact}>
-        <Skeleton className="h-10 w-10 rounded-md" />
-        <div className={styles.headerInfo}>
+      <div className={styles.header}>
+        <div className={styles.headerRow1}>
+          <Skeleton className="h-10 w-10 rounded-md" />
           <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-32 mt-1" />
+          <Skeleton className="h-4 w-32" />
         </div>
-        <div className={styles.headerActions}>
+        <div className={styles.headerRow2}>
           <Skeleton className="h-8 w-24" />
           <Skeleton className="h-8 w-8" />
           <Skeleton className="h-8 w-8" />

@@ -531,13 +531,13 @@ function HotelsList({
 function LoadingSkeleton() {
   return (
     <div className={styles.containerCompact}>
-      <div className={styles.headerCompact}>
-        <Skeleton className="h-10 w-10 rounded-md" />
-        <div className={styles.headerInfo}>
+      <div className={styles.header}>
+        <div className={styles.headerRow1}>
+          <Skeleton className="h-10 w-10 rounded-md" />
           <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-32 mt-1" />
+          <Skeleton className="h-4 w-32" />
         </div>
-        <div className={styles.headerActions}>
+        <div className={styles.headerRow2}>
           <Skeleton className="h-8 w-24" />
           <Skeleton className="h-8 w-8" />
           <Skeleton className="h-8 w-8" />
@@ -786,25 +786,34 @@ export default function TripDetailPage({
   return (
     <div className={styles.containerCompact}>
       {/* Header */}
-      <div className={styles.headerCompact}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleBack}
-          className={styles.backButton}
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className={styles.headerInfo}>
+      <div className={styles.header}>
+        <div className={styles.headerRow1}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className={styles.backButton}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           <h1 className={styles.titleCompact}>{trip.name}</h1>
+          <span className={styles.headerDivider} />
           <span className={styles.routeCompact}>
             {trip.origin_airport} {trip.is_round_trip ? "↔" : "→"}{" "}
-            {trip.destination_code} · {formatShortDate(trip.depart_date)}–
-            {trip.return_date ? formatShortDate(trip.return_date) : ""}
-            {nights > 0 && <span className={styles.nightsBadge}>{nights} nights</span>}
+            {trip.destination_code}
           </span>
+          <span className={styles.headerDivider} />
+          <span className={styles.routeCompact}>
+            {formatShortDate(trip.depart_date)}–{trip.return_date ? formatShortDate(trip.return_date) : ""}
+          </span>
+          {nights > 0 && (
+            <>
+              <span className={styles.headerDivider} />
+              <span className={styles.nightsBadge}>{nights} nights</span>
+            </>
+          )}
         </div>
-        <div className={styles.headerActions}>
+        <div className={styles.headerRow2}>
           <div className={styles.trackingToggle}>
             <Switch
               id="tracking"
