@@ -87,13 +87,19 @@
   class MCPRouter:
       def __init__(self):
           self.tools = {
-              # External MCP servers
-              "search-flight": KiwiMCPClient(),
-              "amadeus_hotel_list": AmadeusMCPClient(),
-              "amadeus_hotel_search": AmadeusMCPClient(),
-              "amadeus_hotel_offer": AmadeusMCPClient(),
+              # ===== External Hosted MCP Servers (Free) =====
+              # lastminute.com - RECOMMENDED for flights (shows airlines, routes, times)
+              "search_flights": LastMinuteMCPClient(),
+              # Kiwi - backup for virtual interlining
+              "search_flights_kiwi": KiwiMCPClient(),
 
-              # Internal tools
+              # ===== Custom MCP Tools (call Amadeus HTTP APIs) =====
+              # For flight numbers, segment details, and hotel searches
+              "search_flights_amadeus": AmadeusFlightTool(),
+              "search_hotels": AmadeusHotelTool(),
+              "search_hotel_offers": AmadeusHotelOfferTool(),
+
+              # ===== Trip Management Tools (custom MCP server) =====
               "create_trip": CreateTripTool(),
               "list_trips": ListTripsTool(),
               "get_trip_details": GetTripDetailsTool(),
@@ -160,22 +166,114 @@ TOOLS = [
 - [ ] `search_airports` - `query` parameter for IATA lookup
 
 ### 2.3 External MCP Server Integration
-- [ ] Create Kiwi MCP client wrapper:
-  ```python
-  class KiwiMCPClient:
-      async def search_flight(
-          self,
-          fly_from: str,
-          fly_to: str,
-          departure_date: str,
-          return_date: Optional[str],
-          adults: int,
-          cabin: str
-      ) -> FlightSearchResult:
-          # Call Kiwi MCP server
-          ...
-  ```
-- [ ] Create Amadeus MCP client wrapper for hotel tools
+
+> **Detailed Research:** See [MCP Flight Servers Research](../research/MCP_FLIGHT_SERVERS.md) for complete testing results, response formats, and configuration details.
+
+#### 2.3.1 lastminute.com MCP Server (Primary Flight Search)
+- **Endpoint:** `mcp.lastminute.com/mcp` (free, no authentication)
+- **Tool:** `search_flights`
+- **Use for:** Primary flight search in chat - best data quality among free options
+- **Returns:** Airline names, carrier codes, routes, times, prices, booking links
+- **Limitation:** Primarily shows LCCs (Southwest, JetBlue, Spirit, Ryanair) - missing AA, UA, DL
+
+```python
+class LastMinuteMCPClient:
+    """Client for lastminute.com hosted MCP server."""
+    MCP_URL = "https://mcp.lastminute.com/mcp"
+
+    async def search_flights(
+        self,
+        departure: str,      # IATA code
+        arrival: str,
+        start_date: str,     # YYYY-MM-DD
+        end_date: str | None = None,
+        adults: int = 1,
+        max_results: int = 10,
+        ranking_best: bool = False,
+    ) -> FlightSearchResult:
+        # Returns: airline, carrier_id, routes, duration, stops, price, deeplink
+        ...
+```
+
+#### 2.3.2 Kiwi MCP Server (Backup - Virtual Interlining)
+- **Endpoint:** `mcp.kiwi.com` (free, no authentication)
+- **Tool:** `search-flight`
+- **Use for:** Virtual interlining, detailed layover info, potentially cheaper prices
+- **Returns:** Airports, times (UTC+local), prices, detailed layovers, booking links
+- **Missing:** Airline names, carrier codes, flight numbers
+
+```python
+class KiwiMCPClient:
+    """Client for Kiwi.com hosted MCP server."""
+    MCP_URL = "https://mcp.kiwi.com"
+
+    async def search_flight(
+        self,
+        fly_from: str,
+        fly_to: str,
+        date_from: str,
+        date_to: str | None = None,
+        adults: int = 1,
+        cabin: str = "M",
+    ) -> FlightSearchResult:
+        # Returns: airports, times, prices, detailed layovers
+        # NOTE: No airline names, carrier codes, or flight numbers
+        ...
+```
+
+#### 2.3.3 Custom Amadeus MCP Tools (Detailed Data + Hotels)
+Custom MCP tools wrapping the existing `AmadeusClient` (`apps/api/app/clients/amadeus.py`).
+
+- Use when: User needs flight numbers, segment details, airline filtering, or hotel searches
+
+```python
+class AmadeusFlightTool:
+    """Custom MCP tool wrapping AmadeusClient.search_flights()"""
+    async def execute(self, args: dict, user_id: str) -> ToolResult:
+        result = await amadeus_client.search_flights(**args)
+        return ToolResult(success=True, data=result)
+```
+
+#### 2.3.4 When to Use Each Provider
+
+| User Request | Provider | Reason |
+|-------------|----------|--------|
+| "Find flights to Paris" | lastminute.com | Shows airline names |
+| "What's the cheapest flight?" | Kiwi | Often lower prices |
+| "I want to fly Delta" | Amadeus | Airline filtering |
+| "Book me on UA200" | Amadeus | Need flight numbers |
+| "Show layover details" | Kiwi | Detailed layover times |
+| "Creative routing options" | Kiwi | Virtual interlining |
+| "Find hotels in Rome" | Amadeus | Only option with hotels |
+
+#### 2.3.5 Provider Comparison Summary
+
+| Feature | Kiwi | lastminute.com | Amadeus |
+|---------|------|----------------|---------|
+| Airline info | **NO** | Yes | Yes |
+| Flight numbers | **NO** | **NO** | **Yes** |
+| Layover details | **Detailed** | Basic | **Detailed** |
+| Segment breakdown | **NO** | **NO** | **Yes** |
+| Terminal info | **NO** | **NO** | **Yes** |
+| Aircraft type | **NO** | **NO** | **Yes** |
+| Cabin class | **NO** | **NO** | **Yes** |
+| Fare/amenity details | **NO** | **NO** | **Yes** |
+| Seats available | **NO** | **NO** | **Yes** |
+| Booking link | Yes | Yes | No |
+| Virtual interlining | **Yes** | No | No |
+| Hotels | No | No | **Yes** |
+| LCC coverage | Yes (unnamed) | Yes (named) | Yes (different inventory) |
+| Legacy carriers | Unknown | **NO** | Limited |
+| Free | Yes | Yes | Yes (2K/mo) |
+
+**Key Findings:**
+- Kiwi often has **cheaper prices** for the same flights (e.g., $20 vs $44 for Wizz Air)
+- Amadeus found **Frontier (F9)** on SFO→MCO which neither MCP server showed
+- Amadeus is **required for price tracking** (need flight numbers to match offers)
+
+- [ ] Create lastminute.com MCP client wrapper
+- [ ] Create Kiwi MCP client wrapper (backup)
+- [ ] Create Amadeus flight/hotel MCP tool wrappers
 - [ ] Handle MCP server connection errors gracefully
 - [ ] Implement response parsing and normalization
 
@@ -184,6 +282,7 @@ TOOLS = [
 ## 3. Custom MCP Tools Implementation
 
 ### 3.1 create_trip Tool
+- [ ] Implement create_trip tool
 ```python
 class CreateTripTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -220,6 +319,7 @@ class CreateTripTool:
 ```
 
 ### 3.2 list_trips Tool
+- [ ] Implement list_trips tool
 ```python
 class ListTripsTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -245,6 +345,7 @@ class ListTripsTool:
 ```
 
 ### 3.3 get_trip_details Tool
+- [ ] Implement get_trip_details tool
 ```python
 class GetTripDetailsTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -282,6 +383,7 @@ class GetTripDetailsTool:
 ```
 
 ### 3.4 set_notification Tool
+- [ ] Implement set_notification tool
 ```python
 class SetNotificationTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -308,6 +410,8 @@ class SetNotificationTool:
 ```
 
 ### 3.5 pause_trip / resume_trip Tools
+- [ ] Implement pause_trip tool
+- [ ] Implement resume_trip tool
 ```python
 class PauseTripTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -343,6 +447,7 @@ class ResumeTripTool:
 ```
 
 ### 3.6 trigger_refresh Tool
+- [ ] Implement trigger_refresh tool
 ```python
 class TriggerRefreshTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -371,11 +476,107 @@ class TriggerRefreshTool:
         )
 ```
 
+### 3.7 search_flights_amadeus Tool (Custom MCP Tool)
+- [ ] Implement search_flights_amadeus tool
+```python
+class AmadeusFlightTool:
+    """Search flights via Amadeus API. Use when:
+    - User asks for flight numbers or specific airlines
+    - Need detailed segment/layover information
+    - User wants to filter by airline
+    - Need to track a specific flight for price monitoring
+    - lastminute.com MCP doesn't provide enough detail
+    """
+
+    name = "search_flights_amadeus"
+    description = "Search for flights using Amadeus. Returns detailed itineraries with flight numbers, airline codes, all segments, layover times, and real-time pricing."
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "origin": {"type": "string", "description": "Origin airport IATA code"},
+            "destination": {"type": "string", "description": "Destination airport IATA code"},
+            "departure_date": {"type": "string", "description": "Departure date (YYYY-MM-DD)"},
+            "return_date": {"type": "string", "description": "Return date for round trip"},
+            "adults": {"type": "integer", "default": 1},
+            "travel_class": {"type": "string", "enum": ["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]},
+        },
+        "required": ["origin", "destination", "departure_date"]
+    }
+
+    async def execute(self, args: dict, user_id: str) -> ToolResult:
+        result = await amadeus_client.search_flights(**args)
+        return ToolResult(success=True, data=self._format_results(result))
+```
+
+### 3.8 search_hotels Tool (Custom MCP Tool)
+- [ ] Implement search_hotels tool
+```python
+class AmadeusHotelTool:
+    """Search hotels in a city via Amadeus API."""
+
+    name = "search_hotels"
+    description = "Search for hotels in a destination city with availability and pricing."
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "city_code": {"type": "string", "description": "City IATA code (e.g., 'PAR' for Paris)"},
+            "check_in_date": {"type": "string", "description": "Check-in date (YYYY-MM-DD)"},
+            "check_out_date": {"type": "string", "description": "Check-out date (YYYY-MM-DD)"},
+            "adults": {"type": "integer", "default": 1},
+            "rooms": {"type": "integer", "default": 1},
+        },
+        "required": ["city_code", "check_in_date", "check_out_date"]
+    }
+
+    async def execute(self, args: dict, user_id: str) -> ToolResult:
+        result = await amadeus_client.search_hotels_by_city(
+            city_code=args["city_code"],
+            check_in_date=args["check_in_date"],
+            check_out_date=args["check_out_date"],
+            adults=args.get("adults", 1),
+            rooms=args.get("rooms", 1),
+        )
+        return ToolResult(success=True, data=result)
+```
+
+### 3.9 search_hotel_offers Tool (Custom MCP Tool)
+- [ ] Implement search_hotel_offers tool
+```python
+class AmadeusHotelOfferTool:
+    """Get specific hotel offers with pricing details."""
+
+    name = "search_hotel_offers"
+    description = "Get detailed pricing and availability for a specific hotel."
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "hotel_id": {"type": "string", "description": "Amadeus hotel ID"},
+            "check_in_date": {"type": "string"},
+            "check_out_date": {"type": "string"},
+            "adults": {"type": "integer", "default": 1},
+        },
+        "required": ["hotel_id", "check_in_date", "check_out_date"]
+    }
+
+    async def execute(self, args: dict, user_id: str) -> ToolResult:
+        result = await amadeus_client.search_hotel_offers(
+            hotel_ids=[args["hotel_id"]],
+            check_in_date=args["check_in_date"],
+            check_out_date=args["check_out_date"],
+            adults=args.get("adults", 1),
+        )
+        return ToolResult(success=True, data=result)
+```
+
 ---
 
 ## 4. Chat API Endpoint
 
 ### 4.1 Streaming Chat Endpoint
+- [ ] Implement streaming chat endpoint
 ```python
 @router.post("/v1/chat/messages")
 async def send_message(
@@ -411,6 +612,7 @@ async def send_message(
 ```
 
 ### 4.2 Tool Call Loop
+- [ ] Implement tool call loop with multi-turn support
 ```python
 async def process_chat_with_tools(
     messages: List[dict],
@@ -631,6 +833,9 @@ Phase 2 is complete when:
 - [ ] Tool calls are executed correctly with authorization
 - [ ] Streaming responses display in real-time
 - [ ] Conversation history is persisted
-- [ ] External MCP servers (Kiwi, Amadeus) are callable via chat
+- [ ] lastminute.com MCP server (hosted at mcp.lastminute.com) is callable for flight searches
+- [ ] Custom Amadeus MCP tools provide detailed flight data (flight numbers, airlines) and hotel searches
+- [ ] LLM uses lastminute.com for quick lookups, switches to Amadeus when user needs specific flight details
+- [ ] Kiwi MCP server available as backup for virtual interlining
 - [ ] Elicitation prompts guide users through missing parameters
 - [ ] All tool operations respect user authorization

@@ -41,16 +41,42 @@ Both flights and hotels are fetched via the **Amadeus API** (developers.amadeus.
 2. User picks specific dates → `search_flights()` for real-time offers with full details
 
 ### Hotel Search APIs
-Hotels use the Amadeus MCP Server (stdio subprocess): `amadeus_hotel_search`. Source: [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp).
+Hotels are searched using **custom MCP tools** that call the Amadeus HTTP API directly (via `apps/api/app/clients/amadeus.py`).
 
-### Custom MCP Server (Trip Management Only)
-Our custom MCP server implements trip management tools:
+### External Flight Search MCP Servers (Chat Integration)
+
+> **Detailed Research:** See [`doc/research/MCP_FLIGHT_SERVERS.md`](doc/research/MCP_FLIGHT_SERVERS.md) for complete testing results, response formats, and provider comparison.
+
+For conversational flight search in Phase 2, we use free hosted MCP servers:
+
+| Provider | Endpoint | Returns | Missing |
+|----------|----------|---------|---------|
+| **lastminute.com** | `mcp.lastminute.com/mcp` | Airline names, carrier codes, routes, times, prices | Flight numbers, detailed segments |
+| **Kiwi.com** | `mcp.kiwi.com` | Prices, detailed layovers, virtual interlining | Airline names, carrier codes, flight numbers |
+| **Amadeus** | Custom MCP tools | Flight numbers, segments, terminals, fare details, amenities | Direct booking links |
+
+**When to use each:**
+- **lastminute.com** - Primary chat search (shows airline names)
+- **Kiwi** - Cheapest prices, creative routing, detailed layover times
+- **Amadeus** - Flight numbers (required for tracking), fare details, hotels
+
+**Airline coverage:** Free MCP servers show LCCs (Southwest, JetBlue, Spirit, Ryanair). Amadeus found Frontier on routes where MCP servers didn't. None reliably show AA, UA, DL.
+
+### Custom MCP Server (Trip Management + Amadeus)
+Our custom MCP server implements:
+
+**Trip Management Tools:**
 - `create_trip` - Create new price tracking trip
 - `list_trips` - List user's tracked trips
 - `get_trip_details` - Get price history and offers
 - `set_notification` - Update alert thresholds
 - `pause_trip` / `resume_trip` - Toggle tracking
 - `trigger_refresh` - Force price check
+
+**Amadeus API Tools (for detailed data):**
+- `search_flights_amadeus` - Full flight data with flight numbers, segments
+- `search_hotels` - Hotel search by city
+- `search_hotel_offers` - Specific hotel pricing
 
 ### Flight Display Requirements
 
@@ -77,10 +103,12 @@ Each flight offer card must show ALL segments for the complete itinerary:
 
 ## Data Provider Strategy
 
-| Phase | Flights | Hotels | Optimizer | Monthly Cost |
-|:------|:--------|:-------|:----------|:-------------|
-| MVP (Phase 1-3) | Amadeus HTTP | Amadeus MCP | N/A | $0 |
-| Phase 4 | Amadeus HTTP (`search_flight_cheapest_dates`) | Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
+| Phase | Flights (Chat) | Flights (Tracking) | Hotels | Optimizer | Monthly Cost |
+|:------|:---------------|:-------------------|:-------|:----------|:-------------|
+| MVP (Phase 1-3) | lastminute.com MCP | Amadeus HTTP | Custom Amadeus MCP | N/A | $0 |
+| Phase 4 | lastminute.com MCP | Amadeus HTTP (`search_flight_cheapest_dates`) | Custom Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
+
+**Chat vs Tracking:** Chat uses free hosted MCP servers (lastminute.com) for quick searches. Price tracking workflows use Amadeus HTTP API for detailed segment data needed for flight number matching.
 
 **Phase 4 SearchAPI Rationale:** The flexible date optimizer needs to survey 90+ date combinations for hotels. SearchAPI provides $40/month for 10,000 searches, making it cost-effective for date-range surveying. For flights, the `search_flight_cheapest_dates` API provides cached date-price grids.
 
