@@ -1,0 +1,355 @@
+"""MCP (Model Context Protocol) schemas for tool definitions and results.
+
+This module defines:
+- ToolResult: Standard result format returned by MCP tools
+- ToolCall: Tool invocation request from the LLM
+- Tool schema definitions for OpenAI-compatible function calling
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass
+class ToolResult:
+    """Result returned from MCP tool execution.
+
+    Attributes:
+        success: Whether the tool execution succeeded.
+        data: The result data if successful, or None on failure.
+        error: Error message if the tool execution failed.
+    """
+
+    success: bool
+    data: dict[str, Any] | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        result: dict[str, Any] = {"success": self.success}
+        if self.data is not None:
+            result["data"] = self.data
+        if self.error is not None:
+            result["error"] = self.error
+        return result
+
+
+@dataclass
+class ToolCallFunction:
+    """Function details within a tool call."""
+
+    name: str
+    arguments: str  # JSON string of arguments
+
+
+@dataclass
+class ToolCall:
+    """Tool invocation request from the LLM.
+
+    Attributes:
+        id: Unique identifier for this tool call.
+        type: Always "function" for function calls.
+        function: The function name and arguments.
+    """
+
+    id: str
+    type: str
+    function: ToolCallFunction
+
+
+# =============================================================================
+# OpenAI-compatible Tool Schema Definitions
+# =============================================================================
+
+# Type definitions for tool parameters
+TOOL_PARAM_STRING = {"type": "string"}
+TOOL_PARAM_INTEGER = {"type": "integer"}
+TOOL_PARAM_NUMBER = {"type": "number"}
+TOOL_PARAM_BOOLEAN = {"type": "boolean"}
+
+
+def _make_tool(
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    required: list[str] | None = None,
+) -> dict[str, Any]:
+    """Helper to create an OpenAI-compatible tool definition.
+
+    Args:
+        name: The function name.
+        description: Human-readable description.
+        parameters: Dict of parameter_name -> schema.
+        required: List of required parameter names.
+
+    Returns:
+        OpenAI-compatible tool definition dict.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": parameters,
+                "required": required or [],
+            },
+        },
+    }
+
+
+# -----------------------------------------------------------------------------
+# Trip Management Tools
+# -----------------------------------------------------------------------------
+
+CREATE_TRIP_TOOL = _make_tool(
+    name="create_trip",
+    description=(
+        "Create a new vacation price tracking trip. "
+        "This sets up monitoring for flights and hotels between the specified locations and dates."
+    ),
+    parameters={
+        "name": {
+            "type": "string",
+            "description": "Friendly name for the trip (e.g., 'Hawaii Spring 2026')",
+        },
+        "origin_airport": {
+            "type": "string",
+            "description": "Origin airport IATA code (e.g., 'SFO')",
+            "pattern": "^[A-Z]{3}$",
+        },
+        "destination_code": {
+            "type": "string",
+            "description": "Destination airport IATA code (e.g., 'HNL')",
+            "pattern": "^[A-Z]{3}$",
+        },
+        "depart_date": {
+            "type": "string",
+            "description": "Departure date in YYYY-MM-DD format",
+            "format": "date",
+        },
+        "return_date": {
+            "type": "string",
+            "description": "Return date in YYYY-MM-DD format",
+            "format": "date",
+        },
+        "adults": {
+            "type": "integer",
+            "description": "Number of adult travelers (default: 1)",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+        },
+        "is_round_trip": {
+            "type": "boolean",
+            "description": "Whether this is a round trip (default: true)",
+            "default": True,
+        },
+        "airlines": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Preferred airline IATA codes (e.g., ['UA', 'AA'])",
+        },
+        "cabin": {
+            "type": "string",
+            "description": "Preferred cabin class",
+            "enum": ["economy", "premium_economy", "business", "first"],
+            "default": "economy",
+        },
+        "stops_mode": {
+            "type": "string",
+            "description": "Flight stops preference",
+            "enum": ["nonstop", "1-stop", "any"],
+            "default": "any",
+        },
+        "hotel_rooms": {
+            "type": "integer",
+            "description": "Number of hotel rooms needed (default: 1)",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+        },
+        "room_types": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Preferred room types (e.g., ['King', 'Suite'])",
+        },
+        "views": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Preferred room views (e.g., ['Ocean', 'City'])",
+        },
+        "notification_threshold": {
+            "type": "number",
+            "description": "Price threshold for alerts (total trip price)",
+        },
+        "threshold_type": {
+            "type": "string",
+            "description": "What price to compare against threshold",
+            "enum": ["trip_total", "flight_total", "hotel_total"],
+            "default": "trip_total",
+        },
+    },
+    required=["name", "origin_airport", "destination_code", "depart_date", "return_date"],
+)
+
+
+LIST_TRIPS_TOOL = _make_tool(
+    name="list_trips",
+    description=(
+        "List all vacation trips being tracked for the current user. "
+        "Returns trip names, routes, dates, status, and current prices."
+    ),
+    parameters={},
+    required=[],
+)
+
+
+GET_TRIP_DETAILS_TOOL = _make_tool(
+    name="get_trip_details",
+    description=(
+        "Get detailed information about a specific trip including flight preferences, "
+        "hotel preferences, notification settings, and price history."
+    ),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip to retrieve",
+            "format": "uuid",
+        },
+    },
+    required=["trip_id"],
+)
+
+
+SET_NOTIFICATION_TOOL = _make_tool(
+    name="set_notification",
+    description=(
+        "Set or update the price alert threshold for a trip. "
+        "You will be notified when the price drops below this threshold."
+    ),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip",
+            "format": "uuid",
+        },
+        "threshold_value": {
+            "type": "number",
+            "description": "Price threshold value in dollars",
+            "minimum": 0,
+        },
+        "threshold_type": {
+            "type": "string",
+            "description": "What price to compare (trip_total, flight_total, or hotel_total)",
+            "enum": ["trip_total", "flight_total", "hotel_total"],
+            "default": "trip_total",
+        },
+    },
+    required=["trip_id", "threshold_value"],
+)
+
+
+PAUSE_TRIP_TOOL = _make_tool(
+    name="pause_trip",
+    description=("Pause price tracking for a trip. The trip will not be refreshed until resumed."),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip to pause",
+            "format": "uuid",
+        },
+    },
+    required=["trip_id"],
+)
+
+
+RESUME_TRIP_TOOL = _make_tool(
+    name="resume_trip",
+    description=("Resume price tracking for a paused trip. This will also trigger an immediate price refresh."),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip to resume",
+            "format": "uuid",
+        },
+    },
+    required=["trip_id"],
+)
+
+
+TRIGGER_REFRESH_TOOL = _make_tool(
+    name="trigger_refresh",
+    description=(
+        "Trigger an immediate price refresh for all active trips. This will fetch the latest flight and hotel prices."
+    ),
+    parameters={},
+    required=[],
+)
+
+
+# -----------------------------------------------------------------------------
+# Search Tools
+# -----------------------------------------------------------------------------
+
+SEARCH_AIRPORTS_TOOL = _make_tool(
+    name="search_airports",
+    description=(
+        "Search for airports by city name, airport name, or IATA code. "
+        "Use this to help users find the correct airport codes."
+    ),
+    parameters={
+        "query": {
+            "type": "string",
+            "description": "Search query (city name, airport name, or IATA code)",
+            "minLength": 2,
+        },
+    },
+    required=["query"],
+)
+
+
+# =============================================================================
+# Complete Tool Registry
+# =============================================================================
+
+# All available MCP tools in OpenAI function-calling format
+MCP_TOOLS: list[dict[str, Any]] = [
+    CREATE_TRIP_TOOL,
+    LIST_TRIPS_TOOL,
+    GET_TRIP_DETAILS_TOOL,
+    SET_NOTIFICATION_TOOL,
+    PAUSE_TRIP_TOOL,
+    RESUME_TRIP_TOOL,
+    TRIGGER_REFRESH_TOOL,
+    SEARCH_AIRPORTS_TOOL,
+]
+
+# Tool name to schema mapping for validation
+TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    tool["function"]["name"]: tool["function"]["parameters"] for tool in MCP_TOOLS
+}
+
+
+def get_tool_schema(tool_name: str) -> dict[str, Any] | None:
+    """Get the parameter schema for a tool by name.
+
+    Args:
+        tool_name: The tool function name.
+
+    Returns:
+        The tool's parameter schema, or None if not found.
+    """
+    return TOOL_SCHEMAS.get(tool_name)
+
+
+def get_all_tools() -> list[dict[str, Any]]:
+    """Get all available MCP tools in OpenAI format.
+
+    Returns:
+        List of tool definitions.
+    """
+    return MCP_TOOLS.copy()

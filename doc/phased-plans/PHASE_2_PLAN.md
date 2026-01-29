@@ -82,7 +82,7 @@
 ## 2. MCP Tool Architecture
 
 ### 2.1 MCP Router Implementation
-- [ ] Create unified MCP router in FastAPI:
+- [X] Create unified MCP router in FastAPI:
   ```python
   class MCPRouter:
       def __init__(self):
@@ -117,9 +117,9 @@
       ) -> ToolResult:
           ...
   ```
-- [ ] Implement tool call validation
-- [ ] Add user context injection for authorization
-- [ ] Create tool result formatting for LLM consumption
+- [X] Implement tool call validation
+- [X] Add user context injection for authorization
+- [X] Create tool result formatting for LLM consumption
 
 ### 2.2 Tool Schema Definitions
 Define OpenAI-compatible tool schemas for Groq:
@@ -156,14 +156,14 @@ TOOLS = [
 ]
 ```
 
-- [ ] `create_trip` - Full TripCreate schema
-- [ ] `list_trips` - No parameters, returns user's trips
-- [ ] `get_trip_details` - `trip_id` parameter
-- [ ] `set_notification` - `trip_id`, `threshold_type`, `threshold_value`
-- [ ] `pause_trip` - `trip_id` parameter
-- [ ] `resume_trip` - `trip_id` parameter
-- [ ] `trigger_refresh` - No parameters, refreshes all active trips
-- [ ] `search_airports` - `query` parameter for IATA lookup
+- [X] `create_trip` - Full TripCreate schema
+- [X] `list_trips` - No parameters, returns user's trips
+- [X] `get_trip_details` - `trip_id` parameter
+- [X] `set_notification` - `trip_id`, `threshold_type`, `threshold_value`
+- [X] `pause_trip` - `trip_id` parameter
+- [X] `resume_trip` - `trip_id` parameter
+- [X] `trigger_refresh` - No parameters, refreshes all active trips
+- [X] `search_airports` - `query` parameter for IATA lookup
 
 ### 2.3 External MCP Server Integration
 
@@ -271,18 +271,18 @@ class AmadeusFlightTool:
 - Amadeus found **Frontier (F9)** on SFO→MCO which neither MCP server showed
 - Amadeus is **required for price tracking** (need flight numbers to match offers)
 
-- [ ] Create lastminute.com MCP client wrapper
-- [ ] Create Kiwi MCP client wrapper (backup)
-- [ ] Create Amadeus flight/hotel MCP tool wrappers
-- [ ] Handle MCP server connection errors gracefully
-- [ ] Implement response parsing and normalization
+- [X] Create lastminute.com MCP client wrapper
+- [X] Create Kiwi MCP client wrapper (backup)
+- [X] Create Amadeus flight/hotel MCP tool wrappers
+- [X] Handle MCP server connection errors gracefully
+- [X] Implement response parsing and normalization
 
 ---
 
 ## 3. Custom MCP Tools Implementation
 
 ### 3.1 create_trip Tool
-- [ ] Implement create_trip tool
+- [X] Implement create_trip tool
 ```python
 class CreateTripTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -319,7 +319,7 @@ class CreateTripTool:
 ```
 
 ### 3.2 list_trips Tool
-- [ ] Implement list_trips tool
+- [X] Implement list_trips tool
 ```python
 class ListTripsTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -345,7 +345,7 @@ class ListTripsTool:
 ```
 
 ### 3.3 get_trip_details Tool
-- [ ] Implement get_trip_details tool
+- [X] Implement get_trip_details tool
 ```python
 class GetTripDetailsTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -383,7 +383,7 @@ class GetTripDetailsTool:
 ```
 
 ### 3.4 set_notification Tool
-- [ ] Implement set_notification tool
+- [X] Implement set_notification tool
 ```python
 class SetNotificationTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -410,8 +410,8 @@ class SetNotificationTool:
 ```
 
 ### 3.5 pause_trip / resume_trip Tools
-- [ ] Implement pause_trip tool
-- [ ] Implement resume_trip tool
+- [X] Implement pause_trip tool
+- [X] Implement resume_trip tool
 ```python
 class PauseTripTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -447,7 +447,7 @@ class ResumeTripTool:
 ```
 
 ### 3.6 trigger_refresh Tool
-- [ ] Implement trigger_refresh tool
+- [X] Implement trigger_refresh tool
 ```python
 class TriggerRefreshTool:
     async def execute(self, args: dict, user_id: str) -> ToolResult:
@@ -477,7 +477,7 @@ class TriggerRefreshTool:
 ```
 
 ### 3.7 search_flights_amadeus Tool (Custom MCP Tool)
-- [ ] Implement search_flights_amadeus tool
+- [X] Implement search_flights_amadeus tool
 ```python
 class AmadeusFlightTool:
     """Search flights via Amadeus API. Use when:
@@ -510,7 +510,7 @@ class AmadeusFlightTool:
 ```
 
 ### 3.8 search_hotels Tool (Custom MCP Tool)
-- [ ] Implement search_hotels tool
+- [X] Implement search_hotels tool
 ```python
 class AmadeusHotelTool:
     """Search hotels in a city via Amadeus API."""
@@ -542,7 +542,7 @@ class AmadeusHotelTool:
 ```
 
 ### 3.9 search_hotel_offers Tool (Custom MCP Tool)
-- [ ] Implement search_hotel_offers tool
+- [X] Implement search_hotel_offers tool
 ```python
 class AmadeusHotelOfferTool:
     """Get specific hotel offers with pricing details."""
