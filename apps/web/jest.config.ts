@@ -17,6 +17,7 @@ const config: Config = {
     "src/app/**/*.{ts,tsx}",
     "src/components/**/*.{ts,tsx}",
     "src/context/**/*.{ts,tsx}",
+    "src/hooks/**/*.{ts,tsx}",
     "src/lib/**/*.{ts,tsx}",
     "src/middleware.ts",
     "!src/app/**/layout.tsx",

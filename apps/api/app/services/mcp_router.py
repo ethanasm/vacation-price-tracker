@@ -4,6 +4,8 @@ This module provides:
 - MCPRouter: Central dispatcher for MCP tool execution
 - Tool call validation against JSON schemas
 - User context injection for authorization
+- Input sanitization for LLM-generated arguments
+- Audit logging for all tool calls
 - Error handling and result formatting
 """
 
@@ -17,6 +19,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, runtime_checkable
 
 from app.schemas.mcp import ToolResult, get_tool_schema
+from app.services.audit_log import audit_logger
+from app.services.input_sanitizer import input_sanitizer
 
 logger = logging.getLogger(__name__)
 
@@ -279,20 +283,25 @@ class MCPRouter:
         user_id: str,
         *,
         skip_validation: bool = False,
+        skip_sanitization: bool = False,
     ) -> ToolResult:
         """Execute a tool with the given arguments.
 
         This method:
         1. Validates the tool exists in the registry
-        2. Validates arguments against the tool's JSON schema
-        3. Executes the tool handler with user context
-        4. Returns a standardized ToolResult
+        2. Sanitizes LLM-generated arguments for injection patterns
+        3. Validates arguments against the tool's JSON schema
+        4. Logs the tool call for audit trail
+        5. Executes the tool handler with user context
+        6. Logs success/failure for audit trail
+        7. Returns a standardized ToolResult
 
         Args:
             tool_name: Name of the tool to execute.
-            arguments: Tool arguments (will be validated).
+            arguments: Tool arguments (will be validated and sanitized).
             user_id: UUID of the authenticated user.
             skip_validation: If True, skip argument validation (for testing).
+            skip_sanitization: If True, skip input sanitization (for testing).
 
         Returns:
             ToolResult with success status and data/error.
@@ -307,15 +316,42 @@ class MCPRouter:
         handler = self._tools.get(tool_name)
         if handler is None:
             logger.warning("Tool not found: %s", tool_name)
+            audit_logger.log_tool_failure(
+                user_id=user_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                error="Tool not found",
+            )
             return ToolResult(
                 success=False,
                 error=f"Tool not found: {tool_name}",
             )
 
+        # Sanitize LLM-generated arguments
+        sanitized_arguments = arguments
+        if not skip_sanitization:
+            sanitization_result = input_sanitizer.sanitize(arguments)
+            sanitized_arguments = sanitization_result.sanitized_data
+
+            if sanitization_result.was_modified:
+                audit_logger.log_input_sanitized(
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    sanitized_fields=sanitization_result.sanitized_fields,
+                    original_patterns=sanitization_result.detected_patterns,
+                )
+
+        # Log tool call before execution
+        audit_logger.log_tool_call(
+            user_id=user_id,
+            tool_name=tool_name,
+            arguments=sanitized_arguments,
+        )
+
         # Validate arguments
         if not skip_validation:
             try:
-                validate_tool_args(tool_name, arguments)
+                validate_tool_args(tool_name, sanitized_arguments)
             except ToolNotFoundError:
                 # Tool exists in registry but not in schema - log warning
                 logger.warning(
@@ -328,6 +364,12 @@ class MCPRouter:
                     tool_name,
                     e.details,
                 )
+                audit_logger.log_tool_failure(
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    arguments=sanitized_arguments,
+                    error=e.message,
+                )
                 return ToolResult(
                     success=False,
                     error=e.message,
@@ -337,20 +379,43 @@ class MCPRouter:
         # Execute the handler
         try:
             if isinstance(handler, ToolHandler):
-                result = await handler.execute(arguments, user_id)
+                result = await handler.execute(sanitized_arguments, user_id)
             else:
                 # Function-based handler
-                result = await handler(arguments, user_id)
+                result = await handler(sanitized_arguments, user_id)
 
             logger.info(
                 "Tool %s executed successfully: success=%s",
                 tool_name,
                 result.success,
             )
+
+            # Log success or failure based on result
+            if result.success:
+                audit_logger.log_tool_success(
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    arguments=sanitized_arguments,
+                    result=result.data or {},
+                )
+            else:
+                audit_logger.log_tool_failure(
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    arguments=sanitized_arguments,
+                    error=result.error or "Unknown error",
+                )
+
             return result
 
         except Exception as e:
             logger.exception("Tool %s execution failed", tool_name)
+            audit_logger.log_tool_failure(
+                user_id=user_id,
+                tool_name=tool_name,
+                arguments=sanitized_arguments,
+                error=str(e),
+            )
             return ToolResult(
                 success=False,
                 error=f"Tool execution failed: {e!s}",

@@ -58,3 +58,4 @@ class CacheTTL:
     REFRESH_TOKEN = 604800  # 7 days
     RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
     REFRESH_LOCK = 1800  # 30 minutes
+    AUDIT_LOG_RETENTION = 86400 * 90  # 90 days

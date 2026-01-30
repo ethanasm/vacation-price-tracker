@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
-import { RefreshCw, MessageSquare, Plane, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { RefreshCw, Plane, AlertCircle, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
@@ -30,6 +30,10 @@ import {
 import { formatPrice, formatShortDate, formatTimestamp } from "@/lib/format";
 import { api, ApiError, type TripResponse } from "@/lib/api";
 import { TripRowContextMenu, TripRowKebab } from "@/components/trip-row-actions";
+import { ChatPanel } from "@/components/chat/chat-panel";
+import { ChatProvider } from "@/lib/chat-provider";
+import { ChatToggle, useChatExpanded, FloatingChatToggle } from "@/components/dashboard/chat-toggle";
+import { useSSE, type PriceUpdateEvent } from "@/hooks/use-sse";
 import styles from "./page.module.css";
 
 const REFRESH_POLL_INTERVAL = 2000; // Poll every 2 seconds
@@ -160,19 +164,6 @@ function FailedState({ onRetry }: FailedStateProps) {
   );
 }
 
-function ChatPlaceholder() {
-  return (
-    <div className={styles.chatPanel}>
-      <MessageSquare className={styles.chatPlaceholderIcon} />
-      <h3 className={styles.chatPlaceholderTitle}>AI Assistant</h3>
-      <p className={styles.chatPlaceholderText}>
-        Chat interface coming in Phase 2. You&apos;ll be able to create and
-        manage trips using natural language.
-      </p>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const [trips, setTrips] = useState<DisplayTrip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -185,6 +176,36 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Chat panel state with localStorage persistence
+  const { isExpanded: isChatExpanded, setExpanded: setChatExpanded, isHydrated } = useChatExpanded(true);
+
+  // Handle SSE price updates - update trip table when new prices arrive
+  const handlePriceUpdate = useCallback((update: PriceUpdateEvent) => {
+    setTrips((prev) =>
+      prev.map((trip) => {
+        if (trip.id === update.trip_id) {
+          return {
+            ...trip,
+            flight_price: update.flight_price ? Number.parseFloat(update.flight_price) : null,
+            hotel_price: update.hotel_price ? Number.parseFloat(update.hotel_price) : null,
+            total_price: update.total_price ? Number.parseFloat(update.total_price) : null,
+            updated_at: update.updated_at,
+          };
+        }
+        return trip;
+      })
+    );
+  }, []);
+
+  // Subscribe to SSE for real-time price updates
+  const { isConnected } = useSSE({
+    autoConnect: true,
+    onPriceUpdate: handlePriceUpdate,
+    onError: (err) => {
+      console.error("SSE error:", err);
+    },
+  });
 
   const fetchTrips = useCallback(async () => {
     setIsLoading(true);
@@ -372,6 +393,12 @@ export default function DashboardPage() {
     fetchTrips();
   };
 
+  // Handle tool results from chat - refetch trips when tools modify data
+  const handleToolResult = useCallback(() => {
+    // Refetch trips when chat creates or modifies trips
+    fetchTrips();
+  }, [fetchTrips]);
+
   return (
     <>
       {/* Page header with title and action buttons */}
@@ -420,6 +447,10 @@ export default function DashboardPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <ChatToggle
+            isExpanded={isChatExpanded}
+            onToggle={setChatExpanded}
+          />
           <Button asChild size="sm">
             <Link href="/trips/new">
               <Plus className="h-4 w-4" />
@@ -430,7 +461,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className={styles.columns}>
+      <div className={`${styles.columns} ${!isChatExpanded ? styles.chatCollapsed : ""}`}>
         {/* Trip table panel */}
         <div className={styles.tablePanel}>
           {error ? (
@@ -542,9 +573,28 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Chat placeholder panel */}
-        <ChatPlaceholder />
+        {/* Chat panel - only render when hydrated to avoid SSR mismatch */}
+        {isHydrated && isChatExpanded && (
+          <div className={styles.chatPanel}>
+            <ChatProvider
+              onToolResult={handleToolResult}
+            >
+              <ChatPanel
+                showCloseButton
+                onClose={() => setChatExpanded(false)}
+              />
+            </ChatProvider>
+          </div>
+        )}
       </div>
+
+      {/* Floating toggle for mobile when chat is collapsed */}
+      {isHydrated && (
+        <FloatingChatToggle
+          isExpanded={isChatExpanded}
+          onToggle={setChatExpanded}
+        />
+      )}
     </>
   );
 }

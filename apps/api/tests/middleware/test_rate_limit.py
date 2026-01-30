@@ -1,4 +1,4 @@
-"""Tests for rate limiting middleware."""
+"""Tests for rate limiting middleware with chat-specific limits."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from app.middleware.rate_limit import (
     _extract_user_id_from_token,
     _get_client_ip,
     _get_rate_limit_identifier,
+    _is_chat_path,
     _rate_limit_response,
     rate_limit_middleware,
 )
 from fastapi import Request
-from fastapi.testclient import TestClient
 
 
 def _make_request(
@@ -48,10 +48,33 @@ def _make_request(
         return {"type": "http.request", "body": b"", "more_body": False}
 
     request = Request(scope, receive)
-    # Manually set cookies
     if cookies:
         request._cookies = cookies
     return request
+
+
+# =============================================================================
+# Tests for _is_chat_path
+# =============================================================================
+
+
+def test_is_chat_path_matches_exact():
+    """Exact chat path should match."""
+    assert _is_chat_path("/v1/chat/messages") is True
+    assert _is_chat_path("/v1/chat") is True
+
+
+def test_is_chat_path_matches_subpaths():
+    """Subpaths of chat endpoints should match."""
+    assert _is_chat_path("/v1/chat/messages/123") is True
+    assert _is_chat_path("/v1/chat/conversations") is True
+
+
+def test_is_chat_path_no_match():
+    """Non-chat paths should not match."""
+    assert _is_chat_path("/v1/trips") is False
+    assert _is_chat_path("/v1/auth/login") is False
+    assert _is_chat_path("/health") is False
 
 
 # =============================================================================
@@ -79,9 +102,7 @@ def test_get_client_ip_from_x_real_ip():
 
 def test_get_client_ip_prefers_forwarded_for_over_real_ip():
     """X-Forwarded-For should take precedence over X-Real-IP."""
-    request = _make_request(
-        headers={"X-Forwarded-For": "203.0.113.1", "X-Real-IP": "198.51.100.5"}
-    )
+    request = _make_request(headers={"X-Forwarded-For": "203.0.113.1", "X-Real-IP": "198.51.100.5"})
     assert _get_client_ip(request) == "203.0.113.1"
 
 
@@ -101,7 +122,6 @@ def test_get_client_ip_unknown_when_no_client():
         "query_string": b"",
         "root_path": "",
         "server": ("localhost", 8000),
-        # No "client" key
     }
 
     async def receive():
@@ -138,8 +158,11 @@ def test_extract_user_id_invalid_token():
 
 def test_extract_user_id_expired_token():
     """Expired token should return None (JWT decode fails)."""
-    # Create a token with a past expiration (this will fail decode)
-    request = _make_request(cookies={CookieNames.ACCESS_TOKEN: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.invalid"})
+    request = _make_request(
+        cookies={
+            CookieNames.ACCESS_TOKEN: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.invalid"
+        }
+    )
     assert _extract_user_id_from_token(request) is None
 
 
@@ -176,8 +199,9 @@ def test_get_rate_limit_identifier_uses_proxy_ip_for_unauthenticated():
 @pytest.mark.asyncio
 async def test_check_rate_limit_allowed(monkeypatch):
     """Request within limit should be allowed."""
+
     async def mock_eval(*args):
-        return [1, 99, 0]  # allowed=True, remaining=99, retry_after=0
+        return [1, 99, 0]
 
     monkeypatch.setattr(rate_limit_module.redis_client, "eval", mock_eval)
 
@@ -191,8 +215,9 @@ async def test_check_rate_limit_allowed(monkeypatch):
 @pytest.mark.asyncio
 async def test_check_rate_limit_exceeded(monkeypatch):
     """Request exceeding limit should be blocked."""
+
     async def mock_eval(*args):
-        return [0, 0, 45]  # allowed=False, remaining=0, retry_after=45
+        return [0, 0, 45]
 
     monkeypatch.setattr(rate_limit_module.redis_client, "eval", mock_eval)
 
@@ -204,8 +229,45 @@ async def test_check_rate_limit_exceeded(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_check_rate_limit_chat_uses_different_resource(monkeypatch):
+    """Chat rate limiting should use 'chat' resource key."""
+    captured_args = []
+
+    async def mock_eval(*args):
+        captured_args.extend(args)
+        return [1, 9, 0]
+
+    monkeypatch.setattr(rate_limit_module.redis_client, "eval", mock_eval)
+
+    await _check_rate_limit("user:test", is_chat=True)
+
+    # The cache key is at index 2 (lua_script, 1, cache_key, ...)
+    cache_key = captured_args[2]
+    assert "chat" in cache_key
+
+
+@pytest.mark.asyncio
+async def test_check_rate_limit_api_uses_api_resource(monkeypatch):
+    """API rate limiting should use 'api' resource key."""
+    captured_args = []
+
+    async def mock_eval(*args):
+        captured_args.extend(args)
+        return [1, 99, 0]
+
+    monkeypatch.setattr(rate_limit_module.redis_client, "eval", mock_eval)
+
+    await _check_rate_limit("user:test", is_chat=False)
+
+    # The cache key is at index 2 (lua_script, 1, cache_key, ...)
+    cache_key = captured_args[2]
+    assert "api" in cache_key
+
+
+@pytest.mark.asyncio
 async def test_check_rate_limit_redis_error_fails_open(monkeypatch, caplog):
     """Redis errors should fail open (allow request)."""
+
     async def mock_eval(*args):
         raise Exception("Redis connection failed")
 
@@ -253,12 +315,12 @@ async def test_rate_limit_middleware_exempt_paths(monkeypatch):
         nonlocal call_next_called
         call_next_called = True
         from fastapi.responses import Response
+
         return Response(content="OK", status_code=200)
 
-    # Mock _check_rate_limit to track if it's called
     check_called = False
 
-    async def mock_check(identifier):
+    async def mock_check(identifier, *, is_chat=False):
         nonlocal check_called
         check_called = True
         return True, 100, 0
@@ -278,6 +340,7 @@ async def test_rate_limit_middleware_exempt_paths(monkeypatch):
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_allows_request_within_limit(monkeypatch):
     """Requests within rate limit should pass through with headers."""
+
     async def mock_check(identifier, *, is_chat=False):
         return True, 50, 0
 
@@ -285,6 +348,7 @@ async def test_rate_limit_middleware_allows_request_within_limit(monkeypatch):
 
     async def call_next(request):
         from fastapi.responses import Response
+
         return Response(content="OK", status_code=200)
 
     request = _make_request(path="/v1/trips")
@@ -298,6 +362,7 @@ async def test_rate_limit_middleware_allows_request_within_limit(monkeypatch):
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_blocks_when_exceeded(monkeypatch, caplog):
     """Requests exceeding rate limit should be blocked with 429."""
+
     async def mock_check(identifier, *, is_chat=False):
         return False, 0, 30
 
@@ -309,6 +374,7 @@ async def test_rate_limit_middleware_blocks_when_exceeded(monkeypatch, caplog):
         nonlocal call_next_called
         call_next_called = True
         from fastapi.responses import Response
+
         return Response(content="OK", status_code=200)
 
     with caplog.at_level(logging.INFO):
@@ -319,6 +385,54 @@ async def test_rate_limit_middleware_blocks_when_exceeded(monkeypatch, caplog):
     assert response.status_code == 429
     assert response.headers.get("Retry-After") == "30"
     assert "Rate limit exceeded" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middleware_chat_uses_chat_limit(monkeypatch):
+    """Chat endpoints should use chat-specific rate limit."""
+    captured_is_chat = None
+
+    async def mock_check(identifier, *, is_chat=False):
+        nonlocal captured_is_chat
+        captured_is_chat = is_chat
+        return True, 9, 0
+
+    monkeypatch.setattr(rate_limit_module, "_check_rate_limit", mock_check)
+
+    async def call_next(request):
+        from fastapi.responses import Response
+
+        return Response(content="OK", status_code=200)
+
+    request = _make_request(path="/v1/chat/messages")
+    response = await rate_limit_middleware(request, call_next)
+
+    assert captured_is_chat is True
+    assert response.headers.get("X-RateLimit-Limit") == "10"  # Chat limit
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middleware_api_uses_api_limit(monkeypatch):
+    """API endpoints should use standard rate limit."""
+    captured_is_chat = None
+
+    async def mock_check(identifier, *, is_chat=False):
+        nonlocal captured_is_chat
+        captured_is_chat = is_chat
+        return True, 99, 0
+
+    monkeypatch.setattr(rate_limit_module, "_check_rate_limit", mock_check)
+
+    async def call_next(request):
+        from fastapi.responses import Response
+
+        return Response(content="OK", status_code=200)
+
+    request = _make_request(path="/v1/trips")
+    response = await rate_limit_middleware(request, call_next)
+
+    assert captured_is_chat is False
+    assert response.headers.get("X-RateLimit-Limit") == "100"
 
 
 @pytest.mark.asyncio
@@ -335,6 +449,7 @@ async def test_rate_limit_middleware_uses_user_id_when_authenticated(monkeypatch
 
     async def call_next(request):
         from fastapi.responses import Response
+
         return Response(content="OK", status_code=200)
 
     user_id = "user-xyz-789"
@@ -363,6 +478,7 @@ async def test_rate_limit_middleware_uses_ip_when_unauthenticated(monkeypatch):
 
     async def call_next(request):
         from fastapi.responses import Response
+
         return Response(content="OK", status_code=200)
 
     request = _make_request(path="/v1/trips", client_host="192.168.1.50")
@@ -380,6 +496,9 @@ def test_cache_keys_rate_limit():
     """CacheKeys.rate_limit should generate correct key format."""
     key = CacheKeys.rate_limit("user:abc123", "api")
     assert key == "rate_limit:user:abc123:api"
+
+    chat_key = CacheKeys.rate_limit("user:abc123", "chat")
+    assert chat_key == "rate_limit:user:abc123:chat"
 
 
 # =============================================================================
@@ -412,7 +531,7 @@ def test_rate_limit_exceeded_default_detail():
 
 
 # =============================================================================
-# Integration tests with FastAPI TestClient
+# Integration tests
 # =============================================================================
 
 
@@ -420,9 +539,8 @@ def test_rate_limit_integration_with_test_client(monkeypatch):
     """Integration test with full middleware stack."""
     from app.main import app
 
-    # Mock Redis for rate limiting
     async def mock_eval(*args):
-        return [1, 50, 0]  # allowed=True, remaining=50, retry_after=0
+        return [1, 50, 0]
 
     mock_redis = MagicMock()
     mock_redis.eval = AsyncMock(side_effect=mock_eval)
@@ -432,13 +550,14 @@ def test_rate_limit_integration_with_test_client(monkeypatch):
 
     monkeypatch.setattr(rate_limit_module, "redis_client", mock_redis)
 
-    # Also mock the main module's redis_client for the readiness check
     import app.main as main_module
+
     monkeypatch.setattr(main_module, "redis_client", mock_redis)
+
+    from fastapi.testclient import TestClient
 
     client = TestClient(app, raise_server_exceptions=False)
 
-    # Health endpoint should bypass rate limiting
     response = client.get("/health")
     assert response.status_code == 200
 
@@ -447,9 +566,8 @@ def test_rate_limit_integration_blocked(monkeypatch):
     """Integration test when rate limit is exceeded."""
     from app.main import app
 
-    # Mock Redis to return rate limit exceeded
     async def mock_eval(*args):
-        return [0, 0, 45]  # allowed=False, remaining=0, retry_after=45
+        return [0, 0, 45]
 
     mock_redis = MagicMock()
     mock_redis.eval = AsyncMock(side_effect=mock_eval)
@@ -459,7 +577,6 @@ def test_rate_limit_integration_blocked(monkeypatch):
 
     monkeypatch.setattr(rate_limit_module, "redis_client", mock_redis)
 
-    # Also mock the main module's redis_client for the readiness check
     import app.main as main_module
     import app.middleware.idempotency as idempotency_module
     import app.routers.auth as auth_module
@@ -468,9 +585,10 @@ def test_rate_limit_integration_blocked(monkeypatch):
     monkeypatch.setattr(idempotency_module, "redis_client", mock_redis)
     monkeypatch.setattr(auth_module, "redis_client", mock_redis)
 
+    from fastapi.testclient import TestClient
+
     client = TestClient(app, raise_server_exceptions=False)
 
-    # Non-exempt endpoint should be blocked
     response = client.get("/v1/auth/me")
     assert response.status_code == 429
     assert response.headers.get("Retry-After") == "45"

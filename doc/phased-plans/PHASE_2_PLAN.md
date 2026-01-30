@@ -576,7 +576,7 @@ class AmadeusHotelOfferTool:
 ## 4. Chat API Endpoint
 
 ### 4.1 Streaming Chat Endpoint
-- [ ] Implement streaming chat endpoint
+- [X] Implement streaming chat endpoint
 ```python
 @router.post("/v1/chat/messages")
 async def send_message(
@@ -612,7 +612,7 @@ async def send_message(
 ```
 
 ### 4.2 Tool Call Loop
-- [ ] Implement tool call loop with multi-turn support
+- [X] Implement tool call loop with multi-turn support
 ```python
 async def process_chat_with_tools(
     messages: List[dict],
@@ -684,9 +684,9 @@ async def process_chat_with_tools(
 ## 5. Frontend Chat Integration
 
 ### 5.1 assistant-ui Setup
-- [ ] Install `assistant-ui` package
-- [ ] Configure chat provider with API endpoint
-- [ ] Style chat component to match application theme
+- [X] Install `assistant-ui` package
+- [X] Configure chat provider with API endpoint
+- [X] Style chat component to match application theme
 
 ### 5.2 Chat Component Implementation
 ```tsx
@@ -717,22 +717,22 @@ export function ChatPanel() {
 ```
 
 ### 5.3 Tool Call Visualization (Optional)
-- [ ] Show collapsible tool call details
-- [ ] Display tool name and parameters
-- [ ] Show loading state during tool execution
-- [ ] Display tool results inline
+- [X] Show collapsible tool call details
+- [X] Display tool name and parameters
+- [X] Show loading state during tool execution
+- [X] Display tool results inline
 
 ### 5.4 Dashboard Integration
-- [ ] Update 2-column layout to include chat panel on right
-- [ ] Add collapse/expand toggle for chat panel
-- [ ] Sync trip table updates from chat actions
-- [ ] Show toast notifications for successful tool calls
+- [X] Update 2-column layout to include chat panel on right
+- [X] Add collapse/expand toggle for chat panel
+- [X] Sync trip table updates from chat actions
+- [X] Show toast notifications for successful tool calls
 
 ### 5.5 Real-time Updates (SSE)
-- [ ] Create SSE endpoint in FastAPI for price updates
-- [ ] Connect to SSE stream on dashboard mount
-- [ ] Update trip table when new snapshots arrive
-- [ ] Show "refreshing" indicator during workflow execution
+- [X] Create SSE endpoint in FastAPI for price updates
+- [X] Connect to SSE stream on dashboard mount
+- [X] Update trip table when new snapshots arrive
+- [X] Show "refreshing" indicator during workflow execution
 
 ---
 
@@ -761,10 +761,10 @@ When creating a trip, the LLM should elicit missing parameters conversationally:
 - Notification threshold
 
 ### 6.2 Smart Defaults
-- [ ] Infer return date from trip length if mentioned ("a week in Hawaii")
-- [ ] Suggest nearby airports if city name given
-- [ ] Recommend notification threshold based on current prices
-- [ ] Pre-fill adults based on previous trips
+- [X] Infer return date from trip length if mentioned ("a week in Hawaii")
+- [X] Suggest nearby airports if city name given
+- [X] Recommend notification threshold based on current prices
+- [X] Pre-fill adults based on previous trips
 
 ### 6.3 Clarification Prompts
 Add examples to system prompt for common clarifications:
@@ -781,21 +781,21 @@ Example clarifications:
 ## 7. Security Checklist (Phase 2)
 
 ### Tool Authorization
-- [ ] All tool executions receive `user_id` from authenticated session
-- [ ] Tools query database with `user_id` filter (row-level security)
-- [ ] Trip operations verify ownership before modification
-- [ ] Tool results never expose other users' data
+- [X] All tool executions receive `user_id` from authenticated session
+- [X] Tools query database with `user_id` filter (row-level security)
+- [X] Trip operations verify ownership before modification
+- [X] Tool results never expose other users' data
 
 ### Input Validation
-- [ ] Tool arguments validated against Pydantic schemas
-- [ ] LLM-generated arguments sanitized before database queries
-- [ ] Prevent prompt injection via input sanitization
-- [ ] Rate limit chat messages (10/minute per user)
+- [X] Tool arguments validated against Pydantic schemas
+- [X] LLM-generated arguments sanitized before database queries
+- [X] Prevent prompt injection via input sanitization
+- [X] Rate limit chat messages (10/minute per user)
 
 ### Content Safety
-- [ ] Log all tool calls for audit trail
-- [ ] Monitor for abuse patterns (excessive trip creation)
-- [ ] Implement conversation length limits
+- [X] Log all tool calls for audit trail
+- [X] Monitor for abuse patterns (excessive trip creation)
+- [X] Implement conversation length limits
 
 ---
 
@@ -808,10 +808,10 @@ Example clarifications:
 - [ ] System prompt generation
 
 ### Integration Tests
-- [ ] Full tool call loop with mocked Groq
-- [ ] MCP router dispatching
-- [ ] Conversation persistence
-- [ ] Streaming response assembly
+- [X] Full tool call loop with mocked Groq
+- [X] MCP router dispatching
+- [X] Conversation persistence
+- [X] Streaming response assembly
 
 ### Manual Testing
 - [ ] Create trip via chat conversation

@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Paths exempt from rate limiting (health checks, etc.)
 EXEMPT_PATHS = {"/health", "/ready", "/docs", "/redoc", "/openapi.json"}
 
+# Chat endpoints have stricter rate limits (10/min per user)
+CHAT_PATHS = {"/v1/chat/messages", "/v1/chat"}
+
 
 def _get_client_ip(request: Request) -> str:
     """Extract client IP from request, considering proxy headers."""
@@ -67,16 +70,30 @@ def _get_rate_limit_identifier(request: Request) -> str:
     return f"ip:{_get_client_ip(request)}"
 
 
-async def _check_rate_limit(identifier: str) -> tuple[bool, int, int]:
+def _is_chat_path(path: str) -> bool:
+    """Check if the request path is a chat endpoint."""
+    return any(path.startswith(chat_path) for chat_path in CHAT_PATHS)
+
+
+async def _check_rate_limit(
+    identifier: str,
+    *,
+    is_chat: bool = False,
+) -> tuple[bool, int, int]:
     """
     Check if request is within rate limit using sliding window counter.
+
+    Args:
+        identifier: User or IP identifier for rate limiting.
+        is_chat: If True, use stricter chat rate limits.
 
     Returns:
         tuple: (allowed, remaining_requests, retry_after_seconds)
     """
-    cache_key = CacheKeys.rate_limit(identifier, "api")
+    resource = "chat" if is_chat else "api"
+    cache_key = CacheKeys.rate_limit(identifier, resource)
     window_seconds = CacheTTL.RATE_LIMIT
-    max_requests = settings.rate_limit_per_minute
+    max_requests = settings.chat_rate_limit_per_minute if is_chat else settings.rate_limit_per_minute
 
     # Get current window timestamp (floor to window boundary)
     now = time.time()
@@ -158,14 +175,18 @@ async def rate_limit_middleware(request: Request, call_next) -> Response:
     # Get identifier for rate limiting
     identifier = _get_rate_limit_identifier(request)
 
+    # Check if this is a chat endpoint for stricter limits
+    is_chat = _is_chat_path(request.url.path)
+
     # Check rate limit
-    allowed, remaining, retry_after = await _check_rate_limit(identifier)
+    allowed, remaining, retry_after = await _check_rate_limit(identifier, is_chat=is_chat)
 
     if not allowed:
         logger.info(
-            "Rate limit exceeded for %s on path %s",
+            "Rate limit exceeded for %s on path %s (chat=%s)",
             identifier,
             request.url.path,
+            is_chat,
         )
         return _rate_limit_response(retry_after, request.url.path)
 
@@ -173,7 +194,8 @@ async def rate_limit_middleware(request: Request, call_next) -> Response:
     response = await call_next(request)
 
     # Add rate limit headers to response
-    response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_per_minute)
+    rate_limit = settings.chat_rate_limit_per_minute if is_chat else settings.rate_limit_per_minute
+    response.headers["X-RateLimit-Limit"] = str(rate_limit)
     response.headers["X-RateLimit-Remaining"] = str(remaining)
 
     return response

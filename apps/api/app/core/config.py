@@ -88,6 +88,7 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     rate_limit_per_minute: int = 100
+    chat_rate_limit_per_minute: int = 10
 
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"

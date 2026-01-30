@@ -1042,3 +1042,154 @@ def test_tool_names_and_descriptions():
         assert tool.description, f"{type(tool).__name__} has no description"
         assert len(tool.name) > 0
         assert len(tool.description) > 0
+
+
+# =============================================================================
+# Row-Level Security Tests (user_id filtering)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_list_trips_only_returns_own_trips(test_session):
+    """Test that list_trips only returns trips owned by the requesting user."""
+    user1 = await create_test_user(test_session, "user1-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-rls@example.com")
+
+    # Create trips for both users
+    await create_test_trip(test_session, user1.id, "User1 Trip A")
+    await create_test_trip(test_session, user1.id, "User1 Trip B")
+    await create_test_trip(test_session, user2.id, "User2 Trip")
+
+    tool = ListTripsTool()
+
+    # User1 should only see their own trips
+    result1 = await tool.execute({}, str(user1.id), test_session)
+    assert result1.success is True
+    assert result1.data["count"] == 2
+    trip_names = [t["name"] for t in result1.data["trips"]]
+    assert "User1 Trip A" in trip_names
+    assert "User1 Trip B" in trip_names
+    assert "User2 Trip" not in trip_names
+
+    # User2 should only see their own trip
+    result2 = await tool.execute({}, str(user2.id), test_session)
+    assert result2.success is True
+    assert result2.data["count"] == 1
+    assert result2.data["trips"][0]["name"] == "User2 Trip"
+
+
+@pytest.mark.asyncio
+async def test_set_notification_wrong_user(test_session):
+    """Test that set_notification fails for another user's trip."""
+    user1 = await create_test_user(test_session, "user1-notif-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-notif-rls@example.com")
+    trip = await create_test_trip(test_session, user1.id, "User1 Protected Trip")
+
+    tool = SetNotificationTool()
+    result = await tool.execute(
+        {"trip_id": str(trip.id), "threshold_value": 1500},
+        str(user2.id),  # Different user
+        test_session,
+    )
+
+    assert result.success is False
+    assert "not found" in result.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_pause_trip_wrong_user(test_session):
+    """Test that pause_trip fails for another user's trip."""
+    user1 = await create_test_user(test_session, "user1-pause-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-pause-rls@example.com")
+    trip = await create_test_trip(test_session, user1.id, "User1 Pause Trip", TripStatus.ACTIVE)
+
+    tool = PauseTripTool()
+    result = await tool.execute(
+        {"trip_id": str(trip.id)},
+        str(user2.id),  # Different user
+        test_session,
+    )
+
+    assert result.success is False
+    assert "not found" in result.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_resume_trip_wrong_user(test_session, monkeypatch):
+    """Test that resume_trip fails for another user's trip."""
+    user1 = await create_test_user(test_session, "user1-resume-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-resume-rls@example.com")
+    trip = await create_test_trip(test_session, user1.id, "User1 Resume Trip", TripStatus.PAUSED)
+
+    mock_trigger = AsyncMock()
+    monkeypatch.setattr("app.tools.pause_resume.trigger_price_check_workflow", mock_trigger)
+
+    tool = ResumeTripTool()
+    result = await tool.execute(
+        {"trip_id": str(trip.id)},
+        str(user2.id),  # Different user
+        test_session,
+    )
+
+    assert result.success is False
+    assert "not found" in result.error.lower()
+    mock_trigger.assert_not_called()  # Workflow should never be called
+
+
+@pytest.mark.asyncio
+async def test_create_trip_counts_only_own_trips(test_session, monkeypatch):
+    """Test that trip limit only counts user's own trips."""
+    user1 = await create_test_user(test_session, "user1-limit-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-limit-rls@example.com")
+
+    # Set trip limit to 2
+    monkeypatch.setattr(settings, "max_trips_per_user", 2)
+    mock_trigger = AsyncMock()
+    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
+
+    tool = CreateTripTool()
+
+    # Create 2 trips for user1 (at limit)
+    args1 = valid_trip_args()
+    await tool.execute(args1, str(user1.id), test_session)
+    args1["name"] = "User1 Second Trip"
+    await tool.execute(args1, str(user1.id), test_session)
+
+    # User1 should not be able to create more
+    args1["name"] = "User1 Third Trip"
+    result1 = await tool.execute(args1, str(user1.id), test_session)
+    assert result1.success is False
+    assert "Trip limit reached" in result1.error
+
+    # User2 should still be able to create trips (their count is 0)
+    args2 = valid_trip_args()
+    args2["name"] = "User2 First Trip"
+    result2 = await tool.execute(args2, str(user2.id), test_session)
+    assert result2.success is True
+
+
+@pytest.mark.asyncio
+async def test_create_trip_duplicate_name_per_user(test_session, monkeypatch):
+    """Test that duplicate trip names are allowed for different users."""
+    user1 = await create_test_user(test_session, "user1-dup-rls@example.com")
+    user2 = await create_test_user(test_session, "user2-dup-rls@example.com")
+
+    mock_trigger = AsyncMock()
+    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
+
+    tool = CreateTripTool()
+    args = valid_trip_args()
+    args["name"] = "Same Name Trip"
+
+    # User1 creates trip
+    result1 = await tool.execute(args, str(user1.id), test_session)
+    assert result1.success is True
+
+    # User2 can create trip with same name
+    result2 = await tool.execute(args, str(user2.id), test_session)
+    assert result2.success is True
+
+    # User1 cannot create another with same name
+    result3 = await tool.execute(args, str(user1.id), test_session)
+    assert result3.success is False
+    assert "already exists" in result3.error

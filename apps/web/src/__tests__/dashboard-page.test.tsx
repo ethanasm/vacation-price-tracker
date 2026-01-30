@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
@@ -43,6 +44,48 @@ const mockUpdateStatus = jest.fn();
 const mockRefreshTrip = jest.fn();
 const mockDeleteTrip = jest.fn();
 const mockDeleteAll = jest.fn();
+
+// Mock chat components
+jest.mock("../components/chat/chat-panel", () => ({
+  ChatPanel: ({ onClose }: { onClose?: () => void }) => (
+    <div data-testid="chat-panel">
+      <span>Travel Assistant</span>
+      {onClose && <button onClick={onClose} type="button">Close</button>}
+    </div>
+  ),
+}));
+
+jest.mock("../lib/chat-provider", () => ({
+  ChatProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// Mock SSE hook
+jest.mock("../hooks/use-sse", () => ({
+  useSSE: () => ({
+    connectionState: "connected",
+    isConnected: true,
+    priceUpdates: [],
+    error: null,
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+    clearUpdates: jest.fn(),
+  }),
+}));
+
+// Mock chat toggle with localStorage simulation
+jest.mock("../components/dashboard/chat-toggle", () => ({
+  useChatExpanded: (defaultValue: boolean) => ({
+    isExpanded: defaultValue,
+    setExpanded: jest.fn(),
+    isHydrated: true,
+  }),
+  ChatToggle: ({ isExpanded, onToggle }: { isExpanded: boolean; onToggle: (v: boolean) => void }) => (
+    <button onClick={() => onToggle(!isExpanded)} type="button" data-testid="chat-toggle">
+      {isExpanded ? "Hide Chat" : "Show Chat"}
+    </button>
+  ),
+  FloatingChatToggle: () => null,
+}));
 
 jest.mock("../lib/api", () => {
   class ApiError extends Error {
@@ -555,10 +598,10 @@ describe("DashboardPage", () => {
       expect(screen.getByText("→")).toBeInTheDocument();
     });
 
-    it("renders chat placeholder", () => {
+    it("renders chat panel", () => {
       render(<DashboardPage />);
 
-      expect(screen.getByText("AI Assistant")).toBeInTheDocument();
+      expect(screen.getByText("Travel Assistant")).toBeInTheDocument();
     });
   });
 
