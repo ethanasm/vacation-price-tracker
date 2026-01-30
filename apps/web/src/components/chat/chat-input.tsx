@@ -78,7 +78,7 @@ export function ChatInput({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        "flex items-center gap-2 p-4 border-t border-border/60 dark:border-white/10 bg-background/80 dark:bg-[rgb(18,18,28)]/80 backdrop-blur-sm",
+        "flex items-center gap-2 p-4 border-t border-border/60 bg-background/80 backdrop-blur-sm",
         className
       )}
     >
@@ -93,14 +93,14 @@ export function ChatInput({
           rows={1}
           aria-label="Message input"
           className={cn(
-            "w-full resize-none rounded-xl border border-border/60 dark:border-white/30",
-            "bg-white/60 dark:bg-white/10 backdrop-blur-sm",
+            "w-full resize-none rounded-xl border border-border/60",
+            "bg-muted/50 backdrop-blur-sm",
             "px-4 py-3 pr-12 text-sm",
-            "text-gray-900 dark:text-white",
-            "placeholder:text-gray-400 dark:placeholder:text-white/50",
+            "text-foreground",
+            "placeholder:text-muted-foreground",
             "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-            "focus:border-border dark:focus:border-white/50",
-            "focus:bg-white/80 dark:focus:bg-white/15",
+            "focus:border-border",
+            "focus:bg-muted/80",
             "disabled:cursor-not-allowed disabled:opacity-50",
             "transition-all"
           )}

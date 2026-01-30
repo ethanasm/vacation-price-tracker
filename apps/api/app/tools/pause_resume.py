@@ -85,7 +85,11 @@ class ResumeTripTool(BaseTool):
     """
 
     name = "resume_trip"
-    description = "Resume price tracking for a paused trip. This will also trigger an immediate price refresh."
+    description = (
+        "Resume price tracking for a trip that is currently PAUSED. "
+        "Only use this tool when the trip status is 'paused'. "
+        "Do NOT use this for active trips - use trigger_refresh instead to refresh prices."
+    )
 
     async def execute(
         self,

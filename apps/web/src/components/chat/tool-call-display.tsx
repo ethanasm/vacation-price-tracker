@@ -93,6 +93,68 @@ function ToolDetails({ toolCall, result, isError }: {
 }
 
 /**
+ * Chevron icon for expand/collapse state
+ */
+function ExpandChevron({ isExpanded }: { isExpanded: boolean }) {
+  const Icon = isExpanded ? ChevronDown : ChevronRight;
+  return (
+    <span className="flex-shrink-0 text-muted-foreground">
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </span>
+  );
+}
+
+/**
+ * Header button/row for the tool call display
+ */
+function ToolCallHeader({
+  toolCall,
+  isExpanded,
+  hasExpandableContent,
+  isExecuting,
+  hasResult,
+  isError,
+  onToggle,
+}: {
+  toolCall: ToolCall;
+  isExpanded: boolean;
+  hasExpandableContent: boolean;
+  isExecuting: boolean;
+  hasResult: boolean;
+  isError: boolean;
+  onToggle: () => void;
+}) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onToggle();
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-2 text-left",
+        hasExpandableContent && "hover:bg-muted/50 dark:hover:bg-white/5 transition-colors cursor-pointer"
+      )}
+      onClick={hasExpandableContent ? onToggle : undefined}
+      onKeyDown={hasExpandableContent ? handleKeyDown : undefined}
+      role={hasExpandableContent ? "button" : undefined}
+      tabIndex={hasExpandableContent ? 0 : undefined}
+      aria-expanded={hasExpandableContent ? isExpanded : undefined}
+      aria-controls={hasExpandableContent ? `tool-details-${toolCall.id}` : undefined}
+    >
+      {hasExpandableContent && <ExpandChevron isExpanded={isExpanded} />}
+      <Wrench className="h-4 w-4 text-primary flex-shrink-0" aria-hidden="true" />
+      <span className="font-medium text-sm truncate">{formatToolName(toolCall.name)}</span>
+      <span className="ml-auto flex-shrink-0">
+        <StatusIcon isExecuting={isExecuting} hasResult={hasResult} isError={isError} />
+      </span>
+    </div>
+  );
+}
+
+/**
  * ToolCallDisplay shows tool invocation details with collapsible arguments
  * and results. Supports loading state during execution.
  */
@@ -109,15 +171,6 @@ export function ToolCallDisplay({
   const hasArguments = toolCall.arguments && Object.keys(toolCall.arguments).length > 0;
   const hasExpandableContent = hasArguments || hasResult;
 
-  const handleKeyDown = hasExpandableContent
-    ? (e: React.KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          setIsExpanded(!isExpanded);
-        }
-      }
-    : undefined;
-
   return (
     <div
       className={cn(
@@ -125,35 +178,15 @@ export function ToolCallDisplay({
         className
       )}
     >
-      <div
-        className={cn(
-          "w-full flex items-center gap-2 px-3 py-2 text-left",
-          hasExpandableContent && "hover:bg-muted/50 dark:hover:bg-white/5 transition-colors cursor-pointer"
-        )}
-        onClick={hasExpandableContent ? () => setIsExpanded(!isExpanded) : undefined}
-        onKeyDown={handleKeyDown}
-        role={hasExpandableContent ? "button" : undefined}
-        tabIndex={hasExpandableContent ? 0 : undefined}
-        aria-expanded={hasExpandableContent ? isExpanded : undefined}
-        aria-controls={hasExpandableContent ? `tool-details-${toolCall.id}` : undefined}
-      >
-        {hasExpandableContent && (
-          <span className="flex-shrink-0 text-muted-foreground">
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            )}
-          </span>
-        )}
-
-        <Wrench className="h-4 w-4 text-primary flex-shrink-0" aria-hidden="true" />
-        <span className="font-medium text-sm truncate">{formatToolName(toolCall.name)}</span>
-        <span className="ml-auto flex-shrink-0">
-          <StatusIcon isExecuting={isExecuting} hasResult={hasResult} isError={isError} />
-        </span>
-      </div>
-
+      <ToolCallHeader
+        toolCall={toolCall}
+        isExpanded={isExpanded}
+        hasExpandableContent={hasExpandableContent}
+        isExecuting={isExecuting}
+        hasResult={hasResult}
+        isError={isError}
+        onToggle={() => setIsExpanded(!isExpanded)}
+      />
       {isExpanded && hasExpandableContent && (
         <ToolDetails toolCall={toolCall} result={result} isError={isError} />
       )}

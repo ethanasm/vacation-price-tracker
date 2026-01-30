@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   ChatChunk,
   ChatMessage,
@@ -13,6 +14,16 @@ import type {
 const DEFAULT_API_ENDPOINT = "/api/chat";
 const CSRF_COOKIE_NAME = "csrf_token";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
+
+/**
+ * Custom error class for authentication failures
+ */
+export class ChatAuthError extends Error {
+  constructor(message = "Authentication required") {
+    super(message);
+    this.name = "ChatAuthError";
+  }
+}
 
 /**
  * Format rate limit message for display
@@ -36,11 +47,6 @@ function generateId(): string {
   // While message IDs are only used for client-side display (React keys),
   // crypto provides better randomness than Math.random().
   return `msg_${crypto.randomUUID()}`;
-}
-
-function generateThreadId(): string {
-  // Generate a proper UUID v4 for the thread ID
-  return crypto.randomUUID();
 }
 
 /**
@@ -78,6 +84,7 @@ interface ChunkProcessingContext {
   assistantMessageId: string;
   onToolCall?: (toolCall: ToolCall) => void;
   onToolResult?: (result: ToolResult) => void;
+  onThreadId?: (threadId: string) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 }
 
@@ -98,6 +105,11 @@ function handleContentChunk(
         : msg
     )
   );
+
+  // Extract thread_id from first content chunk (backend includes it)
+  if (chunk.thread_id) {
+    ctx.onThreadId?.(chunk.thread_id);
+  }
 }
 
 /**
@@ -186,6 +198,12 @@ function processChunk(
     case "rate_limited":
       handleRateLimitChunk(chunk, ctx);
       break;
+    case "done":
+      // Extract thread_id from done chunk (backend sends final thread_id here)
+      if (chunk.thread_id) {
+        ctx.onThreadId?.(chunk.thread_id);
+      }
+      break;
     case "error":
       throw new Error(chunk.error);
   }
@@ -247,6 +265,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     onToolResult,
   } = options;
 
+  const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -263,10 +282,9 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
 
-      const currentThreadId = threadId ?? generateThreadId();
-      if (!threadId) {
-        setThreadId(currentThreadId);
-      }
+      // Use existing threadId or let backend create a new conversation
+      // Don't generate local threadId - let the backend be the source of truth
+      const currentThreadId = threadId;
 
       lastUserMessageRef.current = content;
       setError(null);
@@ -301,6 +319,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         });
 
         if (!response.ok) {
+          if (response.status === 401) {
+            // Session expired or not authenticated - redirect to home
+            router.push("/");
+            throw new ChatAuthError("Session expired. Please sign in again.");
+          }
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.detail || `Request failed with status ${response.status}`);
         }
@@ -314,6 +337,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           onToolCall,
           onToolResult,
           setMessages,
+          // Update threadId from backend response (backend is source of truth for conversation ID)
+          onThreadId: (serverThreadId: string) => {
+            setThreadId(serverThreadId);
+          },
         };
 
         await processStream(response.body.getReader(), ctx);
@@ -336,7 +363,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         abortControllerRef.current = null;
       }
     },
-    [api, threadId, onError, onToolCall, onToolResult]
+    [api, threadId, onError, onToolCall, onToolResult, router]
   );
 
   const clearMessages = useCallback(() => {

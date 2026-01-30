@@ -5,6 +5,14 @@ import {
   type SSEConnectionState,
 } from "../../hooks/use-sse";
 
+// Mock next/navigation
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 // Mock EventSource
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -80,11 +88,19 @@ class MockEventSource {
 
 // Mock global EventSource
 const originalEventSource = global.EventSource;
+
+// Mock fetch for auth status checks
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
+
 beforeEach(() => {
   // @ts-expect-error - Mocking EventSource
   global.EventSource = MockEventSource;
   MockEventSource.reset();
   jest.useFakeTimers();
+  mockFetch.mockClear();
+  // Default: auth check succeeds
+  mockFetch.mockResolvedValue({ ok: true, status: 200 });
 });
 
 afterEach(() => {
@@ -442,14 +458,16 @@ describe("useSSE", () => {
 
       const firstInstance = MockEventSource.getLatest();
 
-      act(() => {
+      await act(async () => {
         firstInstance?.simulateError();
+        // Wait for auth check promise to resolve
+        await Promise.resolve();
       });
 
       expect(result.current.connectionState).toBe("connecting");
 
       // Fast-forward through reconnect delay
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(1000);
       });
 
@@ -457,7 +475,7 @@ describe("useSSE", () => {
       expect(MockEventSource.instances).toHaveLength(2);
     });
 
-    it("uses exponential backoff for reconnects", () => {
+    it("uses exponential backoff for reconnects", async () => {
       renderHook(() =>
         useSSE({
           maxReconnectAttempts: 3,
@@ -467,35 +485,37 @@ describe("useSSE", () => {
 
       // First error
       let instance = MockEventSource.getLatest();
-      act(() => {
+      await act(async () => {
         instance?.simulateError();
+        await Promise.resolve();
       });
 
       // First reconnect at 1000ms (1000 * 2^0)
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(1000);
       });
       expect(MockEventSource.instances).toHaveLength(2);
 
       // Second error
       instance = MockEventSource.getLatest();
-      act(() => {
+      await act(async () => {
         instance?.simulateError();
+        await Promise.resolve();
       });
 
       // Second reconnect at 2000ms (1000 * 2^1)
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(1500);
       });
       expect(MockEventSource.instances).toHaveLength(2); // Not yet
 
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(500);
       });
       expect(MockEventSource.instances).toHaveLength(3); // Now connected
     });
 
-    it("transitions to error state after max reconnect attempts", () => {
+    it("transitions to error state after max reconnect attempts", async () => {
       const onError = jest.fn();
       const { result } = renderHook(() =>
         useSSE({
@@ -506,28 +526,34 @@ describe("useSSE", () => {
       );
 
       // First error and reconnect
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+      await act(async () => {
         jest.advanceTimersByTime(100);
       });
 
       // Second error and reconnect
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+      await act(async () => {
         jest.advanceTimersByTime(200);
       });
 
       // Third error - max attempts reached
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
-        jest.advanceTimersByTime(400);
+        await Promise.resolve();
       });
 
       expect(result.current.connectionState).toBe("error");
       expect(result.current.error?.message).toBe("Max reconnect attempts reached");
     });
 
-    it("resets reconnect attempts on successful connection", () => {
+    it("resets reconnect attempts on successful connection", async () => {
       const { result } = renderHook(() =>
         useSSE({
           maxReconnectAttempts: 3,
@@ -536,13 +562,16 @@ describe("useSSE", () => {
       );
 
       // Fail and reconnect
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+      await act(async () => {
         jest.advanceTimersByTime(100);
       });
 
       // Successfully connect
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.dispatchEvent("connected", {
           status: "connected",
           user_id: "test",
@@ -552,9 +581,9 @@ describe("useSSE", () => {
       expect(result.current.connectionState).toBe("connected");
 
       // Fail again - should have fresh reconnect attempts
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
-        jest.advanceTimersByTime(100);
+        await Promise.resolve();
       });
 
       expect(result.current.connectionState).toBe("connecting");
@@ -573,7 +602,7 @@ describe("useSSE", () => {
       expect(instance?.readyState).toBe(2); // Closed
     });
 
-    it("clears reconnect timeout on unmount", () => {
+    it("clears reconnect timeout on unmount", async () => {
       const { unmount } = renderHook(() =>
         useSSE({
           maxReconnectAttempts: 3,
@@ -582,15 +611,16 @@ describe("useSSE", () => {
       );
 
       // Trigger error to start reconnect timer
-      act(() => {
+      await act(async () => {
         MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
       });
 
       unmount();
 
       // Fast-forward timer - should not create new connection
       const instanceCount = MockEventSource.instances.length;
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(2000);
       });
 
@@ -804,6 +834,108 @@ describe("useSSE", () => {
 
       // Should not call onConnected since data couldn't be parsed
       expect(onConnected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("auth error handling", () => {
+    it("calls onAuthError callback when auth check returns 401", async () => {
+      const onAuthError = jest.fn();
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      renderHook(() =>
+        useSSE({
+          maxReconnectAttempts: 3,
+          reconnectDelay: 100,
+          onAuthError,
+        })
+      );
+
+      // Trigger connection error
+      await act(async () => {
+        MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+
+      // Wait for auth check to complete
+      await waitFor(() => {
+        expect(onAuthError).toHaveBeenCalled();
+      });
+    });
+
+    it("redirects to home page when auth check returns 401 and no onAuthError callback", async () => {
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      renderHook(() =>
+        useSSE({
+          maxReconnectAttempts: 3,
+          reconnectDelay: 100,
+        })
+      );
+
+      // Trigger connection error
+      await act(async () => {
+        MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+
+      // Wait for auth check and redirect
+      await waitFor(() => {
+        expect(mockPush).toHaveBeenCalledWith("/");
+      });
+    });
+
+    it("handles network error in auth check by continuing to reconnect", async () => {
+      mockFetch.mockRejectedValue(new Error("Network error"));
+
+      const { result } = renderHook(() =>
+        useSSE({
+          maxReconnectAttempts: 3,
+          reconnectDelay: 100,
+        })
+      );
+
+      // Trigger connection error
+      await act(async () => {
+        MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+
+      // Should be in connecting state (will retry)
+      expect(result.current.connectionState).toBe("connecting");
+
+      // Should attempt reconnect
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+      });
+
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("sets error state when auth check fails after connection error", async () => {
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+      const onError = jest.fn();
+
+      const { result } = renderHook(() =>
+        useSSE({
+          maxReconnectAttempts: 3,
+          reconnectDelay: 100,
+          onError,
+        })
+      );
+
+      // Trigger connection error
+      await act(async () => {
+        MockEventSource.getLatest()?.simulateError();
+        await Promise.resolve();
+      });
+
+      // Wait for state to update
+      await waitFor(() => {
+        expect(result.current.connectionState).toBe("error");
+      });
+
+      expect(onError).toHaveBeenCalled();
+      expect(result.current.error?.message).toBe("Session expired");
     });
   });
 });

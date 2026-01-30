@@ -199,6 +199,73 @@ def _create_tool_result_message(tool_call: ToolCall, result: ToolResult) -> Groq
     )
 
 
+def _create_assistant_message(content: str, tool_calls: list[ToolCall]) -> GroqMessage:
+    """Create an assistant message with tool calls for the conversation."""
+    return GroqMessage(
+        role="assistant",
+        content=content or "",
+        tool_calls=_tool_calls_to_dict(tool_calls),
+    )
+
+
+def _log_tool_call_start(user_id: str, tool_count: int) -> None:
+    """Log the start of tool call processing."""
+    user_display = user_id[:8] + "..." if len(user_id) > 8 else user_id
+    logger.info("Processing %d tool calls for user %s", tool_count, user_display)
+
+
+async def _process_tool_calls(
+    tool_calls: list[ToolCall],
+    router: MCPRouter,
+    user_id: str,
+    db: AsyncSession,
+    messages: list[GroqMessage],
+) -> AsyncGenerator[ChatChunk, None]:
+    """Execute tool calls and yield chunks, appending results to messages."""
+    for tool_call in tool_calls:
+        result = None
+        async for chunk, tool_result in _execute_tool_call(tool_call, router, user_id, db):
+            yield chunk
+            if tool_result is not None:
+                result = tool_result
+
+        if result is not None:
+            messages.append(_create_tool_result_message(tool_call, result))
+
+
+async def _run_single_tool_round(
+    client: GroqClient,
+    messages: list[GroqMessage],
+    tools: list[Tool],
+    router: MCPRouter,
+    user_id: str,
+    db: AsyncSession,
+) -> AsyncGenerator[tuple[ChatChunk | None, bool], None]:
+    """Run a single round of LLM + tool execution.
+
+    Yields (chunk, should_continue) tuples. should_continue is False when no more rounds needed.
+    """
+    full_content = ""
+    accumulated_tool_calls: list[ToolCall] = []
+
+    async for chunk, content, tool_calls in _stream_llm_response(client, messages, tools):
+        full_content = content
+        accumulated_tool_calls = tool_calls
+        if chunk:
+            yield chunk, True
+
+    if not accumulated_tool_calls:
+        logger.debug("No tool calls, conversation complete")
+        yield None, False
+        return
+
+    _log_tool_call_start(user_id, len(accumulated_tool_calls))
+    messages.append(_create_assistant_message(full_content, accumulated_tool_calls))
+
+    async for chunk in _process_tool_calls(accumulated_tool_calls, router, user_id, db, messages):
+        yield chunk, True
+
+
 async def process_chat_with_tools(
     messages: list[GroqMessage],
     user_id: str,
@@ -238,42 +305,16 @@ async def process_chat_with_tools(
         logger.debug("Tool round %d/%d", round_count, MAX_TOOL_ROUNDS)
 
         try:
-            full_content = ""
-            accumulated_tool_calls: list[ToolCall] = []
-
-            async for chunk, content, tool_calls in _stream_llm_response(client, messages, tools):
-                full_content = content
-                accumulated_tool_calls = tool_calls
+            should_continue = True
+            async for chunk, continue_flag in _run_single_tool_round(
+                client, messages, tools, router, user_id, db
+            ):
+                should_continue = continue_flag
                 if chunk:
                     yield chunk
 
-            if not accumulated_tool_calls:
-                logger.debug("No tool calls, conversation complete")
+            if not should_continue:
                 return
-
-            logger.info(
-                "Processing %d tool calls for user %s",
-                len(accumulated_tool_calls),
-                user_id[:8] + "..." if len(user_id) > 8 else user_id,
-            )
-
-            messages.append(
-                GroqMessage(
-                    role="assistant",
-                    content=full_content or "",
-                    tool_calls=_tool_calls_to_dict(accumulated_tool_calls),
-                )
-            )
-
-            for tool_call in accumulated_tool_calls:
-                result = None
-                async for chunk, tool_result in _execute_tool_call(tool_call, router, user_id, db):
-                    yield chunk
-                    if tool_result is not None:
-                        result = tool_result
-
-                if result is not None:
-                    messages.append(_create_tool_result_message(tool_call, result))
 
         except GroqClientError as e:
             _log_groq_error(e)
@@ -396,13 +437,16 @@ class ChatService:
                 if chunk.content:
                     full_response += chunk.content
 
-                # Track tool calls for persistence
+                # Track tool calls for persistence (must match Groq API format)
                 if chunk.tool_call:
                     tool_calls_made.append(
                         {
                             "id": chunk.tool_call.id,
-                            "name": chunk.tool_call.name,
-                            "arguments": chunk.tool_call.arguments,
+                            "type": "function",
+                            "function": {
+                                "name": chunk.tool_call.name,
+                                "arguments": chunk.tool_call.arguments,
+                            },
                         }
                     )
 

@@ -895,4 +895,111 @@ describe("DashboardPage", () => {
       consoleErrorSpy.mockRestore();
     });
   });
+
+  describe("Delete all functionality", () => {
+    it("deletes all trips successfully", async () => {
+      const user = userEvent.setup();
+      (api.trips.deleteAll as jest.Mock).mockResolvedValue({
+        data: { deleted_count: 3 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Find and click the Delete All button to open dialog
+      const deleteAllButton = screen.getByRole("button", { name: /Delete All/i });
+      await user.click(deleteAllButton);
+
+      // Confirm in the dialog
+      const confirmButton = screen.getByRole("button", { name: /^Delete All$/i });
+      await user.click(confirmButton);
+
+      // Check toast message
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith("3 trips deleted");
+      });
+    });
+
+    it("shows singular message when deleting 1 trip", async () => {
+      (api.trips.list as jest.Mock).mockResolvedValue({
+        data: [mockApiTrips[0]],
+        meta: { page: 1, total: 1 },
+      });
+      (api.trips.deleteAll as jest.Mock).mockResolvedValue({
+        data: { deleted_count: 1 },
+      });
+
+      const user = userEvent.setup();
+
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Find and click the Delete All button to open dialog
+      const deleteAllButton = screen.getByRole("button", { name: /Delete All/i });
+      await user.click(deleteAllButton);
+
+      // Confirm in the dialog
+      const confirmButton = screen.getByRole("button", { name: /^Delete All$/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith("1 trip deleted");
+      });
+    });
+
+    it("shows error toast when delete all fails with ApiError", async () => {
+      const user = userEvent.setup();
+      const MockApiError = jest.requireMock("@/lib/api").ApiError;
+      (api.trips.deleteAll as jest.Mock).mockRejectedValue(
+        new MockApiError(500, "Server Error", "Database connection failed")
+      );
+
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Open and confirm delete all dialog
+      const deleteAllButton = screen.getByRole("button", { name: /Delete All/i });
+      await user.click(deleteAllButton);
+      const confirmButton = screen.getByRole("button", { name: /^Delete All$/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Database connection failed");
+      });
+    });
+
+    it("shows generic error toast when delete all fails with non-ApiError", async () => {
+      const user = userEvent.setup();
+      (api.trips.deleteAll as jest.Mock).mockRejectedValue(new Error("Network error"));
+
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Open and confirm delete all dialog
+      const deleteAllButton = screen.getByRole("button", { name: /Delete All/i });
+      await user.click(deleteAllButton);
+      const confirmButton = screen.getByRole("button", { name: /^Delete All$/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Failed to delete trips");
+      });
+    });
+  });
 });

@@ -44,6 +44,28 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function() {
+  var STORAGE_KEY = 'theme-mode';
+  var mode = localStorage.getItem(STORAGE_KEY) || 'system';
+  var dark = false;
+  if (mode === 'dark') {
+    dark = true;
+  } else if (mode === 'system') {
+    var hour = new Date().getHours();
+    dark = hour >= 18 || hour < 8;
+  }
+  if (dark) {
+    document.documentElement.classList.add('dark');
+  }
+})();
+`,
+          }}
+        />
+      </head>
       <body>
         <ThemeProvider>
           <AuthProvider>

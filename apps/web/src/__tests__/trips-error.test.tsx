@@ -1,6 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TripsError from "../app/trips/error";
+
+// Mock next/navigation
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
 
 // Mock CSS modules
 jest.mock("../app/trips/page.module.css", () => ({
@@ -32,6 +40,12 @@ describe("TripsError", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("renders error message", () => {
@@ -56,7 +70,7 @@ describe("TripsError", () => {
   });
 
   it("calls reset when Try again button is clicked", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     render(<TripsError error={mockError} reset={mockReset} />);
 
@@ -142,5 +156,110 @@ describe("TripsError", () => {
 
     expect(tryAgainButton.querySelector("svg")).toBeInTheDocument();
     expect(homeLink.querySelector("svg")).toBeInTheDocument();
+  });
+
+  describe("authentication error handling", () => {
+    it("shows auth error UI for AuthError", () => {
+      const authError = new Error("Session expired") as Error & { digest?: string };
+      authError.name = "AuthError";
+
+      render(<TripsError error={authError} reset={mockReset} />);
+
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+      expect(
+        screen.getByText(/Your session has expired. Please sign in again/)
+      ).toBeInTheDocument();
+    });
+
+    it("shows auth error UI for ChatAuthError", () => {
+      const chatAuthError = new Error("Authentication required") as Error & { digest?: string };
+      chatAuthError.name = "ChatAuthError";
+
+      render(<TripsError error={chatAuthError} reset={mockReset} />);
+
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+    });
+
+    it("shows auth error UI for 401 in error message", () => {
+      const error401 = new Error("Request failed with status 401") as Error & { digest?: string };
+
+      render(<TripsError error={error401} reset={mockReset} />);
+
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+    });
+
+    it("shows auth error UI for session expired message", () => {
+      const expiredError = new Error("Session expired. Please sign in again.") as Error & { digest?: string };
+
+      render(<TripsError error={expiredError} reset={mockReset} />);
+
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+    });
+
+    it("shows auth error UI for unauthorized message", () => {
+      const unauthorizedError = new Error("Unauthorized access") as Error & { digest?: string };
+
+      render(<TripsError error={unauthorizedError} reset={mockReset} />);
+
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+    });
+
+    it("shows Sign in button for auth errors", () => {
+      const authError = new Error("Unauthorized") as Error & { digest?: string };
+
+      render(<TripsError error={authError} reset={mockReset} />);
+
+      expect(screen.getByRole("link", { name: /Sign in/i })).toBeInTheDocument();
+    });
+
+    it("Sign in link points to home page", () => {
+      const authError = new Error("Authentication failed") as Error & { digest?: string };
+
+      render(<TripsError error={authError} reset={mockReset} />);
+
+      const signInLink = screen.getByRole("link", { name: /Sign in/i });
+      expect(signInLink).toHaveAttribute("href", "/");
+    });
+
+    it("does not show Try again button for auth errors", () => {
+      const authError = new Error("Session expired") as Error & { digest?: string };
+      authError.name = "AuthError";
+
+      render(<TripsError error={authError} reset={mockReset} />);
+
+      expect(screen.queryByRole("button", { name: /Try again/i })).not.toBeInTheDocument();
+    });
+
+    it("automatically redirects to home after 3 seconds for auth errors", () => {
+      const authError = new Error("Unauthorized") as Error & { digest?: string };
+
+      render(<TripsError error={authError} reset={mockReset} />);
+
+      expect(mockPush).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(3000);
+
+      expect(mockPush).toHaveBeenCalledWith("/");
+    });
+
+    it("does not auto-redirect for non-auth errors", () => {
+      render(<TripsError error={mockError} reset={mockReset} />);
+
+      jest.advanceTimersByTime(5000);
+
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("clears timeout on unmount to prevent memory leak", () => {
+      const authError = new Error("Unauthorized") as Error & { digest?: string };
+
+      const { unmount } = render(<TripsError error={authError} reset={mockReset} />);
+
+      unmount();
+
+      jest.advanceTimersByTime(5000);
+
+      expect(mockPush).not.toHaveBeenCalled();
+    });
   });
 });

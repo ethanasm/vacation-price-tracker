@@ -157,7 +157,7 @@ body {
 body {
   font-family: var(--font-body), "Manrope", "Helvetica Neue", sans-serif;
   color: var(--ink);
-  background: var(--paper);
+  background: hsl(var(--card));
   height: 100vh;
   display: flex;
   flex-direction: column;

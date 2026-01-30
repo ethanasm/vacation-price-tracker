@@ -29,33 +29,40 @@ async def _get_latest_snapshot_for_trip(db: AsyncSession, trip_id: uuid.UUID) ->
     return result.scalars().first()
 
 
+def _format_snapshot_update(trip: Trip, snapshot: PriceSnapshot) -> dict:
+    """Format a trip snapshot as an update dictionary."""
+    return {
+        "type": "price_update",
+        "trip_id": str(trip.id),
+        "trip_name": trip.name,
+        "flight_price": str(snapshot.flight_price) if snapshot.flight_price else None,
+        "hotel_price": str(snapshot.hotel_price) if snapshot.hotel_price else None,
+        "total_price": str(snapshot.total_price) if snapshot.total_price else None,
+        "updated_at": snapshot.created_at.isoformat(),
+    }
+
+
+def _should_include_snapshot(snapshot: PriceSnapshot | None, since: datetime | None) -> bool:
+    """Check if a snapshot should be included based on filters."""
+    if snapshot is None:
+        return False
+    if since is not None and snapshot.created_at <= since:
+        return False
+    return True
+
+
 async def _get_user_trips_with_snapshots(
     db: AsyncSession, user_id: uuid.UUID, since: datetime | None = None
 ) -> list[dict]:
     """Get all user trips with their latest snapshots, optionally filtered by timestamp."""
-    # Get all active trips for the user
     trips_result = await db.execute(select(Trip).where(Trip.user_id == user_id).order_by(Trip.created_at.desc()))
     trips = trips_result.scalars().all()
 
     updates = []
     for trip in trips:
         snapshot = await _get_latest_snapshot_for_trip(db, trip.id)
-        if snapshot:
-            # If since is provided, only include snapshots newer than that timestamp
-            if since and snapshot.created_at <= since:
-                continue
-
-            updates.append(
-                {
-                    "type": "price_update",
-                    "trip_id": str(trip.id),
-                    "trip_name": trip.name,
-                    "flight_price": str(snapshot.flight_price) if snapshot.flight_price else None,
-                    "hotel_price": str(snapshot.hotel_price) if snapshot.hotel_price else None,
-                    "total_price": str(snapshot.total_price) if snapshot.total_price else None,
-                    "updated_at": snapshot.created_at.isoformat(),
-                }
-            )
+        if _should_include_snapshot(snapshot, since):
+            updates.append(_format_snapshot_update(trip, snapshot))
 
     return updates
 

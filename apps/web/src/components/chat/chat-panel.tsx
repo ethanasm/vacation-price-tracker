@@ -55,13 +55,13 @@ export function ChatPanel({
   return (
     <div
       className={cn(
-        "flex flex-col h-full bg-background dark:bg-[rgb(18,18,28)]",
-        "border-l border-border/60 dark:border-white/10",
+        "flex flex-col h-full bg-background",
+        "border-l border-border/60",
         className
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 dark:border-white/10">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold text-sm">Travel Assistant</h2>
           {isLoading && (

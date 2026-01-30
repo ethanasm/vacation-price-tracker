@@ -42,6 +42,11 @@ class CacheKeys:
         """Key for refresh-all lock per user."""
         return f"refresh:lock:{user_id}"
 
+    @staticmethod
+    def trip_refresh_lock(trip_id: str) -> str:
+        """Key for single-trip refresh lock."""
+        return f"refresh:trip_lock:{trip_id}"
+
     # Rate limiting
     @staticmethod
     def rate_limit(user_id: str, resource: str) -> str:

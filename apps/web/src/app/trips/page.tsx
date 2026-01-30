@@ -396,18 +396,39 @@ export default function DashboardPage() {
 
   // Handle tool results from chat - only refetch for tools that modify trip data
   const handleToolResult = useCallback((result: ToolResult) => {
-    // Only refetch for tools that create or modify trips
+    // For trigger_refresh, start polling for completion instead of immediate refetch
+    if (result.name === "trigger_refresh" && !result.isError) {
+      const workflowId = (result.result as { workflow_id?: string })?.workflow_id;
+      if (workflowId) {
+        // Start polling for refresh completion (same as dashboard button)
+        setIsRefreshing(true);
+        setRefreshProgress(null);
+
+        // Wait a moment for the workflow to start, then begin polling
+        setTimeout(async () => {
+          pollIntervalRef.current = setInterval(() => {
+            pollRefreshStatus(workflowId);
+          }, REFRESH_POLL_INTERVAL);
+
+          // Do an immediate status check
+          await pollRefreshStatus(workflowId);
+        }, 500);
+        return;
+      }
+    }
+
+    // For other mutating tools, refetch immediately
     const mutatingTools = [
       "create_trip",
+      "delete_trip",
       "pause_trip",
       "resume_trip",
       "set_notification",
-      "trigger_refresh",
     ];
     if (mutatingTools.includes(result.name)) {
       fetchTrips();
     }
-  }, [fetchTrips]);
+  }, [fetchTrips, pollRefreshStatus]);
 
   return (
     <>

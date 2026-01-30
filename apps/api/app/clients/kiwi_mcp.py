@@ -236,24 +236,33 @@ class KiwiMCPClient:
         return data
 
     @staticmethod
-    def _extract_result(data: dict[str, Any]) -> dict[str, Any]:
-        """Extract result from JSON-RPC response, handling nested content."""
+    def _try_parse_text_content(content: list[Any]) -> dict[str, Any] | None:
+        """Try to parse text content from a list of content items."""
         import json
 
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "text":
+                continue
+            try:
+                return json.loads(item.get("text", "{}"))
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    @staticmethod
+    def _extract_result(data: dict[str, Any]) -> dict[str, Any]:
+        """Extract result from JSON-RPC response, handling nested content."""
         result = data.get("result", {})
 
-        if isinstance(result, dict) and "content" in result:
-            content = result["content"]
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        try:
-                            return json.loads(item.get("text", "{}"))
-                        except json.JSONDecodeError:
-                            pass
+        if not isinstance(result, dict) or "content" not in result:
             return result
 
-        return result
+        content = result["content"]
+        if not isinstance(content, list):
+            return result
+
+        parsed = KiwiMCPClient._try_parse_text_content(content)
+        return parsed if parsed is not None else result
 
     def _parse_response(
         self,

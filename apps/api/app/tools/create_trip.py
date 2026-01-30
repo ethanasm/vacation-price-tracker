@@ -1,7 +1,7 @@
 """MCP tool for creating a new trip."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -10,8 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CabinClass, StopsMode, ThresholdType, TripStatus
+from app.db.redis import redis_client
 from app.models.notification_rule import NotificationRule
 from app.models.trip import Trip
 from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
@@ -31,7 +33,8 @@ class CreateTripTool(BaseTool):
     name = "create_trip"
     description = (
         "Create a new vacation price tracking trip. "
-        "Sets up monitoring for flights and hotels between the specified locations and dates."
+        "Sets up monitoring for flights and hotels between the specified locations and dates. "
+        "New trips are created with 'active' status by default and will immediately start fetching prices."
     )
 
     async def execute(
@@ -146,9 +149,22 @@ class CreateTripTool(BaseTool):
     async def _finalize_trip_creation(self, trip: Trip, db: AsyncSession) -> ToolResult:
         """Trigger workflow and build success response."""
         workflow_started = True
+
+        # Acquire per-trip refresh lock before triggering workflow
+        # This prevents duplicate workflows if user immediately calls trigger_refresh_trip
+        lock_key = CacheKeys.trip_refresh_lock(str(trip.id))
+        await redis_client.set(
+            lock_key,
+            f"create-{trip.id}-{datetime.now().isoformat()}",
+            ex=CacheTTL.REFRESH_LOCK,
+            nx=True,
+        )
+
         try:
             await trigger_price_check_workflow(trip.id)
         except Exception:
+            # Release lock on failure
+            await redis_client.delete(lock_key)
             trip.status = TripStatus.ERROR
             await db.commit()
             workflow_started = False

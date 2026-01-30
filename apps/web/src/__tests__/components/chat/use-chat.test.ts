@@ -1,5 +1,13 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useChat } from "../../../hooks/use-chat";
+import { useChat, ChatAuthError } from "../../../hooks/use-chat";
+
+// Mock next/navigation
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -8,6 +16,7 @@ global.fetch = mockFetch;
 describe("useChat", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
   });
 
   describe("initialization", () => {
@@ -119,9 +128,10 @@ describe("useChat", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    it("generates threadId on first message", async () => {
+    it("receives threadId from server on first message", async () => {
+      const serverThreadId = "550e8400-e29b-41d4-a716-446655440000";
       const mockStream = createMockSSEStream([
-        { type: "content", content: "Hi" },
+        { type: "content", content: "Hi", thread_id: serverThreadId },
       ]);
       mockFetch.mockResolvedValueOnce(mockStream);
 
@@ -133,10 +143,34 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      // Thread ID should be a valid UUID v4
-      expect(result.current.threadId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      );
+      // Thread ID should come from server response
+      expect(result.current.threadId).toBe(serverThreadId);
+    });
+
+    it("sends null thread_id on first message", async () => {
+      const mockStream = createMockSSEStream([
+        { type: "content", content: "Response" },
+      ]);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Test message");
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          message: "Test message",
+          thread_id: null,
+        }),
+        signal: expect.any(AbortSignal),
+      });
     });
 
     it("sends correct request body", async () => {
@@ -335,6 +369,42 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalled();
     });
 
+    it("handles 401 errors by redirecting to home page", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ detail: "Unauthorized" }),
+      });
+
+      const onError = jest.fn();
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.sendMessage("Test");
+      });
+
+      expect(mockPush).toHaveBeenCalledWith("/");
+      expect(result.current.error).toBeInstanceOf(ChatAuthError);
+      expect(result.current.error?.message).toBe("Session expired. Please sign in again.");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("throws ChatAuthError with correct name for 401 responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({}),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Test");
+      });
+
+      expect(result.current.error?.name).toBe("ChatAuthError");
+    });
+
     it("handles empty response body", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -419,8 +489,9 @@ describe("useChat", () => {
     });
 
     it("clears threadId", async () => {
+      const serverThreadId = "550e8400-e29b-41d4-a716-446655440000";
       const mockStream = createMockSSEStream([
-        { type: "content", content: "Response" },
+        { type: "content", content: "Response", thread_id: serverThreadId },
       ]);
       mockFetch.mockResolvedValueOnce(mockStream);
 
@@ -430,7 +501,7 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      expect(result.current.threadId).not.toBeNull();
+      expect(result.current.threadId).toBe(serverThreadId);
 
       act(() => {
         result.current.clearMessages();

@@ -241,6 +241,40 @@ describe("ToolCallDisplay", () => {
 
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
     });
+
+    it("can be toggled with Enter key", async () => {
+      const user = userEvent.setup();
+      const toolCallWithArgs: ToolCall = {
+        id: "call-123",
+        name: "list_trips",
+        arguments: { filter: "active" },
+      };
+
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
+
+      const button = screen.getByRole("button");
+      button.focus();
+      await user.keyboard("{Enter}");
+
+      expect(button).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("can be toggled with Space key", async () => {
+      const user = userEvent.setup();
+      const toolCallWithArgs: ToolCall = {
+        id: "call-123",
+        name: "list_trips",
+        arguments: { filter: "active" },
+      };
+
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
+
+      const button = screen.getByRole("button");
+      button.focus();
+      await user.keyboard(" ");
+
+      expect(button).toHaveAttribute("aria-expanded", "true");
+    });
   });
 });
 

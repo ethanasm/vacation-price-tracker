@@ -239,6 +239,41 @@ TRIGGER_REFRESH_TOOL = _make_tool(
 )
 
 
+TRIGGER_REFRESH_TRIP_TOOL = _make_tool(
+    name="trigger_refresh_trip",
+    description=(
+        "Trigger an immediate price refresh for a specific trip. "
+        "Use this when the user wants to update prices for just one trip. "
+        "The trip must be active (not paused)."
+    ),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip to refresh",
+            "format": "uuid",
+        },
+    },
+    required=["trip_id"],
+)
+
+
+DELETE_TRIP_TOOL = _make_tool(
+    name="delete_trip",
+    description=(
+        "Permanently delete a vacation price tracking trip and all its associated data. "
+        "This action cannot be undone. All price history, notification settings, and preferences will be deleted."
+    ),
+    parameters={
+        "trip_id": {
+            "type": "string",
+            "description": "UUID of the trip to delete",
+            "format": "uuid",
+        },
+    },
+    required=["trip_id"],
+)
+
+
 # -----------------------------------------------------------------------------
 # Search Tools
 # -----------------------------------------------------------------------------
@@ -273,6 +308,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     PAUSE_TRIP_TOOL,
     RESUME_TRIP_TOOL,
     TRIGGER_REFRESH_TOOL,
+    TRIGGER_REFRESH_TRIP_TOOL,
+    DELETE_TRIP_TOOL,
     SEARCH_AIRPORTS_TOOL,
 ]
 

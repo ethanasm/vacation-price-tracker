@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:8000";
 
@@ -125,6 +126,11 @@ export interface UseSSEOptions {
    * Callback when connection state changes
    */
   onConnectionStateChange?: (state: SSEConnectionState) => void;
+  /**
+   * Callback when authentication fails (401)
+   * If not provided, will redirect to home page
+   */
+  onAuthError?: () => void;
 }
 
 /**
@@ -185,8 +191,10 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     onHeartbeat,
     onError,
     onConnectionStateChange,
+    onAuthError,
   } = options;
 
+  const router = useRouter();
   const [connectionState, setConnectionState] = useState<SSEConnectionState>("disconnected");
   const [priceUpdates, setPriceUpdates] = useState<PriceUpdateEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
@@ -203,6 +211,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     onHeartbeat,
     onError,
     onConnectionStateChange,
+    onAuthError,
   });
 
   // Keep refs up to date
@@ -213,6 +222,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       onHeartbeat,
       onError,
       onConnectionStateChange,
+      onAuthError,
     };
   });
 
@@ -244,6 +254,31 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     reconnectAttemptsRef.current = 0;
     updateConnectionState("disconnected");
   }, [updateConnectionState]);
+
+  const handleAuthError = useCallback(() => {
+    if (callbacksRef.current.onAuthError) {
+      callbacksRef.current.onAuthError();
+    } else {
+      // Default behavior: redirect to home page
+      router.push("/");
+    }
+  }, [router]);
+
+  const checkAuthStatus = useCallback(async (): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/sse/status`, {
+        credentials: "include",
+      });
+      if (response.status === 401) {
+        handleAuthError();
+        return false;
+      }
+      return response.ok;
+    } catch {
+      // Network error - let the SSE connection attempt handle it
+      return true;
+    }
+  }, [handleAuthError]);
 
   const connect = useCallback(() => {
     // Close existing connection
@@ -313,21 +348,33 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       eventSource.close();
       eventSourceRef.current = null;
 
-      // Attempt to reconnect with exponential backoff
-      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-        updateConnectionState("connecting");
-        const delay = reconnectDelay * (2 ** reconnectAttemptsRef.current);
-        reconnectAttemptsRef.current += 1;
+      // Check if this was an auth error by making a request to the status endpoint
+      // This is async but we handle the result inside the callback
+      checkAuthStatus().then((isAuthenticated) => {
+        if (!isMountedRef.current) return;
 
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (isMountedRef.current) {
-            connect();
-          }
-        }, delay);
-      } else {
-        updateConnectionState("error");
-        handleError(new Error("Max reconnect attempts reached"));
-      }
+        if (!isAuthenticated) {
+          updateConnectionState("error");
+          handleError(new Error("Session expired"));
+          return;
+        }
+
+        // Attempt to reconnect with exponential backoff
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          updateConnectionState("connecting");
+          const delay = reconnectDelay * (2 ** reconnectAttemptsRef.current);
+          reconnectAttemptsRef.current += 1;
+
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (isMountedRef.current) {
+              connect();
+            }
+          }, delay);
+        } else {
+          updateConnectionState("error");
+          handleError(new Error("Max reconnect attempts reached"));
+        }
+      });
     };
   }, [
     heartbeatInterval,
@@ -336,6 +383,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     reconnectDelay,
     updateConnectionState,
     handleError,
+    checkAuthStatus,
   ]);
 
   const clearUpdates = useCallback(() => {

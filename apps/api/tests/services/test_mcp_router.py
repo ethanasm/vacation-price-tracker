@@ -143,7 +143,7 @@ class TestToolSchemas:
     def test_mcp_tools_is_list(self):
         """Test MCP_TOOLS is a list of tool definitions."""
         assert isinstance(MCP_TOOLS, list)
-        assert len(MCP_TOOLS) == 8  # 8 tools defined
+        assert len(MCP_TOOLS) == 10  # 10 tools defined
 
     def test_all_tools_have_required_structure(self):
         """Test all tools have the required OpenAI function structure."""

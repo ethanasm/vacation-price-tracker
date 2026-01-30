@@ -462,22 +462,26 @@ def _register_tools(router: MCPRouter) -> None:
     """Register all available MCP tools with the router."""
     from app.tools import (
         CreateTripTool,
+        DeleteTripTool,
         GetTripDetailsTool,
         ListTripsTool,
         PauseTripTool,
         ResumeTripTool,
         SetNotificationTool,
         TriggerRefreshTool,
+        TriggerRefreshTripTool,
     )
 
     # Register tool instances
     router.register("create_trip", CreateTripTool())
+    router.register("delete_trip", DeleteTripTool())
     router.register("list_trips", ListTripsTool())
     router.register("get_trip_details", GetTripDetailsTool())
     router.register("set_notification", SetNotificationTool())
     router.register("pause_trip", PauseTripTool())
     router.register("resume_trip", ResumeTripTool())
     router.register("trigger_refresh", TriggerRefreshTool())
+    router.register("trigger_refresh_trip", TriggerRefreshTripTool())
 
     logger.info("Registered %d MCP tools", len(router.get_registered_tools()))
 

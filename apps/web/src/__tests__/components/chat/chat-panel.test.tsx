@@ -3,6 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { ChatPanel } from "../../../components/chat/chat-panel";
 import { ChatProvider } from "../../../lib/chat-provider";
 
+// Mock next/navigation
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 // Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch;

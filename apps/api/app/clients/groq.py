@@ -533,6 +533,16 @@ class GroqClient:
             "total_tokens": chunk.usage.total_tokens,
         }
 
+    def _process_stream_delta(
+        self, delta: Any, accumulated_tool_calls: dict[int, dict[str, Any]], chat_chunk: ChatChunk
+    ) -> None:
+        """Process a streaming delta, updating chat_chunk and accumulated tool calls in place."""
+        if delta.content:
+            chat_chunk.content = delta.content
+        if delta.tool_calls:
+            for tc_delta in delta.tool_calls:
+                self._accumulate_tool_call_delta(accumulated_tool_calls, tc_delta)
+
     async def _stream_chat(
         self, client: AsyncGroq, kwargs: dict[str, Any]
     ) -> AsyncGenerator[ChatChunk, None]:
@@ -541,16 +551,13 @@ class GroqClient:
         accumulated_tool_calls: dict[int, dict[str, Any]] = {}
 
         async for chunk in response:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+            choice = chunk.choices[0] if chunk.choices else None
+            delta = choice.delta if choice else None
+            finish_reason = choice.finish_reason if choice else None
             chat_chunk = ChatChunk(finish_reason=finish_reason)
 
             if delta:
-                if delta.content:
-                    chat_chunk.content = delta.content
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        self._accumulate_tool_call_delta(accumulated_tool_calls, tc_delta)
+                self._process_stream_delta(delta, accumulated_tool_calls, chat_chunk)
 
             chat_chunk.usage = self._extract_usage(chunk)
 
