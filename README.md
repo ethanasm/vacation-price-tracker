@@ -17,36 +17,59 @@ Vacation Price Tracker is a full-stack web application designed for travelers to
 - **Auth**: Google OAuth 2.0 (No local passwords).
 - **Testing**: pytest (API), Jest (web).
 - **Code Quality**: Ruff, SonarQube (SonarCloud).
-- **Flight Data**: Kiwi MCP Server (Free, no API key required).
+- **Flight Data**: 
+  - **Primary**: lastminute.com MCP Server (Free, shows airline names/codes).
+  - **Backup**: Kiwi MCP Server (Free, better for virtual interlining).
+  - **Detailed**: Amadeus API (Free tier: 2,000 calls/month, flight numbers & segments).
 - **Hotel Data**: 
-  - **MVP**: Amadeus MCP Server (Free tier: 2,000 calls/month).
+  - **MVP**: Amadeus API (Free tier: 2,000 calls/month).
   - **Phase 4**: SearchAPI Google Hotels (for flexible date optimization).
 
-## External MCP Servers (No Custom Build Required)
+## External MCP Servers & Flight Data Providers
 
-This project leverages existing open-source MCP servers to minimize custom development:
+This project uses a multi-provider strategy to balance data quality, coverage, and cost:
 
-### Kiwi MCP Server (Flights)
-- **Source**: Available via Claude.ai connectors
-- **Tools**: `search-flight`
+### lastminute.com MCP Server (Primary Flight Search)
+- **Endpoint**: `mcp.lastminute.com/mcp`
+- **Tool**: `search_flights`
 - **Cost**: Free, no API key required
+- **Best For**: General flight search—shows airline names, carrier codes, routes, times, and booking links
+- **Limitation**: Primarily shows LCCs (Southwest, JetBlue, Spirit, Ryanair); limited legacy carrier coverage
 
-### Amadeus MCP Server (Hotels)
-- **Source**: [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp)
-- **Tools Exposed**:
-  - `amadeus_hotel_list` - Search hotels by city with filters (amenities, star rating)
-  - `amadeus_hotel_search` - Get hotel offers with pricing for specific dates
-  - `amadeus_hotel_offer` - Get detailed info about a specific offer
-  - `amadeus_hotel_booking` - Book hotel rooms (if needed)
+### Kiwi MCP Server (Backup Flight Search)
+- **Endpoint**: `mcp.kiwi.com`
+- **Tool**: `search-flight`
+- **Cost**: Free, no API key required
+- **Best For**: Virtual interlining (creative multi-carrier routing), often finds cheaper prices
+- **Limitation**: Does NOT include airline names, carrier codes, or flight numbers
+
+### Amadeus API (Detailed Flight Data & Hotels)
+- **Source**: Direct Amadeus REST API (wrapped as custom MCP tools)
+- **Tools**: `search_flights_amadeus`, `search_hotels`, `search_hotel_offers`
 - **Cost**: Free tier (~2,000 calls/month), then €0.001-0.025/call
+- **Best For**: 
+  - Flight numbers, segment details, airline filtering
+  - Hotel searches with availability and pricing
+  - Price tracking (requires flight numbers to match offers)
 
-### What We Build (Custom MCP Tools)
-Since flights and hotels are covered by existing MCP servers, our custom MCP server only needs:
+### When Each Provider Is Used
+
+| User Request | Provider | Reason |
+|-------------|----------|--------|
+| "Find flights to Paris" | lastminute.com | Shows airline names |
+| "What's the cheapest flight?" | Kiwi | Often lower prices |
+| "I want to fly Delta" | Amadeus | Airline filtering |
+| "Show me flight UA200" | Amadeus | Need flight numbers |
+| "Find hotels in Rome" | Amadeus | Only option with hotels |
+
+### Custom MCP Tools (Trip Management)
+Our custom MCP server handles trip management operations:
 - `create_trip` - Create a new price tracking trip
 - `list_trips` - List user's tracked trips
+- `get_trip_details` - Get trip details with price history
 - `set_notification` - Update alert thresholds
-- `trigger_refresh` - Force price check
-- `search_airports` - IATA code lookup (thin wrapper)
+- `pause_trip` / `resume_trip` - Control tracking status
+- `trigger_refresh` - Force price check for all trips
 
 ## Directory Structure
 ```text
@@ -100,7 +123,7 @@ vacation-price-tracker/
    # Edit .env with your credentials:
    # - DATABASE_URL: Postgres connection
    # - GROQ_API_KEY: For LLM chat
-   # - AMADEUS_CLIENT_ID/SECRET: For hotel data
+   # - AMADEUS_API_KEY/SECRET: For flight details & hotel searches
    # - GOOGLE_CLIENT_ID/SECRET: For OAuth
    # - TEMPORAL_ADDRESS: Temporal server
    # - SEARCHAPI_KEY: (Phase 4) For date optimizer
@@ -218,30 +241,39 @@ uv run mypy apps/api/app/
 apps/api/
 ├── app/
 │   ├── core/          # Config, constants, security
+│   ├── clients/       # External API clients (Amadeus, Groq, MCP)
 │   ├── db/            # Database session, deps
 │   ├── models/        # SQLModel database models
 │   ├── routers/       # FastAPI route handlers
+│   ├── middleware/    # CSRF, rate limiting, idempotency
+│   ├── services/      # Business logic services
+│   ├── tools/         # MCP tool implementations
 │   └── main.py        # FastAPI app entry point
 └── tests/
-    ├── test_auth.py   # Auth logic tests
-    ├── test_models.py # Database model tests
-    └── test_security.py # JWT/security tests
+    ├── clients/       # API client tests
+    ├── integration/   # End-to-end tests
+    ├── middleware/    # Middleware tests
+    ├── routers/       # Endpoint tests
+    ├── services/      # Service layer tests
+    ├── tools/         # MCP tool tests
+    └── *.py           # Unit tests (auth, models, schemas, etc.)
 ```
 
 ## Data Provider Strategy
 
 | Phase | Flights | Hotels | Cost |
 |:------|:--------|:-------|:-----|
-| MVP | Kiwi MCP | Amadeus MCP | $0 (free tiers) |
-| Phase 4 | Kiwi MCP | Amadeus + SearchAPI | ~$40/mo for optimizer |
+| MVP | lastminute.com MCP (primary) + Kiwi MCP (backup) + Amadeus (details) | Amadeus API | $0 (free tiers) |
+| Phase 4 | Same as MVP | Amadeus + SearchAPI | ~$40/mo for optimizer |
 
 ## Technical Challenges Overcome
 
-1. **Managing Rate Limits Across Multiple Travel APIs:** Implemented token-bucket throttling per user to stay within Amadeus/Kiwi free tiers.
-2. **Airline Filtering on Non-Filterable APIs:** Designed post-fetch filtering strategy since Kiwi MCP returns all airlines.
-3. **Room Type/View Filtering:** No hotel API supports query-level room filtering—implemented post-fetch parsing of room descriptions.
-4. **OAuth on Home Server:** Solved using Cloudflare Tunnel to provide a public callback URL without port forwarding.
-5. **Distributed Workflow Reliability:** Used Temporal's Saga pattern to ensure partial failures don't corrupt state.
+1. **Multi-Provider Flight Data Strategy:** No single free provider offers complete data. Solved by using lastminute.com for quick searches with airline info, Kiwi for cheaper prices/virtual interlining, and Amadeus for flight numbers and detailed segments needed for price tracking.
+2. **Missing Airline Info from Kiwi MCP:** Research revealed Kiwi MCP (free hosted server) does NOT include airline names/codes—only the paid Tequila affiliate API does. Pivoted to lastminute.com as primary provider.
+3. **Airline Filtering on Non-Filterable APIs:** Designed post-fetch filtering strategy since MCP servers return all airlines without query-level filtering.
+4. **Room Type/View Filtering:** No hotel API supports query-level room filtering—implemented post-fetch parsing of room descriptions.
+5. **OAuth on Home Server:** Solved using Cloudflare Tunnel to provide a public callback URL without port forwarding.
+6. **Distributed Workflow Reliability:** Used Temporal's Saga pattern to ensure partial failures don't corrupt state.
 
 ## Deployment
 
