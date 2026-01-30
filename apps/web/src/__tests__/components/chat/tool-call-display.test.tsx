@@ -49,8 +49,14 @@ describe("ToolCallDisplay", () => {
   });
 
   describe("expansion", () => {
+    const toolCallWithArgs: ToolCall = {
+      id: "call-123",
+      name: "list_trips",
+      arguments: { filter: "active" },
+    };
+
     it("is collapsed by default", () => {
-      render(<ToolCallDisplay toolCall={baseToolCall} />);
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
 
       const button = screen.getByRole("button");
       expect(button).toHaveAttribute("aria-expanded", "false");
@@ -59,7 +65,7 @@ describe("ToolCallDisplay", () => {
     it("expands on click", async () => {
       const user = userEvent.setup();
 
-      render(<ToolCallDisplay toolCall={baseToolCall} />);
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
 
       const button = screen.getByRole("button");
       await user.click(button);
@@ -70,7 +76,7 @@ describe("ToolCallDisplay", () => {
     it("collapses on second click", async () => {
       const user = userEvent.setup();
 
-      render(<ToolCallDisplay toolCall={baseToolCall} />);
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
 
       const button = screen.getByRole("button");
       await user.click(button);
@@ -199,8 +205,13 @@ describe("ToolCallDisplay", () => {
   });
 
   describe("accessibility", () => {
-    it("has accessible button with aria-expanded", () => {
-      render(<ToolCallDisplay toolCall={baseToolCall} />);
+    it("has accessible button with aria-expanded when there are arguments", () => {
+      const toolCallWithArgs: ToolCall = {
+        id: "call-123",
+        name: "list_trips",
+        arguments: { filter: "active" },
+      };
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
 
       const button = screen.getByRole("button");
       expect(button).toHaveAttribute("aria-expanded");
@@ -208,16 +219,27 @@ describe("ToolCallDisplay", () => {
 
     it("has aria-controls linking to details", async () => {
       const user = userEvent.setup();
+      const toolCallWithArgs: ToolCall = {
+        id: "call-123",
+        name: "list_trips",
+        arguments: { filter: "active" },
+      };
 
-      render(<ToolCallDisplay toolCall={baseToolCall} />);
+      render(<ToolCallDisplay toolCall={toolCallWithArgs} />);
 
       const button = screen.getByRole("button");
-      expect(button).toHaveAttribute("aria-controls", `tool-details-${baseToolCall.id}`);
+      expect(button).toHaveAttribute("aria-controls", `tool-details-${toolCallWithArgs.id}`);
 
       await user.click(button);
 
-      const details = document.getElementById(`tool-details-${baseToolCall.id}`);
+      const details = document.getElementById(`tool-details-${toolCallWithArgs.id}`);
       expect(details).toBeInTheDocument();
+    });
+
+    it("does not have button role when no expandable content", () => {
+      render(<ToolCallDisplay toolCall={baseToolCall} />);
+
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
     });
   });
 });

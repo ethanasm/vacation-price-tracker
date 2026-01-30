@@ -32,6 +32,7 @@ import { api, ApiError, type TripResponse } from "@/lib/api";
 import { TripRowContextMenu, TripRowKebab } from "@/components/trip-row-actions";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ChatProvider } from "@/lib/chat-provider";
+import type { ToolResult } from "@/lib/chat-types";
 import { ChatToggle, useChatExpanded, FloatingChatToggle } from "@/components/dashboard/chat-toggle";
 import { useSSE, type PriceUpdateEvent } from "@/hooks/use-sse";
 import styles from "./page.module.css";
@@ -393,10 +394,19 @@ export default function DashboardPage() {
     fetchTrips();
   };
 
-  // Handle tool results from chat - refetch trips when tools modify data
-  const handleToolResult = useCallback(() => {
-    // Refetch trips when chat creates or modifies trips
-    fetchTrips();
+  // Handle tool results from chat - only refetch for tools that modify trip data
+  const handleToolResult = useCallback((result: ToolResult) => {
+    // Only refetch for tools that create or modify trips
+    const mutatingTools = [
+      "create_trip",
+      "pause_trip",
+      "resume_trip",
+      "set_notification",
+      "trigger_refresh",
+    ];
+    if (mutatingTools.includes(result.name)) {
+      fetchTrips();
+    }
   }, [fetchTrips]);
 
   return (
@@ -573,10 +583,11 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Chat panel - only render when hydrated to avoid SSR mismatch */}
-        {isHydrated && isChatExpanded && (
-          <div className={styles.chatPanel}>
+        {/* Chat panel - keep ChatProvider mounted to preserve conversation state */}
+        {isHydrated && (
+          <div className={styles.chatPanel} style={{ display: isChatExpanded ? undefined : "none" }}>
             <ChatProvider
+              api={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/v1/chat/messages`}
               onToolResult={handleToolResult}
             >
               <ChatPanel

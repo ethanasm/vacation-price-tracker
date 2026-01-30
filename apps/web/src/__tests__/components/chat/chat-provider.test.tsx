@@ -165,9 +165,11 @@ describe("ChatProvider", () => {
         createMockSSEStream([
           {
             type: "tool_call",
-            id: "call_abc",
-            name: "list_trips",
-            arguments: "{}",
+            tool_call: {
+              id: "call_abc",
+              name: "list_trips",
+              arguments: "{}",
+            },
           },
         ])
       );
@@ -197,14 +199,20 @@ describe("ChatProvider", () => {
         createMockSSEStream([
           {
             type: "tool_call",
-            id: "call_abc",
-            name: "list_trips",
-            arguments: "{}",
+            tool_call: {
+              id: "call_abc",
+              name: "list_trips",
+              arguments: "{}",
+            },
           },
           {
             type: "tool_result",
-            name: "list_trips",
-            result: { trips: [] },
+            tool_result: {
+              tool_call_id: "call_abc",
+              name: "list_trips",
+              result: { trips: [] },
+              success: true,
+            },
           },
         ])
       );

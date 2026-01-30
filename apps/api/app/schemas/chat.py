@@ -23,6 +23,7 @@ class ChatChunkType(str, Enum):
     TOOL_CALL = "tool_call"  # LLM is calling a tool
     TOOL_RESULT = "tool_result"  # Result from tool execution
     ERROR = "error"  # Error occurred during processing
+    RATE_LIMITED = "rate_limited"  # Rate limited, retrying
     DONE = "done"  # Stream complete
 
 
@@ -96,6 +97,14 @@ class ToolResultChunk(BaseModel):
     success: bool
 
 
+class RateLimitChunk(BaseModel):
+    """Represents rate limit status during retries."""
+
+    attempt: int  # Current attempt number (1-indexed)
+    max_attempts: int  # Maximum number of attempts
+    retry_after: float  # Seconds until next retry
+
+
 class ChatChunk(BaseModel):
     """Individual chunk in the SSE stream.
 
@@ -105,6 +114,7 @@ class ChatChunk(BaseModel):
     - tool_call: ToolCallChunk
     - tool_result: ToolResultChunk
     - error: error message string
+    - rate_limited: RateLimitChunk with retry info
     - done: no additional data
     """
 
@@ -112,6 +122,7 @@ class ChatChunk(BaseModel):
     content: str | None = None
     tool_call: ToolCallChunk | None = None
     tool_result: ToolResultChunk | None = None
+    rate_limit: RateLimitChunk | None = None
     error: str | None = None
     thread_id: uuid.UUID | None = None  # Included on first and last chunk
 
@@ -151,6 +162,20 @@ class ChatChunk(BaseModel):
     def error_chunk(cls, error_message: str) -> ChatChunk:
         """Create an error chunk."""
         return cls(type=ChatChunkType.ERROR, error=error_message)
+
+    @classmethod
+    def rate_limited_chunk(
+        cls, attempt: int, max_attempts: int, retry_after: float
+    ) -> ChatChunk:
+        """Create a rate limit chunk to inform the user about retry status."""
+        return cls(
+            type=ChatChunkType.RATE_LIMITED,
+            rate_limit=RateLimitChunk(
+                attempt=attempt,
+                max_attempts=max_attempts,
+                retry_after=retry_after,
+            ),
+        )
 
     @classmethod
     def done_chunk(cls, thread_id: uuid.UUID | None = None) -> ChatChunk:

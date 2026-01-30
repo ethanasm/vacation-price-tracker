@@ -55,15 +55,18 @@ class ToolHandler(Protocol):
     """Protocol for MCP tool handlers.
 
     Tool handlers must implement an async execute method that takes
-    arguments and user_id, returning a ToolResult.
+    arguments, user_id, and db session, returning a ToolResult.
     """
 
-    async def execute(self, args: dict[str, Any], user_id: str) -> ToolResult:
+    async def execute(
+        self, args: dict[str, Any], user_id: str, db: Any
+    ) -> ToolResult:
         """Execute the tool with given arguments.
 
         Args:
             args: Tool arguments (pre-validated).
             user_id: UUID of the authenticated user.
+            db: Database session for queries.
 
         Returns:
             ToolResult indicating success/failure and data.
@@ -72,7 +75,7 @@ class ToolHandler(Protocol):
 
 
 # Type alias for simple function-based handlers
-ToolFunction = Callable[[dict[str, Any], str], Awaitable[ToolResult]]
+ToolFunction = Callable[[dict[str, Any], str, Any], Awaitable[ToolResult]]
 
 
 def _check_type_match(value: Any, expected_type: str) -> bool:
@@ -281,6 +284,7 @@ class MCPRouter:
         tool_name: str,
         arguments: dict[str, Any],
         user_id: str,
+        db: Any = None,
         *,
         skip_validation: bool = False,
         skip_sanitization: bool = False,
@@ -300,6 +304,7 @@ class MCPRouter:
             tool_name: Name of the tool to execute.
             arguments: Tool arguments (will be validated and sanitized).
             user_id: UUID of the authenticated user.
+            db: Database session for tool execution.
             skip_validation: If True, skip argument validation (for testing).
             skip_sanitization: If True, skip input sanitization (for testing).
 
@@ -379,10 +384,10 @@ class MCPRouter:
         # Execute the handler
         try:
             if isinstance(handler, ToolHandler):
-                result = await handler.execute(sanitized_arguments, user_id)
+                result = await handler.execute(sanitized_arguments, user_id, db)
             else:
                 # Function-based handler
-                result = await handler(sanitized_arguments, user_id)
+                result = await handler(sanitized_arguments, user_id, db)
 
             logger.info(
                 "Tool %s executed successfully: success=%s",
@@ -426,6 +431,7 @@ class MCPRouter:
         tool_name: str,
         arguments_json: str,
         user_id: str,
+        db: Any = None,
     ) -> ToolResult:
         """Execute a tool with JSON-encoded arguments.
 
@@ -436,6 +442,7 @@ class MCPRouter:
             tool_name: Name of the tool to execute.
             arguments_json: JSON string of tool arguments.
             user_id: UUID of the authenticated user.
+            db: Database session for tool execution.
 
         Returns:
             ToolResult with success status and data/error.
@@ -449,17 +456,45 @@ class MCPRouter:
                 error=f"Invalid JSON in tool arguments: {e!s}",
             )
 
+        # Handle null/None arguments (common for tools with no required params)
+        if arguments is None:
+            arguments = {}
+
         if not isinstance(arguments, dict):
             return ToolResult(
                 success=False,
                 error="Tool arguments must be a JSON object",
             )
 
-        return await self.execute(tool_name, arguments, user_id)
+        return await self.execute(tool_name, arguments, user_id, db)
 
 
 # Singleton router instance for the application
 _router: MCPRouter | None = None
+
+
+def _register_tools(router: MCPRouter) -> None:
+    """Register all available MCP tools with the router."""
+    from app.tools import (
+        CreateTripTool,
+        GetTripDetailsTool,
+        ListTripsTool,
+        PauseTripTool,
+        ResumeTripTool,
+        SetNotificationTool,
+        TriggerRefreshTool,
+    )
+
+    # Register tool instances
+    router.register("create_trip", CreateTripTool())
+    router.register("list_trips", ListTripsTool())
+    router.register("get_trip_details", GetTripDetailsTool())
+    router.register("set_notification", SetNotificationTool())
+    router.register("pause_trip", PauseTripTool())
+    router.register("resume_trip", ResumeTripTool())
+    router.register("trigger_refresh", TriggerRefreshTool())
+
+    logger.info("Registered %d MCP tools", len(router.get_registered_tools()))
 
 
 def get_mcp_router() -> MCPRouter:
@@ -471,6 +506,7 @@ def get_mcp_router() -> MCPRouter:
     global _router
     if _router is None:
         _router = MCPRouter()
+        _register_tools(_router)
     return _router
 
 

@@ -133,7 +133,10 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      expect(result.current.threadId).toMatch(/^thread_/);
+      // Thread ID should be a valid UUID v4
+      expect(result.current.threadId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      );
     });
 
     it("sends correct request body", async () => {
@@ -155,6 +158,7 @@ describe("useChat", () => {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           message: "Test message",
           thread_id: "existing-thread",
@@ -187,9 +191,11 @@ describe("useChat", () => {
       const mockStream = createMockSSEStream([
         {
           type: "tool_call",
-          id: "call_123",
-          name: "list_trips",
-          arguments: "{}",
+          tool_call: {
+            id: "call_123",
+            name: "list_trips",
+            arguments: "{}",
+          },
         },
       ]);
       mockFetch.mockResolvedValueOnce(mockStream);
@@ -219,14 +225,20 @@ describe("useChat", () => {
       const mockStream = createMockSSEStream([
         {
           type: "tool_call",
-          id: "call_123",
-          name: "list_trips",
-          arguments: "{}",
+          tool_call: {
+            id: "call_123",
+            name: "list_trips",
+            arguments: "{}",
+          },
         },
         {
           type: "tool_result",
-          name: "list_trips",
-          result: { trips: [] },
+          tool_result: {
+            tool_call_id: "call_123",
+            name: "list_trips",
+            result: { trips: [] },
+            success: true,
+          },
         },
       ]);
       mockFetch.mockResolvedValueOnce(mockStream);
@@ -242,13 +254,36 @@ describe("useChat", () => {
         toolCallId: "call_123",
         name: "list_trips",
         result: { trips: [] },
-        isError: undefined,
+        isError: false,
       });
 
       const toolMessage = result.current.messages.find(
         (m) => m.role === "tool"
       );
       expect(toolMessage?.toolResult).toBeDefined();
+    });
+
+    it("handles rate_limited chunks by showing status message", async () => {
+      const mockStream = createMockSSEStream([
+        {
+          type: "rate_limited",
+          rate_limit: { attempt: 1, max_attempts: 4, retry_after: 60 },
+        },
+        { type: "content", content: "Finally worked!" },
+      ]);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      // After rate limit, the final content should be shown
+      const assistantMessage = result.current.messages.find(
+        (m) => m.role === "assistant"
+      );
+      expect(assistantMessage?.content).toBe("Finally worked!");
     });
 
     it("handles error chunks", async () => {

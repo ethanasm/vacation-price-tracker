@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Moon, Sun, Monitor } from "lucide-react";
 import { Button } from "./button";
 import {
@@ -12,6 +13,28 @@ import { useTheme } from "../../context/ThemeContext";
 
 export function ThemeToggle() {
   const { mode, setMode } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  // Prevent hydration mismatch by only rendering after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Render a placeholder with the same dimensions during SSR
+  if (!mounted) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="relative"
+        title="Toggle theme"
+        disabled
+      >
+        <Sun className="h-4 w-4" />
+        <span className="sr-only">Toggle theme</span>
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu>

@@ -152,6 +152,7 @@ class TestStreamingChunkAssembly:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -180,6 +181,7 @@ class TestStreamingChunkAssembly:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -231,6 +233,7 @@ class TestToolCallStreamingChunks:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -272,6 +275,7 @@ class TestToolCallStreamingChunks:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -320,6 +324,7 @@ class TestErrorChunkHandling:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -356,6 +361,7 @@ class TestErrorChunkHandling:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):

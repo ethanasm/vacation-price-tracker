@@ -78,7 +78,7 @@ export function ChatInput({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        "flex items-end gap-2 p-4 border-t border-border/60 dark:border-white/10 bg-background/80 dark:bg-[rgb(18,18,28)]/80 backdrop-blur-sm",
+        "flex items-center gap-2 p-4 border-t border-border/60 dark:border-white/10 bg-background/80 dark:bg-[rgb(18,18,28)]/80 backdrop-blur-sm",
         className
       )}
     >

@@ -209,9 +209,11 @@ describe("ChatPanel", () => {
         createMockSSEStream([
           {
             type: "tool_call",
-            id: "call-1",
-            name: "list_trips",
-            arguments: "{}",
+            tool_call: {
+              id: "call-1",
+              name: "list_trips",
+              arguments: "{}",
+            },
           },
           { type: "content", content: "Here are your trips." },
         ])

@@ -12,6 +12,7 @@ from app.clients.groq import (
     GroqClient,
     GroqRateLimitError,
     GroqRequestError,
+    GroqToolCallError,
     Message,
     TokenCounter,
     Tool,
@@ -19,7 +20,7 @@ from app.clients.groq import (
     ToolCallFunction,
 )
 from app.core import config as config_module
-from groq import RateLimitError
+from groq import APIError, RateLimitError
 
 # --- Message Tests ---
 
@@ -479,8 +480,11 @@ async def test_chat_rate_limit_retry():
             chunks.append(chunk)
 
     assert call_count == 2
-    assert len(chunks) == 1
-    assert chunks[0].content == "Success"
+    # One rate limit status chunk, then the content chunk
+    assert len(chunks) == 2
+    assert chunks[0].rate_limit_status is not None
+    assert chunks[0].rate_limit_status.attempt == 1
+    assert chunks[1].content == "Success"
 
 
 @pytest.mark.asyncio
@@ -652,3 +656,158 @@ def test_groq_rate_limit_error_without_retry_after():
     """Test GroqRateLimitError without retry_after."""
     error = GroqRateLimitError("Rate limited")
     assert error.retry_after is None
+    assert error.is_daily_limit is False
+
+
+def test_groq_rate_limit_error_daily_limit():
+    """Test GroqRateLimitError with daily limit flag."""
+    error = GroqRateLimitError("Daily limit reached", retry_after=3600.0, is_daily_limit=True)
+    assert error.is_daily_limit is True
+    assert error.retry_after == 3600.0
+
+
+def test_is_daily_token_limit_detects_tpd():
+    """Test _is_daily_token_limit detects TPD errors."""
+    client = GroqClient(api_key="test-key")
+
+    # Mock error with daily token limit message
+    mock_error = MagicMock()
+    mock_error.body = {
+        "error": {
+            "message": "Rate limit reached for model `llama-3.3-70b-versatile` on tokens per day (TPD): Limit 100000"
+        }
+    }
+    assert client._is_daily_token_limit(mock_error) is True
+
+
+def test_is_daily_token_limit_ignores_tpm():
+    """Test _is_daily_token_limit ignores TPM (per minute) errors."""
+    client = GroqClient(api_key="test-key")
+
+    # Mock error with per-minute token limit
+    mock_error = MagicMock()
+    mock_error.body = {
+        "error": {"message": "Rate limit reached on tokens per minute (TPM): Limit 18000"}
+    }
+    assert client._is_daily_token_limit(mock_error) is False
+
+
+def test_is_daily_token_limit_handles_missing_body():
+    """Test _is_daily_token_limit handles errors without body."""
+    client = GroqClient(api_key="test-key")
+
+    mock_error = MagicMock()
+    mock_error.body = None
+    assert client._is_daily_token_limit(mock_error) is False
+
+
+@pytest.mark.asyncio
+async def test_chat_daily_limit_no_retry():
+    """Test chat method immediately raises for daily token limits without retrying."""
+    client = GroqClient(api_key="test-key", model="test-model", max_retries=3)
+
+    call_count = 0
+
+    async def mock_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        error = RateLimitError(
+            message="Rate limit exceeded",
+            response=MagicMock(headers={"retry-after": "3600"}),
+            body=None,
+        )
+        # Simulate daily limit by adding body attribute
+        error.body = {
+            "error": {
+                "message": "Rate limit reached on tokens per day (TPD): Limit 100000, Used 99000"
+            }
+        }
+        raise error
+
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = mock_create
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):
+        messages = [Message(role="user", content="Hello")]
+        with pytest.raises(GroqRateLimitError) as exc_info:
+            async for _ in client.chat(messages, stream=True):
+                pass
+
+    # Should only have called once (no retries for daily limit)
+    assert call_count == 1
+    assert exc_info.value.is_daily_limit is True
+    assert "Daily token limit" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_chat_tool_call_error_retries_once():
+    """Test chat method retries once on tool call generation failure."""
+    client = GroqClient(api_key="test-key", model="test-model", max_retries=3)
+
+    call_count = 0
+
+    async def mock_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        # Simulate API error for failed tool call generation
+        raise APIError(
+            message="Failed to call a function. Please adjust your prompt. See 'failed_generation' for more details.",
+            request=MagicMock(),
+            body=None,
+        )
+
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = mock_create
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):
+        messages = [Message(role="user", content="Hello")]
+        with pytest.raises(GroqToolCallError) as exc_info:
+            async for _ in client.chat(messages, stream=True):
+                pass
+
+    # Should have retried once (2 total attempts)
+    assert call_count == 2
+    assert "failed to generate a valid response" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_chat_tool_call_error_succeeds_on_retry():
+    """Test chat method can succeed on retry after tool call failure."""
+    client = GroqClient(api_key="test-key", model="test-model", max_retries=3)
+
+    call_count = 0
+
+    async def mock_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First call fails
+            raise APIError(
+                message="Failed to call a function.",
+                request=MagicMock(),
+                body=None,
+            )
+        # Second call succeeds
+
+        async def mock_stream():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = "Success!"
+            chunk.choices[0].delta.tool_calls = None
+            chunk.choices[0].finish_reason = "stop"
+            chunk.usage = None
+            yield chunk
+
+        return mock_stream()
+
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = mock_create
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):
+        messages = [Message(role="user", content="Hello")]
+        chunks = [c async for c in client.chat(messages, stream=True)]
+
+    # Should have called twice (first failed, second succeeded)
+    assert call_count == 2
+    assert len(chunks) > 0
+    assert chunks[0].content == "Success!"

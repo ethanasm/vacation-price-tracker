@@ -36,7 +36,7 @@ class MockToolHandler:
         self.should_raise = should_raise
         self.last_call: tuple[dict[str, Any], str] | None = None
 
-    async def execute(self, args: dict[str, Any], user_id: str) -> ToolResult:
+    async def execute(self, args: dict[str, Any], user_id: str, db: Any = None) -> ToolResult:
         self.last_call = (args, user_id)
         if self.should_raise:
             raise RuntimeError("Handler failed")
@@ -71,7 +71,7 @@ class TestMCPRouterRegistration:
     def test_register_async_function(self, router):
         """Test registering an async function as handler."""
 
-        async def my_handler(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def my_handler(args: dict[str, Any], user_id: str, db: Any = None) -> ToolResult:
             return ToolResult(success=True, data=args)
 
         router.register("func_tool", my_handler)
@@ -141,7 +141,7 @@ class TestMCPRouterExecution:
         """Test executing a function-based handler."""
         call_log = []
 
-        async def my_func(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def my_func(args: dict[str, Any], user_id: str, db: Any = None) -> ToolResult:
             call_log.append((args, user_id))
             return ToolResult(success=True, data={"from_func": True})
 
@@ -293,7 +293,7 @@ class TestMCPRouterUserContext:
         """Test that user_id is correctly passed to handler."""
         received_user_ids = []
 
-        async def capture_user_id(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def capture_user_id(args: dict[str, Any], user_id: str, db: Any = None) -> ToolResult:
             received_user_ids.append(user_id)
             return ToolResult(success=True)
 
@@ -308,7 +308,7 @@ class TestMCPRouterUserContext:
         """Test that different users get isolated contexts."""
         calls_by_user = {}
 
-        async def track_user(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def track_user(args: dict[str, Any], user_id: str, db: Any = None) -> ToolResult:
             calls_by_user[user_id] = calls_by_user.get(user_id, 0) + 1
             return ToolResult(success=True)
 
@@ -395,11 +395,12 @@ class TestMCPRouterWithRealTools:
         db, user = db_with_user
 
         # Create a handler that queries the database
-        async def db_handler(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def db_handler(args: dict[str, Any], user_id: str, db_session: Any = None) -> ToolResult:
             from sqlalchemy import select
 
-            # Query trips for the user
-            result = await db.execute(select(Trip).where(Trip.user_id == uuid.UUID(user_id)))
+            # Query trips for the user (use passed db or fallback to closure)
+            session = db_session or db
+            result = await session.execute(select(Trip).where(Trip.user_id == uuid.UUID(user_id)))
             trips = list(result.scalars().all())
             return ToolResult(
                 success=True,
@@ -426,6 +427,7 @@ class TestMCPRouterWithRealTools:
             tool_name="list_trips",
             arguments={},
             user_id=str(user.id),
+            db=db,  # Pass db session
             skip_validation=True,
             skip_sanitization=True,
         )
@@ -470,10 +472,11 @@ class TestMCPRouterWithRealTools:
         await db.flush()
 
         # Handler that respects user_id
-        async def db_handler(args: dict[str, Any], user_id: str) -> ToolResult:
+        async def db_handler(args: dict[str, Any], user_id: str, db_session: Any = None) -> ToolResult:
             from sqlalchemy import select
 
-            result = await db.execute(select(Trip).where(Trip.user_id == uuid.UUID(user_id)))
+            session = db_session or db
+            result = await session.execute(select(Trip).where(Trip.user_id == uuid.UUID(user_id)))
             trips = list(result.scalars().all())
             return ToolResult(
                 success=True,
@@ -483,11 +486,11 @@ class TestMCPRouterWithRealTools:
         router.register("list_trips", db_handler)
 
         # User1 should only see their trip
-        result1 = await router.execute("list_trips", {}, str(user1.id), skip_validation=True, skip_sanitization=True)
+        result1 = await router.execute("list_trips", {}, str(user1.id), db=db, skip_validation=True, skip_sanitization=True)
         assert len(result1.data["trips"]) == 1
         assert result1.data["trips"][0]["name"] == "User1 Trip"
 
         # User2 should only see their trip
-        result2 = await router.execute("list_trips", {}, str(user2.id), skip_validation=True, skip_sanitization=True)
+        result2 = await router.execute("list_trips", {}, str(user2.id), db=db, skip_validation=True, skip_sanitization=True)
         assert len(result2.data["trips"]) == 1
         assert result2.data["trips"][0]["name"] == "User2 Trip"

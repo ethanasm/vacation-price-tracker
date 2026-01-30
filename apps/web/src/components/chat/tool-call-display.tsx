@@ -36,6 +36,8 @@ export function ToolCallDisplay({
 
   const hasResult = result !== undefined;
   const isError = result?.isError === true;
+  const hasArguments = toolCall.arguments && Object.keys(toolCall.arguments).length > 0;
+  const hasExpandableContent = hasArguments || hasResult;
 
   return (
     <div
@@ -44,20 +46,32 @@ export function ToolCallDisplay({
         className
       )}
     >
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 dark:hover:bg-white/5 transition-colors"
-        aria-expanded={isExpanded}
-        aria-controls={`tool-details-${toolCall.id}`}
+      <div
+        className={cn(
+          "w-full flex items-center gap-2 px-3 py-2 text-left",
+          hasExpandableContent && "hover:bg-muted/50 dark:hover:bg-white/5 transition-colors cursor-pointer"
+        )}
+        onClick={hasExpandableContent ? () => setIsExpanded(!isExpanded) : undefined}
+        onKeyDown={hasExpandableContent ? (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        } : undefined}
+        role={hasExpandableContent ? "button" : undefined}
+        tabIndex={hasExpandableContent ? 0 : undefined}
+        aria-expanded={hasExpandableContent ? isExpanded : undefined}
+        aria-controls={hasExpandableContent ? `tool-details-${toolCall.id}` : undefined}
       >
-        <span className="flex-shrink-0 text-muted-foreground">
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          )}
-        </span>
+        {hasExpandableContent && (
+          <span className="flex-shrink-0 text-muted-foreground">
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            )}
+          </span>
+        )}
 
         <Wrench className="h-4 w-4 text-primary flex-shrink-0" aria-hidden="true" />
 
@@ -85,21 +99,23 @@ export function ToolCallDisplay({
             />
           )}
         </span>
-      </button>
+      </div>
 
-      {isExpanded && (
+      {isExpanded && hasExpandableContent && (
         <div
           id={`tool-details-${toolCall.id}`}
           className="px-3 pb-3 space-y-3 border-t border-border/40 dark:border-white/10"
         >
-          <div className="pt-3">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-              Arguments
-            </h4>
-            <pre className="text-xs bg-background dark:bg-black/20 rounded-md p-2 overflow-x-auto">
-              <code>{JSON.stringify(toolCall.arguments, null, 2)}</code>
-            </pre>
-          </div>
+          {hasArguments && (
+            <div className="pt-3">
+              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Arguments
+              </h4>
+              <pre className="text-xs bg-background dark:bg-black/20 rounded-md p-2 overflow-x-auto">
+                <code>{JSON.stringify(toolCall.arguments, null, 2)}</code>
+              </pre>
+            </div>
+          )}
 
           {hasResult && (
             <div>

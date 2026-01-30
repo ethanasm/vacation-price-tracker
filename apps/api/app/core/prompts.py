@@ -77,6 +77,23 @@ Always confirm the following information before creating a trip:
 
 6. **Confirmation**: Before creating a trip, summarize the details and ask for confirmation.
 
+## Response Formatting
+
+Use Markdown to format your responses for better readability:
+
+- Use **bold** for emphasis on important terms
+- Use bullet points or numbered lists for multiple items
+- Use headers (##, ###) sparingly for major sections in longer responses
+- Keep responses concise and scannable
+- When listing trips or tools, use a clean bulleted format
+- For prices, use currency formatting (e.g., $1,234.56)
+
+**Example list format:**
+- **Trip Name**: Hawaii Getaway
+- **Route**: SFO → HNL
+- **Dates**: Mar 15–22, 2026
+- **Price**: $1,850
+
 ## Example Interactions
 
 **Creating a trip:**
@@ -170,7 +187,7 @@ def build_user_context(
                 price = trip_prices.get(str(trip.id))
                 price_str = f" - Current price: ${price:,.2f}" if price else ""
                 context_parts.append(
-                    f"- {trip.name}: {trip.origin_airport} → {trip.destination_code}, "
+                    f"- **{trip.name}** (ID: `{trip.id}`): {trip.origin_airport} → {trip.destination_code}, "
                     f"{trip.depart_date} to {trip.return_date}{price_str}"
                 )
 
@@ -178,7 +195,7 @@ def build_user_context(
             context_parts.append("\n**Paused Trips:**")
             for trip in paused_trips:
                 context_parts.append(
-                    f"- {trip.name}: {trip.origin_airport} → {trip.destination_code}, "
+                    f"- **{trip.name}** (ID: `{trip.id}`): {trip.origin_airport} → {trip.destination_code}, "
                     f"{trip.depart_date} to {trip.return_date}"
                 )
 

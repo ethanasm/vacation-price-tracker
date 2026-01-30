@@ -169,19 +169,39 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
 
+  // Store callbacks in refs to avoid recreating connect() on every render
+  const callbacksRef = useRef({
+    onConnected,
+    onPriceUpdate,
+    onHeartbeat,
+    onError,
+    onConnectionStateChange,
+  });
+
+  // Keep refs up to date
+  useEffect(() => {
+    callbacksRef.current = {
+      onConnected,
+      onPriceUpdate,
+      onHeartbeat,
+      onError,
+      onConnectionStateChange,
+    };
+  });
+
   const updateConnectionState = useCallback((state: SSEConnectionState) => {
     if (isMountedRef.current) {
       setConnectionState(state);
-      onConnectionStateChange?.(state);
+      callbacksRef.current.onConnectionStateChange?.(state);
     }
-  }, [onConnectionStateChange]);
+  }, []);
 
   const handleError = useCallback((err: Error) => {
     if (isMountedRef.current) {
       setError(err);
-      onError?.(err);
+      callbacksRef.current.onError?.(err);
     }
-  }, [onError]);
+  }, []);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -234,7 +254,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
             }
             return [...prev, data];
           });
-          onPriceUpdate?.(data);
+          callbacksRef.current.onPriceUpdate?.(data);
         }
       } catch {
         // Ignore parse errors
@@ -246,7 +266,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       updateConnectionState("connected");
       try {
         const data = JSON.parse(event.data) as ConnectedEvent;
-        onConnected?.(data);
+        callbacksRef.current.onConnected?.(data);
       } catch {
         // Ignore parse errors
       }
@@ -267,7 +287,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
           }
           return [...prev, data];
         });
-        onPriceUpdate?.(data);
+        callbacksRef.current.onPriceUpdate?.(data);
       } catch {
         // Ignore parse errors
       }
@@ -276,7 +296,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     eventSource.addEventListener("heartbeat", (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as HeartbeatEvent;
-        onHeartbeat?.(data);
+        callbacksRef.current.onHeartbeat?.(data);
       } catch {
         // Ignore parse errors
       }
@@ -321,16 +341,14 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     reconnectDelay,
     updateConnectionState,
     handleError,
-    onConnected,
-    onPriceUpdate,
-    onHeartbeat,
   ]);
 
   const clearUpdates = useCallback(() => {
     setPriceUpdates([]);
   }, []);
 
-  // Auto-connect on mount
+  // Auto-connect on mount (only runs once)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Intentionally run only on mount to prevent reconnect loops
   useEffect(() => {
     isMountedRef.current = true;
 
@@ -342,7 +360,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       isMountedRef.current = false;
       disconnect();
     };
-  }, [autoConnect, connect, disconnect]);
+  }, []);
 
   return {
     connectionState,

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 from app.clients.groq import (
     GroqClient,
     GroqClientError,
+    GroqRateLimitError,
+    GroqToolCallError,
     Tool,
     ToolCall,
     groq_client,
@@ -52,6 +54,35 @@ class ChatServiceError(Exception):
 
 class ToolLoopExceededError(ChatServiceError):
     """Raised when tool call loop exceeds maximum rounds."""
+
+
+def _get_rate_limit_error_message(error: GroqRateLimitError) -> str:
+    """Get user-friendly error message for rate limit errors."""
+    if error.is_daily_limit:
+        return (
+            "You've reached the daily AI usage limit. Please try again tomorrow, "
+            "or consider upgrading to a higher tier at console.groq.com."
+        )
+    return "The AI service is currently busy. Please wait a moment and try again."
+
+
+def _get_error_chunk(error: GroqClientError) -> ChatChunk:
+    """Convert a Groq error to an appropriate error chunk."""
+    if isinstance(error, GroqRateLimitError):
+        return ChatChunk.error_chunk(_get_rate_limit_error_message(error))
+    if isinstance(error, GroqToolCallError):
+        return ChatChunk.error_chunk(str(error))
+    return ChatChunk.error_chunk(f"LLM service error: {error}")
+
+
+def _log_groq_error(error: GroqClientError) -> None:
+    """Log Groq error with appropriate level."""
+    if isinstance(error, GroqRateLimitError):
+        logger.warning("Rate limit exceeded: %s (daily_limit=%s)", error, error.is_daily_limit)
+    elif isinstance(error, GroqToolCallError):
+        logger.warning("Tool call generation failed: %s", error)
+    else:
+        logger.exception("Groq client error during chat processing")
 
 
 def _convert_tools_to_groq_format() -> list[Tool]:
@@ -98,6 +129,7 @@ def _tool_calls_to_dict(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
 async def process_chat_with_tools(
     messages: list[GroqMessage],
     user_id: str,
+    db: AsyncSession,
     *,
     client: GroqClient | None = None,
     router: MCPRouter | None = None,
@@ -114,6 +146,7 @@ async def process_chat_with_tools(
     Args:
         messages: List of conversation messages in Groq format.
         user_id: UUID of the authenticated user for tool authorization.
+        db: Database session for tool execution.
         client: Optional Groq client (uses singleton if not provided).
         router: Optional MCP router (uses singleton if not provided).
 
@@ -140,6 +173,16 @@ async def process_chat_with_tools(
             accumulated_tool_calls: list[ToolCall] = []
 
             async for chunk in client.chat(messages=messages, tools=tools, stream=True):
+                # Handle rate limit status (notify user during retry wait)
+                if chunk.rate_limit_status:
+                    status = chunk.rate_limit_status
+                    yield ChatChunk.rate_limited_chunk(
+                        attempt=status.attempt,
+                        max_attempts=status.max_attempts,
+                        retry_after=status.retry_after,
+                    )
+                    continue
+
                 # Stream content as it arrives
                 if chunk.content:
                     full_content += chunk.content
@@ -187,6 +230,7 @@ async def process_chat_with_tools(
                     tool_name,
                     arguments_json,
                     user_id,
+                    db,
                 )
 
                 # Notify about result
@@ -211,8 +255,8 @@ async def process_chat_with_tools(
             # Continue loop to get LLM response after tool execution
 
         except GroqClientError as e:
-            logger.exception("Groq client error during chat processing")
-            yield ChatChunk.error_chunk(f"LLM service error: {e}")
+            _log_groq_error(e)
+            yield _get_error_chunk(e)
             return
 
     # If we get here, we exceeded max rounds
@@ -319,6 +363,7 @@ class ChatService:
             async for chunk in process_chat_with_tools(
                 messages=groq_messages,
                 user_id=str(user.id),
+                db=db,
                 client=self._groq_client,
                 router=self._mcp_router,
             ):

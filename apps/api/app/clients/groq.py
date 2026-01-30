@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import tiktoken
-from groq import AsyncGroq, RateLimitError
+from groq import APIError, AsyncGroq, RateLimitError
 
 from app.core.config import settings
 
@@ -39,13 +39,29 @@ class GroqAuthError(GroqClientError):
 class GroqRateLimitError(GroqClientError):
     """Raised when rate limited by Groq API."""
 
-    def __init__(self, message: str, retry_after: float | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        retry_after: float | None = None,
+        attempts_made: int = 0,
+        is_daily_limit: bool = False,
+    ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+        self.attempts_made = attempts_made
+        self.is_daily_limit = is_daily_limit
 
 
 class GroqRequestError(GroqClientError):
     """Raised when a Groq API request fails."""
+
+
+class GroqToolCallError(GroqClientError):
+    """Raised when the LLM fails to generate a valid tool call.
+
+    This happens when the model produces malformed JSON for function arguments.
+    Retrying may help, but if it persists, simplifying the request might be needed.
+    """
 
 
 @dataclass
@@ -88,6 +104,15 @@ class ToolCallFunction:
 
 
 @dataclass
+class RateLimitStatus:
+    """Status update during rate limit retry."""
+
+    attempt: int  # Current attempt (1-indexed)
+    max_attempts: int  # Total allowed attempts
+    retry_after: float  # Seconds until next retry
+
+
+@dataclass
 class ChatChunk:
     """A streaming chat response chunk."""
 
@@ -95,6 +120,7 @@ class ChatChunk:
     tool_calls: list[ToolCall] | None = None
     finish_reason: str | None = None
     usage: dict[str, int] | None = None
+    rate_limit_status: RateLimitStatus | None = None  # Set when rate limited
 
 
 @dataclass
@@ -277,22 +303,92 @@ class GroqClient:
         except ValueError:
             return None
 
-    async def _handle_rate_limit(
+    def _is_daily_token_limit(self, error: RateLimitError) -> bool:
+        """Check if the rate limit is a daily token limit (TPD) vs per-minute (TPM).
+
+        Daily limits require waiting until the quota resets (up to 24 hours),
+        so retrying immediately is pointless.
+        """
+        try:
+            # Check the error message for "tokens per day" or "TPD"
+            if hasattr(error, "body") and error.body:
+                error_body = error.body
+                if isinstance(error_body, dict):
+                    message = error_body.get("error", {}).get("message", "")
+                    if "tokens per day" in message.lower() or "(tpd)" in message.lower():
+                        return True
+        except (AttributeError, TypeError):
+            pass
+        return False
+
+    def _handle_rate_limit_sync(
         self, error: RateLimitError, attempt: int
-    ) -> float | None:
-        """Handle rate limit error, returning retry_after if max retries exceeded."""
+    ) -> tuple[float | None, float, bool]:
+        """Handle rate limit error, returning (retry_after if exceeded, delay, is_daily).
+
+        Returns:
+            Tuple of (retry_after if max retries exceeded else None, calculated delay, is_daily_limit)
+        """
         retry_after = self._extract_retry_after(error)
-        if attempt >= self._max_retries:
-            return retry_after
+        is_daily = self._is_daily_token_limit(error)
         delay = self._calculate_delay(attempt, retry_after)
+
+        # For daily limits, don't bother retrying - the wait could be hours
+        if is_daily:
+            logger.warning(
+                "Groq daily token limit reached. Retry after: %s seconds. Not retrying.",
+                retry_after,
+            )
+            return retry_after, delay, True
+
+        if attempt >= self._max_retries:
+            return retry_after, delay, False
         logger.warning(
             "Rate limited by Groq API. Attempt %d/%d. Retrying in %.2f seconds.",
             attempt + 1,
             self._max_retries + 1,
             delay,
         )
-        await asyncio.sleep(delay)
-        return None
+        return None, delay, False
+
+    @staticmethod
+    def _is_tool_call_error(error: APIError) -> bool:
+        """Check if the API error is a tool call generation failure."""
+        error_msg = str(error)
+        return "Failed to call a function" in error_msg or "failed_generation" in error_msg
+
+    async def _handle_tool_call_error(self, error: APIError, attempt: int) -> int:
+        """Handle tool call generation error.
+
+        Returns:
+            New attempt number if should retry, -1 if retries exhausted.
+        """
+        if attempt < 1:
+            logger.warning(
+                "Tool call generation failed, retrying. Attempt %d/2. Error: %s",
+                attempt + 1,
+                str(error)[:100],
+            )
+            await asyncio.sleep(0.5)  # Brief pause before retry
+            return attempt + 1
+        return -1  # Signal that retries are exhausted
+
+    def _raise_rate_limit_error(
+        self, error: RateLimitError, retry_after: float | None, delay: float, is_daily: bool, attempt: int
+    ) -> None:
+        """Raise appropriate rate limit error based on context."""
+        if is_daily:
+            raise GroqRateLimitError(
+                "Daily token limit reached. Please try again later.",
+                retry_after=retry_after,
+                attempts_made=attempt + 1,
+                is_daily_limit=True,
+            ) from error
+        raise GroqRateLimitError(
+            f"Rate limited after {self._max_retries + 1} attempts",
+            retry_after=retry_after,
+            attempts_made=self._max_retries + 1,
+        ) from error
 
     async def chat(
         self,
@@ -314,6 +410,7 @@ class GroqClient:
 
         Yields:
             ChatChunk objects with content and/or tool calls.
+            Also yields ChatChunk with rate_limit_status when rate limited.
 
         Raises:
             GroqAuthError: If API key is not configured.
@@ -323,6 +420,7 @@ class GroqClient:
         client = self._get_client()
         kwargs = self._build_chat_kwargs(messages, tools, stream, temperature, max_tokens)
         attempt = 0
+        max_attempts = self._max_retries + 1
 
         while attempt <= self._max_retries:
             try:
@@ -330,13 +428,32 @@ class GroqClient:
                     yield chunk
                 return
             except RateLimitError as e:
-                retry_after = await self._handle_rate_limit(e, attempt)
-                if retry_after is not None:
-                    raise GroqRateLimitError(
-                        f"Rate limited after {self._max_retries + 1} attempts",
-                        retry_after=retry_after,
-                    ) from e
+                retry_after, delay, is_daily = self._handle_rate_limit_sync(e, attempt)
+                if is_daily or retry_after is not None:
+                    self._raise_rate_limit_error(e, retry_after, delay, is_daily, attempt)
+                # Yield rate limit status so caller can inform the user
+                yield ChatChunk(
+                    rate_limit_status=RateLimitStatus(
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
+                        retry_after=delay,
+                    )
+                )
+                await asyncio.sleep(delay)
                 attempt += 1
+            except APIError as e:
+                # Handle tool call generation failures (model produced invalid JSON)
+                if self._is_tool_call_error(e):
+                    attempt = await self._handle_tool_call_error(e, attempt)
+                    if attempt >= 0:
+                        continue  # Retry
+                    # Exhausted retries
+                    raise GroqToolCallError(
+                        "The AI failed to generate a valid response. Please try rephrasing your request."
+                    ) from e
+                # Re-raise other API errors
+                logger.exception("Groq API error: %s", e)
+                raise GroqRequestError(f"Groq API error: {e}") from e
             except GroqClientError:
                 raise
             except Exception as e:

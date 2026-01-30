@@ -103,6 +103,7 @@ class TestProcessChatWithToolsSingleTurn:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -157,6 +158,7 @@ class TestProcessChatWithToolsMultiTurn:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -180,7 +182,7 @@ class TestProcessChatWithToolsMultiTurn:
         assert "trips" in tool_result_chunks[0].tool_result.result
 
         # Verify tool was executed
-        mock_mcp_router.execute_from_json.assert_called_once_with("list_trips", "{}", "test-user-id")
+        mock_mcp_router.execute_from_json.assert_called_once_with("list_trips", "{}", "test-user-id", None)
 
     @pytest.mark.anyio
     async def test_multiple_tool_calls_in_one_turn(self, mock_groq_client, mock_mcp_router):
@@ -206,7 +208,7 @@ class TestProcessChatWithToolsMultiTurn:
 
         mock_groq_client.chat = stream_response
 
-        def mock_execute(tool_name: str, args_json: str, user_id: str):
+        def mock_execute(tool_name: str, args_json: str, user_id: str, db=None):
             if tool_name == "list_trips":
                 return ToolResult(success=True, data={"trips": []})
             else:
@@ -220,6 +222,7 @@ class TestProcessChatWithToolsMultiTurn:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -267,6 +270,7 @@ class TestProcessChatWithToolsMultiTurn:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -302,6 +306,7 @@ class TestProcessChatWithToolsLoopLimit:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):
@@ -463,6 +468,7 @@ class TestChatErrorHandling:
         async for chunk in process_chat_with_tools(
             messages=messages,
             user_id="test-user-id",
+            db=None,
             client=mock_groq_client,
             router=mock_mcp_router,
         ):

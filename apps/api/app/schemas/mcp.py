@@ -109,88 +109,36 @@ CREATE_TRIP_TOOL = _make_tool(
     name="create_trip",
     description=(
         "Create a new vacation price tracking trip. "
-        "This sets up monitoring for flights and hotels between the specified locations and dates."
+        "Sets up monitoring for flights and hotels. "
+        "Required: name, origin_airport, destination_code, depart_date, return_date. "
+        "Optional: adults (default 1). "
+        "Example: create_trip(name='Seattle Trip', origin_airport='SFO', destination_code='SEA', "
+        "depart_date='2026-03-06', return_date='2026-03-09', adults=2)"
     ),
     parameters={
         "name": {
             "type": "string",
-            "description": "Friendly name for the trip (e.g., 'Hawaii Spring 2026')",
+            "description": "Trip name, e.g. 'Seattle Trip'",
         },
         "origin_airport": {
             "type": "string",
-            "description": "Origin airport IATA code (e.g., 'SFO')",
-            "pattern": "^[A-Z]{3}$",
+            "description": "Origin IATA code, e.g. 'SFO'",
         },
         "destination_code": {
             "type": "string",
-            "description": "Destination airport IATA code (e.g., 'HNL')",
-            "pattern": "^[A-Z]{3}$",
+            "description": "Destination IATA code, e.g. 'SEA'",
         },
         "depart_date": {
             "type": "string",
-            "description": "Departure date in YYYY-MM-DD format",
-            "format": "date",
+            "description": "Departure date YYYY-MM-DD, e.g. '2026-03-06'",
         },
         "return_date": {
             "type": "string",
-            "description": "Return date in YYYY-MM-DD format",
-            "format": "date",
+            "description": "Return date YYYY-MM-DD, e.g. '2026-03-09'",
         },
         "adults": {
             "type": "integer",
-            "description": "Number of adult travelers (default: 1)",
-            "minimum": 1,
-            "maximum": 9,
-            "default": 1,
-        },
-        "is_round_trip": {
-            "type": "boolean",
-            "description": "Whether this is a round trip (default: true)",
-            "default": True,
-        },
-        "airlines": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Preferred airline IATA codes (e.g., ['UA', 'AA'])",
-        },
-        "cabin": {
-            "type": "string",
-            "description": "Preferred cabin class",
-            "enum": ["economy", "premium_economy", "business", "first"],
-            "default": "economy",
-        },
-        "stops_mode": {
-            "type": "string",
-            "description": "Flight stops preference",
-            "enum": ["nonstop", "1-stop", "any"],
-            "default": "any",
-        },
-        "hotel_rooms": {
-            "type": "integer",
-            "description": "Number of hotel rooms needed (default: 1)",
-            "minimum": 1,
-            "maximum": 9,
-            "default": 1,
-        },
-        "room_types": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Preferred room types (e.g., ['King', 'Suite'])",
-        },
-        "views": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Preferred room views (e.g., ['Ocean', 'City'])",
-        },
-        "notification_threshold": {
-            "type": "number",
-            "description": "Price threshold for alerts (total trip price)",
-        },
-        "threshold_type": {
-            "type": "string",
-            "description": "What price to compare against threshold",
-            "enum": ["trip_total", "flight_total", "hotel_total"],
-            "default": "trip_total",
+            "description": "Number of adults (default 1)",
         },
     },
     required=["name", "origin_airport", "destination_code", "depart_date", "return_date"],

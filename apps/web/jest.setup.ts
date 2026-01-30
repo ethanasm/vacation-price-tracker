@@ -2,6 +2,14 @@ import "@testing-library/jest-dom";
 import { TextEncoder, TextDecoder } from "node:util";
 import { webcrypto } from "node:crypto";
 
+// Mock react-markdown (ESM module that Jest can't transform)
+jest.mock("react-markdown", () => {
+  return {
+    __esModule: true,
+    default: ({ children }: { children: string }) => children,
+  };
+});
+
 global.TextEncoder = TextEncoder;
 
 // Mock EventSource for SSE tests
@@ -72,15 +80,14 @@ global.EventSource = MockEventSource as any;
 // biome-ignore lint/suspicious/noExplicitAny: Polyfill for TextDecoder
 global.TextDecoder = TextDecoder as any;
 
-// Only set up crypto on self if we're in a browser-like environment (jsdom)
-// In Node environment (for SSR tests), global.self doesn't exist
-if (typeof global.self !== "undefined") {
-  Object.defineProperty(global.self, "crypto", {
-    value: {
-      subtle: webcrypto.subtle,
-    },
-  });
-}
+// Polyfill crypto.randomUUID for jsdom environment
+Object.defineProperty(global, "crypto", {
+  value: {
+    subtle: webcrypto.subtle,
+    randomUUID: () => webcrypto.randomUUID(),
+    getRandomValues: (arr: Uint8Array) => webcrypto.getRandomValues(arr),
+  },
+});
 
 // Silence console.error output in tests (expected error paths are asserted in tests).
 beforeAll(() => {

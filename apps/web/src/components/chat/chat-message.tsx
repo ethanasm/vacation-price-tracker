@@ -1,6 +1,7 @@
 "use client";
 
 import { Bot, User } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { cn } from "../../lib/utils";
 import type { ChatMessage as ChatMessageType } from "../../lib/chat-types";
 import { ToolCallList } from "./tool-call-display";
@@ -78,9 +79,15 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
           )}
         >
           {message.content ? (
-            <p className="text-sm whitespace-pre-wrap break-words">
-              {message.content}
-            </p>
+            isUser ? (
+              <p className="text-sm whitespace-pre-wrap break-words">
+                {message.content}
+              </p>
+            ) : (
+              <div className="text-sm prose prose-sm dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 max-w-none break-words">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+            )
           ) : isAssistant && !message.toolCalls?.length ? (
             <span className="text-sm text-muted-foreground italic">
               Thinking...

@@ -802,10 +802,10 @@ Example clarifications:
 ## 8. Testing Checklist (Phase 2)
 
 ### Unit Tests
-- [ ] Tool schema validation
-- [ ] Tool execution with mocked dependencies
-- [ ] Message history building
-- [ ] System prompt generation
+- [X] Tool schema validation
+- [X] Tool execution with mocked dependencies
+- [X] Message history building
+- [X] System prompt generation
 
 ### Integration Tests
 - [X] Full tool call loop with mocked Groq
@@ -814,23 +814,23 @@ Example clarifications:
 - [X] Streaming response assembly
 
 ### Manual Testing
-- [ ] Create trip via chat conversation
-- [ ] List trips and get details
+- [X] Create trip via chat conversation
+- [X] List trips and get details
 - [ ] Set notification threshold
-- [ ] Pause and resume via chat
-- [ ] Trigger refresh via chat
-- [ ] Multi-turn conversation with context
+- [X] Pause and resume via chat
+- [X] Trigger refresh via chat
+- [X] Multi-turn conversation with context
 
 ---
 
 ## 9. Definition of Done
 
 Phase 2 is complete when:
-- [ ] Chat panel is integrated into dashboard
-- [ ] User can create trips via natural language
-- [ ] User can list and manage trips via chat
+- [X] Chat panel is integrated into dashboard
+- [X] User can create trips via natural language
+- [X] User can list and manage trips via chat
 - [ ] User can set notification thresholds via chat
-- [ ] Tool calls are executed correctly with authorization
+- [X] Tool calls are executed correctly with authorization
 - [ ] Streaming responses display in real-time
 - [ ] Conversation history is persisted
 - [ ] lastminute.com MCP server (hosted at mcp.lastminute.com) is callable for flight searches

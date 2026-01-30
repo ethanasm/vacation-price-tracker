@@ -37,25 +37,34 @@ export interface ChatThread {
 /**
  * SSE chunk types from the backend streaming endpoint
  */
-export type ChatChunkType = "content" | "tool_call" | "tool_result" | "error";
+export type ChatChunkType = "content" | "tool_call" | "tool_result" | "rate_limited" | "error";
 
 export interface ContentChunk {
   type: "content";
   content: string;
 }
 
-export interface ToolCallChunk {
-  type: "tool_call";
+export interface ToolCallData {
   id: string;
   name: string;
   arguments: string;
 }
 
-export interface ToolResultChunk {
-  type: "tool_result";
+export interface ToolResultData {
+  tool_call_id: string;
   name: string;
   result: unknown;
-  isError?: boolean;
+  success: boolean;
+}
+
+export interface ToolCallChunk {
+  type: "tool_call";
+  tool_call: ToolCallData;
+}
+
+export interface ToolResultChunk {
+  type: "tool_result";
+  tool_result: ToolResultData;
 }
 
 export interface ErrorChunk {
@@ -63,7 +72,18 @@ export interface ErrorChunk {
   error: string;
 }
 
-export type ChatChunk = ContentChunk | ToolCallChunk | ToolResultChunk | ErrorChunk;
+export interface RateLimitData {
+  attempt: number;
+  max_attempts: number;
+  retry_after: number;
+}
+
+export interface RateLimitChunk {
+  type: "rate_limited";
+  rate_limit: RateLimitData;
+}
+
+export type ChatChunk = ContentChunk | ToolCallChunk | ToolResultChunk | RateLimitChunk | ErrorChunk;
 
 export interface SendMessageOptions {
   threadId?: string;

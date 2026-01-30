@@ -256,6 +256,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
@@ -310,6 +311,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
@@ -369,6 +371,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
@@ -398,15 +401,16 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
         )
 
-        # Should have error chunk
+        # Should have error chunk with user-friendly rate limit message
         error_chunks = [c for c in chunks if c.type == ChatChunkType.ERROR]
         assert len(error_chunks) == 1
-        assert "LLM service error" in error_chunks[0].error
+        assert "AI service is currently busy" in error_chunks[0].error
 
     @pytest.mark.asyncio
     async def test_tool_loop_limit(self):
@@ -435,6 +439,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
@@ -486,6 +491,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )
@@ -533,6 +539,7 @@ class TestProcessChatWithTools:
             process_chat_with_tools(
                 messages=messages,
                 user_id="user-123",
+                db=None,
                 client=mock_client,
                 router=mock_router,
             )

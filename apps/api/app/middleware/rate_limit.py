@@ -17,8 +17,8 @@ from app.db.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
-# Paths exempt from rate limiting (health checks, etc.)
-EXEMPT_PATHS = {"/health", "/ready", "/docs", "/redoc", "/openapi.json"}
+# Paths exempt from rate limiting (health checks, SSE streams, etc.)
+EXEMPT_PATHS = {"/health", "/ready", "/docs", "/redoc", "/openapi.json", "/v1/sse/updates"}
 
 # Chat endpoints have stricter rate limits (10/min per user)
 CHAT_PATHS = {"/v1/chat/messages", "/v1/chat"}
