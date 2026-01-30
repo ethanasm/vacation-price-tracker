@@ -152,6 +152,41 @@ def format_trip_summary(trip: "Trip", current_price: float | None = None) -> Tri
     )
 
 
+def _format_trip_line(trip: "Trip", price: float | None = None) -> str:
+    """Format a single trip as a context line."""
+    price_str = f" - Current price: ${price:,.2f}" if price else ""
+    return (
+        f"- **{trip.name}** (ID: `{trip.id}`): {trip.origin_airport} → {trip.destination_code}, "
+        f"{trip.depart_date} to {trip.return_date}{price_str}"
+    )
+
+
+def _format_trips_section(
+    trips: list["Trip"],
+    trip_prices: dict[str, float],
+) -> list[str]:
+    """Format the trips section of user context."""
+    active_trips = [t for t in trips if t.status.value == "active"]
+    paused_trips = [t for t in trips if t.status.value == "paused"]
+    parts = [f"\n### User's Trips ({len(trips)} total)"]
+
+    if active_trips:
+        parts.append("\n**Active Trips:**")
+        for trip in active_trips:
+            parts.append(_format_trip_line(trip, trip_prices.get(str(trip.id))))
+
+    if paused_trips:
+        parts.append("\n**Paused Trips:**")
+        for trip in paused_trips:
+            parts.append(_format_trip_line(trip))
+
+    remaining_slots = 10 - len(trips)
+    if remaining_slots <= 3:
+        parts.append(f"\n*Note: User has {remaining_slots} trip slots remaining.*")
+
+    return parts
+
+
 def build_user_context(
     user: "User",
     trips: list["Trip"] | None = None,
@@ -169,40 +204,14 @@ def build_user_context(
         Formatted user context string to inject into the system prompt
     """
     trip_prices = trip_prices or {}
-    context_parts = []
-
-    context_parts.append("\n## Current User Context\n")
-    context_parts.append(f"- **User Email**: {user.email}")
-    context_parts.append(f"- **Account Created**: {user.created_at.strftime('%B %d, %Y')}")
+    context_parts = [
+        "\n## Current User Context\n",
+        f"- **User Email**: {user.email}",
+        f"- **Account Created**: {user.created_at.strftime('%B %d, %Y')}",
+    ]
 
     if trips:
-        active_trips = [t for t in trips if t.status.value == "active"]
-        paused_trips = [t for t in trips if t.status.value == "paused"]
-
-        context_parts.append(f"\n### User's Trips ({len(trips)} total)")
-
-        if active_trips:
-            context_parts.append("\n**Active Trips:**")
-            for trip in active_trips:
-                price = trip_prices.get(str(trip.id))
-                price_str = f" - Current price: ${price:,.2f}" if price else ""
-                context_parts.append(
-                    f"- **{trip.name}** (ID: `{trip.id}`): {trip.origin_airport} → {trip.destination_code}, "
-                    f"{trip.depart_date} to {trip.return_date}{price_str}"
-                )
-
-        if paused_trips:
-            context_parts.append("\n**Paused Trips:**")
-            for trip in paused_trips:
-                context_parts.append(
-                    f"- **{trip.name}** (ID: `{trip.id}`): {trip.origin_airport} → {trip.destination_code}, "
-                    f"{trip.depart_date} to {trip.return_date}"
-                )
-
-        # Add trip limit context
-        remaining_slots = 10 - len(trips)
-        if remaining_slots <= 3:
-            context_parts.append(f"\n*Note: User has {remaining_slots} trip slots remaining.*")
+        context_parts.extend(_format_trips_section(trips, trip_prices))
     else:
         context_parts.append("\n### User's Trips")
         context_parts.append("- No trips created yet")

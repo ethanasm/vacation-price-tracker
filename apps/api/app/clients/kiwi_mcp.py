@@ -324,39 +324,22 @@ class KiwiMCPClient:
         Returns:
             Parsed FlightSearchFlight or None if parsing fails.
         """
-        # Parse airports
+        price_amount = self._parse_price_value(data.get("price"))
+        if price_amount is None:
+            return None
+
         dep_airport = data.get("flyFrom", "").upper()
         arr_airport = data.get("flyTo", "").upper()
-
-        # Parse times - Kiwi provides both UTC and local
         departure_time = self._parse_kiwi_datetime(data.get("departure"))
         arrival_time = self._parse_kiwi_datetime(data.get("arrival"))
 
-        # Parse duration - Kiwi provides seconds
         duration_seconds = data.get("totalDurationInSeconds") or data.get("durationInSeconds")
         duration_minutes = duration_seconds // 60 if duration_seconds else None
 
-        # Parse layovers to determine stops
         layovers_data = data.get("layovers", [])
         stops = len(layovers_data) if isinstance(layovers_data, list) else 0
-
-        # Parse layover details
         layovers = self._parse_layovers(layovers_data)
-
-        # Generate stops text
         stops_text = "Direct" if stops == 0 else f"{stops} stop{'s' if stops > 1 else ''}"
-
-        # Parse price
-        price_value = data.get("price")
-        if price_value is None:
-            logger.warning("No price in Kiwi flight data: %s", data)
-            return None
-
-        try:
-            price_amount = Decimal(str(price_value))
-        except Exception:
-            logger.warning("Invalid price in Kiwi flight: %s", price_value)
-            return None
 
         currency = data.get("currency", default_currency)
 
@@ -365,8 +348,8 @@ class KiwiMCPClient:
             arrival_airport=arr_airport,
             departure_time=departure_time,
             arrival_time=arrival_time,
-            airline_name=None,  # Kiwi doesn't provide airline names
-            carrier_code=None,  # Kiwi doesn't provide carrier codes
+            airline_name=None,
+            carrier_code=None,
             duration_minutes=duration_minutes,
             stops=stops,
             stops_text=stops_text,
@@ -378,6 +361,16 @@ class KiwiMCPClient:
             provider="kiwi",
             raw_data=data,
         )
+
+    def _parse_price_value(self, price_value: Any) -> Decimal | None:
+        """Parse a price value to Decimal."""
+        if price_value is None:
+            return None
+        try:
+            return Decimal(str(price_value))
+        except Exception:
+            logger.warning("Invalid price value: %s", price_value)
+            return None
 
     def _parse_layovers(self, layovers_data: list[dict[str, Any]] | Any) -> list[FlightLayover]:
         """

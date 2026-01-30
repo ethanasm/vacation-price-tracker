@@ -552,3 +552,129 @@ function createMockSSEStream(
     },
   };
 }
+
+// Helper to create mock SSE stream with invalid JSON
+function createMockSSEStreamWithInvalidJSON() {
+  const lines = [
+    "data: {invalid json\n\n",
+    "data: [DONE]\n\n",
+  ];
+  const text = lines.join("");
+
+  let position = 0;
+
+  return {
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (position >= text.length) {
+            return { done: true, value: undefined };
+          }
+          const chunk = text.slice(position, position + 50);
+          position += 50;
+          return {
+            done: false,
+            value: new TextEncoder().encode(chunk),
+          };
+        },
+      }),
+    },
+  };
+}
+
+describe("useChat edge cases", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Clear any cookies
+    Object.defineProperty(document, "cookie", {
+      writable: true,
+      value: "",
+    });
+  });
+
+  it("includes CSRF token in headers when available", async () => {
+    // Set a mock CSRF cookie
+    Object.defineProperty(document, "cookie", {
+      writable: true,
+      value: "csrf_token=test-csrf-token-123",
+    });
+
+    const mockStream = createMockSSEStream([
+      { type: "content", content: "Response" },
+    ]);
+    mockFetch.mockResolvedValueOnce(mockStream);
+
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-CSRF-Token": "test-csrf-token-123",
+        }),
+      })
+    );
+  });
+
+  it("handles invalid JSON in SSE stream gracefully", async () => {
+    const mockStream = createMockSSEStreamWithInvalidJSON();
+    mockFetch.mockResolvedValueOnce(mockStream);
+
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    // Should not crash, assistant message should exist but be empty
+    const assistantMessage = result.current.messages.find(
+      (m) => m.role === "assistant"
+    );
+    expect(assistantMessage).toBeDefined();
+    expect(assistantMessage?.content).toBe("");
+  });
+
+  it("handles SSE lines that don't start with 'data: '", async () => {
+    const text = "event: something\ndata: {\"type\":\"content\",\"content\":\"Hi\"}\n\ndata: [DONE]\n\n";
+    let position = 0;
+
+    const mockStream = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (position >= text.length) {
+              return { done: true, value: undefined };
+            }
+            const chunk = text.slice(position, position + 100);
+            position += 100;
+            return {
+              done: false,
+              value: new TextEncoder().encode(chunk),
+            };
+          },
+        }),
+      },
+    };
+
+    mockFetch.mockResolvedValueOnce(mockStream);
+
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    // Should process the content chunk despite the event: line
+    const assistantMessage = result.current.messages.find(
+      (m) => m.role === "assistant"
+    );
+    expect(assistantMessage?.content).toBe("Hi");
+  });
+});
+

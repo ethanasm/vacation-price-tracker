@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -257,7 +257,7 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
 
     async with AsyncSessionLocal() as session:
         # Check for recent snapshots to prevent duplicates
-        cutoff = datetime.utcnow() - timedelta(seconds=SNAPSHOT_DEDUP_WINDOW_SECONDS)
+        cutoff = datetime.now(UTC) - timedelta(seconds=SNAPSHOT_DEDUP_WINDOW_SECONDS)
         existing_result = await session.execute(
             select(PriceSnapshot)
             .where(PriceSnapshot.trip_id == trip_uuid)
@@ -268,7 +268,7 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
         recent_snapshot = existing_result.scalars().first()
 
         if recent_snapshot:
-            seconds_ago = (datetime.utcnow() - recent_snapshot.created_at).total_seconds()
+            seconds_ago = (datetime.now(UTC) - recent_snapshot.created_at).total_seconds()
 
             # Check if recent snapshot contains errors - if so, allow retry with better data
             raw_data = recent_snapshot.raw_data or {}

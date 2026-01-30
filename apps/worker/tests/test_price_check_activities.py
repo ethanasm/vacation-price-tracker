@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -294,7 +294,7 @@ async def test_save_snapshot_activity_dedup_skips_recent(monkeypatch):
     existing_snapshot_id = uuid.uuid4()
     recent_snapshot = SimpleNamespace(
         id=existing_snapshot_id,
-        created_at=datetime.utcnow() - timedelta(seconds=30),  # 30 seconds ago
+        created_at=datetime.now(UTC) - timedelta(seconds=30),  # 30 seconds ago
         raw_data={"ok": True},  # No errors, so dedup should skip
     )
     session = DummySessionWithDedup(None, [], recent_snapshot=recent_snapshot)
@@ -345,7 +345,7 @@ async def test_save_snapshot_activity_allows_retry_after_error(monkeypatch):
     # Recent snapshot that had errors (flight fetch failed)
     recent_snapshot = SimpleNamespace(
         id=existing_snapshot_id,
-        created_at=datetime.utcnow() - timedelta(seconds=30),  # 30 seconds ago
+        created_at=datetime.now(UTC) - timedelta(seconds=30),  # 30 seconds ago
         raw_data={"errors": {"flights": "Failed to fetch flights: No flights found"}},
     )
     session = DummySessionWithDedup(None, [], recent_snapshot=recent_snapshot)

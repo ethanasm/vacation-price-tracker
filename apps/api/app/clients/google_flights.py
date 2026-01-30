@@ -170,6 +170,50 @@ class GoogleFlightsClient:
 
         return offers
 
+    def _parse_stops(self, stops: Any) -> int:
+        """Parse stops value from various formats to integer."""
+        if isinstance(stops, int):
+            return stops
+        if isinstance(stops, str):
+            if "nonstop" in stops.lower() or stops == "0":
+                return 0
+            # Try to extract number from string like "1 stop"
+            try:
+                return int("".join(filter(str.isdigit, stops)) or "1")
+            except ValueError:
+                return 1
+        return 0
+
+    def _build_segment(
+        self,
+        dep_code: str | None,
+        arr_code: str | None,
+        dep_time: str | None,
+        arr_time: str | None,
+        carrier_code: str,
+        flight_number: str,
+        duration_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        """Build an Amadeus-compatible segment dict."""
+        segment: dict[str, Any] = {
+            "carrierCode": carrier_code,
+            "number": flight_number,
+            "operating": {"carrierCode": carrier_code},
+        }
+        if dep_code or dep_time:
+            segment["departure"] = {
+                "iataCode": dep_code.upper() if dep_code else None,
+                "at": dep_time,
+            }
+        if arr_code or arr_time:
+            segment["arrival"] = {
+                "iataCode": arr_code.upper() if arr_code else None,
+                "at": arr_time,
+            }
+        if duration_minutes:
+            segment["duration"] = f"PT{duration_minutes}M"
+        return segment
+
     def _convert_flight(
         self,
         flight: Any,
@@ -191,101 +235,45 @@ class GoogleFlightsClient:
         Returns:
             Flight offer dict in Amadeus format, or None if conversion fails
         """
-        # Extract price - fast-flights uses flight.price as a string like "$299"
         price_str = getattr(flight, "price", None)
         if not price_str:
             return None
 
-        # Parse price string (e.g., "$299" or "299 USD")
         price = self._parse_price(price_str)
         if price is None:
             return None
 
-        # Extract airline info
         airline_name = getattr(flight, "name", None) or "Unknown"
-
-        # Try to extract airline code from the name or use first two letters
         airline_code = self._extract_airline_code(airline_name)
-
-        # Extract timing info
         departure_time = getattr(flight, "departure", None)
         arrival_time = getattr(flight, "arrival", None)
-
-        # Extract duration
-        duration_str = getattr(flight, "duration", None)
-        duration_minutes = self._parse_duration(duration_str)
-
-        # Extract stops
-        stops = getattr(flight, "stops", 0)
-        if isinstance(stops, str):
-            if "nonstop" in stops.lower() or stops == "0":
-                stops = 0
-            else:
-                # Try to extract number from string like "1 stop"
-                try:
-                    stops = int("".join(filter(str.isdigit, stops)) or "1")
-                except ValueError:
-                    stops = 1
-
-        # Generate flight number (carrier code + index-based number)
+        duration_minutes = self._parse_duration(getattr(flight, "duration", None))
+        stops = self._parse_stops(getattr(flight, "stops", 0))
         flight_number = str(100 + index)
 
-        # Build itinerary segments with full airport info
-        outbound_segment = {
-            "departure": {
-                "iataCode": origin.upper() if origin else None,
-                "at": departure_time,
-            } if departure_time or origin else {},
-            "arrival": {
-                "iataCode": destination.upper() if destination else None,
-                "at": arrival_time,
-            } if arrival_time or destination else {},
-            "carrierCode": airline_code,
-            "number": flight_number,
-            "operating": {"carrierCode": airline_code},
+        outbound_segment = self._build_segment(
+            origin, destination, departure_time, arrival_time,
+            airline_code, flight_number, duration_minutes
+        )
+
+        itineraries = [{
             "duration": f"PT{duration_minutes}M" if duration_minutes else None,
-        }
+            "segments": [outbound_segment],
+        }]
 
-        itineraries = [
-            {
-                "duration": f"PT{duration_minutes}M" if duration_minutes else None,
-                "segments": [outbound_segment],
-            }
-        ]
-
-        # Add return itinerary for round trips
         if return_date:
-            return_segment = {
-                "departure": {
-                    "iataCode": destination.upper() if destination else None,
-                    "at": None,  # We don't have return flight times from fast-flights
-                },
-                "arrival": {
-                    "iataCode": origin.upper() if origin else None,
-                    "at": None,
-                },
-                "carrierCode": airline_code,
-                "number": str(200 + index),
-                "operating": {"carrierCode": airline_code},
-            }
-            itineraries.append(
-                {
-                    "duration": None,
-                    "segments": [return_segment],
-                }
+            return_segment = self._build_segment(
+                destination, origin, None, None,
+                airline_code, str(200 + index)
             )
+            itineraries.append({"duration": None, "segments": [return_segment]})
 
         return {
             "id": str(uuid.uuid4())[:8],
-            "price": {
-                "total": str(price),
-                "grandTotal": str(price),
-                "currency": "USD",
-            },
+            "price": {"total": str(price), "grandTotal": str(price), "currency": "USD"},
             "validatingAirlineCodes": [airline_code] if airline_code else [],
             "itineraries": itineraries,
             "travelerPricings": [],
-            # Additional fields for easier access
             "airline_name": airline_name,
             "airline_code": airline_code,
             "departure_time": departure_time,

@@ -322,6 +322,46 @@ function ItinerarySection({
   );
 }
 
+/**
+ * Extract display data from a flight offer for rendering
+ */
+function extractFlightDisplayData(flight: ApiFlightOffer) {
+  const outbound = flight.itineraries?.[0];
+  const returnItinerary = flight.itineraries?.[1];
+  const firstSegment = outbound?.segments?.[0];
+  const returnFirstSegment = returnItinerary?.segments?.[0];
+  const returnLastSegment = returnItinerary?.segments?.length
+    ? returnItinerary.segments[returnItinerary.segments.length - 1]
+    : null;
+  const outboundLastSegment = outbound?.segments?.length
+    ? outbound.segments[outbound.segments.length - 1]
+    : null;
+
+  return {
+    outbound,
+    returnItinerary,
+    firstSegment,
+    returnFirstSegment,
+    returnLastSegment,
+    outboundLastSegment,
+    airlineName: firstSegment?.carrier_code
+      ? getAirlineName(firstSegment.carrier_code)
+      : (flight.airline_name ?? "Unknown"),
+    outboundDepTime: firstSegment?.departure_time
+      ? formatFlightTime(firstSegment.departure_time)
+      : null,
+    outboundArrTime: outboundLastSegment?.arrival_time
+      ? formatFlightTime(outboundLastSegment.arrival_time)
+      : null,
+    returnDepTime: returnFirstSegment?.departure_time
+      ? formatFlightTime(returnFirstSegment.departure_time)
+      : null,
+    returnArrTime: returnLastSegment?.arrival_time
+      ? formatFlightTime(returnLastSegment.arrival_time)
+      : null,
+  };
+}
+
 function FlightsList({
   flights,
   departDate,
@@ -365,33 +405,17 @@ function FlightsList({
         const isSelected = sig === selectedFlightSignature;
         const isExpanded = expandedCards.has(flight.id);
         const isDirect = flight.stops === 0;
-        const outbound = flight.itineraries?.[0];
-        const returnItinerary = flight.itineraries?.[1];
-        const firstSegment = outbound?.segments?.[0];
-        const airlineName = firstSegment?.carrier_code
-          ? getAirlineName(firstSegment.carrier_code)
-          : (flight.airline_name ?? "Unknown");
-
-        const returnFirstSegment = returnItinerary?.segments?.[0];
-        const returnLastSegment = returnItinerary?.segments?.length
-          ? returnItinerary.segments[returnItinerary.segments.length - 1]
-          : null;
-        const outboundLastSegment = outbound?.segments?.length
-          ? outbound.segments[outbound.segments.length - 1]
-          : null;
-
-        const outboundDepTime = firstSegment?.departure_time
-          ? formatFlightTime(firstSegment.departure_time)
-          : null;
-        const outboundArrTime = outboundLastSegment?.arrival_time
-          ? formatFlightTime(outboundLastSegment.arrival_time)
-          : null;
-        const returnDepTime = returnFirstSegment?.departure_time
-          ? formatFlightTime(returnFirstSegment.departure_time)
-          : null;
-        const returnArrTime = returnLastSegment?.arrival_time
-          ? formatFlightTime(returnLastSegment.arrival_time)
-          : null;
+        const displayData = extractFlightDisplayData(flight);
+        const {
+          airlineName,
+          outboundDepTime,
+          outboundArrTime,
+          returnDepTime,
+          returnArrTime,
+          returnFirstSegment,
+          outbound,
+          returnItinerary,
+        } = displayData;
 
         return (
           <div

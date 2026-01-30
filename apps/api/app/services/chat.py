@@ -32,7 +32,7 @@ from app.models.user import User
 from app.schemas.chat import ChatChunk
 from app.schemas.mcp import get_all_tools
 from app.services.conversation import ConversationService, conversation_service
-from app.services.mcp_router import MCPRouter, get_mcp_router
+from app.services.mcp_router import MCPRouter, ToolResult, get_mcp_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -126,6 +126,79 @@ def _tool_calls_to_dict(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
     ]
 
 
+async def _stream_llm_response(
+    client: GroqClient,
+    messages: list[GroqMessage],
+    tools: list[dict[str, Any]],
+) -> AsyncGenerator[tuple[ChatChunk | None, str, list[ToolCall]], None]:
+    """Stream LLM response and yield chunks with accumulated state.
+
+    Yields tuples of (chunk_to_yield, full_content, accumulated_tool_calls).
+    """
+    full_content = ""
+    accumulated_tool_calls: list[ToolCall] = []
+
+    async for chunk in client.chat(messages=messages, tools=tools, stream=True):
+        if chunk.rate_limit_status:
+            status = chunk.rate_limit_status
+            yield (
+                ChatChunk.rate_limited_chunk(
+                    attempt=status.attempt,
+                    max_attempts=status.max_attempts,
+                    retry_after=status.retry_after,
+                ),
+                full_content,
+                accumulated_tool_calls,
+            )
+            continue
+
+        if chunk.content:
+            full_content += chunk.content
+            yield ChatChunk.text(chunk.content), full_content, accumulated_tool_calls
+
+        if chunk.tool_calls:
+            accumulated_tool_calls.extend(chunk.tool_calls)
+
+    yield None, full_content, accumulated_tool_calls
+
+
+async def _execute_tool_call(
+    tool_call: ToolCall,
+    router: MCPRouter,
+    user_id: str,
+    db: AsyncSession,
+) -> AsyncGenerator[tuple[ChatChunk, ToolResult | None], None]:
+    """Execute a single tool call and yield chunks with final result."""
+    tool_name = tool_call.function.name
+    arguments_json = tool_call.function.arguments
+
+    yield ChatChunk.tool_calling(
+        tool_call_id=tool_call.id,
+        name=tool_name,
+        arguments=arguments_json,
+    ), None
+
+    result = await router.execute_from_json(tool_name, arguments_json, user_id, db)
+
+    yield ChatChunk.tool_executed(
+        tool_call_id=tool_call.id,
+        name=tool_name,
+        result=result.data if result.success else {"error": result.error},
+        success=result.success,
+    ), result
+
+
+def _create_tool_result_message(tool_call: ToolCall, result: ToolResult) -> GroqMessage:
+    """Create a tool result message for the conversation."""
+    result_content = json.dumps(result.data) if result.success else json.dumps({"error": result.error})
+    return GroqMessage(
+        role="tool",
+        content=result_content,
+        tool_call_id=tool_call.id,
+        name=tool_call.function.name,
+    )
+
+
 async def process_chat_with_tools(
     messages: list[GroqMessage],
     user_id: str,
@@ -161,50 +234,29 @@ async def process_chat_with_tools(
     router = router or get_mcp_router()
     tools = _convert_tools_to_groq_format()
 
-    round_count = 0
-
-    while round_count < MAX_TOOL_ROUNDS:
-        round_count += 1
+    for round_count in range(1, MAX_TOOL_ROUNDS + 1):
         logger.debug("Tool round %d/%d", round_count, MAX_TOOL_ROUNDS)
 
         try:
-            # Accumulate response from streaming
             full_content = ""
             accumulated_tool_calls: list[ToolCall] = []
 
-            async for chunk in client.chat(messages=messages, tools=tools, stream=True):
-                # Handle rate limit status (notify user during retry wait)
-                if chunk.rate_limit_status:
-                    status = chunk.rate_limit_status
-                    yield ChatChunk.rate_limited_chunk(
-                        attempt=status.attempt,
-                        max_attempts=status.max_attempts,
-                        retry_after=status.retry_after,
-                    )
-                    continue
+            async for chunk, content, tool_calls in _stream_llm_response(client, messages, tools):
+                full_content = content
+                accumulated_tool_calls = tool_calls
+                if chunk:
+                    yield chunk
 
-                # Stream content as it arrives
-                if chunk.content:
-                    full_content += chunk.content
-                    yield ChatChunk.text(chunk.content)
-
-                # Collect tool calls (they come at the end of the stream)
-                if chunk.tool_calls:
-                    accumulated_tool_calls.extend(chunk.tool_calls)
-
-            # If no tool calls, we're done
             if not accumulated_tool_calls:
                 logger.debug("No tool calls, conversation complete")
                 return
 
-            # Process tool calls
             logger.info(
                 "Processing %d tool calls for user %s",
                 len(accumulated_tool_calls),
                 user_id[:8] + "..." if len(user_id) > 8 else user_id,
             )
 
-            # Add assistant message with tool calls to conversation
             messages.append(
                 GroqMessage(
                     role="assistant",
@@ -213,53 +265,21 @@ async def process_chat_with_tools(
                 )
             )
 
-            # Execute each tool call and add results to messages
             for tool_call in accumulated_tool_calls:
-                tool_name = tool_call.function.name
-                arguments_json = tool_call.function.arguments
+                result = None
+                async for chunk, tool_result in _execute_tool_call(tool_call, router, user_id, db):
+                    yield chunk
+                    if tool_result is not None:
+                        result = tool_result
 
-                # Notify about tool call
-                yield ChatChunk.tool_calling(
-                    tool_call_id=tool_call.id,
-                    name=tool_name,
-                    arguments=arguments_json,
-                )
-
-                # Execute the tool
-                result = await router.execute_from_json(
-                    tool_name,
-                    arguments_json,
-                    user_id,
-                    db,
-                )
-
-                # Notify about result
-                yield ChatChunk.tool_executed(
-                    tool_call_id=tool_call.id,
-                    name=tool_name,
-                    result=result.data if result.success else {"error": result.error},
-                    success=result.success,
-                )
-
-                # Add tool result to messages for the next round
-                result_content = json.dumps(result.data) if result.success else json.dumps({"error": result.error})
-                messages.append(
-                    GroqMessage(
-                        role="tool",
-                        content=result_content,
-                        tool_call_id=tool_call.id,
-                        name=tool_name,
-                    )
-                )
-
-            # Continue loop to get LLM response after tool execution
+                if result is not None:
+                    messages.append(_create_tool_result_message(tool_call, result))
 
         except GroqClientError as e:
             _log_groq_error(e)
             yield _get_error_chunk(e)
             return
 
-    # If we get here, we exceeded max rounds
     logger.warning("Tool loop exceeded %d rounds, terminating", MAX_TOOL_ROUNDS)
     yield ChatChunk.error_chunk(
         f"Tool execution exceeded maximum rounds ({MAX_TOOL_ROUNDS}). Please try a simpler request."

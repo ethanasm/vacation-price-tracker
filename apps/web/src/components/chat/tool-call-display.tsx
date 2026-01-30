@@ -23,6 +23,76 @@ function formatToolName(name: string): string {
 }
 
 /**
+ * Status icon component for tool execution state
+ */
+function StatusIcon({ isExecuting, hasResult, isError }: {
+  isExecuting: boolean;
+  hasResult: boolean;
+  isError: boolean;
+}) {
+  if (isExecuting) {
+    return <Loader2 className="h-4 w-4 text-primary animate-spin" aria-label="Executing tool" />;
+  }
+  if (hasResult && !isError) {
+    return <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" aria-label="Tool completed successfully" />;
+  }
+  if (hasResult && isError) {
+    return <XCircle className="h-4 w-4 text-destructive" aria-label="Tool failed" />;
+  }
+  return null;
+}
+
+/**
+ * Expandable content for arguments and results
+ */
+function ToolDetails({ toolCall, result, isError }: {
+  toolCall: ToolCall;
+  result?: ToolResult;
+  isError: boolean;
+}) {
+  const hasArguments = toolCall.arguments && Object.keys(toolCall.arguments).length > 0;
+  const hasResult = result !== undefined;
+
+  return (
+    <div
+      id={`tool-details-${toolCall.id}`}
+      className="px-3 pb-3 space-y-3 border-t border-border/40 dark:border-white/10"
+    >
+      {hasArguments && (
+        <div className="pt-3">
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Arguments
+          </h4>
+          <pre className="text-xs bg-background dark:bg-black/20 rounded-md p-2 overflow-x-auto">
+            <code>{JSON.stringify(toolCall.arguments, null, 2)}</code>
+          </pre>
+        </div>
+      )}
+
+      {hasResult && (
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            {isError ? "Error" : "Result"}
+          </h4>
+          <pre
+            className={cn(
+              "text-xs rounded-md p-2 overflow-x-auto",
+              isError ? "bg-destructive/10 text-destructive" : "bg-background dark:bg-black/20"
+            )}
+          >
+            <code>
+              {typeof result.result === "string"
+                ? result.result
+                : JSON.stringify(result.result, null, 2)}
+            </code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * ToolCallDisplay shows tool invocation details with collapsible arguments
  * and results. Supports loading state during execution.
  */
@@ -39,6 +109,15 @@ export function ToolCallDisplay({
   const hasArguments = toolCall.arguments && Object.keys(toolCall.arguments).length > 0;
   const hasExpandableContent = hasArguments || hasResult;
 
+  const handleKeyDown = hasExpandableContent
+    ? (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setIsExpanded(!isExpanded);
+        }
+      }
+    : undefined;
+
   return (
     <div
       className={cn(
@@ -52,12 +131,7 @@ export function ToolCallDisplay({
           hasExpandableContent && "hover:bg-muted/50 dark:hover:bg-white/5 transition-colors cursor-pointer"
         )}
         onClick={hasExpandableContent ? () => setIsExpanded(!isExpanded) : undefined}
-        onKeyDown={hasExpandableContent ? (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setIsExpanded(!isExpanded);
-          }
-        } : undefined}
+        onKeyDown={handleKeyDown}
         role={hasExpandableContent ? "button" : undefined}
         tabIndex={hasExpandableContent ? 0 : undefined}
         aria-expanded={hasExpandableContent ? isExpanded : undefined}
@@ -74,71 +148,14 @@ export function ToolCallDisplay({
         )}
 
         <Wrench className="h-4 w-4 text-primary flex-shrink-0" aria-hidden="true" />
-
-        <span className="font-medium text-sm truncate">
-          {formatToolName(toolCall.name)}
-        </span>
-
+        <span className="font-medium text-sm truncate">{formatToolName(toolCall.name)}</span>
         <span className="ml-auto flex-shrink-0">
-          {isExecuting && (
-            <Loader2
-              className="h-4 w-4 text-primary animate-spin"
-              aria-label="Executing tool"
-            />
-          )}
-          {hasResult && !isError && (
-            <CheckCircle2
-              className="h-4 w-4 text-green-600 dark:text-green-400"
-              aria-label="Tool completed successfully"
-            />
-          )}
-          {hasResult && isError && (
-            <XCircle
-              className="h-4 w-4 text-destructive"
-              aria-label="Tool failed"
-            />
-          )}
+          <StatusIcon isExecuting={isExecuting} hasResult={hasResult} isError={isError} />
         </span>
       </div>
 
       {isExpanded && hasExpandableContent && (
-        <div
-          id={`tool-details-${toolCall.id}`}
-          className="px-3 pb-3 space-y-3 border-t border-border/40 dark:border-white/10"
-        >
-          {hasArguments && (
-            <div className="pt-3">
-              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Arguments
-              </h4>
-              <pre className="text-xs bg-background dark:bg-black/20 rounded-md p-2 overflow-x-auto">
-                <code>{JSON.stringify(toolCall.arguments, null, 2)}</code>
-              </pre>
-            </div>
-          )}
-
-          {hasResult && (
-            <div>
-              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                {isError ? "Error" : "Result"}
-              </h4>
-              <pre
-                className={cn(
-                  "text-xs rounded-md p-2 overflow-x-auto",
-                  isError
-                    ? "bg-destructive/10 text-destructive"
-                    : "bg-background dark:bg-black/20"
-                )}
-              >
-                <code>
-                  {typeof result.result === "string"
-                    ? result.result
-                    : JSON.stringify(result.result, null, 2)}
-                </code>
-              </pre>
-            </div>
-          )}
-        </div>
+        <ToolDetails toolCall={toolCall} result={result} isError={isError} />
       )}
     </div>
   );

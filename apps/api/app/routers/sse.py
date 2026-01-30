@@ -124,7 +124,7 @@ async def event_generator(
 
         except asyncio.CancelledError:
             logger.info("SSE connection cancelled for user %s", user_id)
-            break
+            raise  # Re-raise to properly propagate cancellation
         except Exception as e:
             logger.error("Error in SSE event loop: %s", e)
             yield f"event: error\ndata: {json.dumps({'error': 'Internal error'})}\n\n"

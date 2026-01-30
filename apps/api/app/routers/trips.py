@@ -57,6 +57,28 @@ from app.services.temporal import (
 
 router = APIRouter()
 
+# ISO 8601 duration pattern (e.g., "PT1H6M", "PT2H", "PT45M")
+ISO_8601_DURATION_PATTERN = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?")
+
+
+def _parse_iso8601_duration(duration_str: str | None) -> int | None:
+    """Parse ISO 8601 duration string to minutes.
+
+    Args:
+        duration_str: Duration string like "PT1H6M", "PT2H", "PT45M"
+
+    Returns:
+        Duration in minutes, or None if parsing fails
+    """
+    if not duration_str or not isinstance(duration_str, str):
+        return None
+    match = ISO_8601_DURATION_PATTERN.match(duration_str)
+    if not match:
+        return None
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    return hours * 60 + minutes
+
 
 def _pagination_meta(page: int, limit: int, total: int) -> dict:
     total_pages = (total + limit - 1) // limit if total else 0
@@ -237,18 +259,7 @@ def _parse_amadeus_duration(item: dict) -> int | None:
             return duration
         return None
 
-    duration_str = itineraries[0].get("duration")
-    if not duration_str or not isinstance(duration_str, str):
-        return None
-
-    # Parse ISO 8601 duration format (e.g., "PT1H6M", "PT2H", "PT45M")
-    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
-    if not match:
-        return None
-
-    hours = int(match.group(1)) if match.group(1) else 0
-    minutes = int(match.group(2)) if match.group(2) else 0
-    return hours * 60 + minutes
+    return _parse_iso8601_duration(itineraries[0].get("duration"))
 
 
 def _count_amadeus_stops(item: dict) -> int:
@@ -308,25 +319,31 @@ def _extract_return_flight(item: dict) -> dict | None:
     number = first_segment.get("number")
     flight_number = f"{carrier_code}{number}" if carrier_code and number else None
 
-    # Parse return duration
-    duration_str = return_itinerary.get("duration")
-    duration_minutes = None
-    if duration_str and isinstance(duration_str, str):
-        match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
-        if match:
-            hours = int(match.group(1)) if match.group(1) else 0
-            minutes = int(match.group(2)) if match.group(2) else 0
-            duration_minutes = hours * 60 + minutes
-
-    stops = max(0, len(segments) - 1)
-
     return {
         "flight_number": flight_number,
         "departure_time": departure_time,
         "arrival_time": arrival_time,
-        "duration_minutes": duration_minutes,
-        "stops": stops,
+        "duration_minutes": _parse_iso8601_duration(return_itinerary.get("duration")),
+        "stops": max(0, len(segments) - 1),
     }
+
+
+def _parse_flight_segment(seg: dict) -> FlightSegment:
+    """Parse a single flight segment from Amadeus data."""
+    dep = seg.get("departure", {})
+    arr = seg.get("arrival", {})
+    carrier = seg.get("carrierCode")
+    number = seg.get("number")
+
+    return FlightSegment(
+        carrier_code=carrier,
+        flight_number=f"{carrier}{number}" if carrier and number else None,
+        departure_airport=dep.get("iataCode"),
+        arrival_airport=arr.get("iataCode"),
+        departure_time=dep.get("at"),
+        arrival_time=arr.get("at"),
+        duration_minutes=_parse_iso8601_duration(seg.get("duration")),
+    )
 
 
 def _extract_itineraries(item: dict) -> list[FlightItinerary]:
@@ -343,100 +360,81 @@ def _extract_itineraries(item: dict) -> list[FlightItinerary]:
         if not segments:
             continue
 
-        # Parse total duration for this itinerary
-        duration_str = itinerary.get("duration")
-        total_duration = None
-        if duration_str and isinstance(duration_str, str):
-            match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration_str)
-            if match:
-                hours = int(match.group(1)) if match.group(1) else 0
-                minutes = int(match.group(2)) if match.group(2) else 0
-                total_duration = hours * 60 + minutes
-
-        extracted_segments = []
-        for seg in segments:
-            dep = seg.get("departure", {})
-            arr = seg.get("arrival", {})
-            carrier = seg.get("carrierCode")
-            number = seg.get("number")
-
-            # Parse segment duration
-            seg_dur = None
-            if seg.get("duration"):
-                match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", seg.get("duration", ""))
-                if match:
-                    seg_dur = (int(match.group(1) or 0) * 60) + int(match.group(2) or 0)
-
-            extracted_segments.append(FlightSegment(
-                carrier_code=carrier,
-                flight_number=f"{carrier}{number}" if carrier and number else None,
-                departure_airport=dep.get("iataCode"),
-                arrival_airport=arr.get("iataCode"),
-                departure_time=dep.get("at"),
-                arrival_time=arr.get("at"),
-                duration_minutes=seg_dur,
-            ))
+        extracted_segments = [_parse_flight_segment(seg) for seg in segments]
 
         result.append(FlightItinerary(
             direction=directions[idx] if idx < len(directions) else f"leg_{idx}",
             segments=extracted_segments,
-            total_duration_minutes=total_duration,
+            total_duration_minutes=_parse_iso8601_duration(itinerary.get("duration")),
             stops=len(extracted_segments) - 1,
         ))
 
     return result
 
 
+def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOffer | None:
+    """Parse a single flight offer from raw data."""
+    if not isinstance(item, dict):
+        return None
+    price = _extract_price(item)
+    if price is None:
+        return None
+    departure_time, arrival_time = _extract_amadeus_times(item)
+    return FlightOffer(
+        id=item.get("id") or str(index),
+        airline_code=_extract_amadeus_airline_code(item),
+        flight_number=_extract_amadeus_flight_number(item),
+        airline_name=_get_airline_name(item, flights_data),
+        price=price,
+        departure_time=departure_time,
+        arrival_time=arrival_time,
+        duration_minutes=_parse_amadeus_duration(item),
+        stops=_count_amadeus_stops(item),
+        return_flight=_extract_return_flight(item),
+        itineraries=_extract_itineraries(item),
+    )
+
+
+def _parse_hotel_offer(item: dict, index: int) -> HotelOffer | None:
+    """Parse a single hotel offer from raw data."""
+    if not isinstance(item, dict):
+        return None
+    price = _extract_price(item)
+    if price is None:
+        return None
+    return HotelOffer(
+        id=item.get("id") or item.get("hotelId") or str(index),
+        name=item.get("name") or item.get("hotel", {}).get("name", f"Hotel {index + 1}"),
+        price=price,
+        rating=item.get("rating") or item.get("hotel", {}).get("rating"),
+        address=item.get("address") or item.get("hotel", {}).get("address"),
+        description=item.get("description") or item.get("room", {}).get("description"),
+    )
+
+
 def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
     """Convert a snapshot to response, extracting offers from raw_data."""
-    flight_offers: list[FlightOffer] = []
-    hotel_offers: list[HotelOffer] = []
-
     raw = snapshot.raw_data or {}
 
     # Extract flight offers
+    flight_offers: list[FlightOffer] = []
     flights_data = raw.get("flights", {})
     if isinstance(flights_data, dict):
         flight_list = flights_data.get("data") or flights_data.get("offers") or []
-        for i, item in enumerate(flight_list[:10]):  # Limit to top 10
-            if not isinstance(item, dict):
-                continue
-            price = _extract_price(item)
-            if price is None:
-                continue
-            departure_time, arrival_time = _extract_amadeus_times(item)
-            flight_offers.append(FlightOffer(
-                id=item.get("id") or str(i),
-                airline_code=_extract_amadeus_airline_code(item),
-                flight_number=_extract_amadeus_flight_number(item),
-                airline_name=_get_airline_name(item, flights_data),
-                price=price,
-                departure_time=departure_time,
-                arrival_time=arrival_time,
-                duration_minutes=_parse_amadeus_duration(item),
-                stops=_count_amadeus_stops(item),
-                return_flight=_extract_return_flight(item),
-                itineraries=_extract_itineraries(item),
-            ))
+        for i, item in enumerate(flight_list[:10]):
+            offer = _parse_flight_offer(item, i, flights_data)
+            if offer:
+                flight_offers.append(offer)
 
     # Extract hotel offers
+    hotel_offers: list[HotelOffer] = []
     hotels_data = raw.get("hotels", {})
     if isinstance(hotels_data, dict):
         hotel_list = hotels_data.get("data") or hotels_data.get("offers") or []
-        for i, item in enumerate(hotel_list[:10]):  # Limit to top 10
-            if not isinstance(item, dict):
-                continue
-            price = _extract_price(item)
-            if price is None:
-                continue
-            hotel_offers.append(HotelOffer(
-                id=item.get("id") or item.get("hotelId") or str(i),
-                name=item.get("name") or item.get("hotel", {}).get("name", f"Hotel {i + 1}"),
-                price=price,
-                rating=item.get("rating") or item.get("hotel", {}).get("rating"),
-                address=item.get("address") or item.get("hotel", {}).get("address"),
-                description=item.get("description") or item.get("room", {}).get("description"),
-            ))
+        for i, item in enumerate(hotel_list[:10]):
+            offer = _parse_hotel_offer(item, i)
+            if offer:
+                hotel_offers.append(offer)
 
     return PriceSnapshotResponse(
         id=snapshot.id,

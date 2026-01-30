@@ -279,6 +279,81 @@ class MCPRouter:
         """
         return tool_name in self._tools
 
+    def _sanitize_arguments(
+        self,
+        arguments: dict[str, Any],
+        user_id: str,
+        tool_name: str,
+    ) -> dict[str, Any]:
+        """Sanitize LLM-generated arguments and log if modified."""
+        sanitization_result = input_sanitizer.sanitize(arguments)
+        if sanitization_result.was_modified:
+            audit_logger.log_input_sanitized(
+                user_id=user_id,
+                tool_name=tool_name,
+                sanitized_fields=sanitization_result.sanitized_fields,
+                original_patterns=sanitization_result.detected_patterns,
+            )
+        return sanitization_result.sanitized_data
+
+    def _validate_arguments(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+    ) -> ToolResult | None:
+        """Validate arguments. Returns ToolResult on failure, None on success."""
+        try:
+            validate_tool_args(tool_name, arguments)
+            return None
+        except ToolNotFoundError:
+            logger.warning("Tool %s is registered but has no schema definition", tool_name)
+            return None
+        except ToolValidationError as e:
+            logger.warning("Validation failed for tool %s: %s", tool_name, e.details)
+            audit_logger.log_tool_failure(
+                user_id=user_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                error=e.message,
+            )
+            return ToolResult(success=False, error=e.message, data=e.details)
+
+    async def _execute_handler(
+        self,
+        handler: ToolHandler | Any,
+        arguments: dict[str, Any],
+        user_id: str,
+        db: Any,
+    ) -> ToolResult:
+        """Execute the tool handler and return result."""
+        if isinstance(handler, ToolHandler):
+            return await handler.execute(arguments, user_id, db)
+        return await handler(arguments, user_id, db)
+
+    def _log_result(
+        self,
+        tool_name: str,
+        result: ToolResult,
+        user_id: str,
+        arguments: dict[str, Any],
+    ) -> None:
+        """Log tool execution result."""
+        if result.success:
+            audit_logger.log_tool_success(
+                user_id=user_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                result=result.data or {},
+            )
+        else:
+            audit_logger.log_tool_failure(
+                user_id=user_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                error=result.error or "Unknown error",
+            )
+
     async def execute(
         self,
         tool_name: str,
@@ -291,15 +366,6 @@ class MCPRouter:
     ) -> ToolResult:
         """Execute a tool with the given arguments.
 
-        This method:
-        1. Validates the tool exists in the registry
-        2. Sanitizes LLM-generated arguments for injection patterns
-        3. Validates arguments against the tool's JSON schema
-        4. Logs the tool call for audit trail
-        5. Executes the tool handler with user context
-        6. Logs success/failure for audit trail
-        7. Returns a standardized ToolResult
-
         Args:
             tool_name: Name of the tool to execute.
             arguments: Tool arguments (will be validated and sanitized).
@@ -311,120 +377,39 @@ class MCPRouter:
         Returns:
             ToolResult with success status and data/error.
         """
-        logger.info(
-            "Executing tool: %s for user: %s",
-            tool_name,
-            user_id[:8] + "..." if len(user_id) > 8 else user_id,
-        )
+        user_display = user_id[:8] + "..." if len(user_id) > 8 else user_id
+        logger.info("Executing tool: %s for user: %s", tool_name, user_display)
 
-        # Check if tool is registered
         handler = self._tools.get(tool_name)
         if handler is None:
             logger.warning("Tool not found: %s", tool_name)
             audit_logger.log_tool_failure(
-                user_id=user_id,
-                tool_name=tool_name,
-                arguments=arguments,
-                error="Tool not found",
+                user_id=user_id, tool_name=tool_name, arguments=arguments, error="Tool not found"
             )
-            return ToolResult(
-                success=False,
-                error=f"Tool not found: {tool_name}",
-            )
+            return ToolResult(success=False, error=f"Tool not found: {tool_name}")
 
-        # Sanitize LLM-generated arguments
         sanitized_arguments = arguments
         if not skip_sanitization:
-            sanitization_result = input_sanitizer.sanitize(arguments)
-            sanitized_arguments = sanitization_result.sanitized_data
+            sanitized_arguments = self._sanitize_arguments(arguments, user_id, tool_name)
 
-            if sanitization_result.was_modified:
-                audit_logger.log_input_sanitized(
-                    user_id=user_id,
-                    tool_name=tool_name,
-                    sanitized_fields=sanitization_result.sanitized_fields,
-                    original_patterns=sanitization_result.detected_patterns,
-                )
+        audit_logger.log_tool_call(user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments)
 
-        # Log tool call before execution
-        audit_logger.log_tool_call(
-            user_id=user_id,
-            tool_name=tool_name,
-            arguments=sanitized_arguments,
-        )
-
-        # Validate arguments
         if not skip_validation:
-            try:
-                validate_tool_args(tool_name, sanitized_arguments)
-            except ToolNotFoundError:
-                # Tool exists in registry but not in schema - log warning
-                logger.warning(
-                    "Tool %s is registered but has no schema definition",
-                    tool_name,
-                )
-            except ToolValidationError as e:
-                logger.warning(
-                    "Validation failed for tool %s: %s",
-                    tool_name,
-                    e.details,
-                )
-                audit_logger.log_tool_failure(
-                    user_id=user_id,
-                    tool_name=tool_name,
-                    arguments=sanitized_arguments,
-                    error=e.message,
-                )
-                return ToolResult(
-                    success=False,
-                    error=e.message,
-                    data=e.details,
-                )
+            validation_error = self._validate_arguments(tool_name, sanitized_arguments, user_id)
+            if validation_error:
+                return validation_error
 
-        # Execute the handler
         try:
-            if isinstance(handler, ToolHandler):
-                result = await handler.execute(sanitized_arguments, user_id, db)
-            else:
-                # Function-based handler
-                result = await handler(sanitized_arguments, user_id, db)
-
-            logger.info(
-                "Tool %s executed successfully: success=%s",
-                tool_name,
-                result.success,
-            )
-
-            # Log success or failure based on result
-            if result.success:
-                audit_logger.log_tool_success(
-                    user_id=user_id,
-                    tool_name=tool_name,
-                    arguments=sanitized_arguments,
-                    result=result.data or {},
-                )
-            else:
-                audit_logger.log_tool_failure(
-                    user_id=user_id,
-                    tool_name=tool_name,
-                    arguments=sanitized_arguments,
-                    error=result.error or "Unknown error",
-                )
-
+            result = await self._execute_handler(handler, sanitized_arguments, user_id, db)
+            logger.info("Tool %s executed successfully: success=%s", tool_name, result.success)
+            self._log_result(tool_name, result, user_id, sanitized_arguments)
             return result
-
         except Exception as e:
             logger.exception("Tool %s execution failed", tool_name)
             audit_logger.log_tool_failure(
-                user_id=user_id,
-                tool_name=tool_name,
-                arguments=sanitized_arguments,
-                error=str(e),
+                user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments, error=str(e)
             )
-            return ToolResult(
-                success=False,
-                error=f"Tool execution failed: {e!s}",
-            )
+            return ToolResult(success=False, error=f"Tool execution failed: {e!s}")
 
     async def execute_from_json(
         self,

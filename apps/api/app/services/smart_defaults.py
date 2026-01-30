@@ -131,6 +131,23 @@ DEFAULT_THRESHOLD_PERCENTAGE = 0.10
 DEFAULT_ADULTS = 1
 
 
+def _calculate_days_from_match(match: re.Match, pattern: str, fixed_days: int | None) -> int | None:
+    """Calculate days from a regex match based on pattern type."""
+    if fixed_days is not None:
+        return fixed_days
+
+    try:
+        num = int(match.group(1))
+    except (IndexError, ValueError):
+        return None
+
+    if "night" in pattern:
+        return num + 1  # N nights = N+1 days
+    elif "week" in pattern:
+        return num * 7
+    return num  # Days
+
+
 def infer_return_date(description: str, depart_date: date) -> date | None:
     """Infer return date from a natural language trip description.
 
@@ -157,33 +174,20 @@ def infer_return_date(description: str, depart_date: date) -> date | None:
 
     for pattern, fixed_days in DURATION_PATTERNS:
         match = re.search(pattern, description_lower, re.IGNORECASE)
-        if match:
-            if fixed_days is not None:
-                days = fixed_days
-            else:
-                # Extract number from capture group
-                try:
-                    num = int(match.group(1))
-                except (IndexError, ValueError):
-                    continue
+        if not match:
+            continue
 
-                # Determine unit from pattern
-                if "night" in pattern:
-                    # N nights = N+1 days (e.g., 3 nights = 4 day trip)
-                    days = num + 1
-                elif "week" in pattern:
-                    days = num * 7
-                else:
-                    # Days
-                    days = num
+        days = _calculate_days_from_match(match, pattern, fixed_days)
+        if days is None:
+            continue
 
-            logger.debug(
-                "Inferred %d days from '%s' (matched pattern: %s)",
-                days,
-                description,
-                pattern,
-            )
-            return depart_date + timedelta(days=days)
+        logger.debug(
+            "Inferred %d days from '%s' (matched pattern: %s)",
+            days,
+            description,
+            pattern,
+        )
+        return depart_date + timedelta(days=days)
 
     logger.debug("No duration pattern found in: '%s'", description)
     return None
@@ -328,21 +332,11 @@ def parse_trip_duration_text(text: str) -> int | None:
 
     for pattern, fixed_days in DURATION_PATTERNS:
         match = re.search(pattern, text_lower, re.IGNORECASE)
-        if match:
-            if fixed_days is not None:
-                return fixed_days
-            else:
-                try:
-                    num = int(match.group(1))
-                except (IndexError, ValueError):
-                    continue
-
-                if "night" in pattern:
-                    return num + 1
-                elif "week" in pattern:
-                    return num * 7
-                else:
-                    return num
+        if not match:
+            continue
+        days = _calculate_days_from_match(match, pattern, fixed_days)
+        if days is not None:
+            return days
 
     return None
 

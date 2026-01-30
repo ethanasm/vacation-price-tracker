@@ -32,7 +32,10 @@ function getCookieValue(name: string): string | null {
 }
 
 function generateId(): string {
-  return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  // Use crypto.randomUUID() for better uniqueness guarantees.
+  // While message IDs are only used for client-side display (React keys),
+  // crypto provides better randomness than Math.random().
+  return `msg_${crypto.randomUUID()}`;
 }
 
 function generateThreadId(): string {
@@ -51,6 +54,182 @@ function parseSSEData(data: string): ChatChunk | null {
     return JSON.parse(data) as ChatChunk;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Build request headers with optional CSRF token
+ */
+function buildRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+  if (csrfToken) {
+    headers[CSRF_HEADER_NAME] = csrfToken;
+  }
+  return headers;
+}
+
+/**
+ * Context for chunk processing callbacks
+ */
+interface ChunkProcessingContext {
+  assistantMessageId: string;
+  onToolCall?: (toolCall: ToolCall) => void;
+  onToolResult?: (result: ToolResult) => void;
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+}
+
+/**
+ * Process a content chunk
+ */
+function handleContentChunk(
+  chunk: ChatChunk,
+  accumulatedContent: { value: string },
+  ctx: ChunkProcessingContext
+): void {
+  if (chunk.type !== "content") return;
+  accumulatedContent.value += chunk.content;
+  ctx.setMessages((prev) =>
+    prev.map((msg) =>
+      msg.id === ctx.assistantMessageId
+        ? { ...msg, content: accumulatedContent.value }
+        : msg
+    )
+  );
+}
+
+/**
+ * Process a tool call chunk
+ */
+function handleToolCallChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): void {
+  if (chunk.type !== "tool_call") return;
+  const tc = chunk.tool_call;
+
+  const toolCall: ToolCall = {
+    id: tc.id,
+    name: tc.name,
+    arguments: JSON.parse(tc.arguments),
+  };
+  ctx.onToolCall?.(toolCall);
+
+  ctx.setMessages((prev) =>
+    prev.map((msg) =>
+      msg.id === ctx.assistantMessageId
+        ? { ...msg, toolCalls: [...(msg.toolCalls ?? []), toolCall] }
+        : msg
+    )
+  );
+}
+
+/**
+ * Process a tool result chunk
+ */
+function handleToolResultChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): void {
+  if (chunk.type !== "tool_result") return;
+  const tr = chunk.tool_result;
+
+  const result: ToolResult = {
+    toolCallId: tr.tool_call_id,
+    name: tr.name,
+    result: tr.result,
+    isError: !tr.success,
+  };
+  ctx.onToolResult?.(result);
+
+  const toolMessage: ChatMessage = {
+    id: generateId(),
+    role: "tool",
+    content: "",
+    createdAt: new Date(),
+    toolResult: result,
+  };
+  ctx.setMessages((prev) => [...prev, toolMessage]);
+}
+
+/**
+ * Process a rate limit chunk
+ */
+function handleRateLimitChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): void {
+  if (chunk.type !== "rate_limited") return;
+  const rl = chunk.rate_limit;
+
+  const rateLimitMsg = formatRateLimitMessage(rl.attempt, rl.max_attempts, rl.retry_after);
+  ctx.setMessages((prev) =>
+    prev.map((msg) =>
+      msg.id === ctx.assistantMessageId
+        ? { ...msg, content: rateLimitMsg }
+        : msg
+    )
+  );
+}
+
+/**
+ * Process a single SSE chunk
+ */
+function processChunk(
+  chunk: ChatChunk,
+  accumulatedContent: { value: string },
+  ctx: ChunkProcessingContext
+): void {
+  switch (chunk.type) {
+    case "content":
+      handleContentChunk(chunk, accumulatedContent, ctx);
+      break;
+    case "tool_call":
+      handleToolCallChunk(chunk, ctx);
+      break;
+    case "tool_result":
+      handleToolResultChunk(chunk, ctx);
+      break;
+    case "rate_limited":
+      handleRateLimitChunk(chunk, ctx);
+      break;
+    case "error":
+      throw new Error(chunk.error);
+  }
+}
+
+/**
+ * Process SSE stream lines
+ */
+function processStreamLines(
+  lines: string[],
+  accumulatedContent: { value: string },
+  ctx: ChunkProcessingContext
+): void {
+  for (const line of lines) {
+    if (!line.startsWith("data: ")) continue;
+
+    const data = line.slice(6);
+    const chunk = parseSSEData(data);
+    if (chunk) {
+      processChunk(chunk, accumulatedContent, ctx);
+    }
+  }
+}
+
+/**
+ * Read and process the SSE stream
+ */
+async function processStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ctx: ChunkProcessingContext
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const accumulatedContent = { value: "" };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    processStreamLines(lines, accumulatedContent, ctx);
   }
 }
 
@@ -78,9 +257,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!content.trim()) {
-        return;
-      }
+      if (!content.trim()) return;
 
       // Cancel any in-flight request
       abortControllerRef.current?.abort();
@@ -102,7 +279,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         content,
         createdAt: new Date(),
       };
-
       setMessages((prev) => [...prev, userMessage]);
 
       // Create placeholder for assistant response
@@ -113,158 +289,41 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         content: "",
         createdAt: new Date(),
       };
-
       setMessages((prev) => [...prev, assistantMessage]);
 
       try {
-        // Get CSRF token from cookie
-        const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-        };
-        if (csrfToken) {
-          headers[CSRF_HEADER_NAME] = csrfToken;
-        }
-
         const response = await fetch(api, {
           method: "POST",
-          headers,
-          credentials: "include", // Include cookies for auth and CSRF
-          body: JSON.stringify({
-            message: content,
-            thread_id: currentThreadId,
-          }),
+          headers: buildRequestHeaders(),
+          credentials: "include",
+          body: JSON.stringify({ message: content, thread_id: currentThreadId }),
           signal: abortControllerRef.current.signal,
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            errorData.detail || `Request failed with status ${response.status}`
-          );
+          throw new Error(errorData.detail || `Request failed with status ${response.status}`);
         }
 
         if (!response.body) {
           throw new Error("Response body is empty");
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let accumulatedContent = "";
-        const pendingToolCalls: ToolCall[] = [];
-        const toolResults: ToolResult[] = [];
+        const ctx: ChunkProcessingContext = {
+          assistantMessageId,
+          onToolCall,
+          onToolResult,
+          setMessages,
+        };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              const chunk = parseSSEData(data);
-
-              if (!chunk) continue;
-
-              switch (chunk.type) {
-                case "content":
-                  accumulatedContent += chunk.content;
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, content: accumulatedContent }
-                        : msg
-                    )
-                  );
-                  break;
-
-                case "tool_call": {
-                  // tool_call data is nested under chunk.tool_call
-                  const tc = chunk.tool_call;
-                  if (!tc) break;
-                  const toolCall: ToolCall = {
-                    id: tc.id,
-                    name: tc.name,
-                    arguments: JSON.parse(tc.arguments),
-                  };
-                  pendingToolCalls.push(toolCall);
-                  onToolCall?.(toolCall);
-
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, toolCalls: [...(msg.toolCalls ?? []), toolCall] }
-                        : msg
-                    )
-                  );
-                  break;
-                }
-
-                case "tool_result": {
-                  // tool_result data is nested under chunk.tool_result
-                  const tr = chunk.tool_result;
-                  if (!tr) break;
-                  const result: ToolResult = {
-                    toolCallId: tr.tool_call_id,
-                    name: tr.name,
-                    result: tr.result,
-                    isError: !tr.success,
-                  };
-                  toolResults.push(result);
-                  onToolResult?.(result);
-
-                  // Add tool result as separate message
-                  const toolMessage: ChatMessage = {
-                    id: generateId(),
-                    role: "tool",
-                    content: "",
-                    createdAt: new Date(),
-                    toolResult: result,
-                  };
-                  setMessages((prev) => [...prev, toolMessage]);
-                  break;
-                }
-
-                case "rate_limited": {
-                  // Show rate limit status as temporary content
-                  const rl = chunk.rate_limit;
-                  if (!rl) break;
-                  const rateLimitMsg = formatRateLimitMessage(
-                    rl.attempt,
-                    rl.max_attempts,
-                    rl.retry_after
-                  );
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, content: rateLimitMsg }
-                        : msg
-                    )
-                  );
-                  break;
-                }
-
-                case "error":
-                  throw new Error(chunk.error);
-              }
-            }
-          }
-        }
+        await processStream(response.body.getReader(), ctx);
       } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          // Request was cancelled, don't update state
-          return;
-        }
+        if (err instanceof Error && err.name === "AbortError") return;
 
         const error = err instanceof Error ? err : new Error("Unknown error occurred");
         setError(error);
         onError?.(error);
 
-        // Update assistant message to show error
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
@@ -289,15 +348,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   }, []);
 
   const retryLastMessage = useCallback(async () => {
-    if (!lastUserMessageRef.current) {
-      return;
-    }
+    if (!lastUserMessageRef.current) return;
 
     // Remove the last user message and any following messages
     setMessages((prev) => {
-      const lastUserIndex = [...prev]
-        .reverse()
-        .findIndex((msg) => msg.role === "user");
+      const lastUserIndex = [...prev].reverse().findIndex((msg) => msg.role === "user");
       if (lastUserIndex === -1) return prev;
       const actualIndex = prev.length - 1 - lastUserIndex;
       return prev.slice(0, actualIndex);

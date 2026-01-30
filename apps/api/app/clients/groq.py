@@ -390,6 +390,38 @@ class GroqClient:
             attempts_made=self._max_retries + 1,
         ) from error
 
+    async def _handle_rate_limit_in_chat(
+        self,
+        error: RateLimitError,
+        attempt: int,
+        max_attempts: int,
+    ) -> tuple[int, ChatChunk | None]:
+        """Handle rate limit error during chat. Returns (next_attempt, optional_chunk)."""
+        retry_after, delay, is_daily = self._handle_rate_limit_sync(error, attempt)
+        if is_daily or retry_after is not None:
+            self._raise_rate_limit_error(error, retry_after, delay, is_daily, attempt)
+        # Return chunk to yield and updated attempt
+        chunk = ChatChunk(
+            rate_limit_status=RateLimitStatus(
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                retry_after=delay,
+            )
+        )
+        return delay, chunk
+
+    async def _handle_api_error_in_chat(self, error: APIError, attempt: int) -> int:
+        """Handle API error during chat. Returns next attempt or raises."""
+        if self._is_tool_call_error(error):
+            new_attempt = await self._handle_tool_call_error(error, attempt)
+            if new_attempt >= 0:
+                return new_attempt
+            raise GroqToolCallError(
+                "The AI failed to generate a valid response. Please try rephrasing your request."
+            ) from error
+        logger.exception("Groq API error: %s", error)
+        raise GroqRequestError(f"Groq API error: {error}") from error
+
     async def chat(
         self,
         messages: list[Message],
@@ -428,32 +460,13 @@ class GroqClient:
                     yield chunk
                 return
             except RateLimitError as e:
-                retry_after, delay, is_daily = self._handle_rate_limit_sync(e, attempt)
-                if is_daily or retry_after is not None:
-                    self._raise_rate_limit_error(e, retry_after, delay, is_daily, attempt)
-                # Yield rate limit status so caller can inform the user
-                yield ChatChunk(
-                    rate_limit_status=RateLimitStatus(
-                        attempt=attempt + 1,
-                        max_attempts=max_attempts,
-                        retry_after=delay,
-                    )
-                )
+                delay, chunk = await self._handle_rate_limit_in_chat(e, attempt, max_attempts)
+                if chunk:
+                    yield chunk
                 await asyncio.sleep(delay)
                 attempt += 1
             except APIError as e:
-                # Handle tool call generation failures (model produced invalid JSON)
-                if self._is_tool_call_error(e):
-                    attempt = await self._handle_tool_call_error(e, attempt)
-                    if attempt >= 0:
-                        continue  # Retry
-                    # Exhausted retries
-                    raise GroqToolCallError(
-                        "The AI failed to generate a valid response. Please try rephrasing your request."
-                    ) from e
-                # Re-raise other API errors
-                logger.exception("Groq API error: %s", e)
-                raise GroqRequestError(f"Groq API error: {e}") from e
+                attempt = await self._handle_api_error_in_chat(e, attempt)
             except GroqClientError:
                 raise
             except Exception as e:

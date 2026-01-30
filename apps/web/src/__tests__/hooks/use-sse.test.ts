@@ -666,4 +666,144 @@ describe("useSSE", () => {
       expect(firstInstance?.readyState).toBe(2); // First closed
     });
   });
+
+  describe("edge cases and error handling", () => {
+    it("handles invalid JSON in onmessage gracefully", () => {
+      const { result } = renderHook(() => useSSE());
+      const instance = MockEventSource.getLatest();
+
+      // Simulate invalid JSON being received
+      act(() => {
+        if (instance?.onmessage) {
+          const event = new MessageEvent("message", {
+            data: "invalid json {{{",
+          });
+          instance.onmessage(event);
+        }
+      });
+
+      // Should not crash and state should remain stable
+      expect(result.current.priceUpdates).toEqual([]);
+    });
+
+    it("handles onmessage with valid JSON but wrong type", () => {
+      const { result } = renderHook(() => useSSE());
+      const instance = MockEventSource.getLatest();
+
+      // Simulate valid JSON but not a price_update type
+      act(() => {
+        if (instance?.onmessage) {
+          const event = new MessageEvent("message", {
+            data: JSON.stringify({ type: "other", data: "something" }),
+          });
+          instance.onmessage(event);
+        }
+      });
+
+      // Should not add to price updates
+      expect(result.current.priceUpdates).toEqual([]);
+    });
+
+    it("does not reconnect after unmount during timeout", () => {
+      const { result, unmount } = renderHook(() =>
+        useSSE({
+          maxReconnectAttempts: 3,
+          reconnectDelay: 1000,
+        })
+      );
+
+      // Trigger error to start reconnect timer
+      act(() => {
+        MockEventSource.getLatest()?.simulateError();
+      });
+
+      const instanceCountBeforeUnmount = MockEventSource.instances.length;
+
+      // Unmount before the reconnect timer fires
+      unmount();
+
+      // Advance timers past the reconnect delay
+      act(() => {
+        jest.advanceTimersByTime(5000);
+      });
+
+      // No new connections should have been created
+      expect(MockEventSource.instances.length).toBe(instanceCountBeforeUnmount);
+    });
+
+    it("handles error event with unparseable data", () => {
+      const onError = jest.fn();
+      renderHook(() => useSSE({ onError }));
+      const instance = MockEventSource.getLatest();
+
+      // Dispatch error event with invalid JSON
+      act(() => {
+        const event = new MessageEvent("error", {
+          data: "not valid json",
+        });
+        if (instance) {
+          // @ts-expect-error - accessing private for testing
+          const listeners = instance.eventListeners.error;
+          if (listeners) {
+            for (const l of listeners) {
+              l(event);
+            }
+          }
+        }
+      });
+
+      // Should not call onError since we couldn't parse the error data
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it("handles heartbeat event with invalid data gracefully", () => {
+      const onHeartbeat = jest.fn();
+      renderHook(() => useSSE({ onHeartbeat }));
+      const instance = MockEventSource.getLatest();
+
+      // Dispatch heartbeat with invalid JSON
+      act(() => {
+        const event = new MessageEvent("heartbeat", {
+          data: "invalid",
+        });
+        if (instance) {
+          // @ts-expect-error - accessing private for testing
+          const listeners = instance.eventListeners.heartbeat;
+          if (listeners) {
+            for (const l of listeners) {
+              l(event);
+            }
+          }
+        }
+      });
+
+      // Should not call onHeartbeat since data couldn't be parsed
+      expect(onHeartbeat).not.toHaveBeenCalled();
+    });
+
+    it("handles connected event with invalid data gracefully", () => {
+      const onConnected = jest.fn();
+      renderHook(() => useSSE({ onConnected }));
+      const instance = MockEventSource.getLatest();
+
+      // Dispatch connected with invalid JSON
+      act(() => {
+        const event = new MessageEvent("connected", {
+          data: "invalid json",
+        });
+        if (instance) {
+          // @ts-expect-error - accessing private for testing
+          const listeners = instance.eventListeners.connected;
+          if (listeners) {
+            for (const l of listeners) {
+              l(event);
+            }
+          }
+        }
+      });
+
+      // Should not call onConnected since data couldn't be parsed
+      expect(onConnected).not.toHaveBeenCalled();
+    });
+  });
 });

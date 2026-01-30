@@ -5,6 +5,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:8000";
 
 /**
+ * Update price updates state with a new or updated entry
+ */
+function updatePriceUpdatesState(
+  prev: PriceUpdateEvent[],
+  data: PriceUpdateEvent
+): PriceUpdateEvent[] {
+  const existing = prev.findIndex((u) => u.trip_id === data.trip_id);
+  if (existing !== -1) {
+    const updated = [...prev];
+    updated[existing] = data;
+    return updated;
+  }
+  return [...prev, data];
+}
+
+/**
+ * Safely parse JSON event data
+ */
+function parseEventData<T>(eventData: string): T | null {
+  try {
+    return JSON.parse(eventData) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Event types emitted by the SSE endpoint
  */
 export type SSEEventType = "connected" | "price_update" | "heartbeat" | "error";
@@ -240,74 +267,42 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
-      // Handle generic messages (shouldn't happen with named events)
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "price_update" && isMountedRef.current) {
-          setPriceUpdates((prev) => {
-            const existing = prev.findIndex((u) => u.trip_id === data.trip_id);
-            if (existing !== -1) {
-              // Update existing entry
-              const updated = [...prev];
-              updated[existing] = data;
-              return updated;
-            }
-            return [...prev, data];
-          });
-          callbacksRef.current.onPriceUpdate?.(data);
-        }
-      } catch {
-        // Ignore parse errors
+      const data = parseEventData<PriceUpdateEvent>(event.data);
+      if (data?.type === "price_update" && isMountedRef.current) {
+        setPriceUpdates((prev) => updatePriceUpdatesState(prev, data));
+        callbacksRef.current.onPriceUpdate?.(data);
       }
     };
 
     eventSource.addEventListener("connected", (event: MessageEvent) => {
       reconnectAttemptsRef.current = 0;
       updateConnectionState("connected");
-      try {
-        const data = JSON.parse(event.data) as ConnectedEvent;
+      const data = parseEventData<ConnectedEvent>(event.data);
+      if (data) {
         callbacksRef.current.onConnected?.(data);
-      } catch {
-        // Ignore parse errors
       }
     });
 
     eventSource.addEventListener("price_update", (event: MessageEvent) => {
       if (!isMountedRef.current) return;
-
-      try {
-        const data = JSON.parse(event.data) as PriceUpdateEvent;
-        setPriceUpdates((prev) => {
-          const existing = prev.findIndex((u) => u.trip_id === data.trip_id);
-          if (existing !== -1) {
-            // Update existing entry
-            const updated = [...prev];
-            updated[existing] = data;
-            return updated;
-          }
-          return [...prev, data];
-        });
+      const data = parseEventData<PriceUpdateEvent>(event.data);
+      if (data) {
+        setPriceUpdates((prev) => updatePriceUpdatesState(prev, data));
         callbacksRef.current.onPriceUpdate?.(data);
-      } catch {
-        // Ignore parse errors
       }
     });
 
     eventSource.addEventListener("heartbeat", (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as HeartbeatEvent;
+      const data = parseEventData<HeartbeatEvent>(event.data);
+      if (data) {
         callbacksRef.current.onHeartbeat?.(data);
-      } catch {
-        // Ignore parse errors
       }
     });
 
     eventSource.addEventListener("error", (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as ErrorEvent;
+      const data = parseEventData<ErrorEvent>(event.data);
+      if (data) {
         handleError(new Error(data.error));
-      } catch {
-        // If we can't parse the error, it's likely a connection error
       }
     });
 

@@ -287,6 +287,13 @@ class LastMinuteMCPClient:
             error=None,
         )
 
+    def _extract_price(self, data: dict[str, Any]) -> Decimal | None:
+        """Extract and parse price from flight data."""
+        price_amount_cents = data.get("price_amount")
+        if price_amount_cents is not None:
+            return Decimal(price_amount_cents) / 100
+        return self._parse_price_string(data.get("price", ""))
+
     def _parse_flight(
         self,
         data: dict[str, Any],
@@ -302,34 +309,16 @@ class LastMinuteMCPClient:
         Returns:
             Parsed FlightSearchFlight or None if parsing fails.
         """
-        # Parse departure info: "BGY 09:25"
-        departure_str = data.get("departure", "")
-        dep_airport, dep_time = self._parse_airport_time(departure_str)
-
-        # Parse arrival info: "STN 10:30"
-        arrival_str = data.get("arrival", "")
-        arr_airport, arr_time = self._parse_airport_time(arrival_str)
-
-        # Parse duration: "2 hours and 5 min" -> minutes
-        duration_str = data.get("duration", "")
-        duration_minutes = self._parse_duration(duration_str)
-
-        # Parse stops: "Direct" or "1 stop"
-        stops_str = data.get("stops", "")
-        stops = self._parse_stops(stops_str)
-
-        # Parse price - prefer price_amount (in cents) over price string
-        price_amount_cents = data.get("price_amount")
-        price_str = data.get("price", "")
-
-        if price_amount_cents is not None:
-            price_amount = Decimal(price_amount_cents) / 100
-        else:
-            price_amount = self._parse_price_string(price_str)
-
+        price_amount = self._extract_price(data)
         if price_amount is None:
             logger.warning("Could not parse price from: %s", data)
             return None
+
+        dep_airport, dep_time = self._parse_airport_time(data.get("departure", ""))
+        arr_airport, arr_time = self._parse_airport_time(data.get("arrival", ""))
+        duration_minutes = self._parse_duration(data.get("duration", ""))
+        stops_str = data.get("stops", "")
+        stops = self._parse_stops(stops_str)
 
         return FlightSearchFlight(
             departure_airport=dep_airport or "",
@@ -341,10 +330,10 @@ class LastMinuteMCPClient:
             duration_minutes=duration_minutes,
             stops=stops,
             stops_text=stops_str or None,
-            layovers=[],  # lastminute.com doesn't provide detailed layover info
+            layovers=[],
             price_amount=price_amount,
             price_currency=default_currency,
-            price_display=price_str or None,
+            price_display=data.get("price") or None,
             booking_link=data.get("deeplink"),
             provider="lastminute",
             raw_data=data,
