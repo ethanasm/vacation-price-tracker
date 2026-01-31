@@ -17,3 +17,7 @@
 /certs/*.key
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Nx
+.nx/cache
+.nx/workspace-data

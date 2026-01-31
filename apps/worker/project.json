@@ -1,0 +1,58 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "worker",
+  "projectType": "application",
+  "sourceRoot": "apps/worker/worker",
+  "tags": ["scope:worker", "type:app", "lang:python"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "uv run ruff check apps/worker/",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run ruff format apps/worker/",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "uv run pytest apps/worker/tests -v",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "test:coverage": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "outputs": ["{projectRoot}/coverage.xml"],
+      "options": {
+        "command": "uv run pytest apps/worker/tests -v --cov=worker --cov-fail-under=95 --cov-report=term --cov-report=xml:apps/worker/coverage.xml",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run python -m worker",
+        "cwd": "apps/worker"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run python -m worker",
+        "cwd": "apps/worker"
+      }
+    }
+  }
+}

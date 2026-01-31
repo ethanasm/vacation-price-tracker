@@ -20,32 +20,78 @@ jobs:
       AMADEUS_API_SECRET: test-amadeus-secret
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for nx affected
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install uv
         run: pip install uv
-      - name: Install dependencies
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Nx
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: ${{ runner.os }}-nx-python-${{ hashFiles('**/uv.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nx-python-${{ hashFiles('**/uv.lock', '**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nx-python-
+
+      - name: Install Node dependencies (for Nx)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Python dependencies
         run: uv sync --extra dev
-      - name: Build
-        run: uv build
-      - name: Lint
-        run: uv run ruff check apps/api apps/worker
-      - name: Api Test
-        run: uv run pytest apps/api/tests -v
-      - name: Worker Test
-        run: uv run pytest apps/worker/tests -v
+
+      - name: Set NX_BASE for affected commands
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
+          else
+            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+          fi
+
+      - name: Lint (affected Python)
+        run: pnpm nx affected -t lint --base=${{ env.NX_BASE }} --projects=api,worker
+
+      - name: Test API (affected)
+        run: pnpm nx affected -t test:coverage --base=${{ env.NX_BASE }} --projects=api
+
+      - name: Test Worker (affected)
+        run: pnpm nx affected -t test:coverage --base=${{ env.NX_BASE }} --projects=worker
 
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install uv
         run: pip install uv
+
       - name: Install dependencies
         run: uv sync --extra dev
+
       - name: Run pip-audit
         run: uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994

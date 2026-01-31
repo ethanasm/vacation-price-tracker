@@ -1,0 +1,89 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "web",
+  "projectType": "application",
+  "sourceRoot": "apps/web/src",
+  "tags": ["scope:web", "type:app"],
+  "targets": {
+    "build": {
+      "executor": "@nx/next:build",
+      "outputs": ["{projectRoot}/.next"],
+      "cache": true,
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "apps/web/.next"
+      },
+      "configurations": {
+        "development": {},
+        "production": {}
+      }
+    },
+    "dev": {
+      "executor": "@nx/next:server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "web:build",
+        "dev": true,
+        "port": 3000
+      },
+      "configurations": {
+        "development": {},
+        "production": {
+          "dev": false
+        }
+      }
+    },
+    "start": {
+      "executor": "@nx/next:server",
+      "options": {
+        "buildTarget": "web:build",
+        "dev": false,
+        "port": 3000
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "pnpm biome lint .",
+        "cwd": "apps/web"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "pnpm tsc --noEmit",
+        "cwd": "apps/web"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "NODE_NO_WARNINGS=1 CI=true pnpm jest",
+        "cwd": "apps/web"
+      }
+    },
+    "test:coverage": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "outputs": ["{projectRoot}/coverage"],
+      "options": {
+        "command": "NODE_NO_WARNINGS=1 CI=true pnpm jest --coverage",
+        "cwd": "apps/web"
+      }
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm biome format --write .",
+        "cwd": "apps/web"
+      }
+    }
+  }
+}
