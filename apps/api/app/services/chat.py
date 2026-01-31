@@ -5,6 +5,8 @@ This module provides:
 - Tool call loop with multi-turn support
 - Message persistence integration
 - Streaming SSE chunk generation
+- Query validation for travel-related requests
+- Tool retry limits to prevent infinite loops
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from app.clients.groq import (
@@ -33,6 +36,7 @@ from app.schemas.chat import ChatChunk
 from app.schemas.mcp import get_all_tools
 from app.services.conversation import ConversationService, conversation_service
 from app.services.mcp_router import MCPRouter, ToolResult, get_mcp_router
+from app.services.query_validator import validate_query
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -47,6 +51,9 @@ logger = logging.getLogger(__name__)
 # Maximum number of tool call rounds to prevent infinite loops
 MAX_TOOL_ROUNDS = 10
 
+# Maximum number of times a single tool can be called per conversation turn
+MAX_TOOL_RETRIES = 3
+
 
 class ChatServiceError(Exception):
     """Base error for chat service failures."""
@@ -54,6 +61,69 @@ class ChatServiceError(Exception):
 
 class ToolLoopExceededError(ChatServiceError):
     """Raised when tool call loop exceeds maximum rounds."""
+
+
+class ToolRetryExceededError(ChatServiceError):
+    """Raised when a specific tool exceeds retry limit."""
+
+
+class ToolRetryTracker:
+    """Tracks tool call attempts to prevent infinite retries.
+
+    Each tool can only be called MAX_TOOL_RETRIES times per conversation turn.
+    This prevents the LLM from getting stuck in a loop calling the same tool.
+    """
+
+    def __init__(self, max_retries: int = MAX_TOOL_RETRIES) -> None:
+        """Initialize the tracker.
+
+        Args:
+            max_retries: Maximum times a tool can be called per turn.
+        """
+        self._counts: Counter[str] = Counter()
+        self._max_retries = max_retries
+
+    def record_call(self, tool_name: str) -> None:
+        """Record a tool call attempt.
+
+        Args:
+            tool_name: Name of the tool being called.
+        """
+        self._counts[tool_name] += 1
+
+    def is_exceeded(self, tool_name: str) -> bool:
+        """Check if tool has exceeded retry limit.
+
+        Args:
+            tool_name: Name of the tool to check.
+
+        Returns:
+            True if tool has been called more than max_retries times.
+        """
+        return self._counts[tool_name] >= self._max_retries
+
+    def get_count(self, tool_name: str) -> int:
+        """Get current call count for a tool.
+
+        Args:
+            tool_name: Name of the tool.
+
+        Returns:
+            Number of times the tool has been called.
+        """
+        return self._counts[tool_name]
+
+    def get_exceeded_tools(self) -> list[str]:
+        """Get list of tools that have exceeded their retry limit.
+
+        Returns:
+            List of tool names that hit the limit.
+        """
+        return [name for name, count in self._counts.items() if count >= self._max_retries]
+
+    def reset(self) -> None:
+        """Reset all counters."""
+        self._counts.clear()
 
 
 def _get_rate_limit_error_message(error: GroqRateLimitError) -> str:
@@ -220,9 +290,41 @@ async def _process_tool_calls(
     user_id: str,
     db: AsyncSession,
     messages: list[GroqMessage],
-) -> AsyncGenerator[ChatChunk, None]:
-    """Execute tool calls and yield chunks, appending results to messages."""
+    retry_tracker: ToolRetryTracker | None = None,
+) -> AsyncGenerator[ChatChunk | tuple[ChatChunk, bool], None]:
+    """Execute tool calls and yield chunks, appending results to messages.
+
+    Args:
+        tool_calls: List of tool calls to execute.
+        router: MCP router for tool execution.
+        user_id: User ID for authorization.
+        db: Database session.
+        messages: Message list to append results to.
+        retry_tracker: Optional tracker for tool retry limits.
+
+    Yields:
+        ChatChunk objects, or (ChatChunk, exceeded_flag) tuples when retry limit hit.
+    """
     for tool_call in tool_calls:
+        tool_name = tool_call.function.name
+
+        # Check if tool has exceeded retry limit
+        if retry_tracker is not None:
+            if retry_tracker.is_exceeded(tool_name):
+                logger.warning(
+                    "Tool %s exceeded retry limit (%d calls), skipping",
+                    tool_name,
+                    retry_tracker.get_count(tool_name),
+                )
+                # Yield error chunk indicating tool was skipped
+                yield ChatChunk.error_chunk(
+                    f"Tool '{tool_name}' has been called too many times ({MAX_TOOL_RETRIES}). "
+                    "Please try a different approach or rephrase your request."
+                ), True
+                continue
+
+            retry_tracker.record_call(tool_name)
+
         result = None
         async for chunk, tool_result in _execute_tool_call(tool_call, router, user_id, db):
             yield chunk
@@ -240,10 +342,21 @@ async def _run_single_tool_round(
     router: MCPRouter,
     user_id: str,
     db: AsyncSession,
+    retry_tracker: ToolRetryTracker | None = None,
 ) -> AsyncGenerator[tuple[ChatChunk | None, bool], None]:
     """Run a single round of LLM + tool execution.
 
-    Yields (chunk, should_continue) tuples. should_continue is False when no more rounds needed.
+    Args:
+        client: Groq client for LLM calls.
+        messages: Conversation messages.
+        tools: Available tools.
+        router: MCP router for tool execution.
+        user_id: User ID for authorization.
+        db: Database session.
+        retry_tracker: Optional tracker for tool retry limits.
+
+    Yields:
+        (chunk, should_continue) tuples. should_continue is False when no more rounds needed.
     """
     full_content = ""
     accumulated_tool_calls: list[ToolCall] = []
@@ -262,8 +375,22 @@ async def _run_single_tool_round(
     _log_tool_call_start(user_id, len(accumulated_tool_calls))
     messages.append(_create_assistant_message(full_content, accumulated_tool_calls))
 
-    async for chunk in _process_tool_calls(accumulated_tool_calls, router, user_id, db, messages):
-        yield chunk, True
+    any_exceeded = False
+    async for result in _process_tool_calls(
+        accumulated_tool_calls, router, user_id, db, messages, retry_tracker
+    ):
+        # Handle both plain chunks and (chunk, exceeded) tuples
+        if isinstance(result, tuple):
+            chunk, exceeded = result
+            if exceeded:
+                any_exceeded = True
+            yield chunk, True
+        else:
+            yield result, True
+
+    # If any tools exceeded their retry limit, signal to stop processing
+    if any_exceeded:
+        yield None, False
 
 
 async def process_chat_with_tools(
@@ -282,6 +409,7 @@ async def process_chat_with_tools(
     3. Executes any tool calls made by the LLM
     4. Continues the conversation with tool results
     5. Repeats until the LLM responds without tool calls
+    6. Tracks tool retry counts to prevent infinite loops on specific tools
 
     Args:
         messages: List of conversation messages in Groq format.
@@ -301,19 +429,26 @@ async def process_chat_with_tools(
     router = router or get_mcp_router()
     tools = _convert_tools_to_groq_format()
 
+    # Create retry tracker for this conversation turn
+    retry_tracker = ToolRetryTracker(max_retries=MAX_TOOL_RETRIES)
+
     for round_count in range(1, MAX_TOOL_ROUNDS + 1):
         logger.debug("Tool round %d/%d", round_count, MAX_TOOL_ROUNDS)
 
         try:
             should_continue = True
             async for chunk, continue_flag in _run_single_tool_round(
-                client, messages, tools, router, user_id, db
+                client, messages, tools, router, user_id, db, retry_tracker
             ):
                 should_continue = continue_flag
                 if chunk:
                     yield chunk
 
             if not should_continue:
+                # Log if any tools hit their retry limit
+                exceeded = retry_tracker.get_exceeded_tools()
+                if exceeded:
+                    logger.warning("Tools that hit retry limit: %s", exceeded)
                 return
 
         except GroqClientError as e:
@@ -386,6 +521,22 @@ class ChatService:
         Yields:
             ChatChunk objects for each piece of the response.
         """
+        # 0. Validate query is within travel scope
+        validation = validate_query(message)
+        if not validation.is_valid:
+            logger.warning(
+                "Query rejected - not travel-related: %s (reason: %s)",
+                message[:50],
+                validation.reason,
+            )
+            yield ChatChunk.text(
+                "I'm a travel assistant focused on helping you track vacation prices. "
+                "I can help you create trips, monitor flight and hotel prices, set price alerts, "
+                "and manage your travel plans. Is there something travel-related I can help you with?"
+            )
+            yield ChatChunk.done_chunk(thread_id=thread_id)
+            return
+
         # 1. Get or create conversation
         conversation = await self._conversation_svc.get_or_create_conversation(thread_id, user.id, db)
         logger.info(

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Space_Grotesk } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
 import { ThemeProvider } from "../context/ThemeContext";
+import { SSEProvider } from "../lib/sse-provider";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
 import styles from "./layout.module.css";
@@ -69,9 +70,11 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <AuthProvider>
-            {children}
-            <SiteFooter />
-            <Toaster position="top-right" richColors closeButton />
+            <SSEProvider showToasts>
+              {children}
+              <SiteFooter />
+              <Toaster position="top-right" richColors closeButton />
+            </SSEProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

@@ -9,6 +9,11 @@ jest.mock("../context/AuthContext", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// Mock the SSEProvider (uses useRouter which isn't available in tests)
+jest.mock("../lib/sse-provider", () => ({
+  SSEProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 // Mock CSS modules
 jest.mock("./layout.module.css", () => ({
   footer: "footer",

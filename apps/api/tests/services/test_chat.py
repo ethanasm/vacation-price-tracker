@@ -33,7 +33,6 @@ from app.models.user import User
 from app.schemas.chat import ChatChunk, ChatChunkType
 from app.schemas.mcp import ToolResult
 from app.services.chat import (
-    MAX_TOOL_ROUNDS,
     ChatService,
     _convert_db_messages_to_groq,
     _convert_tools_to_groq_format,
@@ -414,7 +413,12 @@ class TestProcessChatWithTools:
 
     @pytest.mark.asyncio
     async def test_tool_loop_limit(self):
-        """Test that tool loop is limited to prevent infinite loops."""
+        """Test that tool loop is limited to prevent infinite loops.
+
+        Note: With the new per-tool retry limit, a single tool calling the same
+        tool repeatedly will hit the per-tool limit (3) before the total loop
+        limit (10). This test verifies that the loop still terminates.
+        """
         mock_client = MagicMock(spec=GroqClient)
         mock_router = MagicMock(spec=MCPRouter)
 
@@ -445,13 +449,16 @@ class TestProcessChatWithTools:
             )
         )
 
-        # Should end with an error about exceeding max rounds
+        # Should end with an error about tool being called too many times
         error_chunks = [c for c in chunks if c.type == ChatChunkType.ERROR]
-        assert len(error_chunks) == 1
-        assert "maximum rounds" in error_chunks[0].error.lower()
+        assert len(error_chunks) >= 1
+        # The error should mention either "maximum rounds" or "too many times"
+        error_text = error_chunks[0].error.lower()
+        assert "too many times" in error_text or "maximum rounds" in error_text
 
-        # Router should have been called MAX_TOOL_ROUNDS times
-        assert mock_router.execute_from_json.call_count == MAX_TOOL_ROUNDS
+        # Router should have been called exactly MAX_TOOL_RETRIES (3) times
+        # because the per-tool limit kicks in first
+        assert mock_router.execute_from_json.call_count == 3
 
     @pytest.mark.asyncio
     async def test_multiple_tool_calls_in_one_turn(self):
@@ -548,6 +555,100 @@ class TestProcessChatWithTools:
         # Should complete without error
         content_chunks = [c for c in chunks if c.type == ChatChunkType.CONTENT]
         assert len(content_chunks) >= 1
+
+    @pytest.mark.asyncio
+    async def test_tool_retry_limit_exceeded(self):
+        """Test that a specific tool is blocked after exceeding retry limit."""
+        mock_client = MagicMock(spec=GroqClient)
+        mock_router = MagicMock(spec=MCPRouter)
+
+        call_count = [0]
+
+        async def mock_chat(*args, **kwargs):
+            call_count[0] += 1
+            # Always try to call list_trips - should be blocked after 3 attempts
+            yield GroqChatChunk(
+                tool_calls=[
+                    ToolCall(
+                        id=f"call_{call_count[0]}",
+                        type="function",
+                        function=ToolCallFunction(name="list_trips", arguments="{}"),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+
+        mock_client.chat = mock_chat
+        mock_router.execute_from_json = AsyncMock(return_value=ToolResult(success=True, data={"trips": []}))
+
+        messages = [GroqMessage(role="user", content="Keep listing trips")]
+        chunks = await collect_chunks(
+            process_chat_with_tools(
+                messages=messages,
+                user_id="user-123",
+                db=None,
+                client=mock_client,
+                router=mock_router,
+            )
+        )
+
+        # Should have error chunk about tool being called too many times
+        error_chunks = [c for c in chunks if c.type == ChatChunkType.ERROR]
+        assert len(error_chunks) >= 1
+        assert any("too many times" in c.error.lower() for c in error_chunks)
+
+        # Router should only be called MAX_TOOL_RETRIES times (3) for list_trips
+        # Since the tool is blocked after 3 calls
+        assert mock_router.execute_from_json.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_different_tools_have_separate_limits(self):
+        """Test that different tools have independent retry limits."""
+        mock_client = MagicMock(spec=GroqClient)
+        mock_router = MagicMock(spec=MCPRouter)
+
+        call_count = [0]
+
+        async def mock_chat(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                # First two rounds: call different tools
+                yield GroqChatChunk(
+                    tool_calls=[
+                        ToolCall(
+                            id=f"call_{call_count[0]}a",
+                            type="function",
+                            function=ToolCallFunction(name="list_trips", arguments="{}"),
+                        ),
+                        ToolCall(
+                            id=f"call_{call_count[0]}b",
+                            type="function",
+                            function=ToolCallFunction(name="trigger_refresh", arguments="{}"),
+                        ),
+                    ],
+                    finish_reason="tool_calls",
+                )
+            else:
+                yield GroqChatChunk(content="Done")
+                yield GroqChatChunk(finish_reason="stop")
+
+        mock_client.chat = mock_chat
+        mock_router.execute_from_json = AsyncMock(return_value=ToolResult(success=True, data={}))
+
+        messages = [GroqMessage(role="user", content="Do multiple things")]
+        # Consume all chunks to trigger tool execution
+        await collect_chunks(
+            process_chat_with_tools(
+                messages=messages,
+                user_id="user-123",
+                db=None,
+                client=mock_client,
+                router=mock_router,
+            )
+        )
+
+        # Both tools should be called twice each (within their limits)
+        assert mock_router.execute_from_json.call_count == 4
 
 
 # =============================================================================
@@ -892,6 +993,131 @@ class TestChatService:
         )
 
         conv_svc.get_messages.assert_called_once_with(conversation.id, db, limit=50)
+
+    @pytest.mark.asyncio
+    async def test_send_message_rejects_non_travel_query(self):
+        """Test that non-travel queries are rejected with helpful message."""
+        conv_svc = MagicMock(spec=ConversationService)
+        groq = MagicMock(spec=GroqClient)
+        router = MagicMock(spec=MCPRouter)
+        db = AsyncMock()
+
+        user = make_user()
+        service = ChatService(
+            conversation_svc=conv_svc,
+            groq_client_instance=groq,
+            mcp_router=router,
+        )
+
+        # Send a malicious query
+        chunks = await collect_chunks(
+            service.send_message(
+                user=user,
+                message="drop table users; --",
+                db=db,
+            )
+        )
+
+        # Should get a helpful message rejecting the query
+        content_chunks = [c for c in chunks if c.type == ChatChunkType.CONTENT]
+        assert len(content_chunks) >= 1
+        assert "travel assistant" in content_chunks[0].content.lower()
+
+        # Should get a done chunk
+        done_chunks = [c for c in chunks if c.type == ChatChunkType.DONE]
+        assert len(done_chunks) == 1
+
+        # Groq should NOT be called for rejected queries
+        groq.chat.assert_not_called()
+
+        # Conversation should NOT be created for rejected queries
+        conv_svc.get_or_create_conversation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_send_message_accepts_travel_query(self):
+        """Test that travel-related queries are accepted."""
+        conv_svc = MagicMock(spec=ConversationService)
+        groq = MagicMock(spec=GroqClient)
+        router = MagicMock(spec=MCPRouter)
+        db = AsyncMock()
+
+        conversation = make_conversation()
+        conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
+        conv_svc.add_message = AsyncMock(return_value=make_message())
+        conv_svc.get_messages_for_context = AsyncMock(return_value=[])
+        conv_svc.messages_to_groq_format = MagicMock(return_value=[])
+        conv_svc.prune_old_messages = AsyncMock(return_value=0)
+
+        async def mock_chat(*args, **kwargs):
+            yield GroqChatChunk(content="I can help you with that trip!")
+            yield GroqChatChunk(finish_reason="stop")
+
+        groq.chat = mock_chat
+
+        user = make_user()
+        service = ChatService(
+            conversation_svc=conv_svc,
+            groq_client_instance=groq,
+            mcp_router=router,
+        )
+
+        chunks = await collect_chunks(
+            service.send_message(
+                user=user,
+                message="Create a trip to Hawaii for next month",
+                db=db,
+            )
+        )
+
+        # Should have content from LLM
+        content_chunks = [c for c in chunks if c.type == ChatChunkType.CONTENT]
+        assert len(content_chunks) >= 1
+
+        # Conversation should be created
+        conv_svc.get_or_create_conversation.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_message_accepts_greeting(self):
+        """Test that simple greetings are accepted."""
+        conv_svc = MagicMock(spec=ConversationService)
+        groq = MagicMock(spec=GroqClient)
+        router = MagicMock(spec=MCPRouter)
+        db = AsyncMock()
+
+        conversation = make_conversation()
+        conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
+        conv_svc.add_message = AsyncMock(return_value=make_message())
+        conv_svc.get_messages_for_context = AsyncMock(return_value=[])
+        conv_svc.messages_to_groq_format = MagicMock(return_value=[])
+        conv_svc.prune_old_messages = AsyncMock(return_value=0)
+
+        async def mock_chat(*args, **kwargs):
+            yield GroqChatChunk(content="Hello! How can I help with your travel plans?")
+            yield GroqChatChunk(finish_reason="stop")
+
+        groq.chat = mock_chat
+
+        user = make_user()
+        service = ChatService(
+            conversation_svc=conv_svc,
+            groq_client_instance=groq,
+            mcp_router=router,
+        )
+
+        chunks = await collect_chunks(
+            service.send_message(
+                user=user,
+                message="Hello!",
+                db=db,
+            )
+        )
+
+        # Should have content from LLM
+        content_chunks = [c for c in chunks if c.type == ChatChunkType.CONTENT]
+        assert len(content_chunks) >= 1
+
+        # Greeting should be accepted
+        conv_svc.get_or_create_conversation.assert_called_once()
 
 
 # =============================================================================

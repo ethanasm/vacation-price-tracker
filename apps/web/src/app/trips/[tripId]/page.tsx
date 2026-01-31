@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useState, useEffect, useCallback } from "react";
+import React, { use, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -44,6 +44,7 @@ import type { TripDetail, PriceSnapshot, ApiFlightOffer, ApiHotelOffer } from "@
 import { api, ApiError } from "@/lib/api";
 import { formatPrice, formatShortDate, formatDateTime, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
 import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
+import { useSSEContextOptional } from "@/lib/sse-provider";
 import styles from "./page.module.css";
 
 /** Build a stable flight signature from itinerary segments: e.g. "B6-100+B6-200" */
@@ -668,6 +669,29 @@ export default function TripDetailPage({
     fetchTripDetails();
   }, [fetchTripDetails]);
 
+  // Listen for SSE price updates for this trip
+  const sseContext = useSSEContextOptional();
+  const priceUpdates = sseContext?.priceUpdates;
+  const lastUpdateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!priceUpdates || !tripId) return;
+
+    // Find the latest price update for this trip
+    const tripUpdate = priceUpdates.find((u) => u.trip_id === tripId);
+    if (!tripUpdate) return;
+
+    // Only refetch if this is a new update (compare updated_at timestamp)
+    if (tripUpdate.updated_at === lastUpdateRef.current) return;
+    lastUpdateRef.current = tripUpdate.updated_at;
+
+    // Skip if we're already loading or refreshing (avoid duplicate fetches)
+    if (isLoading || isRefreshing) return;
+
+    // Refetch trip details to get the full snapshot with offers
+    fetchTripDetails();
+  }, [priceUpdates, tripId, isLoading, isRefreshing, fetchTripDetails]);
+
   const handleStatusToggle = async (checked: boolean) => {
     if (!tripId || !trip) return;
     setIsUpdatingStatus(true);
@@ -707,47 +731,39 @@ export default function TripDetailPage({
   const handleRefresh = async () => {
     if (!tripId) return;
     setIsRefreshing(true);
-    const currentSnapshotCount = priceHistory.length;
-    const currentLatestId = priceHistory[0]?.id;
 
     try {
       await api.trips.refresh(tripId);
-      toast.success("Refresh started");
+      toast.success("Refresh started - prices will update automatically");
 
-      // Poll for new snapshot (up to 30 seconds)
-      const maxAttempts = 15;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
-
-        try {
-          const response = await api.trips.getDetails(tripId);
-          const newHistory = response.data.price_history;
-
-          // Check if we have a new snapshot
-          if (newHistory.length > currentSnapshotCount || (newHistory[0]?.id && newHistory[0].id !== currentLatestId)) {
-            setTrip(response.data.trip);
-            setPriceHistory(newHistory);
-            toast.success("Prices updated");
-            return;
-          }
-        } catch {
-          // Ignore errors during polling, continue trying
-        }
-      }
-
-      // If we get here, no new snapshot was detected - refresh anyway
-      await fetchTripDetails();
-      toast.info("Refresh complete");
+      // Set a timeout to stop the spinner if SSE update takes too long
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 30000);
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.detail || "Failed to refresh trip");
       } else {
         toast.error("Failed to refresh trip");
       }
-    } finally {
       setIsRefreshing(false);
     }
   };
+
+  // Stop refreshing spinner when we receive new data via SSE
+  useEffect(() => {
+    if (isRefreshing && priceHistory.length > 0) {
+      // Check if the latest snapshot is recent (within last 60 seconds)
+      const latestTimestamp = priceHistory[0]?.created_at;
+      if (latestTimestamp) {
+        const latestDate = new Date(latestTimestamp);
+        const now = new Date();
+        if (now.getTime() - latestDate.getTime() < 60000) {
+          setIsRefreshing(false);
+        }
+      }
+    }
+  }, [priceHistory, isRefreshing]);
 
   const handleBack = useCallback(() => {
     router.push("/trips");

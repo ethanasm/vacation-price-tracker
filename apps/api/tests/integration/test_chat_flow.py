@@ -28,7 +28,6 @@ from app.models.user import User
 from app.schemas.chat import ChatChunkType
 from app.schemas.mcp import ToolResult
 from app.services.chat import (
-    MAX_TOOL_ROUNDS,
     ChatService,
     process_chat_with_tools,
 )
@@ -288,7 +287,11 @@ class TestProcessChatWithToolsLoopLimit:
 
     @pytest.mark.anyio
     async def test_exceeds_max_tool_rounds(self, mock_groq_client, mock_mcp_router):
-        """Test that exceeding max tool rounds produces error chunk."""
+        """Test that exceeding tool limits produces error chunk.
+
+        Note: With per-tool retry limits (3), calling the same tool repeatedly
+        will hit the per-tool limit before the total loop limit (10).
+        """
 
         async def infinite_tool_calls(*args, **kwargs):
             yield GroqChatChunk(content="Calling another tool...")
@@ -312,10 +315,12 @@ class TestProcessChatWithToolsLoopLimit:
         ):
             chunks.append(chunk)
 
-        # Should end with an error chunk
+        # Should end with an error chunk about too many calls
         error_chunks = [c for c in chunks if c.type == ChatChunkType.ERROR]
-        assert len(error_chunks) == 1
-        assert str(MAX_TOOL_ROUNDS) in error_chunks[0].error
+        assert len(error_chunks) >= 1
+        # Error should mention either "too many times" (per-tool limit) or "maximum rounds"
+        error_text = error_chunks[0].error.lower()
+        assert "too many times" in error_text or "maximum rounds" in error_text
 
 
 class TestChatServiceIntegration:

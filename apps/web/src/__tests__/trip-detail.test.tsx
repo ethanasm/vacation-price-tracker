@@ -19,7 +19,14 @@ jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
   },
+}));
+
+// Mock SSE provider (uses useRouter which can cause issues in tests)
+const mockSSEContext = { priceUpdates: [] as Array<{ trip_id: string; updated_at: string }> };
+jest.mock("@/lib/sse-provider", () => ({
+  useSSEContextOptional: () => mockSSEContext,
 }));
 
 // Mock recharts
@@ -1682,8 +1689,7 @@ describe("TripDetailPage", () => {
     });
 
     it("triggers refresh when refresh button clicked", async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
 
       await act(async () => {
@@ -1699,18 +1705,8 @@ describe("TripDetailPage", () => {
 
       await waitFor(() => {
         expect(mockRefresh).toHaveBeenCalledWith("test-trip");
-        expect(toast.success).toHaveBeenCalledWith("Refresh started");
+        expect(toast.success).toHaveBeenCalledWith("Refresh started - prices will update automatically");
       });
-
-      // Advance timers to trigger the refetch
-      await act(async () => {
-        jest.advanceTimersByTime(2000);
-      });
-
-      // getDetails called initially and again after refresh
-      expect(mockGetDetails.mock.calls.length).toBeGreaterThanOrEqual(2);
-
-      jest.useRealTimers();
     });
 
     it("shows error toast with detail on API error", async () => {
@@ -1804,30 +1800,6 @@ describe("TripDetailPage", () => {
 
       mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
 
-      // Mock getDetails to return a new snapshot after polling
-      const updatedSnapshot = {
-        id: "new-snapshot-id",
-        created_at: "2025-01-22T12:00:00Z",
-        total_price: "3500.00",
-        flight_price: "1500.00",
-        hotel_price: "2000.00",
-        flight_offers: [],
-        hotel_offers: [],
-      };
-      mockGetDetails
-        .mockResolvedValueOnce({
-          data: {
-            trip: { ...baseTripData },
-            price_history: basePriceHistory,
-          },
-        })
-        .mockResolvedValue({
-          data: {
-            trip: { ...baseTripData },
-            price_history: [updatedSnapshot, ...basePriceHistory],
-          },
-        });
-
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
@@ -1849,17 +1821,110 @@ describe("TripDetailPage", () => {
         expect(refreshButton).toBeDisabled();
       });
 
-      // Advance timers to trigger first poll (2 seconds)
+      // Advance timers to trigger timeout (30 seconds)
       await act(async () => {
-        jest.advanceTimersByTime(2000);
+        jest.advanceTimersByTime(30000);
       });
 
-      // Button should be enabled again after detecting new snapshot
+      // Button should be enabled again after timeout
       await waitFor(() => {
         expect(refreshButton).not.toBeDisabled();
       });
 
       jest.useRealTimers();
     });
+  });
+
+  describe("SSE real-time updates", () => {
+    beforeEach(() => {
+      mockSSEContext.priceUpdates = [];
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: basePriceHistory,
+        },
+      });
+    });
+
+    afterEach(() => {
+      mockSSEContext.priceUpdates = [];
+    });
+
+    it("renders correctly when SSE context has no updates", async () => {
+      mockSSEContext.priceUpdates = [];
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+    });
+
+    it("handles SSE context with updates for different trips", async () => {
+      // SSE update for a different trip should not affect this trip's display
+      mockSSEContext.priceUpdates = [
+        { trip_id: "other-trip", updated_at: "2025-01-22T12:00:00Z" },
+      ];
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+    });
+
+    it("handles SSE context with updates for this trip", async () => {
+      mockSSEContext.priceUpdates = [
+        { trip_id: "test-trip", updated_at: "2025-01-22T12:00:00Z" },
+      ];
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      // Verify the component rendered successfully with SSE data
+      expect(mockGetDetails).toHaveBeenCalled();
+    });
+
+    it("renders when SSE context has null priceUpdates", async () => {
+      // Test the case where priceUpdates is undefined/null
+      const originalUpdates = mockSSEContext.priceUpdates;
+      // @ts-expect-error Testing null case
+      mockSSEContext.priceUpdates = null;
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      mockSSEContext.priceUpdates = originalUpdates;
+    });
+
+    it("handles empty tripId gracefully with SSE updates", async () => {
+      mockSSEContext.priceUpdates = [
+        { trip_id: "test-trip", updated_at: "2025-01-22T12:00:00Z" },
+      ];
+
+      await act(async () => {
+        render(<TestWrapper tripId="" />);
+      });
+
+      // Component should still render (even with empty tripId)
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+    });
+
   });
 });
