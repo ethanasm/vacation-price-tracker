@@ -3,13 +3,16 @@
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  ApiChatMessageResponse,
   ChatChunk,
   ChatMessage,
+  ConversationDetailResponse,
   ToolCall,
   ToolResult,
   UseChatOptions,
   UseChatReturn,
 } from "../lib/chat-types";
+import { fetchWithAuth } from "../lib/api";
 
 const DEFAULT_API_ENDPOINT = "/api/chat";
 const CSRF_COOKIE_NAME = "csrf_token";
@@ -47,6 +50,46 @@ function generateId(): string {
   // While message IDs are only used for client-side display (React keys),
   // crypto provides better randomness than Math.random().
   return `msg_${crypto.randomUUID()}`;
+}
+
+/**
+ * Transform API message response to frontend ChatMessage format.
+ * Handles tool_calls array and tool_call_id fields.
+ */
+function transformApiMessage(apiMsg: ApiChatMessageResponse): ChatMessage {
+  const message: ChatMessage = {
+    id: apiMsg.id,
+    role: apiMsg.role as "user" | "assistant" | "tool",
+    content: apiMsg.content,
+    createdAt: new Date(apiMsg.created_at),
+  };
+
+  // Transform tool_calls if present (assistant messages)
+  // Backend stores tool_calls in Groq API format: { id, type, function: { name, arguments } }
+  if (apiMsg.tool_calls && apiMsg.tool_calls.length > 0) {
+    message.toolCalls = apiMsg.tool_calls.map((tc) => {
+      // Handle Groq API format where tool info is nested under function
+      const name = tc.function?.name ?? tc.name;
+      const args = tc.function?.arguments ?? tc.arguments;
+      return {
+        id: tc.id,
+        name: name ?? "",
+        arguments: typeof args === "string" ? JSON.parse(args) : (args ?? {}),
+      };
+    });
+  }
+
+  // Transform tool result if this is a tool message
+  if (apiMsg.role === "tool" && apiMsg.tool_call_id) {
+    message.toolResult = {
+      toolCallId: apiMsg.tool_call_id,
+      name: apiMsg.name || "",
+      result: apiMsg.content ? JSON.parse(apiMsg.content) : null,
+      isError: false,
+    };
+  }
+
+  return message;
 }
 
 /**
@@ -148,6 +191,7 @@ function handleToolResultChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): v
     result: tr.result,
     isError: !tr.success,
   };
+  console.log("[use-chat] tool_result received:", result.name, "calling onToolResult:", !!ctx.onToolResult);
   ctx.onToolResult?.(result);
 
   const toolMessage: ChatMessage = {
@@ -223,6 +267,7 @@ function processStreamLines(
     const data = line.slice(6);
     const chunk = parseSSEData(data);
     if (chunk) {
+      console.log("[use-chat] SSE chunk received:", chunk.type, chunk);
       processChunk(chunk, accumulatedContent, ctx);
     }
   }
@@ -273,6 +318,18 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string | null>(null);
+
+  // Use refs for callbacks to avoid stale closures during streaming
+  // The callbacks might change during a long-running stream, and we want
+  // to always call the latest version when a tool result arrives
+  const onToolCallRef = useRef(onToolCall);
+  const onToolResultRef = useRef(onToolResult);
+  const onErrorRef = useRef(onError);
+
+  // Keep refs in sync with props
+  onToolCallRef.current = onToolCall;
+  onToolResultRef.current = onToolResult;
+  onErrorRef.current = onError;
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -334,8 +391,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
         const ctx: ChunkProcessingContext = {
           assistantMessageId,
-          onToolCall,
-          onToolResult,
+          // Use refs to always get the latest callbacks, avoiding stale closures
+          // during long-running streams where the parent component may re-render
+          onToolCall: (tc) => onToolCallRef.current?.(tc),
+          onToolResult: (tr) => onToolResultRef.current?.(tr),
           setMessages,
           // Update threadId from backend response (backend is source of truth for conversation ID)
           onThreadId: (serverThreadId: string) => {
@@ -349,7 +408,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
         const error = err instanceof Error ? err : new Error("Unknown error occurred");
         setError(error);
-        onError?.(error);
+        onErrorRef.current?.(error);
 
         setMessages((prev) =>
           prev.map((msg) =>
@@ -363,7 +422,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         abortControllerRef.current = null;
       }
     },
-    [api, threadId, onError, onToolCall, onToolResult, router]
+    [api, threadId, router]
   );
 
   const clearMessages = useCallback(() => {
@@ -388,6 +447,64 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     await sendMessage(lastUserMessageRef.current);
   }, [sendMessage]);
 
+  /**
+   * Load a thread by fetching its messages from the API.
+   * Transforms API ChatMessageResponse[] to frontend ChatMessage[] format.
+   */
+  const loadThread = useCallback(async (targetThreadId: string) => {
+    // Cancel any in-flight request
+    abortControllerRef.current?.abort();
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetchWithAuth(`/v1/chat/conversations/${targetThreadId}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Conversation not found");
+        }
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to load conversation: ${response.status}`);
+      }
+
+      const data: ConversationDetailResponse = await response.json();
+
+      // Transform API messages to frontend format
+      const transformedMessages = data.data.messages.map(transformApiMessage);
+
+      setMessages(transformedMessages);
+      setThreadId(targetThreadId);
+      lastUserMessageRef.current = null;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error("Failed to load conversation");
+      setError(error);
+      onError?.(error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onError]);
+
+  /**
+   * Switch to a different thread by loading it.
+   * Updates currentThreadId and loads messages.
+   */
+  const switchThread = useCallback(async (targetThreadId: string) => {
+    await loadThread(targetThreadId);
+  }, [loadThread]);
+
+  /**
+   * Start a new thread by clearing messages and resetting threadId.
+   */
+  const startNewThread = useCallback(() => {
+    abortControllerRef.current?.abort();
+    setMessages([]);
+    setError(null);
+    setThreadId(null);
+    lastUserMessageRef.current = null;
+  }, []);
+
   return {
     messages,
     isLoading,
@@ -396,5 +513,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     sendMessage,
     clearMessages,
     retryLastMessage,
+    loadThread,
+    switchThread,
+    startNewThread,
   };
 }

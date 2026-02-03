@@ -2,8 +2,10 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
+  useState,
   type ReactNode,
 } from "react";
 import { useChat } from "../hooks/use-chat";
@@ -19,9 +21,17 @@ interface ChatContextValue {
   isLoading: boolean;
   error: Error | null;
   threadId: string | null;
+  /** Tool call IDs that are waiting for async updates (e.g., price refresh via SSE) */
+  pendingRefreshIds: Set<string>;
+  /** Add a tool call ID to pending refresh set */
+  addPendingRefresh: (toolCallId: string) => void;
+  /** Remove a tool call ID from pending refresh set */
+  removePendingRefresh: (toolCallId: string) => void;
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
+  switchThread: (threadId: string) => Promise<void>;
+  startNewThread: () => void;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -33,6 +43,8 @@ export interface ChatProviderProps {
   onError?: (error: Error) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onToolResult?: (result: ToolResult) => void;
+  /** Tool call IDs that are waiting for async updates (e.g., price refresh via SSE) - controlled by parent */
+  pendingRefreshIds?: Set<string>;
 }
 
 /**
@@ -46,7 +58,29 @@ export function ChatProvider({
   onError,
   onToolCall,
   onToolResult,
+  pendingRefreshIds: controlledPendingIds,
 }: ChatProviderProps) {
+  // Track tool call IDs that are waiting for async updates (e.g., price refresh via SSE)
+  // Use controlled prop if provided, otherwise use internal state
+  const [internalPendingIds, setInternalPendingIds] = useState<Set<string>>(new Set());
+  const pendingRefreshIds = controlledPendingIds ?? internalPendingIds;
+
+  const addPendingRefresh = useCallback((toolCallId: string) => {
+    if (!controlledPendingIds) {
+      setInternalPendingIds((prev) => new Set(prev).add(toolCallId));
+    }
+  }, [controlledPendingIds]);
+
+  const removePendingRefresh = useCallback((toolCallId: string) => {
+    if (!controlledPendingIds) {
+      setInternalPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(toolCallId);
+        return next;
+      });
+    }
+  }, [controlledPendingIds]);
+
   const options: UseChatOptions = useMemo(
     () => ({
       api,
@@ -66,18 +100,28 @@ export function ChatProvider({
       isLoading: chat.isLoading,
       error: chat.error,
       threadId: chat.threadId,
+      pendingRefreshIds,
+      addPendingRefresh,
+      removePendingRefresh,
       sendMessage: chat.sendMessage,
       clearMessages: chat.clearMessages,
       retryLastMessage: chat.retryLastMessage,
+      switchThread: chat.switchThread,
+      startNewThread: chat.startNewThread,
     }),
     [
       chat.messages,
       chat.isLoading,
       chat.error,
       chat.threadId,
+      pendingRefreshIds,
+      addPendingRefresh,
+      removePendingRefresh,
       chat.sendMessage,
       chat.clearMessages,
       chat.retryLastMessage,
+      chat.switchThread,
+      chat.startNewThread,
     ]
   );
 

@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_TOKENS = 8000
 # Maximum messages to keep per conversation before pruning
 MAX_MESSAGES_PER_CONVERSATION = 100
+# Maximum conversations per user before automatic cleanup
+MAX_CONVERSATIONS_PER_USER = 20
 
 
 class ConversationService:
@@ -294,6 +296,288 @@ class ConversationService:
             tokens += TokenCounter.count_tokens(tool_json)
 
         return tokens
+
+
+# =============================================================================
+# Title Generation Section (Agent 1)
+# =============================================================================
+
+# System prompt for generating conversation titles
+TITLE_GENERATION_PROMPT = (
+    "Generate a 3-6 word title summarizing this conversation. "
+    "Return only the title, no quotes or punctuation."
+)
+
+
+async def generate_title(user_message: str, assistant_response: str) -> str:
+    """Generate a conversation title using Groq LLM.
+
+    Args:
+        user_message: The first user message in the conversation.
+        assistant_response: The assistant's response to the user message.
+
+    Returns:
+        A 3-6 word title summarizing the conversation.
+    """
+    from app.clients.groq import GroqClient
+    from app.clients.groq import Message as GroqMessage
+
+    client = GroqClient()
+
+    messages = [
+        GroqMessage(role="system", content=TITLE_GENERATION_PROMPT),
+        GroqMessage(
+            role="user",
+            content=f"User: {user_message}\n\nAssistant: {assistant_response[:500]}",
+        ),
+    ]
+
+    try:
+        full_response = ""
+        async for chunk in client.chat(
+            messages=messages,
+            stream=True,
+            temperature=0.3,  # Lower temperature for more consistent titles
+            max_tokens=50,  # Short response expected
+        ):
+            if chunk.content:
+                full_response += chunk.content
+
+        # Clean up the title - remove quotes and extra whitespace
+        title = full_response.strip().strip('"\'').strip()
+
+        # Ensure title isn't too long (max 255 chars for DB field)
+        if len(title) > 255:
+            title = title[:252] + "..."
+
+        return title
+    except Exception as e:
+        logger.warning("Failed to generate conversation title: %s", e)
+        # Return a fallback title based on the user message
+        return _generate_fallback_title(user_message)
+
+
+def _generate_fallback_title(user_message: str) -> str:
+    """Generate a simple fallback title from the user message.
+
+    Args:
+        user_message: The first user message.
+
+    Returns:
+        A truncated version of the user message as the title.
+    """
+    # Take first few words of the user message
+    words = user_message.split()[:6]
+    title = " ".join(words)
+    if len(title) > 50:
+        title = title[:47] + "..."
+    return title
+
+
+async def update_conversation_title(
+    conversation_id: uuid.UUID,
+    title: str,
+    db: AsyncSession,
+) -> bool:
+    """Update the title of a conversation.
+
+    Args:
+        conversation_id: UUID of the conversation to update.
+        title: The new title to set.
+        db: Database session.
+
+    Returns:
+        True if the update was successful, False if conversation not found.
+    """
+    from sqlalchemy import update
+
+    result = await db.execute(
+        update(Conversation)
+        .where(Conversation.id == conversation_id)
+        .values(title=title)
+    )
+    return result.rowcount > 0
+
+
+async def should_generate_title(
+    conversation_id: uuid.UUID,
+    db: AsyncSession,
+) -> bool:
+    """Check if a conversation needs a title generated.
+
+    A title should be generated when:
+    - The conversation has no title (title is None)
+    - The conversation has at least 1 user message and 1 assistant message
+
+    Args:
+        conversation_id: UUID of the conversation to check.
+        db: Database session.
+
+    Returns:
+        True if a title should be generated, False otherwise.
+    """
+    # First check if conversation already has a title
+    conv_result = await db.execute(
+        select(Conversation.title).where(Conversation.id == conversation_id)
+    )
+    title = conv_result.scalar_one_or_none()
+    if title is not None:
+        return False
+
+    # Check message counts
+    user_count_result = await db.execute(
+        select(func.count())
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.role == "user")
+    )
+    user_count = user_count_result.scalar_one()
+
+    assistant_count_result = await db.execute(
+        select(func.count())
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.role == "assistant")
+    )
+    assistant_count = assistant_count_result.scalar_one()
+
+    return user_count >= 1 and assistant_count >= 1
+
+
+async def get_first_exchange(
+    conversation_id: uuid.UUID,
+    db: AsyncSession,
+) -> tuple[str | None, str | None]:
+    """Get the first user message and first assistant response.
+
+    Args:
+        conversation_id: UUID of the conversation.
+        db: Database session.
+
+    Returns:
+        Tuple of (first_user_message, first_assistant_response).
+        Either may be None if not found.
+    """
+    # Get first user message
+    user_result = await db.execute(
+        select(Message.content)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.role == "user")
+        .order_by(Message.created_at.asc())
+        .limit(1)
+    )
+    user_message = user_result.scalar_one_or_none()
+
+    # Get first assistant message
+    assistant_result = await db.execute(
+        select(Message.content)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.role == "assistant")
+        .order_by(Message.created_at.asc())
+        .limit(1)
+    )
+    assistant_response = assistant_result.scalar_one_or_none()
+
+    return user_message, assistant_response
+
+
+# =============================================================================
+# Conversation Limit Enforcement Section (Agent 2)
+# =============================================================================
+
+
+async def count_user_conversations(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> int:
+    """Count the total number of conversations for a user.
+
+    Args:
+        user_id: UUID of the user.
+        db: Database session.
+
+    Returns:
+        The number of conversations the user has.
+    """
+    result = await db.execute(
+        select(func.count()).where(Conversation.user_id == user_id)
+    )
+    return result.scalar_one()
+
+
+async def delete_oldest_conversations(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    delete_count: int,
+) -> int:
+    """Delete the oldest conversations for a user.
+
+    Deletes conversations by updated_at ascending (oldest first).
+    Messages are deleted via CASCADE when conversations are deleted.
+
+    Args:
+        user_id: UUID of the user.
+        db: Database session.
+        delete_count: Number of conversations to delete.
+
+    Returns:
+        The number of conversations actually deleted.
+    """
+    if delete_count <= 0:
+        return 0
+
+    # Find the IDs of the oldest conversations to delete
+    oldest_stmt = (
+        select(Conversation.id)
+        .where(Conversation.user_id == user_id)
+        .order_by(Conversation.updated_at.asc())
+        .limit(delete_count)
+    )
+    oldest_result = await db.execute(oldest_stmt)
+    conversation_ids = list(oldest_result.scalars().all())
+
+    if not conversation_ids:
+        return 0
+
+    # Delete the conversations (messages cascade)
+    delete_stmt = delete(Conversation).where(Conversation.id.in_(conversation_ids))
+    result = await db.execute(delete_stmt)
+    deleted = result.rowcount
+
+    logger.info(
+        "Deleted %d oldest conversations for user %s",
+        deleted,
+        str(user_id)[:8],
+    )
+
+    return deleted
+
+
+async def enforce_conversation_limit(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    max_conversations: int = MAX_CONVERSATIONS_PER_USER,
+) -> int:
+    """Enforce the conversation limit for a user.
+
+    If the user has more conversations than the limit, deletes the oldest
+    ones to make room. This should be called BEFORE creating a new conversation
+    to ensure there's room for the new one.
+
+    Args:
+        user_id: UUID of the user.
+        db: Database session.
+        max_conversations: Maximum allowed conversations (default: MAX_CONVERSATIONS_PER_USER).
+
+    Returns:
+        The number of conversations deleted (0 if under limit).
+    """
+    current_count = await count_user_conversations(user_id, db)
+
+    # We delete enough to get to max_conversations - 1 to make room for the new one
+    if current_count >= max_conversations:
+        delete_count = current_count - max_conversations + 1
+        return await delete_oldest_conversations(user_id, db, delete_count)
+
+    return 0
 
 
 # Singleton instance for shared use

@@ -1,4 +1,4 @@
-import { render, renderHook, screen, act } from "@testing-library/react";
+import { render, renderHook, screen, act, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import {
@@ -26,6 +26,13 @@ jest.mock("../../hooks/use-sse", () => ({
 const mockToastSuccess = toast.success as jest.Mock;
 const mockToastError = toast.error as jest.Mock;
 
+// Helper to store captured callbacks from useSSE
+let capturedCallbacks: {
+  onConnected?: () => void;
+  onPriceUpdate?: (update: PriceUpdateEvent) => void;
+  onConnectionStateChange?: (state: SSEConnectionState) => void;
+} = {};
+
 describe("SSEProvider", () => {
   const defaultMockReturn = {
     connectionState: "connected" as SSEConnectionState,
@@ -39,7 +46,13 @@ describe("SSEProvider", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
+    capturedCallbacks = {};
     mockUseSSE.mockReturnValue(defaultMockReturn);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   function wrapper({ children }: { children: ReactNode }) {
@@ -71,7 +84,7 @@ describe("SSEProvider", () => {
   });
 
   describe("toast notifications", () => {
-    it("shows success toast on price update when showToasts is true", () => {
+    it("shows success toast on price update after initial sync period", () => {
       const update: PriceUpdateEvent = {
         type: "price_update",
         trip_id: "trip-1",
@@ -83,10 +96,11 @@ describe("SSEProvider", () => {
       };
 
       mockUseSSE.mockImplementation((options) => {
-        // Call the callback immediately
-        if (options.onPriceUpdate) {
-          options.onPriceUpdate(update);
-        }
+        // Capture callbacks for later use
+        capturedCallbacks = {
+          onConnected: options.onConnected,
+          onPriceUpdate: options.onPriceUpdate,
+        };
         return defaultMockReturn;
       });
 
@@ -96,12 +110,62 @@ describe("SSEProvider", () => {
         </SSEProvider>
       );
 
+      // Simulate connection established
+      act(() => {
+        capturedCallbacks.onConnected?.();
+      });
+
+      // Wait for initial sync grace period (2 seconds)
+      act(() => {
+        jest.advanceTimersByTime(2100);
+      });
+
+      // Now price updates should show toasts
+      act(() => {
+        capturedCallbacks.onPriceUpdate?.(update);
+      });
+
       expect(mockToastSuccess).toHaveBeenCalledWith(
         "Price updated for Hawaii Trip",
         expect.objectContaining({
           description: "New total: $800.00",
         })
       );
+    });
+
+    it("does not show toast during initial sync period", () => {
+      const update: PriceUpdateEvent = {
+        type: "price_update",
+        trip_id: "trip-1",
+        trip_name: "Hawaii Trip",
+        flight_price: "500.00",
+        hotel_price: "300.00",
+        total_price: "800.00",
+        updated_at: "2024-01-01T12:00:00Z",
+      };
+
+      mockUseSSE.mockImplementation((options) => {
+        capturedCallbacks = {
+          onConnected: options.onConnected,
+          onPriceUpdate: options.onPriceUpdate,
+        };
+        return defaultMockReturn;
+      });
+
+      render(
+        <SSEProvider showToasts>
+          <div>Content</div>
+        </SSEProvider>
+      );
+
+      // Simulate connection then immediate price update (initial sync)
+      act(() => {
+        capturedCallbacks.onConnected?.();
+        capturedCallbacks.onPriceUpdate?.(update);
+      });
+
+      // Toast should NOT be shown during initial sync
+      expect(mockToastSuccess).not.toHaveBeenCalled();
     });
 
     it("uses flight_price when total_price is null", () => {
@@ -116,9 +180,10 @@ describe("SSEProvider", () => {
       };
 
       mockUseSSE.mockImplementation((options) => {
-        if (options.onPriceUpdate) {
-          options.onPriceUpdate(update);
-        }
+        capturedCallbacks = {
+          onConnected: options.onConnected,
+          onPriceUpdate: options.onPriceUpdate,
+        };
         return defaultMockReturn;
       });
 
@@ -127,6 +192,13 @@ describe("SSEProvider", () => {
           <div>Content</div>
         </SSEProvider>
       );
+
+      // Simulate connection and wait for initial sync
+      act(() => {
+        capturedCallbacks.onConnected?.();
+        jest.advanceTimersByTime(2100);
+        capturedCallbacks.onPriceUpdate?.(update);
+      });
 
       expect(mockToastSuccess).toHaveBeenCalledWith(
         "Price updated for Test Trip",
@@ -148,9 +220,10 @@ describe("SSEProvider", () => {
       };
 
       mockUseSSE.mockImplementation((options) => {
-        if (options.onPriceUpdate) {
-          options.onPriceUpdate(update);
-        }
+        capturedCallbacks = {
+          onConnected: options.onConnected,
+          onPriceUpdate: options.onPriceUpdate,
+        };
         return defaultMockReturn;
       });
 
@@ -159,6 +232,13 @@ describe("SSEProvider", () => {
           <div>Content</div>
         </SSEProvider>
       );
+
+      // Simulate connection and wait for initial sync
+      act(() => {
+        capturedCallbacks.onConnected?.();
+        jest.advanceTimersByTime(2100);
+        capturedCallbacks.onPriceUpdate?.(update);
+      });
 
       expect(mockToastSuccess).toHaveBeenCalledWith(
         "Price updated for Test Trip",

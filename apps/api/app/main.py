@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
-    await close_temporal_client()
+    close_temporal_client()
 
 
 app = FastAPI(

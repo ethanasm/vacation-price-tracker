@@ -337,6 +337,21 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
     });
 
+    it("handles done chunks with thread_id", async () => {
+      const serverThreadId = "done-chunk-thread-id";
+      const mockStream = createMockSSEStreamWithDoneThreadId(serverThreadId);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      // Thread ID should be set from the done chunk
+      expect(result.current.threadId).toBe(serverThreadId);
+    });
+
     it("handles HTTP errors", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -654,6 +669,36 @@ function createMockSSEStreamWithInvalidJSON() {
   };
 }
 
+function createMockSSEStreamWithDoneThreadId(threadId: string) {
+  const lines = [
+    `data: {"type":"content","content":"Hello"}\n\n`,
+    `data: {"type":"done","thread_id":"${threadId}"}\n\n`,
+    "data: [DONE]\n\n",
+  ];
+  const text = lines.join("");
+
+  let position = 0;
+
+  return {
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (position >= text.length) {
+            return { done: true, value: undefined };
+          }
+          const chunk = text.slice(position, position + 100);
+          position += 100;
+          return {
+            done: false,
+            value: new TextEncoder().encode(chunk),
+          };
+        },
+      }),
+    },
+  };
+}
+
 describe("useChat edge cases", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -746,6 +791,369 @@ describe("useChat edge cases", () => {
       (m) => m.role === "assistant"
     );
     expect(assistantMessage?.content).toBe("Hi");
+  });
+});
+
+describe("useChat thread management", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPush.mockClear();
+  });
+
+  describe("loadThread", () => {
+    it("fetches and loads conversation history", async () => {
+      const threadId = "test-thread-123";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: "Test Thread",
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "Hello",
+              tool_calls: null,
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+            {
+              id: "msg-2",
+              role: "assistant",
+              content: "Hi there!",
+              tool_calls: null,
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:01Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/v1/chat/conversations/${threadId}`),
+        expect.any(Object)
+      );
+
+      expect(result.current.threadId).toBe(threadId);
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].role).toBe("user");
+      expect(result.current.messages[0].content).toBe("Hello");
+      expect(result.current.messages[1].role).toBe("assistant");
+      expect(result.current.messages[1].content).toBe("Hi there!");
+    });
+
+    it("transforms tool_calls in messages", async () => {
+      const threadId = "test-thread-456";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: null,
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                { id: "call_1", name: "list_trips", arguments: "{}" },
+              ],
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(result.current.messages[0].toolCalls).toEqual([
+        { id: "call_1", name: "list_trips", arguments: {} },
+      ]);
+    });
+
+    it("transforms tool result messages", async () => {
+      const threadId = "test-thread-789";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: null,
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "tool",
+              content: '{"trips":[]}',
+              tool_calls: null,
+              tool_call_id: "call_123",
+              name: "list_trips",
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(result.current.messages[0].role).toBe("tool");
+      expect(result.current.messages[0].toolResult).toEqual({
+        toolCallId: "call_123",
+        name: "list_trips",
+        result: { trips: [] },
+        isError: false,
+      });
+    });
+
+    it("handles 404 error", async () => {
+      const onError = jest.fn();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({}),
+      });
+
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.loadThread("nonexistent-thread");
+      });
+
+      expect(result.current.error?.message).toBe("Conversation not found");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("handles network error", async () => {
+      const onError = jest.fn();
+      mockFetch.mockRejectedValueOnce(new Error("Unable to connect to server"));
+
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.loadThread("test-thread");
+      });
+
+      expect(result.current.error?.message).toBe("Unable to connect to server");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("handles non-404 error with detail from response", async () => {
+      const onError = jest.fn();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ detail: "Database connection failed" }),
+      });
+
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.loadThread("test-thread");
+      });
+
+      expect(result.current.error?.message).toBe("Database connection failed");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("handles non-404 error without detail in response", async () => {
+      const onError = jest.fn();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({}),
+      });
+
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.loadThread("test-thread");
+      });
+
+      expect(result.current.error?.message).toBe("Failed to load conversation: 500");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("handles JSON parse error in non-404 response", async () => {
+      const onError = jest.fn();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("JSON parse error")),
+      });
+
+      const { result } = renderHook(() => useChat({ onError }));
+
+      await act(async () => {
+        await result.current.loadThread("test-thread");
+      });
+
+      expect(result.current.error?.message).toBe("Failed to load conversation: 500");
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it("sets isLoading during fetch", async () => {
+      let resolvePromise: () => void;
+      const fetchPromise = new Promise<void>((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      mockFetch.mockImplementationOnce(async () => {
+        await fetchPromise;
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            data: {
+              conversation: { id: "test", title: null, created_at: "", updated_at: "" },
+              messages: [],
+            },
+          }),
+        };
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      act(() => {
+        void result.current.loadThread("test-thread");
+      });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(true);
+      });
+
+      await act(async () => {
+        resolvePromise?.();
+        await fetchPromise;
+      });
+
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  describe("switchThread", () => {
+    it("calls loadThread with the threadId", async () => {
+      const threadId = "switch-thread-123";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: "Switched Thread",
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "Switched message",
+              tool_calls: null,
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.switchThread(threadId);
+      });
+
+      expect(result.current.threadId).toBe(threadId);
+      expect(result.current.messages[0].content).toBe("Switched message");
+    });
+  });
+
+  describe("startNewThread", () => {
+    it("clears messages and resets threadId", async () => {
+      // First, send a message to establish state
+      const serverThreadId = "existing-thread-123";
+      const mockStream = createMockSSEStream([
+        { type: "content", content: "Response", thread_id: serverThreadId },
+      ]);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      expect(result.current.messages.length).toBeGreaterThan(0);
+      expect(result.current.threadId).toBe(serverThreadId);
+
+      // Now start a new thread
+      act(() => {
+        result.current.startNewThread();
+      });
+
+      expect(result.current.messages).toEqual([]);
+      expect(result.current.threadId).toBeNull();
+      expect(result.current.error).toBeNull();
+    });
+
+    it("clears error state", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("Test error"));
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      expect(result.current.error).not.toBeNull();
+
+      act(() => {
+        result.current.startNewThread();
+      });
+
+      expect(result.current.error).toBeNull();
+    });
   });
 });
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.clients.groq import (
@@ -684,13 +684,16 @@ class TestChatService:
         assert service._mcp_router is router
 
     @pytest.mark.asyncio
-    async def test_send_message_creates_conversation(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_creates_conversation(self, mock_enforce_limit):
         """Test that send_message creates a new conversation when needed."""
         # Set up mocks
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
@@ -721,6 +724,9 @@ class TestChatService:
                 thread_id=None,
             )
         )
+
+        # Verify conversation limit was enforced
+        mock_enforce_limit.assert_called_once_with(user.id, db)
 
         # Verify conversation was created
         conv_svc.get_or_create_conversation.assert_called_once()
@@ -775,12 +781,15 @@ class TestChatService:
         assert conv_svc.get_or_create_conversation.call_args[0][0] == existing_conv_id
 
     @pytest.mark.asyncio
-    async def test_send_message_includes_thread_id_in_chunks(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_includes_thread_id_in_chunks(self, mock_enforce_limit):
         """Test that thread_id is included in first and last chunks."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conv_id = uuid.uuid4()
         conversation = make_conversation(conv_id=conv_id)
@@ -815,12 +824,15 @@ class TestChatService:
         assert done_chunks[0].thread_id == conv_id
 
     @pytest.mark.asyncio
-    async def test_send_message_saves_assistant_response(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_saves_assistant_response(self, mock_enforce_limit):
         """Test that assistant response is saved to database."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
@@ -854,12 +866,86 @@ class TestChatService:
         assert assistant_call[1]["content"] == "Hello world!"
 
     @pytest.mark.asyncio
-    async def test_send_message_commits_on_success(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_saves_tool_result_messages(self, mock_enforce_limit):
+        """Test that tool result messages are saved to database."""
+        conv_svc = MagicMock(spec=ConversationService)
+        groq = MagicMock(spec=GroqClient)
+        router = MagicMock(spec=MCPRouter)
+        db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
+
+        conversation = make_conversation()
+        conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
+        conv_svc.add_message = AsyncMock(return_value=make_message())
+        conv_svc.get_messages_for_context = AsyncMock(return_value=[])
+        conv_svc.messages_to_groq_format = MagicMock(return_value=[])
+        conv_svc.prune_old_messages = AsyncMock(return_value=0)
+
+        call_count = [0]
+
+        async def mock_chat(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call: assistant makes a tool call
+                yield GroqChatChunk(
+                    tool_calls=[
+                        ToolCall(
+                            id="call_123",
+                            type="function",
+                            function=ToolCallFunction(name="list_trips", arguments="{}"),
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            else:
+                # Second call: assistant gives final response
+                yield GroqChatChunk(content="Here are your trips.")
+                yield GroqChatChunk(finish_reason="stop")
+
+        groq.chat = mock_chat
+        router.execute_from_json = AsyncMock(
+            return_value=ToolResult(success=True, data={"trips": [{"id": "trip-1", "name": "Hawaii"}]})
+        )
+
+        user = make_user()
+        service = ChatService(
+            conversation_svc=conv_svc,
+            groq_client_instance=groq,
+            mcp_router=router,
+        )
+
+        await collect_chunks(service.send_message(user=user, message="List my trips", db=db))
+
+        # Should have saved: user message, assistant message (with tool call), tool result, assistant final response
+        # Depending on implementation, might combine some messages, but tool result should be there
+        add_message_calls = conv_svc.add_message.call_args_list
+
+        # Find the tool result message
+        tool_result_calls = [
+            call for call in add_message_calls if call[1].get("role") == "tool"
+        ]
+
+        assert len(tool_result_calls) >= 1, "Tool result message should be saved"
+        tool_result_call = tool_result_calls[0]
+        assert tool_result_call[1]["tool_call_id"] == "call_123"
+        assert tool_result_call[1]["name"] == "list_trips"
+        # Content should be JSON of the result
+        import json
+        content = json.loads(tool_result_call[1]["content"])
+        assert content == {"trips": [{"id": "trip-1", "name": "Hawaii"}]}
+
+    @pytest.mark.asyncio
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_commits_on_success(self, mock_enforce_limit):
         """Test that database is committed on successful completion."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
@@ -887,12 +973,15 @@ class TestChatService:
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_message_rollback_on_error(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_rollback_on_error(self, mock_enforce_limit):
         """Test that database is rolled back on error."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
@@ -1034,12 +1123,15 @@ class TestChatService:
         conv_svc.get_or_create_conversation.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_message_accepts_travel_query(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_accepts_travel_query(self, mock_enforce_limit):
         """Test that travel-related queries are accepted."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)
@@ -1077,12 +1169,15 @@ class TestChatService:
         conv_svc.get_or_create_conversation.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_message_accepts_greeting(self):
+    @patch("app.services.chat.enforce_conversation_limit", new_callable=AsyncMock)
+    async def test_send_message_accepts_greeting(self, mock_enforce_limit):
         """Test that simple greetings are accepted."""
         conv_svc = MagicMock(spec=ConversationService)
         groq = MagicMock(spec=GroqClient)
         router = MagicMock(spec=MCPRouter)
         db = AsyncMock()
+
+        mock_enforce_limit.return_value = 0
 
         conversation = make_conversation()
         conv_svc.get_or_create_conversation = AsyncMock(return_value=conversation)

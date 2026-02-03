@@ -3,11 +3,15 @@
 import { Bot, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "../../lib/utils";
-import type { ChatMessage as ChatMessageType } from "../../lib/chat-types";
+import type { ChatMessage as ChatMessageType, ToolResult } from "../../lib/chat-types";
 import { ToolCallList } from "./tool-call-display";
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** Tool results to display with this message's tool calls */
+  toolResults?: ChatMessageType["toolResult"][];
+  /** Tool call IDs that are waiting for async updates (e.g., price refresh) */
+  pendingUpdateIds?: Set<string>;
   className?: string;
 }
 
@@ -26,7 +30,7 @@ function formatTime(date: Date): string {
  * ChatMessage renders a single message in the chat interface.
  * Supports user, assistant, and tool message types.
  */
-export function ChatMessage({ message, className }: ChatMessageProps) {
+export function ChatMessage({ message, toolResults = [], pendingUpdateIds, className }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isTool = message.role === "tool";
@@ -99,6 +103,8 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
         {isAssistant && message.toolCalls && message.toolCalls.length > 0 && (
           <ToolCallList
             toolCalls={message.toolCalls}
+            results={toolResults.filter((r): r is NonNullable<typeof r> => r !== undefined)}
+            pendingUpdateIds={pendingUpdateIds}
             className="w-full"
           />
         )}
@@ -119,15 +125,25 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
 
 interface ChatMessageListProps {
   messages: ChatMessageType[];
+  /** Tool call IDs that are waiting for async updates (e.g., price refresh) */
+  pendingUpdateIds?: Set<string>;
   className?: string;
 }
 
 /**
  * ChatMessageList renders a list of chat messages.
  */
-export function ChatMessageList({ messages, className }: ChatMessageListProps) {
+export function ChatMessageList({ messages, pendingUpdateIds, className }: ChatMessageListProps) {
   // Filter out tool messages as they're rendered inline with tool calls
   const visibleMessages = messages.filter((msg) => msg.role !== "tool");
+
+  // Collect all tool results from tool messages
+  const toolResultsByCallId = new Map<string, ChatMessageType["toolResult"]>();
+  for (const msg of messages) {
+    if (msg.role === "tool" && msg.toolResult) {
+      toolResultsByCallId.set(msg.toolResult.toolCallId, msg.toolResult);
+    }
+  }
 
   if (visibleMessages.length === 0) {
     return (
@@ -149,9 +165,21 @@ export function ChatMessageList({ messages, className }: ChatMessageListProps) {
 
   return (
     <div className={cn("space-y-4", className)} role="list" aria-label="Chat messages">
-      {visibleMessages.map((message) => (
-        <ChatMessage key={message.id} message={message} />
-      ))}
+      {visibleMessages.map((message) => {
+        // Get tool results for this message's tool calls
+        const messageToolResults = message.toolCalls
+          ?.map((tc) => toolResultsByCallId.get(tc.id))
+          .filter((r): r is NonNullable<typeof r> => r !== undefined) ?? [];
+
+        return (
+          <ChatMessage
+            key={message.id}
+            message={message}
+            toolResults={messageToolResults}
+            pendingUpdateIds={pendingUpdateIds}
+          />
+        );
+      })}
     </div>
   );
 }

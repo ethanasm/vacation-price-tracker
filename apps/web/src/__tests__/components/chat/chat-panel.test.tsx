@@ -11,6 +11,16 @@ jest.mock("next/navigation", () => ({
   }),
 }));
 
+// Mock the api module for ThreadHistoryDropdown
+const mockListConversations = jest.fn();
+jest.mock("../../../lib/api", () => ({
+  api: {
+    chat: {
+      listConversations: (...args: unknown[]) => mockListConversations(...args),
+    },
+  },
+}));
+
 // Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
@@ -59,6 +69,8 @@ function renderWithProvider(
 describe("ChatPanel", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default mock for conversations list
+    mockListConversations.mockResolvedValue({ data: [] });
   });
 
   describe("rendering", () => {
@@ -363,6 +375,176 @@ describe("ChatPanel", () => {
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledTimes(2);
       });
+    });
+  });
+
+  describe("thread history button", () => {
+    it("renders thread history button", () => {
+      renderWithProvider(<ChatPanel />);
+
+      expect(
+        screen.getByRole("button", { name: /chat history/i })
+      ).toBeInTheDocument();
+    });
+
+    it("opens dropdown and shows conversations on click", async () => {
+      mockListConversations.mockResolvedValue({
+        data: [
+          {
+            id: "thread-1",
+            title: "Paris Trip Planning",
+            created_at: "2024-01-01T00:00:00Z",
+            updated_at: "2024-01-02T00:00:00Z",
+          },
+        ],
+      });
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      await user.click(screen.getByRole("button", { name: /chat history/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Paris Trip Planning")).toBeInTheDocument();
+      });
+    });
+
+    it("shows 'Untitled conversation' for conversations without title", async () => {
+      mockListConversations.mockResolvedValue({
+        data: [
+          {
+            id: "thread-1",
+            title: null,
+            created_at: "2024-01-01T00:00:00Z",
+            updated_at: "2024-01-02T00:00:00Z",
+          },
+        ],
+      });
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      await user.click(screen.getByRole("button", { name: /chat history/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Untitled conversation")).toBeInTheDocument();
+      });
+    });
+
+    it("shows empty state when no conversations", async () => {
+      mockListConversations.mockResolvedValue({ data: [] });
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      await user.click(screen.getByRole("button", { name: /chat history/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("No conversations yet")).toBeInTheDocument();
+      });
+    });
+
+    it("disables history button while loading", async () => {
+      let resolveStream: () => void = () => {};
+      const streamPromise = new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+
+      const mockStream = {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              await streamPromise;
+              return { done: true, value: undefined };
+            },
+          }),
+        },
+      };
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      const input = screen.getByRole("textbox", { name: /message input/i });
+      await user.type(input, "Hello{Enter}");
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /chat history/i })
+        ).toBeDisabled();
+      });
+
+      // Clean up
+      resolveStream();
+    });
+  });
+
+  describe("new thread button", () => {
+    it("renders new thread button", () => {
+      renderWithProvider(<ChatPanel />);
+
+      expect(
+        screen.getByRole("button", { name: /new thread/i })
+      ).toBeInTheDocument();
+    });
+
+    it("clears messages and starts new thread when clicked", async () => {
+      mockFetch.mockResolvedValueOnce(
+        createMockSSEStream([{ type: "content", content: "Hello!" }])
+      );
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      // Send a message first
+      const input = screen.getByRole("textbox", { name: /message input/i });
+      await user.type(input, "Hi{Enter}");
+
+      await waitFor(() => {
+        expect(screen.getByText("Hello!")).toBeInTheDocument();
+      });
+
+      // Click new thread button
+      await user.click(screen.getByRole("button", { name: /new thread/i }));
+
+      // Messages should be cleared
+      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    });
+
+    it("disables new thread button while loading", async () => {
+      let resolveStream: () => void = () => {};
+      const streamPromise = new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+
+      const mockStream = {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              await streamPromise;
+              return { done: true, value: undefined };
+            },
+          }),
+        },
+      };
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const user = userEvent.setup();
+      renderWithProvider(<ChatPanel />);
+
+      const input = screen.getByRole("textbox", { name: /message input/i });
+      await user.type(input, "Hello{Enter}");
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /new thread/i })
+        ).toBeDisabled();
+      });
+
+      // Clean up
+      resolveStream();
     });
   });
 

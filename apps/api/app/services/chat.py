@@ -34,7 +34,15 @@ from app.models.message import Message
 from app.models.user import User
 from app.schemas.chat import ChatChunk
 from app.schemas.mcp import get_all_tools
-from app.services.conversation import ConversationService, conversation_service
+from app.services.conversation import (
+    ConversationService,
+    conversation_service,
+    enforce_conversation_limit,
+    generate_title,
+    get_first_exchange,
+    should_generate_title,
+    update_conversation_title,
+)
 from app.services.mcp_router import MCPRouter, ToolResult, get_mcp_router
 from app.services.query_validator import validate_query
 
@@ -250,6 +258,7 @@ async def _execute_tool_call(
 
     result = await router.execute_from_json(tool_name, arguments_json, user_id, db)
 
+    logger.info("Tool %s executed, success=%s, yielding tool_result chunk", tool_name, result.success)
     yield ChatChunk.tool_executed(
         tool_call_id=tool_call.id,
         name=tool_name,
@@ -537,7 +546,11 @@ class ChatService:
             yield ChatChunk.done_chunk(thread_id=thread_id)
             return
 
-        # 1. Get or create conversation
+        # 1. Enforce conversation limit before creating new conversations
+        if thread_id is None:
+            await enforce_conversation_limit(user.id, db)
+
+        # 2. Get or create conversation
         conversation = await self._conversation_svc.get_or_create_conversation(thread_id, user.id, db)
         logger.info(
             "Chat: user=%s conversation=%s thread_id=%s",
@@ -546,7 +559,7 @@ class ChatService:
             thread_id,
         )
 
-        # 2. Save user message
+        # 3. Save user message
         await self._conversation_svc.add_message(
             conversation_id=conversation.id,
             role="user",
@@ -554,21 +567,22 @@ class ChatService:
             db=db,
         )
 
-        # 3. Build system prompt with user context
+        # 4. Build system prompt with user context
         system_prompt = build_system_prompt(user, trips, trip_prices)
 
-        # 4. Get message history that fits in context window
+        # 5. Get message history that fits in context window
         history_messages = await self._conversation_svc.get_messages_for_context(
             conversation.id, db, system_prompt=system_prompt
         )
 
-        # 5. Convert to Groq format with system prompt first
+        # 6. Convert to Groq format with system prompt first
         groq_messages: list[GroqMessage] = [GroqMessage(role="system", content=system_prompt)]
         groq_messages.extend(self._conversation_svc.messages_to_groq_format(history_messages))
 
-        # 6. Process chat with tools and stream response
+        # 7. Process chat with tools and stream response
         full_response = ""
         tool_calls_made: list[dict[str, Any]] = []
+        tool_results_to_save: list[dict[str, Any]] = []
         first_chunk = True
 
         try:
@@ -601,25 +615,34 @@ class ChatService:
                         }
                     )
 
+                # Track tool results for persistence
+                if chunk.tool_result:
+                    tool_results_to_save.append(
+                        {
+                            "tool_call_id": chunk.tool_result.tool_call_id,
+                            "name": chunk.tool_result.name,
+                            "result": chunk.tool_result.result,
+                            "success": chunk.tool_result.success,
+                        }
+                    )
+
                 yield chunk
 
-            # 7. Save assistant response
-            if full_response or tool_calls_made:
-                await self._conversation_svc.add_message(
-                    conversation_id=conversation.id,
-                    role="assistant",
-                    content=full_response,
-                    db=db,
-                    tool_calls=tool_calls_made if tool_calls_made else None,
-                )
+            # 8. Save assistant response and tool results
+            await self._save_messages(
+                conversation.id, db, full_response, tool_calls_made, tool_results_to_save
+            )
 
-            # 8. Prune old messages if needed
+            # 9. Generate title if needed (first exchange completed)
+            await self._maybe_generate_title(conversation.id, db)
+
+            # 10. Prune old messages if needed
             await self._conversation_svc.prune_old_messages(conversation.id, db)
 
-            # 9. Commit the transaction
+            # 11. Commit the transaction
             await db.commit()
 
-            # 10. Send done chunk with thread_id
+            # 12. Send done chunk with thread_id
             yield ChatChunk.done_chunk(thread_id=conversation.id)
 
         except Exception as e:
@@ -627,6 +650,88 @@ class ChatService:
             await db.rollback()
             yield ChatChunk.error_chunk(f"Chat processing error: {e}")
             yield ChatChunk.done_chunk(thread_id=conversation.id)
+
+    async def _save_messages(
+        self,
+        conversation_id: uuid.UUID,
+        db: AsyncSession,
+        full_response: str,
+        tool_calls_made: list[dict[str, Any]],
+        tool_results_to_save: list[dict[str, Any]],
+    ) -> None:
+        """Save assistant response and tool result messages to database.
+
+        Args:
+            conversation_id: UUID of the conversation.
+            db: Database session.
+            full_response: Accumulated text response from assistant.
+            tool_calls_made: List of tool calls made during this turn.
+            tool_results_to_save: List of tool results to persist.
+        """
+        # Save assistant response (with tool calls if any)
+        if full_response or tool_calls_made:
+            await self._conversation_svc.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=full_response,
+                db=db,
+                tool_calls=tool_calls_made if tool_calls_made else None,
+            )
+
+        # Save tool result messages
+        for tr in tool_results_to_save:
+            await self._conversation_svc.add_message(
+                conversation_id=conversation_id,
+                role="tool",
+                content=json.dumps(tr["result"]),
+                db=db,
+                tool_call_id=tr["tool_call_id"],
+                name=tr["name"],
+            )
+
+    async def _maybe_generate_title(
+        self,
+        conversation_id: uuid.UUID,
+        db: AsyncSession,
+    ) -> None:
+        """Generate and save conversation title if conditions are met.
+
+        Title is generated when:
+        - Conversation has no title
+        - Conversation has at least 1 user + 1 assistant message
+
+        Args:
+            conversation_id: UUID of the conversation.
+            db: Database session.
+        """
+        try:
+            if not await should_generate_title(conversation_id, db):
+                return
+
+            user_message, assistant_response = await get_first_exchange(
+                conversation_id, db
+            )
+
+            if not user_message or not assistant_response:
+                logger.debug(
+                    "Skipping title generation: missing user or assistant message"
+                )
+                return
+
+            title = await generate_title(user_message, assistant_response)
+            await update_conversation_title(conversation_id, title, db)
+            logger.info(
+                "Generated title for conversation %s: %s",
+                str(conversation_id)[:8],
+                title[:50],
+            )
+        except Exception as e:
+            # Don't fail the chat if title generation fails
+            logger.warning(
+                "Failed to generate title for conversation %s: %s",
+                conversation_id,
+                e,
+            )
 
     async def get_conversation_history(
         self,

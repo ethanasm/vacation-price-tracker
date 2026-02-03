@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
@@ -102,9 +103,25 @@ export function SSEProvider({
   onConnectionStateChange,
   autoConnect = true,
 }: SSEProviderProps) {
+  // Track whether we've received the first "connected" event
+  // Initial price updates sent right after connection shouldn't trigger toasts
+  const hasConnectedRef = useRef(false);
+  const initialSyncCompleteRef = useRef(false);
+
+  const handleConnected = useCallback(() => {
+    hasConnectedRef.current = true;
+    // Allow a brief window for initial price updates to arrive without toasts
+    // The backend sends all current prices right after "connected" event
+    setTimeout(() => {
+      initialSyncCompleteRef.current = true;
+    }, 2000);
+  }, []);
+
   const handlePriceUpdate = useCallback(
     (update: PriceUpdateEvent) => {
-      if (showToasts) {
+      // Only show toasts after initial sync is complete
+      // This prevents toast spam on page load when SSE sends current prices
+      if (showToasts && initialSyncCompleteRef.current) {
         const price = update.total_price || update.flight_price || "N/A";
         toast.success(`Price updated for ${update.trip_name}`, {
           description: `New total: $${price}`,
@@ -124,6 +141,11 @@ export function SSEProvider({
           duration: 5000,
         });
       }
+      // Reset initial sync tracking on disconnect so reconnects work correctly
+      if (state === "disconnected") {
+        hasConnectedRef.current = false;
+        initialSyncCompleteRef.current = false;
+      }
       onConnectionStateChange?.(state);
     },
     [showToasts, onConnectionStateChange]
@@ -132,10 +154,11 @@ export function SSEProvider({
   const sseOptions: UseSSEOptions = useMemo(
     () => ({
       autoConnect,
+      onConnected: handleConnected,
       onPriceUpdate: handlePriceUpdate,
       onConnectionStateChange: handleConnectionStateChange,
     }),
-    [autoConnect, handlePriceUpdate, handleConnectionStateChange]
+    [autoConnect, handleConnected, handlePriceUpdate, handleConnectionStateChange]
   );
 
   const {

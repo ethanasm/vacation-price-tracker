@@ -9,13 +9,16 @@ interface ToolCallDisplayProps {
   toolCall: ToolCall;
   result?: ToolResult;
   isExecuting?: boolean;
+  /** Shows a "waiting for update" state after tool completes (e.g., waiting for SSE price update) */
+  isPendingUpdate?: boolean;
   className?: string;
 }
 
 /**
  * Formats a tool name for display by converting snake_case to Title Case
  */
-function formatToolName(name: string): string {
+function formatToolName(name: string | undefined): string {
+  if (!name) return "Unknown Tool";
   return name
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -25,13 +28,22 @@ function formatToolName(name: string): string {
 /**
  * Status icon component for tool execution state
  */
-function StatusIcon({ isExecuting, hasResult, isError }: {
+function StatusIcon({ isExecuting, hasResult, isError, isPendingUpdate }: {
   isExecuting: boolean;
   hasResult: boolean;
   isError: boolean;
+  isPendingUpdate: boolean;
 }) {
   if (isExecuting) {
     return <Loader2 className="h-4 w-4 text-primary animate-spin" aria-label="Executing tool" />;
+  }
+  if (isPendingUpdate) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        <span>Fetching prices...</span>
+      </span>
+    );
   }
   if (hasResult && !isError) {
     return <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" aria-label="Tool completed successfully" />;
@@ -114,6 +126,7 @@ function ToolCallHeader({
   isExecuting,
   hasResult,
   isError,
+  isPendingUpdate,
   onToggle,
 }: {
   toolCall: ToolCall;
@@ -122,6 +135,7 @@ function ToolCallHeader({
   isExecuting: boolean;
   hasResult: boolean;
   isError: boolean;
+  isPendingUpdate: boolean;
   onToggle: () => void;
 }) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -148,7 +162,7 @@ function ToolCallHeader({
       <Wrench className="h-4 w-4 text-primary flex-shrink-0" aria-hidden="true" />
       <span className="font-medium text-sm truncate">{formatToolName(toolCall.name)}</span>
       <span className="ml-auto flex-shrink-0">
-        <StatusIcon isExecuting={isExecuting} hasResult={hasResult} isError={isError} />
+        <StatusIcon isExecuting={isExecuting} hasResult={hasResult} isError={isError} isPendingUpdate={isPendingUpdate} />
       </span>
     </div>
   );
@@ -162,6 +176,7 @@ export function ToolCallDisplay({
   toolCall,
   result,
   isExecuting = false,
+  isPendingUpdate = false,
   className,
 }: ToolCallDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -185,6 +200,7 @@ export function ToolCallDisplay({
         isExecuting={isExecuting}
         hasResult={hasResult}
         isError={isError}
+        isPendingUpdate={isPendingUpdate}
         onToggle={() => setIsExpanded(!isExpanded)}
       />
       {isExpanded && hasExpandableContent && (
@@ -198,6 +214,8 @@ interface ToolCallListProps {
   toolCalls: ToolCall[];
   results?: ToolResult[];
   executingIds?: Set<string>;
+  /** Tool call IDs that are waiting for an async update (e.g., price refresh via SSE) */
+  pendingUpdateIds?: Set<string>;
   className?: string;
 }
 
@@ -208,6 +226,7 @@ export function ToolCallList({
   toolCalls,
   results = [],
   executingIds = new Set(),
+  pendingUpdateIds = new Set(),
   className,
 }: ToolCallListProps) {
   const resultsByToolCallId = new Map(
@@ -226,6 +245,7 @@ export function ToolCallList({
           toolCall={toolCall}
           result={resultsByToolCallId.get(toolCall.id)}
           isExecuting={executingIds.has(toolCall.id)}
+          isPendingUpdate={pendingUpdateIds.has(toolCall.id)}
         />
       ))}
     </div>

@@ -113,4 +113,60 @@ export interface UseChatReturn {
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
+  loadThread: (threadId: string) => Promise<void>;
+  switchThread: (threadId: string) => Promise<void>;
+  startNewThread: () => void;
+}
+
+/**
+ * Conversation summary for list responses.
+ * Matches backend ConversationResponse schema.
+ */
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * API message response format from backend.
+ * Used when loading conversation history.
+ * Tool calls are stored in Groq API format with nested function object.
+ */
+export interface ApiChatMessageResponse {
+  id: string;
+  role: string;
+  content: string;
+  tool_calls: Array<{
+    id: string;
+    type?: string;
+    function?: {
+      name: string;
+      arguments: string;
+    };
+    // Fallback for legacy format
+    name?: string;
+    arguments?: string;
+  }> | null;
+  tool_call_id: string | null;
+  name: string | null;
+  created_at: string;
+}
+
+/**
+ * Response format for listing conversations.
+ */
+export interface ConversationListResponse {
+  data: ConversationSummary[];
+}
+
+/**
+ * Response format for getting a single conversation with messages.
+ */
+export interface ConversationDetailResponse {
+  data: {
+    conversation: ConversationSummary;
+    messages: ApiChatMessageResponse[];
+  };
 }

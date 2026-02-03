@@ -171,6 +171,41 @@ export interface ApiResponse<T> {
   } | null;
 }
 
+// Conversation types for chat history
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessageResponse {
+  id: string;
+  role: string;
+  content: string;
+  tool_calls: Array<{
+    id: string;
+    name: string;
+    arguments: string;
+  }> | null;
+  tool_call_id: string | null;
+  name: string | null;
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  conversation: ConversationSummary;
+  messages: ChatMessageResponse[];
+}
+
+export interface ConversationListResponse {
+  data: ConversationSummary[];
+}
+
+export interface ConversationDetailResponse {
+  data: ConversationDetail;
+}
+
 // Trip update request (PATCH endpoint - not fully in OpenAPI spec)
 export interface UpdateTripRequest {
   name?: string;
@@ -692,6 +727,52 @@ export const api = {
         throw new ApiError(
           response.status,
           error.title || "Failed to start refresh",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+  },
+
+  chat: {
+    /**
+     * List the current user's conversations.
+     * @param limit - Maximum number of conversations to return (default: 20)
+     */
+    async listConversations(limit = 20): Promise<ConversationListResponse> {
+      const params = new URLSearchParams();
+      params.set("limit", String(limit));
+
+      const response = await fetchWithAuth(`/v1/chat/conversations?${params.toString()}`);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to load conversations",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Get a conversation with its message history.
+     * @param threadId - Conversation UUID
+     */
+    async getConversation(threadId: string): Promise<ConversationDetailResponse> {
+      const response = await fetchWithAuth(`/v1/chat/conversations/${threadId}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new ApiError(404, "Conversation not found");
+        }
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to load conversation",
           error.detail
         );
       }

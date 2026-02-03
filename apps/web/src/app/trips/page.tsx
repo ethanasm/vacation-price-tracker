@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 
 import { RefreshCw, Plane, AlertCircle, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +38,12 @@ import { useSSE, type PriceUpdateEvent } from "@/hooks/use-sse";
 import styles from "./page.module.css";
 
 const REFRESH_POLL_INTERVAL = 2000; // Poll every 2 seconds
+
+/** Mapping of tool call ID to trip ID for pending refresh indicators */
+interface PendingRefresh {
+  toolCallId: string;
+  tripId: string;
+}
 
 type DisplayStatus = "ACTIVE" | "PAUSED" | "ERROR";
 
@@ -178,11 +184,21 @@ export default function DashboardPage() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track pending refresh tool calls: tool call ID → trip ID
+  const [pendingRefreshes, setPendingRefreshes] = useState<PendingRefresh[]>([]);
+
+  // Derive a Set of pending tool call IDs for passing to ChatProvider
+  const pendingRefreshIds = useMemo(
+    () => new Set(pendingRefreshes.map((p) => p.toolCallId)),
+    [pendingRefreshes]
+  );
+
   // Chat panel state with localStorage persistence
   const { isExpanded: isChatExpanded, setExpanded: setChatExpanded, isHydrated } = useChatExpanded(true);
 
   // Handle SSE price updates - update trip table when new prices arrive
   const handlePriceUpdate = useCallback((update: PriceUpdateEvent) => {
+    // Update trip table with new prices
     setTrips((prev) =>
       prev.map((trip) => {
         if (trip.id === update.trip_id) {
@@ -197,6 +213,9 @@ export default function DashboardPage() {
         return trip;
       })
     );
+
+    // Clear any pending refresh indicator for this trip
+    setPendingRefreshes((prev) => prev.filter((p) => p.tripId !== update.trip_id));
   }, []);
 
   // Subscribe to SSE for real-time price updates
@@ -209,11 +228,13 @@ export default function DashboardPage() {
   });
 
   const fetchTrips = useCallback(async () => {
+    console.log("[trips/page] fetchTrips() called");
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await api.trips.list();
+      console.log("[trips/page] fetchTrips() received", response.data.length, "trips");
       const displayTrips = response.data.map(mapApiTripToDisplayTrip);
       setTrips(displayTrips);
     } catch (err) {
@@ -396,7 +417,9 @@ export default function DashboardPage() {
 
   // Handle tool results from chat - only refetch for tools that modify trip data
   const handleToolResult = useCallback((result: ToolResult) => {
-    // For trigger_refresh, start polling for completion instead of immediate refetch
+    console.log("[trips/page] handleToolResult called:", result.name, result);
+
+    // For trigger_refresh (all trips), start polling for completion instead of immediate refetch
     if (result.name === "trigger_refresh" && !result.isError) {
       const workflowId = (result.result as { workflow_id?: string })?.workflow_id;
       if (workflowId) {
@@ -417,7 +440,18 @@ export default function DashboardPage() {
       }
     }
 
-    // For other mutating tools, refetch immediately
+    // For trigger_refresh_trip (single trip), track the pending state
+    // The SSE will deliver the price update and clear this pending state
+    if (result.name === "trigger_refresh_trip" && !result.isError) {
+      const tripId = (result.result as { trip_id?: string })?.trip_id;
+      if (tripId) {
+        console.log("[trips/page] Adding pending refresh for trip:", tripId, "toolCallId:", result.toolCallId);
+        setPendingRefreshes((prev) => [...prev, { toolCallId: result.toolCallId, tripId }]);
+      }
+      return;
+    }
+
+    // For mutating tools, refetch the trip list immediately
     const mutatingTools = [
       "create_trip",
       "delete_trip",
@@ -426,6 +460,14 @@ export default function DashboardPage() {
       "set_notification",
     ];
     if (mutatingTools.includes(result.name)) {
+      console.log("[trips/page] Mutating tool detected, calling fetchTrips()");
+      // Show a toast for create_trip to indicate the trip was created
+      if (result.name === "create_trip" && !result.isError) {
+        const tripName = (result.result as { name?: string })?.name;
+        toast.success(`Trip "${tripName || "New trip"}" created`, {
+          description: "Fetching initial prices...",
+        });
+      }
       fetchTrips();
     }
   }, [fetchTrips, pollRefreshStatus]);
@@ -610,6 +652,7 @@ export default function DashboardPage() {
             <ChatProvider
               api={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/v1/chat/messages`}
               onToolResult={handleToolResult}
+              pendingRefreshIds={pendingRefreshIds}
             >
               <ChatPanel
                 showCloseButton

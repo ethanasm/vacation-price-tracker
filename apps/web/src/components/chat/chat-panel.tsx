@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useCallback, useLayoutEffect } from "react";
-import { RefreshCw, X, AlertCircle } from "lucide-react";
+import { RefreshCw, X, AlertCircle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { useChatContext } from "../../lib/chat-provider";
 import { ChatMessageList } from "./chat-message";
 import { ChatInput } from "./chat-input";
+import { ThreadHistoryDropdown } from "./thread-history-dropdown";
 
 interface ChatPanelProps {
   className?: string;
@@ -27,9 +28,12 @@ export function ChatPanel({
     messages,
     isLoading,
     error,
+    pendingRefreshIds,
     sendMessage,
     clearMessages,
     retryLastMessage,
+    switchThread,
+    startNewThread,
   } = useChatContext();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,11 +80,26 @@ export function ChatPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          <ThreadHistoryDropdown
+            onSelectThread={switchThread}
+            disabled={isLoading}
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={startNewThread}
+            disabled={isLoading}
+            aria-label="New thread"
+            title="New thread"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
           {messages.length > 0 && (
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={clearMessages}
+              disabled={isLoading}
               aria-label="Clear chat"
               title="Clear chat"
             >
@@ -106,7 +125,7 @@ export function ChatPanel({
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto px-4 py-4"
       >
-        <ChatMessageList messages={messages} />
+        <ChatMessageList messages={messages} pendingUpdateIds={pendingRefreshIds} />
 
         {/* Error state */}
         {error && (

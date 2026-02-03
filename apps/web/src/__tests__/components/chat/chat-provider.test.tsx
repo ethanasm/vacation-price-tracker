@@ -20,6 +20,9 @@ function TestConsumer() {
     isLoading,
     error,
     threadId,
+    pendingRefreshIds,
+    addPendingRefresh,
+    removePendingRefresh,
     sendMessage,
     clearMessages,
     retryLastMessage,
@@ -31,6 +34,8 @@ function TestConsumer() {
       <span data-testid="error">{error?.message || "none"}</span>
       <span data-testid="threadId">{threadId || "none"}</span>
       <span data-testid="messageCount">{messages.length}</span>
+      <span data-testid="pendingCount">{pendingRefreshIds.size}</span>
+      <span data-testid="pendingIds">{Array.from(pendingRefreshIds).join(",") || "none"}</span>
       <ul data-testid="messages">
         {messages.map((msg) => (
           <li key={msg.id} data-testid={`message-${msg.role}`}>
@@ -50,6 +55,12 @@ function TestConsumer() {
       </button>
       <button type="button" onClick={retryLastMessage} data-testid="retry">
         Retry
+      </button>
+      <button type="button" onClick={() => addPendingRefresh("test-id-1")} data-testid="addPending">
+        Add Pending
+      </button>
+      <button type="button" onClick={() => removePendingRefresh("test-id-1")} data-testid="removePending">
+        Remove Pending
       </button>
     </div>
   );
@@ -399,5 +410,111 @@ describe("useChatContext", () => {
     }).toThrow("useChatContext must be used within a ChatProvider");
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe("pendingRefreshIds", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("provides empty pendingRefreshIds by default", () => {
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("0");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("none");
+  });
+
+  it("uses controlled pendingRefreshIds when provided", () => {
+    const controlledIds = new Set(["controlled-id-1", "controlled-id-2"]);
+
+    render(
+      <ChatProvider pendingRefreshIds={controlledIds}>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("2");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("controlled-id-1,controlled-id-2");
+  });
+
+  it("addPendingRefresh adds ID to internal state when uncontrolled", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("0");
+
+    await user.click(screen.getByTestId("addPending"));
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("test-id-1");
+  });
+
+  it("removePendingRefresh removes ID from internal state when uncontrolled", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    // Add first
+    await user.click(screen.getByTestId("addPending"));
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+
+    // Then remove
+    await user.click(screen.getByTestId("removePending"));
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("0");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("none");
+  });
+
+  it("addPendingRefresh is a no-op when controlled", async () => {
+    const controlledIds = new Set(["controlled-id"]);
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider pendingRefreshIds={controlledIds}>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+
+    // Try to add - should not change anything since it's controlled
+    await user.click(screen.getByTestId("addPending"));
+
+    // Still only 1 (the controlled one)
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("controlled-id");
+  });
+
+  it("removePendingRefresh is a no-op when controlled", async () => {
+    const controlledIds = new Set(["test-id-1"]);
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider pendingRefreshIds={controlledIds}>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+
+    // Try to remove - should not change anything since it's controlled
+    await user.click(screen.getByTestId("removePending"));
+
+    // Still 1 (the controlled one)
+    expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
+    expect(screen.getByTestId("pendingIds")).toHaveTextContent("test-id-1");
   });
 });

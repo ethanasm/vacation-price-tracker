@@ -1576,4 +1576,165 @@ describe("API Client", () => {
     });
 
   });
+
+  describe("api.chat.listConversations", () => {
+    it("returns conversations on success", async () => {
+      const mockResponse = {
+        data: [
+          { id: "conv-1", title: "Trip planning", created_at: "2024-01-15T10:00:00Z", updated_at: "2024-01-15T12:00:00Z" },
+          { id: "conv-2", title: null, created_at: "2024-01-14T08:00:00Z", updated_at: "2024-01-14T09:00:00Z" },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.chat.listConversations();
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/chat/conversations?limit=20",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("passes custom limit parameter", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [] }),
+      });
+
+      await api.chat.listConversations(50);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/chat/conversations?limit=50",
+        expect.any(Object)
+      );
+    });
+
+    it("throws ApiError on server error", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database unavailable" }),
+      });
+
+      try {
+        await api.chat.listConversations();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+        expect((error as ApiError).detail).toBe("Database unavailable");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.chat.listConversations()).rejects.toThrow("Failed to load conversations");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.chat.listConversations()).rejects.toThrow("Failed to load conversations");
+    });
+  });
+
+  describe("api.chat.getConversation", () => {
+    it("returns conversation with messages on success", async () => {
+      const mockResponse = {
+        data: {
+          conversation: {
+            id: "conv-1",
+            title: "Trip to Paris",
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T12:00:00Z",
+          },
+          messages: [
+            { id: "msg-1", role: "user", content: "Hello" },
+            { id: "msg-2", role: "assistant", content: "Hi there!" },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await api.chat.getConversation("conv-1");
+
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/chat/conversations/conv-1",
+        expect.objectContaining({
+          credentials: "include",
+        })
+      );
+    });
+
+    it("throws ApiError with 404 when conversation not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(api.chat.getConversation("invalid")).rejects.toThrow("Conversation not found");
+    });
+
+    it("throws ApiError with detail from server response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database connection failed" }),
+      });
+
+      try {
+        await api.chat.getConversation("conv-1");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).message).toBe("Server Error");
+        expect((error as ApiError).detail).toBe("Database connection failed");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(api.chat.getConversation("conv-1")).rejects.toThrow("Failed to load conversation");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(api.chat.getConversation("conv-1")).rejects.toThrow("Failed to load conversation");
+    });
+  });
 });
