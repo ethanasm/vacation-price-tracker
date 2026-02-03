@@ -53,14 +53,14 @@ jobs:
       - name: Build (affected)
         run: pnpm nx affected -t build --base=${{ env.NX_BASE }}
 
-      - name: Lint (affected)
-        run: pnpm nx affected -t lint --base=${{ env.NX_BASE }} --projects=web
+      - name: Lint (web)
+        run: pnpm nx run web:lint
 
-      - name: Typecheck (affected)
-        run: pnpm nx affected -t typecheck --base=${{ env.NX_BASE }} --projects=web
+      - name: Typecheck (web)
+        run: pnpm nx run web:typecheck
 
-      - name: Test (affected)
-        run: pnpm nx affected -t test --base=${{ env.NX_BASE }} --projects=web
+      - name: Test (web)
+        run: pnpm nx run web:test
 
   audit:
     runs-on: ubuntu-latest

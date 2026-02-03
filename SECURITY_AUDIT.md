@@ -11,9 +11,10 @@
 
 All critical dependencies are up-to-date with no exploitable vulnerabilities affecting this project's implementation.
 
-**pip-audit Results:** 2 advisories found - **Risk accepted**
+**pip-audit Results:** 3 advisories found - **Risk accepted**
 - ecdsa CVE-2024-23342: does not affect our HS256 JWT implementation
 - protobuf CVE-2026-0994 (v6.33.4, via temporalio/fast-flights): no fix version available yet; monitoring for upstream patch
+- pip CVE-2026-1703: requires pip 26.0; uv manages our environment so pip is not directly used
 **pnpm audit Results:** No known vulnerabilities found (apps/web)
 
 ---
@@ -86,6 +87,18 @@ All critical dependencies are up-to-date with no exploitable vulnerabilities aff
 - **Known CVEs:** None
 - **Notes:** Latest version
 
+### 11. ⚠️ pip 25.3 (Transitive)
+- **Status:** ✅ **Acceptable Risk** (Not directly used)
+- **CVE:** CVE-2026-1703
+- **Severity:** Medium
+- **Fix Version:** pip 26.0
+- **Impact on this project:** ✅ **NO RISK**
+  - This project uses **uv** as the package manager, not pip directly
+  - pip is only present as a transitive dependency in the virtual environment
+  - All package installations are handled by uv, which has its own resolver
+  - The vulnerability affects pip's package installation behavior, which we don't invoke
+- **Action:** ✅ **RISK ACCEPTED** - uv manages our environment; pip is not directly used
+
 ---
 
 ## Development Dependencies
@@ -115,7 +128,7 @@ No high-priority security actions required!
    ```
    - To suppress accepted-risk warnings:
    ```bash
-   uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994
+   uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703
    ```
 
 2. **Monitor security advisories**

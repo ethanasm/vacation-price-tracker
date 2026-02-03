@@ -5,7 +5,7 @@
   "scripts": {
     "verify": "./scripts/verify.sh",
     "verify:deps": "pnpm install --frozen-lockfile && uv sync --extra dev",
-    "verify:audit": "pnpm audit --prod && uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --skip-editable",
+    "verify:audit": "pnpm audit --prod && uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703 --skip-editable",
     "build": "nx run-many -t build --all",
     "lint": "nx run-many -t lint --all",
     "test": "nx run-many -t test --all",

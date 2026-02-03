@@ -11,14 +11,16 @@
       "inputs": ["default"],
       "options": {
         "command": "uv run ruff check apps/worker/",
-        "cwd": "{workspaceRoot}"
+        "cwd": "{workspaceRoot}",
+        "forwardAllArgs": false
       }
     },
     "format": {
       "executor": "nx:run-commands",
       "options": {
         "command": "uv run ruff format apps/worker/",
-        "cwd": "{workspaceRoot}"
+        "cwd": "{workspaceRoot}",
+        "forwardAllArgs": false
       }
     },
     "test": {
@@ -27,7 +29,8 @@
       "inputs": ["default"],
       "options": {
         "command": "uv run pytest apps/worker/tests -v",
-        "cwd": "{workspaceRoot}"
+        "cwd": "{workspaceRoot}",
+        "forwardAllArgs": false
       }
     },
     "test:coverage": {
@@ -37,21 +40,24 @@
       "outputs": ["{projectRoot}/coverage.xml"],
       "options": {
         "command": "uv run pytest apps/worker/tests -v --cov=worker --cov-fail-under=95 --cov-report=term --cov-report=xml:apps/worker/coverage.xml",
-        "cwd": "{workspaceRoot}"
+        "cwd": "{workspaceRoot}",
+        "forwardAllArgs": false
       }
     },
     "dev": {
       "executor": "nx:run-commands",
       "options": {
         "command": "uv run python -m worker",
-        "cwd": "apps/worker"
+        "cwd": "apps/worker",
+        "forwardAllArgs": false
       }
     },
     "start": {
       "executor": "nx:run-commands",
       "options": {
         "command": "uv run python -m worker",
-        "cwd": "apps/worker"
+        "cwd": "apps/worker",
+        "forwardAllArgs": false
       }
     }
   }

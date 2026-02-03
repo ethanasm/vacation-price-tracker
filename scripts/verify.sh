@@ -26,11 +26,11 @@ fi
 
 echo ""
 echo "${PURPLE}${BOLD}━━━ Step 2: Running Nx Tasks (with caching) ━━━${NC}"
-echo "Running: lint, typecheck, test:coverage across all projects..."
+echo "Running: build, lint, typecheck, test:coverage across all projects..."
 echo ""
 
 # Run all cacheable tasks via Nx - will skip unchanged
-pnpm nx run-many -t lint typecheck test:coverage --all --parallel=3
+pnpm nx run-many -t build lint typecheck test:coverage --all --parallel=3
 if [ $? -ne 0 ]; then
   echo ""
   echo "${RED}${CROSS} Nx tasks failed${NC}"
@@ -46,7 +46,7 @@ echo "${PURPLE}${BOLD}━━━ Step 3: Security Audits ━━━${NC}"
 pnpm audit --prod
 AUDIT_NPM=$?
 
-uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --skip-editable
+uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703 --skip-editable
 AUDIT_PIP=$?
 
 if [ $AUDIT_NPM -ne 0 ] || [ $AUDIT_PIP -ne 0 ]; then

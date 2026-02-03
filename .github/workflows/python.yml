@@ -69,14 +69,17 @@ jobs:
             echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
           fi
 
-      - name: Lint (affected Python)
-        run: pnpm nx affected -t lint --base=${{ env.NX_BASE }} --projects=api,worker
+      - name: Lint (api)
+        run: pnpm nx run api:lint
 
-      - name: Test API (affected)
-        run: pnpm nx affected -t test:coverage --base=${{ env.NX_BASE }} --projects=api
+      - name: Lint (worker)
+        run: pnpm nx run worker:lint
 
-      - name: Test Worker (affected)
-        run: pnpm nx affected -t test:coverage --base=${{ env.NX_BASE }} --projects=worker
+      - name: Test API
+        run: pnpm nx run api:test:coverage
+
+      - name: Test Worker
+        run: pnpm nx run worker:test:coverage
 
   audit:
     runs-on: ubuntu-latest
@@ -94,4 +97,4 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run pip-audit
-        run: uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994
+        run: uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703

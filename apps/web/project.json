@@ -47,7 +47,8 @@
       "inputs": ["default"],
       "options": {
         "command": "pnpm biome lint .",
-        "cwd": "apps/web"
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "typecheck": {
@@ -56,7 +57,8 @@
       "inputs": ["default"],
       "options": {
         "command": "pnpm tsc --noEmit",
-        "cwd": "apps/web"
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "test": {
@@ -65,7 +67,8 @@
       "inputs": ["default"],
       "options": {
         "command": "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false",
-        "cwd": "apps/web"
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "test:coverage": {
@@ -75,14 +78,16 @@
       "outputs": ["{projectRoot}/coverage"],
       "options": {
         "command": "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false --coverage",
-        "cwd": "apps/web"
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "format": {
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm biome format --write .",
-        "cwd": "apps/web"
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     }
   }
