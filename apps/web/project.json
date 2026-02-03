@@ -64,7 +64,7 @@
       "cache": true,
       "inputs": ["default"],
       "options": {
-        "command": "NODE_NO_WARNINGS=1 CI=true pnpm jest",
+        "command": "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false",
         "cwd": "apps/web"
       }
     },
@@ -74,7 +74,7 @@
       "inputs": ["default"],
       "outputs": ["{projectRoot}/coverage"],
       "options": {
-        "command": "NODE_NO_WARNINGS=1 CI=true pnpm jest --coverage",
+        "command": "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false --coverage",
         "cwd": "apps/web"
       }
     },

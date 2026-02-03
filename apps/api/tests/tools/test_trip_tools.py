@@ -160,15 +160,10 @@ def test_base_tool_error_helper():
 
 
 @pytest.mark.asyncio
-async def test_create_trip_success(test_session, monkeypatch, mock_redis):
+async def test_create_trip_success(test_session):
     """Test successful trip creation."""
     user = await create_test_user(test_session, "create@example.com")
     tool = CreateTripTool()
-
-    # Mock trigger_price_check_workflow and redis_client
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     result = await tool.execute(args, str(user.id), test_session)
@@ -176,19 +171,15 @@ async def test_create_trip_success(test_session, monkeypatch, mock_redis):
     assert result.success is True
     assert "trip_id" in result.data
     assert result.data["name"] == "Hawaii Vacation"
-    assert "Fetching initial prices" in result.data["message"]
-    mock_trigger.assert_called_once()
+    assert "Created trip" in result.data["message"]
+    assert "trigger_refresh_trip" in result.data["message"]
 
 
 @pytest.mark.asyncio
-async def test_create_trip_with_flight_prefs(test_session, monkeypatch, mock_redis):
+async def test_create_trip_with_flight_prefs(test_session):
     """Test trip creation with flight preferences."""
     user = await create_test_user(test_session, "flight-prefs@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["airlines"] = ["UA", "AA"]
@@ -201,14 +192,10 @@ async def test_create_trip_with_flight_prefs(test_session, monkeypatch, mock_red
 
 
 @pytest.mark.asyncio
-async def test_create_trip_with_hotel_prefs(test_session, monkeypatch, mock_redis):
+async def test_create_trip_with_hotel_prefs(test_session):
     """Test trip creation with hotel preferences."""
     user = await create_test_user(test_session, "hotel-prefs@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["hotel_rooms"] = 2
@@ -221,14 +208,10 @@ async def test_create_trip_with_hotel_prefs(test_session, monkeypatch, mock_redi
 
 
 @pytest.mark.asyncio
-async def test_create_trip_with_invalid_cabin(test_session, monkeypatch, mock_redis):
+async def test_create_trip_with_invalid_cabin(test_session):
     """Test trip creation with invalid cabin class defaults to economy."""
     user = await create_test_user(test_session, "invalid-cabin@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["cabin"] = "super_deluxe"  # Invalid
@@ -239,14 +222,10 @@ async def test_create_trip_with_invalid_cabin(test_session, monkeypatch, mock_re
 
 
 @pytest.mark.asyncio
-async def test_create_trip_with_invalid_stops_mode(test_session, monkeypatch, mock_redis):
+async def test_create_trip_with_invalid_stops_mode(test_session):
     """Test trip creation with invalid stops mode defaults to any."""
     user = await create_test_user(test_session, "invalid-stops@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["stops_mode"] = "invalid"
@@ -257,14 +236,10 @@ async def test_create_trip_with_invalid_stops_mode(test_session, monkeypatch, mo
 
 
 @pytest.mark.asyncio
-async def test_create_trip_with_invalid_threshold_type(test_session, monkeypatch, mock_redis):
+async def test_create_trip_with_invalid_threshold_type(test_session):
     """Test trip creation with invalid threshold type defaults to trip_total."""
     user = await create_test_user(test_session, "invalid-threshold@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["threshold_type"] = "invalid_type"
@@ -275,15 +250,12 @@ async def test_create_trip_with_invalid_threshold_type(test_session, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_create_trip_limit_exceeded(test_session, monkeypatch, mock_redis):
+async def test_create_trip_limit_exceeded(test_session, monkeypatch):
     """Test trip creation fails when limit exceeded."""
     user = await create_test_user(test_session, "limit@example.com")
     tool = CreateTripTool()
 
     monkeypatch.setattr(settings, "max_trips_per_user", 1)
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     # Create first trip
     args = valid_trip_args()
@@ -298,14 +270,10 @@ async def test_create_trip_limit_exceeded(test_session, monkeypatch, mock_redis)
 
 
 @pytest.mark.asyncio
-async def test_create_trip_duplicate_name(test_session, monkeypatch, mock_redis):
+async def test_create_trip_duplicate_name(test_session):
     """Test trip creation fails with duplicate name."""
     user = await create_test_user(test_session, "duplicate@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     # Create first trip
     args = valid_trip_args()
@@ -349,13 +317,10 @@ async def test_create_trip_missing_date(test_session):
 
 
 @pytest.mark.asyncio
-async def test_create_trip_validation_error(test_session, monkeypatch):
+async def test_create_trip_validation_error(test_session):
     """Test trip creation fails with validation error."""
     user = await create_test_user(test_session, "validation@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
 
     args = valid_trip_args()
     args["origin_airport"] = "INVALID"  # Must be 3 chars
@@ -366,31 +331,10 @@ async def test_create_trip_validation_error(test_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_trip_workflow_failure(test_session, monkeypatch, mock_redis):
-    """Test trip is created but marked as error when workflow fails."""
-    user = await create_test_user(test_session, "workflow-fail@example.com")
-    tool = CreateTripTool()
-
-    mock_trigger = AsyncMock(side_effect=Exception("Workflow error"))
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
-
-    args = valid_trip_args()
-    result = await tool.execute(args, str(user.id), test_session)
-
-    assert result.success is True
-    assert "failed to start" in result.data["message"]
-
-
-@pytest.mark.asyncio
-async def test_create_trip_date_object(test_session, monkeypatch, mock_redis):
+async def test_create_trip_date_object(test_session):
     """Test trip creation with date objects instead of strings."""
     user = await create_test_user(test_session, "date-object@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     args["depart_date"] = date.today() + timedelta(days=30)
@@ -402,14 +346,10 @@ async def test_create_trip_date_object(test_session, monkeypatch, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_create_trip_no_notification_threshold(test_session, monkeypatch, mock_redis):
+async def test_create_trip_no_notification_threshold(test_session):
     """Test trip creation with default notification threshold."""
     user = await create_test_user(test_session, "no-threshold@example.com")
     tool = CreateTripTool()
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     args = valid_trip_args()
     del args["notification_threshold"]
@@ -1353,16 +1293,13 @@ async def test_resume_trip_wrong_user(test_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_trip_counts_only_own_trips(test_session, monkeypatch, mock_redis):
+async def test_create_trip_counts_only_own_trips(test_session, monkeypatch):
     """Test that trip limit only counts user's own trips."""
     user1 = await create_test_user(test_session, "user1-limit-rls@example.com")
     user2 = await create_test_user(test_session, "user2-limit-rls@example.com")
 
     # Set trip limit to 2
     monkeypatch.setattr(settings, "max_trips_per_user", 2)
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     tool = CreateTripTool()
 
@@ -1386,14 +1323,10 @@ async def test_create_trip_counts_only_own_trips(test_session, monkeypatch, mock
 
 
 @pytest.mark.asyncio
-async def test_create_trip_duplicate_name_per_user(test_session, monkeypatch, mock_redis):
+async def test_create_trip_duplicate_name_per_user(test_session):
     """Test that duplicate trip names are allowed for different users."""
     user1 = await create_test_user(test_session, "user1-dup-rls@example.com")
     user2 = await create_test_user(test_session, "user2-dup-rls@example.com")
-
-    mock_trigger = AsyncMock()
-    monkeypatch.setattr("app.tools.create_trip.trigger_price_check_workflow", mock_trigger)
-    monkeypatch.setattr("app.tools.create_trip.redis_client", mock_redis)
 
     tool = CreateTripTool()
     args = valid_trip_args()

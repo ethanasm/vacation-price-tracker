@@ -1,7 +1,7 @@
 """MCP tool for creating a new trip."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -10,16 +10,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
-from app.core.constants import CabinClass, StopsMode, ThresholdType, TripStatus
-from app.db.redis import redis_client
+from app.core.constants import CabinClass, StopsMode, ThresholdType
 from app.models.notification_rule import NotificationRule
 from app.models.trip import Trip
 from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.schemas.mcp import ToolResult
 from app.schemas.trip import TripCreate
-from app.services.temporal import trigger_price_check_workflow
 from app.tools.base import BaseTool
 
 
@@ -34,7 +31,8 @@ class CreateTripTool(BaseTool):
     description = (
         "Create a new vacation price tracking trip. "
         "Sets up monitoring for flights and hotels between the specified locations and dates. "
-        "New trips are created with 'active' status by default and will immediately start fetching prices."
+        "New trips are created with 'active' status by default. "
+        "After creating a trip, call trigger_refresh_trip with the returned trip_id to fetch initial prices."
     )
 
     async def execute(
@@ -62,8 +60,21 @@ class CreateTripTool(BaseTool):
         if isinstance(trip, ToolResult):
             return trip
 
-        # Trigger workflow and build response
-        return await self._finalize_trip_creation(trip, db)
+        # Build success response (do NOT trigger refresh here - LLM should call trigger_refresh_trip separately)
+        return self._build_success_response(trip)
+
+    def _build_success_response(self, trip: Trip) -> ToolResult:
+        """Build success response after trip creation."""
+        return self.success(
+            {
+                "trip_id": str(trip.id),
+                "name": trip.name,
+                "origin": trip.origin_airport,
+                "destination": trip.destination_code,
+                "dates": f"{trip.depart_date} to {trip.return_date}",
+                "message": f"Created trip '{trip.name}'. Call trigger_refresh_trip to fetch initial prices.",
+            }
+        )
 
     async def _validate_trip_creation(
         self, args: dict[str, Any], user_uuid: uuid.UUID, db: AsyncSession
@@ -145,43 +156,6 @@ class CreateTripTool(BaseTool):
 
         await db.refresh(trip)
         return trip
-
-    async def _finalize_trip_creation(self, trip: Trip, db: AsyncSession) -> ToolResult:
-        """Trigger workflow and build success response."""
-        workflow_started = True
-
-        # Acquire per-trip refresh lock before triggering workflow
-        # This prevents duplicate workflows if user immediately calls trigger_refresh_trip
-        lock_key = CacheKeys.trip_refresh_lock(str(trip.id))
-        await redis_client.set(
-            lock_key,
-            f"create-{trip.id}-{datetime.now().isoformat()}",
-            ex=CacheTTL.REFRESH_LOCK,
-            nx=True,
-        )
-
-        try:
-            await trigger_price_check_workflow(trip.id)
-        except Exception:
-            # Release lock on failure
-            await redis_client.delete(lock_key)
-            trip.status = TripStatus.ERROR
-            await db.commit()
-            workflow_started = False
-
-        message = f"Created trip '{trip.name}'"
-        message += ". Fetching initial prices..." if workflow_started else ", but initial price check failed to start."
-
-        return self.success(
-            {
-                "trip_id": str(trip.id),
-                "name": trip.name,
-                "origin": trip.origin_airport,
-                "destination": trip.destination_code,
-                "dates": f"{trip.depart_date} to {trip.return_date}",
-                "message": message,
-            }
-        )
 
     def _parse_date(self, date_str: Any) -> date:
         """Parse a date string into a date object."""
