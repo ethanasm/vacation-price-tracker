@@ -195,14 +195,18 @@ class TestToolSchemas:
         assert "vacation price tracking" in schema["description"].lower()
 
         params = schema["parameters"]
-        assert "name" in params["required"]
-        assert "origin_airport" in params["required"]
-        assert "destination_code" in params["required"]
-        assert "depart_date" in params["required"]
-        assert "return_date" in params["required"]
-
-        # Check adults param exists (simplified schema)
+        # No required params - elicitation handles missing fields
+        assert params["required"] == []
+        # But all properties should still be defined
+        assert "name" in params["properties"]
+        assert "origin_airport" in params["properties"]
+        assert "destination_code" in params["properties"]
+        assert "depart_date" in params["properties"]
+        assert "return_date" in params["properties"]
         assert "adults" in params["properties"]
+
+        # Description should mention elicitation behavior
+        assert "only pass fields" in schema["description"].lower()
 
     def test_list_trips_tool_schema(self):
         """Test list_trips tool schema."""
@@ -427,12 +431,12 @@ class TestValidateToolArgs:
         """Test list_trips requires no arguments."""
         validate_tool_args("list_trips", {})  # Should not raise
 
-    def test_validate_create_trip_missing_required(self):
-        """Test create_trip with missing required fields."""
-        with pytest.raises(ToolValidationError) as exc_info:
-            validate_tool_args("create_trip", {"name": "Test Trip"})
-
-        assert "Missing required parameter" in str(exc_info.value.details)
+    def test_validate_create_trip_partial_args(self):
+        """Test create_trip accepts partial args (elicitation handles missing)."""
+        # No longer raises - elicitation handles missing fields at tool level
+        validate_tool_args("create_trip", {"name": "Test Trip"})  # Should not raise
+        validate_tool_args("create_trip", {"destination_code": "SEA"})  # Should not raise
+        validate_tool_args("create_trip", {})  # Should not raise
 
     def test_validate_create_trip_valid(self):
         """Test create_trip with all required fields."""

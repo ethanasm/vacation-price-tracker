@@ -32,7 +32,7 @@ from app.clients.groq import (
 from app.core.prompts import build_system_prompt
 from app.models.message import Message
 from app.models.user import User
-from app.schemas.chat import ChatChunk
+from app.schemas.chat import ChatChunk, ChatChunkType
 from app.schemas.mcp import get_all_tools
 from app.services.conversation import (
     ConversationService,
@@ -240,13 +240,38 @@ async def _stream_llm_response(
     yield None, full_content, accumulated_tool_calls
 
 
+def _is_elicitation_result(result: ToolResult) -> bool:
+    """Check if a tool result indicates elicitation is needed.
+
+    A tool signals elicitation is needed by returning a successful result
+    with data containing needs_elicitation: True.
+
+    Args:
+        result: The tool execution result to check.
+
+    Returns:
+        True if the tool is requesting elicitation, False otherwise.
+    """
+    return (
+        result.success
+        and result.data is not None
+        and result.data.get("needs_elicitation", False) is True
+    )
+
+
 async def _execute_tool_call(
     tool_call: ToolCall,
     router: MCPRouter,
     user_id: str,
     db: AsyncSession,
 ) -> AsyncGenerator[tuple[ChatChunk, ToolResult | None], None]:
-    """Execute a single tool call and yield chunks with final result."""
+    """Execute a single tool call and yield chunks with final result.
+
+    If the tool returns a result indicating elicitation is needed
+    (i.e., result.data contains needs_elicitation: True), an elicitation
+    chunk is yielded instead of a tool_result chunk. This signals the
+    frontend to open a form UI to collect the missing data.
+    """
     tool_name = tool_call.function.name
     arguments_json = tool_call.function.arguments
 
@@ -258,13 +283,28 @@ async def _execute_tool_call(
 
     result = await router.execute_from_json(tool_name, arguments_json, user_id, db)
 
-    logger.info("Tool %s executed, success=%s, yielding tool_result chunk", tool_name, result.success)
-    yield ChatChunk.tool_executed(
-        tool_call_id=tool_call.id,
-        name=tool_name,
-        result=result.data if result.success else {"error": result.error},
-        success=result.success,
-    ), result
+    # Check if tool is requesting elicitation for missing fields
+    if _is_elicitation_result(result):
+        logger.info(
+            "Tool %s requesting elicitation, missing_fields=%s",
+            tool_name,
+            result.data.get("missing_fields", []),
+        )
+        yield ChatChunk.elicitation_request(
+            tool_call_id=tool_call.id,
+            tool_name=tool_name,
+            component=result.data.get("component", "unknown"),
+            prefilled=result.data.get("prefilled", {}),
+            missing_fields=result.data.get("missing_fields", []),
+        ), result
+    else:
+        logger.info("Tool %s executed, success=%s, yielding tool_result chunk", tool_name, result.success)
+        yield ChatChunk.tool_executed(
+            tool_call_id=tool_call.id,
+            name=tool_name,
+            result=result.data if result.success else {"error": result.error},
+            success=result.success,
+        ), result
 
 
 def _create_tool_result_message(tool_call: ToolCall, result: ToolResult) -> GroqMessage:
@@ -312,7 +352,8 @@ async def _process_tool_calls(
         retry_tracker: Optional tracker for tool retry limits.
 
     Yields:
-        ChatChunk objects, or (ChatChunk, exceeded_flag) tuples when retry limit hit.
+        ChatChunk objects, or (ChatChunk, stop_flag) tuples when processing should stop.
+        stop_flag is True when retry limit is hit or elicitation is requested.
     """
     for tool_call in tool_calls:
         tool_name = tool_call.function.name
@@ -335,10 +376,23 @@ async def _process_tool_calls(
             retry_tracker.record_call(tool_name)
 
         result = None
+        elicitation_requested = False
         async for chunk, tool_result in _execute_tool_call(tool_call, router, user_id, db):
-            yield chunk
+            # Check if this is an elicitation chunk
+            if chunk.type == ChatChunkType.ELICITATION:
+                elicitation_requested = True
+                # Yield the elicitation chunk with stop flag
+                yield chunk, True
+            else:
+                yield chunk
             if tool_result is not None:
                 result = tool_result
+
+        # If elicitation was requested, stop processing further tool calls
+        # The frontend will collect user input and submit to continue
+        if elicitation_requested:
+            logger.info("Elicitation requested, stopping tool call processing")
+            return
 
         if result is not None:
             messages.append(_create_tool_result_message(tool_call, result))

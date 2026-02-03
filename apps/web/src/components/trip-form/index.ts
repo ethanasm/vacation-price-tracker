@@ -54,3 +54,6 @@ export type { NotificationSectionProps } from "./notification-section";
 
 export { AirportAutocomplete } from "./airport-autocomplete";
 export type { AirportAutocompleteProps, Location } from "./airport-autocomplete";
+
+export { ChatTripForm } from "./chat-trip-form";
+export type { ChatTripFormProps, ChatTripFormPrefilled } from "./chat-trip-form";

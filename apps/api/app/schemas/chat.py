@@ -22,6 +22,7 @@ class ChatChunkType(str, Enum):
     CONTENT = "content"  # Text content from the LLM
     TOOL_CALL = "tool_call"  # LLM is calling a tool
     TOOL_RESULT = "tool_result"  # Result from tool execution
+    ELICITATION = "elicitation"  # Request user input via form
     ERROR = "error"  # Error occurred during processing
     RATE_LIMITED = "rate_limited"  # Rate limited, retrying
     DONE = "done"  # Stream complete
@@ -105,6 +106,30 @@ class RateLimitChunk(BaseModel):
     retry_after: float  # Seconds until next retry
 
 
+class ElicitationChunk(BaseModel):
+    """Request to open an external form for user input.
+
+    When a tool requires additional information that wasn't provided in the
+    conversation, this chunk signals the frontend to open a form UI component
+    to collect the missing data.
+
+    Attributes:
+        tool_call_id: Unique identifier for this tool call, used to correlate
+                      the submission back to the pending tool execution.
+        tool_name: Name of the tool that requested elicitation (e.g., "create_trip").
+        component: Frontend component to render (e.g., "create-trip-form").
+        prefilled: Data already captured from the conversation that should be
+                   pre-populated in the form.
+        missing_fields: List of required field names that were not provided.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    component: str
+    prefilled: dict[str, Any]
+    missing_fields: list[str] = Field(default_factory=list)
+
+
 class ChatChunk(BaseModel):
     """Individual chunk in the SSE stream.
 
@@ -113,6 +138,7 @@ class ChatChunk(BaseModel):
     - content: text string
     - tool_call: ToolCallChunk
     - tool_result: ToolResultChunk
+    - elicitation: ElicitationChunk requesting form input
     - error: error message string
     - rate_limited: RateLimitChunk with retry info
     - done: no additional data
@@ -122,6 +148,7 @@ class ChatChunk(BaseModel):
     content: str | None = None
     tool_call: ToolCallChunk | None = None
     tool_result: ToolResultChunk | None = None
+    elicitation: ElicitationChunk | None = None
     rate_limit: RateLimitChunk | None = None
     error: str | None = None
     thread_id: uuid.UUID | None = None  # Included on first and last chunk
@@ -181,3 +208,63 @@ class ChatChunk(BaseModel):
     def done_chunk(cls, thread_id: uuid.UUID | None = None) -> ChatChunk:
         """Create a done chunk indicating stream completion."""
         return cls(type=ChatChunkType.DONE, thread_id=thread_id)
+
+    @classmethod
+    def elicitation_request(
+        cls,
+        tool_call_id: str,
+        tool_name: str,
+        component: str,
+        prefilled: dict[str, Any],
+        missing_fields: list[str] | None = None,
+    ) -> ChatChunk:
+        """Create an elicitation chunk to request form input from the user.
+
+        Args:
+            tool_call_id: Unique identifier for the pending tool call.
+            tool_name: Name of the tool requesting elicitation.
+            component: Frontend component identifier to render (e.g., "create-trip-form").
+            prefilled: Data already captured to pre-populate in the form.
+            missing_fields: Optional list of required field names that are missing.
+
+        Returns:
+            ChatChunk with type ELICITATION and populated elicitation data.
+        """
+        return cls(
+            type=ChatChunkType.ELICITATION,
+            elicitation=ElicitationChunk(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                component=component,
+                prefilled=prefilled,
+                missing_fields=missing_fields or [],
+            ),
+        )
+
+
+class ElicitationSubmissionRequest(BaseModel):
+    """Request body for submitting elicitation form data.
+
+    Used with POST /v1/chat/elicitation/{tool_call_id} to submit
+    user-provided form data and complete a pending tool execution.
+
+    Attributes:
+        thread_id: The conversation thread ID where elicitation occurred.
+        tool_name: Name of the tool being executed (for validation).
+        data: The form data submitted by the user.
+    """
+
+    thread_id: uuid.UUID = Field(
+        ...,
+        description="Conversation thread ID where the elicitation was requested.",
+    )
+    tool_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Name of the tool that requested elicitation.",
+    )
+    data: dict[str, Any] = Field(
+        ...,
+        description="Form data submitted by the user to complete the tool call.",
+    )

@@ -55,8 +55,29 @@ jest.mock("../components/chat/chat-panel", () => ({
   ),
 }));
 
+// Mock elicitation drawer
+jest.mock("../components/chat/elicitation-drawer", () => ({
+  ElicitationDrawer: () => null,
+}));
+
 jest.mock("../lib/chat-provider", () => ({
   ChatProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useChatContext: () => ({
+    threadId: "mock-thread-id",
+    pendingElicitation: null,
+    setPendingElicitation: jest.fn(),
+    messages: [],
+    isLoading: false,
+    error: null,
+    pendingRefreshIds: new Set(),
+    addPendingRefresh: jest.fn(),
+    removePendingRefresh: jest.fn(),
+    sendMessage: jest.fn(),
+    clearMessages: jest.fn(),
+    retryLastMessage: jest.fn(),
+    switchThread: jest.fn(),
+    startNewThread: jest.fn(),
+  }),
 }));
 
 // Mock SSE hook

@@ -25,6 +25,10 @@ class CreateTripTool(BaseTool):
 
     This tool creates a new trip with the specified flight/hotel preferences
     and notification settings. It also triggers an initial price check workflow.
+
+    When required fields are missing, the tool returns an elicitation request
+    instead of failing, allowing the frontend to collect the missing data
+    via a form UI.
     """
 
     name = "create_trip"
@@ -35,13 +39,29 @@ class CreateTripTool(BaseTool):
         "After creating a trip, call trigger_refresh_trip with the returned trip_id to fetch initial prices."
     )
 
+    # Required fields for trip creation
+    # These must be provided either in the initial request or via elicitation
+    REQUIRED_FIELDS = ["name", "origin_airport", "destination_code", "depart_date", "return_date"]
+
+    # Component name for the frontend to render when elicitation is needed
+    ELICITATION_COMPONENT = "create-trip-form"
+
     async def execute(
         self,
         args: dict[str, Any],
         user_id: str,
         db: AsyncSession,
     ) -> ToolResult:
-        """Create a new trip for the user."""
+        """Create a new trip for the user.
+
+        If required fields are missing, returns an elicitation request
+        that signals the frontend to collect the missing data via a form.
+        """
+        # Check for missing required fields before any database operations
+        elicitation_result = self._check_elicitation_needed(args)
+        if elicitation_result:
+            return elicitation_result
+
         user_uuid = uuid.UUID(user_id)
 
         # Pre-validation checks
@@ -73,6 +93,45 @@ class CreateTripTool(BaseTool):
                 "destination": trip.destination_code,
                 "dates": f"{trip.depart_date} to {trip.return_date}",
                 "message": f"Created trip '{trip.name}'. Call trigger_refresh_trip to fetch initial prices.",
+            }
+        )
+
+    def _check_elicitation_needed(self, args: dict[str, Any]) -> ToolResult | None:
+        """Check if required fields are missing and return elicitation request if so.
+
+        This method enables conversational trip creation where users can say
+        "create a trip to Seattle" and be guided through a form to complete
+        missing details.
+
+        Args:
+            args: Dictionary of arguments provided by the LLM.
+
+        Returns:
+            ToolResult with elicitation request if fields are missing,
+            None if all required fields are present.
+        """
+        # Identify missing required fields
+        missing_fields = [
+            field for field in self.REQUIRED_FIELDS
+            if not args.get(field) or (isinstance(args.get(field), str) and not args.get(field).strip())
+        ]
+
+        if not missing_fields:
+            return None
+
+        # Build prefilled data from provided arguments
+        # Include all provided args, not just the required ones, to preserve optional prefs
+        prefilled = {
+            key: value for key, value in args.items()
+            if value is not None and (not isinstance(value, str) or value.strip())
+        }
+
+        return self.success(
+            {
+                "needs_elicitation": True,
+                "component": self.ELICITATION_COMPONENT,
+                "prefilled": prefilled,
+                "missing_fields": missing_fields,
             }
         )
 

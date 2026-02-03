@@ -2,6 +2,15 @@ import "@testing-library/jest-dom";
 import { TextEncoder, TextDecoder } from "node:util";
 import { webcrypto } from "node:crypto";
 
+// Mock ResizeObserver for Radix UI components (Sheet, Dialog, etc.)
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+// biome-ignore lint/suspicious/noExplicitAny: Polyfill for ResizeObserver
+global.ResizeObserver = MockResizeObserver as any;
+
 // Mock react-markdown (ESM module that Jest can't transform)
 jest.mock("react-markdown", () => {
   return {

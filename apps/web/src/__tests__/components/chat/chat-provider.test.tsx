@@ -23,6 +23,8 @@ function TestConsumer() {
     pendingRefreshIds,
     addPendingRefresh,
     removePendingRefresh,
+    pendingElicitation,
+    setPendingElicitation,
     sendMessage,
     clearMessages,
     retryLastMessage,
@@ -61,6 +63,22 @@ function TestConsumer() {
       </button>
       <button type="button" onClick={() => removePendingRefresh("test-id-1")} data-testid="removePending">
         Remove Pending
+      </button>
+      <span data-testid="pendingElicitation">{pendingElicitation ? pendingElicitation.tool_call_id : "none"}</span>
+      <button
+        type="button"
+        onClick={() => setPendingElicitation({
+          tool_call_id: "test-elicitation",
+          tool_name: "create_trip",
+          component: "create-trip-form",
+          prefilled: { name: "Test Trip" },
+        })}
+        data-testid="setElicitation"
+      >
+        Set Elicitation
+      </button>
+      <button type="button" onClick={() => setPendingElicitation(null)} data-testid="clearElicitation">
+        Clear Elicitation
       </button>
     </div>
   );
@@ -516,5 +534,126 @@ describe("pendingRefreshIds", () => {
     // Still 1 (the controlled one)
     expect(screen.getByTestId("pendingCount")).toHaveTextContent("1");
     expect(screen.getByTestId("pendingIds")).toHaveTextContent("test-id-1");
+  });
+});
+
+describe("elicitation handling", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("provides null pendingElicitation by default", () => {
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("none");
+  });
+
+  it("setPendingElicitation updates the pending elicitation state", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("none");
+
+    await user.click(screen.getByTestId("setElicitation"));
+
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("test-elicitation");
+  });
+
+  it("setPendingElicitation can clear the pending elicitation", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    // Set first
+    await user.click(screen.getByTestId("setElicitation"));
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("test-elicitation");
+
+    // Then clear
+    await user.click(screen.getByTestId("clearElicitation"));
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("none");
+  });
+
+  it("calls onElicitation callback when elicitation chunk is received", async () => {
+    mockFetch.mockResolvedValueOnce(
+      createMockSSEStream([
+        {
+          type: "elicitation",
+          elicitation: {
+            tool_call_id: "call-123",
+            tool_name: "create_trip",
+            component: "create-trip-form",
+            prefilled: { destination_code: "SEA" },
+            missing_fields: ["name"],
+          },
+        },
+      ])
+    );
+
+    const onElicitation = jest.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider onElicitation={onElicitation}>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    await user.click(screen.getByTestId("send"));
+
+    await waitFor(() => {
+      expect(onElicitation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool_call_id: "call-123",
+          tool_name: "create_trip",
+          component: "create-trip-form",
+        })
+      );
+    });
+
+    // Also updates internal state
+    expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("call-123");
+  });
+
+  it("updates pendingElicitation state without onElicitation callback", async () => {
+    mockFetch.mockResolvedValueOnce(
+      createMockSSEStream([
+        {
+          type: "elicitation",
+          elicitation: {
+            tool_call_id: "call-456",
+            tool_name: "create_trip",
+            component: "create-trip-form",
+            prefilled: {},
+          },
+        },
+      ])
+    );
+
+    const user = userEvent.setup();
+
+    render(
+      <ChatProvider>
+        <TestConsumer />
+      </ChatProvider>
+    );
+
+    await user.click(screen.getByTestId("send"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pendingElicitation")).toHaveTextContent("call-456");
+    });
   });
 });

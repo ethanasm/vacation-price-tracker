@@ -1737,4 +1737,135 @@ describe("API Client", () => {
       await expect(api.chat.getConversation("conv-1")).rejects.toThrow("Failed to load conversation");
     });
   });
+
+  describe("submitElicitation", () => {
+    it("submits elicitation data successfully", async () => {
+      const mockResponse = {
+        ok: true,
+        status: 200,
+        body: { getReader: jest.fn() },
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse);
+
+      const result = await api.chat.submitElicitation(
+        "tool-call-123",
+        "thread-456",
+        "create_trip",
+        { name: "Test Trip", origin_airport: "SFO" }
+      );
+
+      expect(result).toBe(mockResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/chat/elicitation/tool-call-123"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            thread_id: "thread-456",
+            tool_name: "create_trip",
+            data: { name: "Test Trip", origin_airport: "SFO" },
+          }),
+        })
+      );
+    });
+
+    it("encodes tool call ID in URL", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: { getReader: jest.fn() },
+      });
+
+      await api.chat.submitElicitation(
+        "call/with-special&chars",
+        "thread-123",
+        "create_trip",
+        { name: "Test" }
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("call%2Fwith-special%26chars"),
+        expect.anything()
+      );
+    });
+
+    it("throws ApiError with 404 when elicitation not found", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.chat.submitElicitation("invalid-id", "thread-1", "create_trip", {})
+      ).rejects.toThrow("Elicitation not found or expired");
+    });
+
+    it("throws ApiError with 400 for validation errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: "Validation Error", detail: "Name is required" }),
+      });
+
+      try {
+        await api.chat.submitElicitation("call-1", "thread-1", "create_trip", {});
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(400);
+        expect((error as ApiError).detail).toBe("Name is required");
+      }
+    });
+
+    it("throws ApiError with default message for 400 without title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.chat.submitElicitation("call-1", "thread-1", "create_trip", {})
+      ).rejects.toThrow("Invalid elicitation data");
+    });
+
+    it("throws ApiError for server errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ title: "Server Error", detail: "Database unavailable" }),
+      });
+
+      try {
+        await api.chat.submitElicitation("call-1", "thread-1", "create_trip", {});
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).status).toBe(500);
+        expect((error as ApiError).detail).toBe("Database unavailable");
+      }
+    });
+
+    it("uses default message when server response has no title", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.chat.submitElicitation("call-1", "thread-1", "create_trip", {})
+      ).rejects.toThrow("Failed to submit elicitation");
+    });
+
+    it("handles JSON parse error in error response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => { throw new Error("JSON parse error"); },
+      });
+
+      await expect(
+        api.chat.submitElicitation("call-1", "thread-1", "create_trip", {})
+      ).rejects.toThrow("Failed to submit elicitation");
+    });
+  });
 });

@@ -121,13 +121,12 @@ def test_travel_assistant_prompt_contains_capabilities():
     assert "Setting price alert thresholds" in TRAVEL_ASSISTANT_PROMPT
 
 
-def test_travel_assistant_prompt_contains_required_fields():
-    """Test that the base prompt mentions required trip fields."""
-    assert "Trip name" in TRAVEL_ASSISTANT_PROMPT
-    assert "Origin airport" in TRAVEL_ASSISTANT_PROMPT
-    assert "Destination airport" in TRAVEL_ASSISTANT_PROMPT
-    assert "Departure date" in TRAVEL_ASSISTANT_PROMPT
-    assert "Return date" in TRAVEL_ASSISTANT_PROMPT
+def test_travel_assistant_prompt_contains_trip_creation_guidance():
+    """Test that the base prompt mentions trip creation guidance."""
+    # Prompt should mention that tool opens form for missing fields
+    assert "form" in TRAVEL_ASSISTANT_PROMPT
+    # And that it should call trigger_refresh_trip after creating
+    assert "trigger_refresh_trip" in TRAVEL_ASSISTANT_PROMPT
 
 
 def test_travel_assistant_prompt_contains_iata_examples():

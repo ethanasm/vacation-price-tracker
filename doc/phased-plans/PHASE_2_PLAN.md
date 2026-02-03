@@ -832,10 +832,10 @@ Phase 2 is complete when:
 - [ ] User can set notification thresholds via chat
 - [X] Tool calls are executed correctly with authorization
 - [ ] Streaming responses display in real-time
-- [ ] Conversation history is persisted
+- [X] Conversation history is persisted
 - [ ] lastminute.com MCP server (hosted at mcp.lastminute.com) is callable for flight searches
 - [ ] Custom Amadeus MCP tools provide detailed flight data (flight numbers, airlines) and hotel searches
 - [ ] LLM uses lastminute.com for quick lookups, switches to Amadeus when user needs specific flight details
 - [ ] Kiwi MCP server available as backup for virtual interlining
-- [ ] Elicitation prompts guide users through missing parameters
+- [X] Elicitation prompts guide users through missing parameters
 - [ ] All tool operations respect user authorization

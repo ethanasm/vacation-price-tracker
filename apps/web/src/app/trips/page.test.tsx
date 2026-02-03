@@ -15,21 +15,56 @@ jest.mock("@/components/chat/chat-panel", () => ({
   ),
 }));
 
+// Track tool result callback
+let capturedOnToolResult: ((result: unknown) => void) | null = null;
+
 jest.mock("@/lib/chat-provider", () => ({
-  ChatProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ChatProvider: ({ children, onToolResult }: { children: React.ReactNode; onToolResult?: (result: unknown) => void }) => {
+    capturedOnToolResult = onToolResult || null;
+    return <>{children}</>;
+  },
+  useChatContext: () => ({
+    threadId: "mock-thread-id",
+    pendingElicitation: null,
+    setPendingElicitation: jest.fn(),
+    messages: [],
+    isLoading: false,
+    error: null,
+    pendingRefreshIds: new Set(),
+    addPendingRefresh: jest.fn(),
+    removePendingRefresh: jest.fn(),
+    sendMessage: jest.fn(),
+    clearMessages: jest.fn(),
+    retryLastMessage: jest.fn(),
+    switchThread: jest.fn(),
+    startNewThread: jest.fn(),
+  }),
 }));
+
+// Mock elicitation drawer
+jest.mock("@/components/chat/elicitation-drawer", () => ({
+  ElicitationDrawer: () => null,
+}));
+
+// Track SSE callback for tests
+let capturedOnPriceUpdate: ((update: unknown) => void) | null = null;
+let capturedOnError: ((error: Error) => void) | null = null;
 
 // Mock SSE hook
 jest.mock("@/hooks/use-sse", () => ({
-  useSSE: () => ({
-    connectionState: "connected",
-    isConnected: true,
-    priceUpdates: [],
-    error: null,
-    connect: jest.fn(),
-    disconnect: jest.fn(),
-    clearUpdates: jest.fn(),
-  }),
+  useSSE: (options: { onPriceUpdate?: (update: unknown) => void; onError?: (error: Error) => void }) => {
+    capturedOnPriceUpdate = options.onPriceUpdate || null;
+    capturedOnError = options.onError || null;
+    return {
+      connectionState: "connected",
+      isConnected: true,
+      priceUpdates: [],
+      error: null,
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+      clearUpdates: jest.fn(),
+    };
+  },
 }));
 
 // Mock chat toggle with localStorage simulation
@@ -893,6 +928,375 @@ describe("DashboardPage", () => {
       });
 
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe("Tool result handling", () => {
+    it("refetches trips when create_trip tool result is received", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate create_trip tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "create_trip",
+            toolCallId: "call-1",
+            isError: false,
+            result: { name: "New Trip" },
+          });
+        }
+      });
+
+      // Should show success toast and refetch
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith('Trip "New Trip" created', {
+          description: "Fetching initial prices...",
+        });
+      });
+
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("refetches trips when delete_trip tool result is received", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate delete_trip tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "delete_trip",
+            toolCallId: "call-2",
+            isError: false,
+            result: {},
+          });
+        }
+      });
+
+      // Should refetch trips
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("handles trigger_refresh tool result by starting polling", async () => {
+      jest.useFakeTimers();
+
+      (api.trips.getRefreshStatus as jest.Mock).mockResolvedValue({
+        data: { status: "completed", total: 3, completed: 3, failed: 0 },
+      });
+
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Simulate trigger_refresh tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "trigger_refresh",
+            toolCallId: "call-3",
+            isError: false,
+            result: { workflow_id: "workflow-123" },
+          });
+        }
+      });
+
+      // Advance timer to trigger polling
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+
+      // Should start polling
+      await waitFor(() => {
+        expect(api.trips.getRefreshStatus).toHaveBeenCalledWith("workflow-123");
+      });
+
+      jest.useRealTimers();
+    });
+
+    it("tracks pending refresh for trigger_refresh_trip tool result", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Simulate trigger_refresh_trip tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "trigger_refresh_trip",
+            toolCallId: "call-4",
+            isError: false,
+            result: { trip_id: "1" },
+          });
+        }
+      });
+
+      // The pending refresh should be tracked (tested via SSE clearing it)
+      // Simulate SSE price update that clears the pending refresh
+      await act(async () => {
+        if (capturedOnPriceUpdate) {
+          capturedOnPriceUpdate({
+            trip_id: "1",
+            flight_price: "750.00",
+            hotel_price: "1100.00",
+            total_price: "1850.00",
+            updated_at: "2025-01-22T12:00:00Z",
+          });
+        }
+      });
+
+      // Price should be updated
+      await waitFor(() => {
+        expect(screen.getByText("$750")).toBeInTheDocument();
+      });
+    });
+
+    it("refetches trips for pause_trip tool result", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate pause_trip tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "pause_trip",
+            toolCallId: "call-5",
+            isError: false,
+            result: {},
+          });
+        }
+      });
+
+      // Should refetch trips
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("refetches trips for resume_trip tool result", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate resume_trip tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "resume_trip",
+            toolCallId: "call-6",
+            isError: false,
+            result: {},
+          });
+        }
+      });
+
+      // Should refetch trips
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("refetches trips for set_notification tool result", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate set_notification tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "set_notification",
+            toolCallId: "call-7",
+            isError: false,
+            result: {},
+          });
+        }
+      });
+
+      // Should refetch trips
+      await waitFor(() => {
+        expect(api.trips.list).toHaveBeenCalled();
+      });
+    });
+
+    it("does not refetch for non-mutating tool results", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Clear previous calls
+      (api.trips.list as jest.Mock).mockClear();
+
+      // Simulate a non-mutating tool result
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "list_trips",
+            toolCallId: "call-8",
+            isError: false,
+            result: {},
+          });
+        }
+      });
+
+      // Should NOT refetch trips
+      expect(api.trips.list).not.toHaveBeenCalled();
+    });
+
+    it("shows default toast message when create_trip result has no name", async () => {
+      render(<DashboardPage />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Simulate create_trip tool result without name
+      await act(async () => {
+        if (capturedOnToolResult) {
+          capturedOnToolResult({
+            name: "create_trip",
+            toolCallId: "call-9",
+            isError: false,
+            result: {}, // No name property
+          });
+        }
+      });
+
+      // Should show success toast with default name
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith('Trip "New trip" created', {
+          description: "Fetching initial prices...",
+        });
+      });
+    });
+  });
+
+  describe("SSE price updates", () => {
+    it("updates trip prices when SSE price update is received", async () => {
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Initial price should be displayed
+      expect(screen.getByText("$893")).toBeInTheDocument();
+
+      // Simulate SSE price update
+      await act(async () => {
+        if (capturedOnPriceUpdate) {
+          capturedOnPriceUpdate({
+            trip_id: "1",
+            flight_price: "999.00",
+            hotel_price: "1500.00",
+            total_price: "2499.00",
+            updated_at: "2025-01-22T10:00:00Z",
+          });
+        }
+      });
+
+      // New price should be displayed
+      await waitFor(() => {
+        expect(screen.getByText("$999")).toBeInTheDocument();
+      });
+    });
+
+    it("handles SSE errors gracefully", async () => {
+      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Simulate SSE error
+      await act(async () => {
+        if (capturedOnError) {
+          capturedOnError(new Error("SSE connection failed"));
+        }
+      });
+
+      // Should log the error
+      expect(consoleErrorSpy).toHaveBeenCalledWith("SSE error:", expect.any(Error));
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("clears pending refresh for trip when price update is received", async () => {
+      render(<DashboardPage />);
+
+      // Wait for trips to load
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
+
+      // Simulate SSE price update that clears pending refresh
+      await act(async () => {
+        if (capturedOnPriceUpdate) {
+          capturedOnPriceUpdate({
+            trip_id: "1",
+            flight_price: "800.00",
+            hotel_price: "1000.00",
+            total_price: "1800.00",
+            updated_at: "2025-01-22T11:00:00Z",
+          });
+        }
+      });
+
+      // Price should be updated
+      await waitFor(() => {
+        expect(screen.getByText("$800")).toBeInTheDocument();
+      });
     });
   });
 

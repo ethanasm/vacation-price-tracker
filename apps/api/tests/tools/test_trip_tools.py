@@ -303,7 +303,11 @@ async def test_create_trip_invalid_date(test_session):
 
 @pytest.mark.asyncio
 async def test_create_trip_missing_date(test_session):
-    """Test trip creation fails with missing date."""
+    """Test trip creation returns elicitation request with missing date.
+
+    With elicitation support, missing required fields trigger an elicitation
+    request instead of failing directly.
+    """
     user = await create_test_user(test_session, "missing-date@example.com")
     tool = CreateTripTool()
 
@@ -312,8 +316,10 @@ async def test_create_trip_missing_date(test_session):
 
     result = await tool.execute(args, str(user.id), test_session)
 
-    assert result.success is False
-    assert "Date is required" in result.error
+    # Now returns elicitation request instead of error
+    assert result.success is True
+    assert result.data.get("needs_elicitation") is True
+    assert "depart_date" in result.data.get("missing_fields", [])
 
 
 @pytest.mark.asyncio

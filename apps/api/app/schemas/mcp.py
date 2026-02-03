@@ -110,38 +110,40 @@ CREATE_TRIP_TOOL = _make_tool(
     description=(
         "Create a new vacation price tracking trip. "
         "Sets up monitoring for flights and hotels. "
-        "Required: name, origin_airport, destination_code, depart_date, return_date. "
-        "Optional: adults (default 1). "
-        "Example: create_trip(name='Seattle Trip', origin_airport='SFO', destination_code='SEA', "
-        "depart_date='2026-03-06', return_date='2026-03-09', adults=2)"
+        "IMPORTANT: Only pass fields the user EXPLICITLY provided. "
+        "Do NOT invent, guess, or fill in missing values (dates, names, etc.). "
+        "If the user says 'create a trip to Seattle', call with only destination_code='SEA'. "
+        "The tool will return an elicitation request to collect missing fields via a form. "
+        "Fields: name, origin_airport, destination_code, depart_date (YYYY-MM-DD), "
+        "return_date (YYYY-MM-DD), adults (default 1)."
     ),
     parameters={
         "name": {
             "type": "string",
-            "description": "Trip name, e.g. 'Seattle Trip'",
+            "description": "Trip name if user provided one, e.g. 'Seattle Trip'",
         },
         "origin_airport": {
             "type": "string",
-            "description": "Origin IATA code, e.g. 'SFO'",
+            "description": "Origin IATA code if user provided one, e.g. 'SFO'",
         },
         "destination_code": {
             "type": "string",
-            "description": "Destination IATA code, e.g. 'SEA'",
+            "description": "Destination IATA code if user provided one, e.g. 'SEA'",
         },
         "depart_date": {
             "type": "string",
-            "description": "Departure date YYYY-MM-DD, e.g. '2026-03-06'",
+            "description": "Departure date YYYY-MM-DD if user provided one",
         },
         "return_date": {
             "type": "string",
-            "description": "Return date YYYY-MM-DD, e.g. '2026-03-09'",
+            "description": "Return date YYYY-MM-DD if user provided one",
         },
         "adults": {
             "type": "integer",
-            "description": "Number of adults (default 1)",
+            "description": "Number of adults if user specified",
         },
     },
-    required=["name", "origin_airport", "destination_code", "depart_date", "return_date"],
+    required=[],
 )
 
 

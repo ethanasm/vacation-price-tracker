@@ -2,6 +2,7 @@
 
 This module provides:
 - POST /v1/chat/messages: Streaming SSE endpoint for chat messages
+- POST /v1/chat/elicitation/{tool_call_id}: Submit elicitation form data
 - GET /v1/chat/conversations: List user's conversations
 - GET /v1/chat/conversations/{thread_id}: Get conversation history
 - DELETE /v1/chat/conversations/{thread_id}: Delete a conversation
@@ -24,10 +25,12 @@ from app.models.trip import Trip
 from app.routers.auth import UserResponse, get_current_user
 from app.schemas.base import APIResponse
 from app.schemas.chat import (
+    ChatChunk,
     ChatMessageResponse,
     ChatRequest,
     ChatResponse,
     ConversationResponse,
+    ElicitationSubmissionRequest,
 )
 from app.services.chat import ChatService, chat_service
 from app.services.conversation import ConversationService, conversation_service
@@ -297,3 +300,107 @@ async def delete_conversation(
         raise ConversationNotFound()
 
     await db.commit()
+
+
+class ElicitationNotFound(NotFoundError):
+    """Raised when an elicitation tool_call_id is not found or invalid."""
+
+    def __init__(self) -> None:
+        super().__init__(detail="Elicitation not found or invalid")
+
+
+class ToolNotRegistered(NotFoundError):
+    """Raised when the specified tool is not registered."""
+
+    def __init__(self, tool_name: str) -> None:
+        super().__init__(detail=f"Tool not registered: {tool_name}")
+
+
+@router.post("/v1/chat/elicitation/{tool_call_id}")
+async def submit_elicitation(
+    tool_call_id: str,
+    request: ElicitationSubmissionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+    conv_svc: ConversationService = Depends(lambda: conversation_service),
+) -> StreamingResponse:
+    """Submit elicitation form data to complete a pending tool execution.
+
+    When a tool requests elicitation (missing required fields), the frontend
+    displays a form to collect the data. This endpoint receives the submitted
+    form data and executes the tool with complete arguments.
+
+    The response is an SSE stream containing:
+    - **tool_result**: Result from the tool execution
+    - **content**: Optional follow-up text from the LLM
+    - **done**: Stream completion marker
+
+    Args:
+        tool_call_id: Unique identifier from the elicitation request.
+        request: Elicitation submission containing thread_id, tool_name, and form data.
+        db: Database session.
+        current_user: Authenticated user.
+        conv_svc: Conversation service instance.
+
+    Returns:
+        StreamingResponse with SSE content.
+
+    Raises:
+        ConversationNotFound: If the conversation doesn't exist or doesn't belong to user.
+        ToolNotRegistered: If the specified tool is not registered.
+    """
+    from app.services.mcp_router import get_mcp_router
+
+    user_id = uuid.UUID(current_user.id)
+
+    # Verify conversation exists and belongs to user
+    conversation = await conv_svc.get_conversation(
+        request.thread_id, user_id, db
+    )
+    if not conversation:
+        raise ConversationNotFound()
+
+    # Get MCP router and verify tool exists
+    router_instance = get_mcp_router()
+    if not router_instance.is_registered(request.tool_name):
+        raise ToolNotRegistered(request.tool_name)
+
+    async def generate() -> AsyncGenerator[str, None]:
+        """Execute the tool and stream results."""
+        # Execute the tool with submitted data
+        result = await router_instance.execute(
+            tool_name=request.tool_name,
+            arguments=request.data,
+            user_id=str(user_id),
+            db=db,
+        )
+
+        # Yield tool result chunk
+        yield f"data: {ChatChunk.tool_executed(tool_call_id=tool_call_id, name=request.tool_name, result=result.data if result.success else {'error': result.error}, success=result.success).model_dump_json()}\n\n"
+
+        # Save tool result to conversation history
+        import json
+
+        await conv_svc.add_message(
+            conversation_id=conversation.id,
+            role="tool",
+            content=json.dumps(result.data) if result.success else json.dumps({"error": result.error}),
+            db=db,
+            tool_call_id=tool_call_id,
+            name=request.tool_name,
+        )
+
+        await db.commit()
+
+        # Yield done chunk with thread_id
+        yield f"data: {ChatChunk.done_chunk(thread_id=request.thread_id).model_dump_json()}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

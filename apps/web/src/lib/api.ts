@@ -779,5 +779,57 @@ export const api = {
 
       return response.json();
     },
+
+    /**
+     * Submit form data to complete a pending tool execution (elicitation).
+     * @param toolCallId - The ID of the tool call requiring elicitation
+     * @param threadId - The conversation thread ID
+     * @param toolName - The name of the tool being executed
+     * @param data - Form data to submit for tool execution
+     * @returns Streaming response with tool result
+     */
+    async submitElicitation(
+      toolCallId: string,
+      threadId: string,
+      toolName: string,
+      data: Record<string, unknown>
+    ): Promise<Response> {
+      const response = await fetchWithAuth(
+        `/v1/chat/elicitation/${encodeURIComponent(toolCallId)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            thread_id: threadId,
+            tool_name: toolName,
+            data: data,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new ApiError(404, "Elicitation not found or expired");
+        }
+        if (response.status === 400) {
+          const error = await response.json().catch(() => ({}));
+          throw new ApiError(
+            400,
+            error.title || "Invalid elicitation data",
+            error.detail
+          );
+        }
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to submit elicitation",
+          error.detail
+        );
+      }
+
+      return response;
+    },
   },
 };

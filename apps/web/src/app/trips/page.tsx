@@ -31,10 +31,12 @@ import { formatPrice, formatShortDate, formatTimestamp } from "@/lib/format";
 import { api, ApiError, type TripResponse } from "@/lib/api";
 import { TripRowContextMenu, TripRowKebab } from "@/components/trip-row-actions";
 import { ChatPanel } from "@/components/chat/chat-panel";
-import { ChatProvider } from "@/lib/chat-provider";
+import { ChatProvider, useChatContext } from "@/lib/chat-provider";
 import type { ToolResult } from "@/lib/chat-types";
+import type { TripPayload } from "@/components/trip-form";
 import { ChatToggle, useChatExpanded, FloatingChatToggle } from "@/components/dashboard/chat-toggle";
 import { useSSE, type PriceUpdateEvent } from "@/hooks/use-sse";
+import { ElicitationDrawer } from "@/components/chat/elicitation-drawer";
 import styles from "./page.module.css";
 
 const REFRESH_POLL_INTERVAL = 2000; // Poll every 2 seconds
@@ -168,6 +170,145 @@ function FailedState({ onRetry }: FailedStateProps) {
         Retry
       </Button>
     </div>
+  );
+}
+
+interface ChatPanelWithElicitationProps {
+  showCloseButton: boolean;
+  onClose: () => void;
+  onTripCreated: () => void;
+}
+
+/**
+ * Wrapper component that renders both ChatPanel and ElicitationDrawer.
+ * Must be a child of ChatProvider to access context values.
+ */
+function ChatPanelWithElicitation({
+  showCloseButton,
+  onClose,
+  onTripCreated,
+}: ChatPanelWithElicitationProps) {
+  const {
+    threadId,
+    pendingElicitation,
+    setPendingElicitation,
+  } = useChatContext();
+
+  // Handle elicitation form completion
+  const handleElicitationComplete = useCallback(async (
+    toolCallId: string,
+    data: TripPayload
+  ) => {
+    if (!threadId) {
+      console.error("[ChatPanelWithElicitation] Cannot submit elicitation: no thread ID");
+      toast.error("Cannot complete form", {
+        description: "Chat session not found. Please try again.",
+      });
+      setPendingElicitation(null);
+      return;
+    }
+
+    if (!pendingElicitation) {
+      console.error("[ChatPanelWithElicitation] No pending elicitation found");
+      return;
+    }
+
+    console.log("[ChatPanelWithElicitation] Submitting elicitation:", toolCallId, threadId, pendingElicitation.tool_name);
+
+    try {
+      // Submit the elicitation to the backend
+      // The backend will execute the tool and return a streaming response
+      const response = await api.chat.submitElicitation(
+        toolCallId,
+        threadId,
+        pendingElicitation.tool_name,
+        data as unknown as Record<string, unknown>
+      );
+
+      // Clear the pending elicitation
+      setPendingElicitation(null);
+
+      // Parse the streaming response to get the trip_id
+      let tripId: string | null = null;
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const chunk = JSON.parse(line.slice(6));
+                // Extract trip_id from tool_result chunk
+                if (chunk.type === "tool_result" && chunk.tool_result?.result?.trip_id) {
+                  tripId = chunk.tool_result.result.trip_id;
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
+          }
+        }
+      }
+
+      // Show success toast
+      toast.success(`Trip "${data.name}" created`, {
+        description: tripId ? "Fetching initial prices..." : "Trip created successfully",
+      });
+
+      // Notify parent to refresh trips
+      onTripCreated();
+
+      // Trigger price refresh if we got a trip_id
+      if (tripId) {
+        try {
+          console.log("[ChatPanelWithElicitation] Triggering price refresh for trip:", tripId);
+          await api.trips.refresh(tripId);
+        } catch (refreshErr) {
+          console.error("[ChatPanelWithElicitation] Failed to trigger price refresh:", refreshErr);
+          // Don't show error toast - the trip was created successfully
+        }
+      }
+    } catch (err) {
+      console.error("[ChatPanelWithElicitation] Elicitation submission failed:", err);
+      if (err instanceof ApiError) {
+        toast.error("Failed to create trip", {
+          description: err.detail,
+        });
+      } else {
+        toast.error("Failed to create trip", {
+          description: "An unexpected error occurred. Please try again.",
+        });
+      }
+    }
+  }, [threadId, pendingElicitation, setPendingElicitation, onTripCreated]);
+
+  // Handle elicitation cancellation
+  const handleElicitationCancel = useCallback(() => {
+    console.log("[ChatPanelWithElicitation] Elicitation cancelled");
+    setPendingElicitation(null);
+  }, [setPendingElicitation]);
+
+  return (
+    <>
+      <ChatPanel
+        showCloseButton={showCloseButton}
+        onClose={onClose}
+      />
+      <ElicitationDrawer
+        elicitation={pendingElicitation}
+        onComplete={handleElicitationComplete}
+        onCancel={handleElicitationCancel}
+      />
+    </>
   );
 }
 
@@ -654,9 +795,10 @@ export default function DashboardPage() {
               onToolResult={handleToolResult}
               pendingRefreshIds={pendingRefreshIds}
             >
-              <ChatPanel
+              <ChatPanelWithElicitation
                 showCloseButton
                 onClose={() => setChatExpanded(false)}
+                onTripCreated={fetchTrips}
               />
             </ChatProvider>
           </div>

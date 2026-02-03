@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,9 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel
 
-TEST_DB_FILE = os.path.join(tempfile.gettempdir(), "test_vacation_tracker.db")
-TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_FILE}"
-
 
 @pytest.fixture(scope="session")
 def anyio_backend():
@@ -25,7 +23,11 @@ def anyio_backend():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_engine():
-    """Create a test database engine for each test."""
+    """Create a test database engine for each test.
+
+    Uses a unique database file per test to avoid race conditions
+    when tests run in parallel.
+    """
     # Import all models so SQLAlchemy registers them with metadata
     from app.models import (
         Conversation,
@@ -41,12 +43,12 @@ async def test_engine():
     # Reference models to avoid unused import warnings
     _ = (User, Trip, TripFlightPrefs, TripHotelPrefs, PriceSnapshot, NotificationRule, Conversation, Message)
 
-    # Remove old test DB if exists
-    if os.path.exists(TEST_DB_FILE):
-        os.remove(TEST_DB_FILE)
+    # Use unique file per test to avoid race conditions in parallel execution
+    test_db_file = os.path.join(tempfile.gettempdir(), f"test_vacation_tracker_{uuid.uuid4().hex}.db")
+    test_database_url = f"sqlite+aiosqlite:///{test_db_file}"
 
     engine = create_async_engine(
-        TEST_DATABASE_URL,
+        test_database_url,
         connect_args={"check_same_thread": False},
         poolclass=NullPool,
     )
@@ -59,8 +61,11 @@ async def test_engine():
     await engine.dispose()
 
     # Clean up test DB after test
-    if os.path.exists(TEST_DB_FILE):
-        os.remove(TEST_DB_FILE)
+    if os.path.exists(test_db_file):
+        try:
+            os.remove(test_db_file)
+        except OSError:
+            pass  # Ignore cleanup errors
 
 
 @pytest_asyncio.fixture(scope="function")

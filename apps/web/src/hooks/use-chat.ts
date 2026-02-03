@@ -7,6 +7,7 @@ import type {
   ChatChunk,
   ChatMessage,
   ConversationDetailResponse,
+  ElicitationData,
   ToolCall,
   ToolResult,
   UseChatOptions,
@@ -128,6 +129,7 @@ interface ChunkProcessingContext {
   onToolCall?: (toolCall: ToolCall) => void;
   onToolResult?: (result: ToolResult) => void;
   onThreadId?: (threadId: string) => void;
+  onElicitation?: (elicitation: ElicitationData) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 }
 
@@ -222,6 +224,14 @@ function handleRateLimitChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): vo
 }
 
 /**
+ * Process an elicitation chunk (request for user input via form)
+ */
+function handleElicitationChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): void {
+  if (chunk.type !== "elicitation") return;
+  ctx.onElicitation?.(chunk.elicitation);
+}
+
+/**
  * Process a single SSE chunk
  */
 function processChunk(
@@ -241,6 +251,9 @@ function processChunk(
       break;
     case "rate_limited":
       handleRateLimitChunk(chunk, ctx);
+      break;
+    case "elicitation":
+      handleElicitationChunk(chunk, ctx);
       break;
     case "done":
       // Extract thread_id from done chunk (backend sends final thread_id here)
@@ -308,6 +321,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     onError,
     onToolCall,
     onToolResult,
+    onElicitation,
   } = options;
 
   const router = useRouter();
@@ -325,11 +339,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   const onToolCallRef = useRef(onToolCall);
   const onToolResultRef = useRef(onToolResult);
   const onErrorRef = useRef(onError);
+  const onElicitationRef = useRef(onElicitation);
 
   // Keep refs in sync with props
   onToolCallRef.current = onToolCall;
   onToolResultRef.current = onToolResult;
   onErrorRef.current = onError;
+  onElicitationRef.current = onElicitation;
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -395,6 +411,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           // during long-running streams where the parent component may re-render
           onToolCall: (tc) => onToolCallRef.current?.(tc),
           onToolResult: (tr) => onToolResultRef.current?.(tr),
+          onElicitation: (el) => onElicitationRef.current?.(el),
           setMessages,
           // Update threadId from backend response (backend is source of truth for conversation ID)
           onThreadId: (serverThreadId: string) => {

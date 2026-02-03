@@ -183,13 +183,13 @@ class TestMCPRouterValidation:
     @pytest.mark.anyio
     async def test_validation_missing_required_field(self, router):
         """Test validation fails for missing required fields."""
-        # create_trip requires name, origin_airport, etc.
+        # get_trip_details requires trip_id
         handler = MockToolHandler()
-        router.register("create_trip", handler)
+        router.register("get_trip_details", handler)
 
         result = await router.execute(
-            tool_name="create_trip",
-            arguments={"name": "Test Trip"},  # Missing required fields
+            tool_name="get_trip_details",
+            arguments={},  # Missing required trip_id
             user_id="user-123",
             skip_sanitization=True,
         )
@@ -201,16 +201,12 @@ class TestMCPRouterValidation:
     async def test_validation_with_all_required_fields(self, router):
         """Test validation passes with all required fields."""
         handler = MockToolHandler()
-        router.register("create_trip", handler)
+        router.register("get_trip_details", handler)
 
         result = await router.execute(
-            tool_name="create_trip",
+            tool_name="get_trip_details",
             arguments={
-                "name": "Hawaii Trip",
-                "origin_airport": "SFO",
-                "destination_code": "HNL",
-                "depart_date": "2026-06-01",
-                "return_date": "2026-06-08",
+                "trip_id": "550e8400-e29b-41d4-a716-446655440000",
             },
             user_id="user-123",
             skip_sanitization=True,
@@ -326,8 +322,9 @@ class TestToolValidation:
 
     def test_validate_args_missing_required(self):
         """Test validation raises for missing required fields."""
+        # get_trip_details requires trip_id
         with pytest.raises(ToolValidationError) as exc_info:
-            validate_tool_args("create_trip", {"name": "Test"})
+            validate_tool_args("get_trip_details", {})
 
         assert "invalid arguments" in str(exc_info.value).lower()
         assert "errors" in exc_info.value.details
@@ -339,15 +336,11 @@ class TestToolValidation:
 
     def test_validate_args_valid(self):
         """Test validation passes for valid arguments."""
-        # Should not raise
+        # Should not raise - get_trip_details with valid trip_id
         validate_tool_args(
-            "create_trip",
+            "get_trip_details",
             {
-                "name": "Test Trip",
-                "origin_airport": "SFO",
-                "destination_code": "HNL",
-                "depart_date": "2026-06-01",
-                "return_date": "2026-06-08",
+                "trip_id": "550e8400-e29b-41d4-a716-446655440000",
             },
         )
 

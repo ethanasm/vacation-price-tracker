@@ -11,6 +11,7 @@ import {
 import { useChat } from "../hooks/use-chat";
 import type {
   ChatMessage,
+  ElicitationData,
   ToolCall,
   ToolResult,
   UseChatOptions,
@@ -27,6 +28,10 @@ interface ChatContextValue {
   addPendingRefresh: (toolCallId: string) => void;
   /** Remove a tool call ID from pending refresh set */
   removePendingRefresh: (toolCallId: string) => void;
+  /** Pending elicitation request (form input needed from user) */
+  pendingElicitation: ElicitationData | null;
+  /** Set the pending elicitation (or null to clear) */
+  setPendingElicitation: (elicitation: ElicitationData | null) => void;
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
@@ -43,6 +48,8 @@ export interface ChatProviderProps {
   onError?: (error: Error) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onToolResult?: (result: ToolResult) => void;
+  /** Called when a tool needs additional user input via a form */
+  onElicitation?: (elicitation: ElicitationData) => void;
   /** Tool call IDs that are waiting for async updates (e.g., price refresh via SSE) - controlled by parent */
   pendingRefreshIds?: Set<string>;
 }
@@ -58,12 +65,16 @@ export function ChatProvider({
   onError,
   onToolCall,
   onToolResult,
+  onElicitation,
   pendingRefreshIds: controlledPendingIds,
 }: ChatProviderProps) {
   // Track tool call IDs that are waiting for async updates (e.g., price refresh via SSE)
   // Use controlled prop if provided, otherwise use internal state
   const [internalPendingIds, setInternalPendingIds] = useState<Set<string>>(new Set());
   const pendingRefreshIds = controlledPendingIds ?? internalPendingIds;
+
+  // Track pending elicitation (form input needed from user)
+  const [pendingElicitation, setPendingElicitation] = useState<ElicitationData | null>(null);
 
   const addPendingRefresh = useCallback((toolCallId: string) => {
     if (!controlledPendingIds) {
@@ -81,6 +92,12 @@ export function ChatProvider({
     }
   }, [controlledPendingIds]);
 
+  // Handle elicitation requests: set internal state and call external callback
+  const handleElicitation = useCallback((elicitation: ElicitationData) => {
+    setPendingElicitation(elicitation);
+    onElicitation?.(elicitation);
+  }, [onElicitation]);
+
   const options: UseChatOptions = useMemo(
     () => ({
       api,
@@ -88,8 +105,9 @@ export function ChatProvider({
       onError,
       onToolCall,
       onToolResult,
+      onElicitation: handleElicitation,
     }),
-    [api, initialThreadId, onError, onToolCall, onToolResult]
+    [api, initialThreadId, onError, onToolCall, onToolResult, handleElicitation]
   );
 
   const chat = useChat(options);
@@ -103,6 +121,8 @@ export function ChatProvider({
       pendingRefreshIds,
       addPendingRefresh,
       removePendingRefresh,
+      pendingElicitation,
+      setPendingElicitation,
       sendMessage: chat.sendMessage,
       clearMessages: chat.clearMessages,
       retryLastMessage: chat.retryLastMessage,
@@ -117,6 +137,7 @@ export function ChatProvider({
       pendingRefreshIds,
       addPendingRefresh,
       removePendingRefresh,
+      pendingElicitation,
       chat.sendMessage,
       chat.clearMessages,
       chat.retryLastMessage,

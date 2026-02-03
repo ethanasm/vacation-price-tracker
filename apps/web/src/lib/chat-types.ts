@@ -37,7 +37,7 @@ export interface ChatThread {
 /**
  * SSE chunk types from the backend streaming endpoint
  */
-export type ChatChunkType = "content" | "tool_call" | "tool_result" | "rate_limited" | "error" | "done";
+export type ChatChunkType = "content" | "tool_call" | "tool_result" | "rate_limited" | "error" | "done" | "elicitation";
 
 export interface ContentChunk {
   type: "content";
@@ -89,7 +89,30 @@ export interface DoneChunk {
   thread_id?: string;
 }
 
-export type ChatChunk = ContentChunk | ToolCallChunk | ToolResultChunk | RateLimitChunk | ErrorChunk | DoneChunk;
+/**
+ * Elicitation data for requesting user input via forms.
+ * The backend sends this when a tool requires additional user input
+ * before it can complete execution.
+ */
+export interface ElicitationData {
+  /** ID of the tool call that needs elicitation */
+  tool_call_id: string;
+  /** Name of the tool being called */
+  tool_name: string;
+  /** Component to render (e.g., "create-trip-form") */
+  component: string;
+  /** Values already captured from the conversation */
+  prefilled: Record<string, unknown>;
+  /** Fields that are missing and need to be filled */
+  missing_fields?: string[];
+}
+
+export interface ElicitationChunk {
+  type: "elicitation";
+  elicitation: ElicitationData;
+}
+
+export type ChatChunk = ContentChunk | ToolCallChunk | ToolResultChunk | RateLimitChunk | ErrorChunk | DoneChunk | ElicitationChunk;
 
 export interface SendMessageOptions {
   threadId?: string;
@@ -103,6 +126,8 @@ export interface UseChatOptions {
   onError?: (error: Error) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onToolResult?: (result: ToolResult) => void;
+  /** Called when a tool needs additional user input via a form */
+  onElicitation?: (elicitation: ElicitationData) => void;
 }
 
 export interface UseChatReturn {
