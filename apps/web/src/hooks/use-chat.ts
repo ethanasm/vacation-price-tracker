@@ -522,6 +522,215 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     lastUserMessageRef.current = null;
   }, []);
 
+  /**
+   * Process a streaming response from an elicitation submission.
+   * Updates chat messages with the assistant's response after the user
+   * submits an elicitation form.
+   *
+   * The elicitation response stream contains:
+   * 1. tool_result chunk (the elicitation tool result, e.g., create_trip)
+   * 2. content chunks (LLM follow-up response)
+   * 3. tool_call chunks (additional tools, e.g., refresh_trip_prices)
+   * 4. tool_result chunks (results of additional tools)
+   * 5. done chunk
+   *
+   * We need to handle this differently from normal chat:
+   * - Don't create placeholder message upfront (would show blank bubble)
+   * - Create assistant message lazily when first content arrives
+   * - Tool results from elicitation go into standalone tool messages
+   */
+  const processElicitationResponse = useCallback(
+    async (response: Response): Promise<{ tripId: string | null }> => {
+      if (!response.body) {
+        throw new Error("Response body is empty");
+      }
+
+      let tripId: string | null = null;
+      let assistantMessageId: string | null = null;
+      let assistantMessageCreated = false;
+
+      // Extract the elicitation tool call from the previous assistant message
+      // We'll move it to the new assistant message so it appears after the content
+      let elicitationToolCall: ToolCall | null = null;
+      setMessages((prev) => {
+        // Find the last assistant message with tool calls
+        const lastAssistantIdx = [...prev].reverse().findIndex(
+          (m) => m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0
+        );
+        if (lastAssistantIdx === -1) return prev;
+
+        const actualIdx = prev.length - 1 - lastAssistantIdx;
+        const lastAssistant = prev[actualIdx];
+
+        // Extract the tool call (should be the elicitation one like create_trip)
+        if (lastAssistant.toolCalls && lastAssistant.toolCalls.length > 0) {
+          elicitationToolCall = lastAssistant.toolCalls[lastAssistant.toolCalls.length - 1];
+
+          // Remove the tool call from the previous message
+          // If it has no content and no other tool calls, we'll filter it out
+          const updatedToolCalls = lastAssistant.toolCalls.slice(0, -1);
+          const updatedMessage = {
+            ...lastAssistant,
+            toolCalls: updatedToolCalls.length > 0 ? updatedToolCalls : undefined,
+          };
+
+          return [
+            ...prev.slice(0, actualIdx),
+            updatedMessage,
+            ...prev.slice(actualIdx + 1),
+          ];
+        }
+        return prev;
+      });
+
+      // Custom stream processor for elicitation responses
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const accumulatedContent = { value: "" };
+      const reader = response.body.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          let chunk: ChatChunk;
+          try {
+            chunk = JSON.parse(data) as ChatChunk;
+          } catch {
+            continue;
+          }
+
+          console.log("[use-chat] Elicitation SSE chunk:", chunk.type, chunk);
+
+          switch (chunk.type) {
+            case "tool_result": {
+              // Extract trip_id from create_trip result
+              const tr = chunk.tool_result;
+              if (tr.result && typeof tr.result === "object" && "trip_id" in tr.result) {
+                tripId = (tr.result as { trip_id: string }).trip_id;
+              }
+
+              const result: ToolResult = {
+                toolCallId: tr.tool_call_id,
+                name: tr.name,
+                result: tr.result,
+                isError: !tr.success,
+              };
+              onToolResultRef.current?.(result);
+
+              // Add tool message
+              const toolMessage: ChatMessage = {
+                id: generateId(),
+                role: "tool",
+                content: "",
+                createdAt: new Date(),
+                toolResult: result,
+              };
+              setMessages((prev) => [...prev, toolMessage]);
+              break;
+            }
+
+            case "content": {
+              // Create assistant message on first content chunk
+              // Include the elicitation tool call so it appears after the content
+              if (!assistantMessageCreated) {
+                assistantMessageId = generateId();
+                const assistantMessage: ChatMessage = {
+                  id: assistantMessageId,
+                  role: "assistant",
+                  content: "",
+                  createdAt: new Date(),
+                  // Add the elicitation tool call (e.g., create_trip) to this message
+                  toolCalls: elicitationToolCall ? [elicitationToolCall] : undefined,
+                };
+                setMessages((prev) => [...prev, assistantMessage]);
+                assistantMessageCreated = true;
+              }
+
+              // Update assistant message content
+              accumulatedContent.value += chunk.content;
+              const currentAssistantId = assistantMessageId;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === currentAssistantId
+                    ? { ...msg, content: accumulatedContent.value }
+                    : msg
+                )
+              );
+
+              // Extract thread_id if present
+              if (chunk.thread_id) {
+                setThreadId(chunk.thread_id);
+              }
+              break;
+            }
+
+            case "tool_call": {
+              // Ensure assistant message exists for tool calls
+              // Include the elicitation tool call so it appears with the content
+              if (!assistantMessageCreated) {
+                assistantMessageId = generateId();
+                const assistantMessage: ChatMessage = {
+                  id: assistantMessageId,
+                  role: "assistant",
+                  content: "",
+                  createdAt: new Date(),
+                  // Add the elicitation tool call (e.g., create_trip) to this message
+                  toolCalls: elicitationToolCall ? [elicitationToolCall] : undefined,
+                };
+                setMessages((prev) => [...prev, assistantMessage]);
+                assistantMessageCreated = true;
+              }
+
+              const tc = chunk.tool_call;
+              const toolCall: ToolCall = {
+                id: tc.id,
+                name: tc.name,
+                arguments: JSON.parse(tc.arguments),
+              };
+              onToolCallRef.current?.(toolCall);
+
+              // Add tool call to assistant message
+              const currentAssistantId = assistantMessageId;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === currentAssistantId
+                    ? { ...msg, toolCalls: [...(msg.toolCalls ?? []), toolCall] }
+                    : msg
+                )
+              );
+              break;
+            }
+
+            case "done": {
+              if (chunk.thread_id) {
+                setThreadId(chunk.thread_id);
+              }
+              break;
+            }
+
+            case "error": {
+              throw new Error(chunk.error);
+            }
+          }
+        }
+      }
+
+      return { tripId };
+    },
+    []
+  );
+
   return {
     messages,
     isLoading,
@@ -533,5 +742,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     loadThread,
     switchThread,
     startNewThread,
+    processElicitationResponse,
   };
 }

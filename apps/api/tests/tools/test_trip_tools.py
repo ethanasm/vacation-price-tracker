@@ -20,10 +20,10 @@ from app.tools import (
     GetTripDetailsTool,
     ListTripsTool,
     PauseTripTool,
+    RefreshAllTripPricesTool,
+    RefreshTripPricesTool,
     ResumeTripTool,
     SetNotificationTool,
-    TriggerRefreshTool,
-    TriggerRefreshTripTool,
     get_all_trip_tools,
     get_trip_tool,
 )
@@ -96,8 +96,8 @@ def test_get_trip_tool_returns_tool():
     assert get_trip_tool("set_notification") is SetNotificationTool
     assert get_trip_tool("pause_trip") is PauseTripTool
     assert get_trip_tool("resume_trip") is ResumeTripTool
-    assert get_trip_tool("trigger_refresh") is TriggerRefreshTool
-    assert get_trip_tool("trigger_refresh_trip") is TriggerRefreshTripTool
+    assert get_trip_tool("refresh_all_trip_prices") is RefreshAllTripPricesTool
+    assert get_trip_tool("refresh_trip_prices") is RefreshTripPricesTool
 
 
 def test_get_trip_tool_returns_none_for_unknown():
@@ -112,7 +112,7 @@ def test_get_all_trip_tools():
     assert "create_trip" in tools
     assert "delete_trip" in tools
     assert "list_trips" in tools
-    assert "trigger_refresh_trip" in tools
+    assert "refresh_trip_prices" in tools
 
 
 # =============================================================================
@@ -172,7 +172,7 @@ async def test_create_trip_success(test_session):
     assert "trip_id" in result.data
     assert result.data["name"] == "Hawaii Vacation"
     assert "Created trip" in result.data["message"]
-    assert "trigger_refresh_trip" in result.data["message"]
+    assert "refresh_trip_prices" in result.data["message"]
 
 
 @pytest.mark.asyncio
@@ -907,12 +907,12 @@ async def test_resume_trip_invalid_trip_id(test_session, monkeypatch):
 
 
 # =============================================================================
-# TriggerRefreshTool Tests
+# RefreshAllTripPricesTool Tests
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_success(test_session, monkeypatch, mock_redis):
+async def test_refresh_all_trip_prices_success(test_session, monkeypatch, mock_redis):
     """Test triggering refresh successfully."""
     user = await create_test_user(test_session, "refresh@example.com")
 
@@ -922,7 +922,7 @@ async def test_trigger_refresh_success(test_session, monkeypatch, mock_redis):
     mock_start = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.start_refresh_all_workflow", mock_start)
 
-    tool = TriggerRefreshTool()
+    tool = RefreshAllTripPricesTool()
     result = await tool.execute({}, str(user.id), test_session)
 
     assert result.success is True
@@ -932,7 +932,7 @@ async def test_trigger_refresh_success(test_session, monkeypatch, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_already_in_progress(test_session, monkeypatch, mock_redis):
+async def test_refresh_all_trip_prices_already_in_progress(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when one is already in progress."""
     user = await create_test_user(test_session, "refresh-lock@example.com")
 
@@ -940,7 +940,7 @@ async def test_trigger_refresh_already_in_progress(test_session, monkeypatch, mo
     mock_redis.get = AsyncMock(return_value="existing-refresh-id")
     monkeypatch.setattr("app.tools.trigger_refresh.redis_client", mock_redis)
 
-    tool = TriggerRefreshTool()
+    tool = RefreshAllTripPricesTool()
     result = await tool.execute({}, str(user.id), test_session)
 
     assert result.success is False
@@ -948,7 +948,7 @@ async def test_trigger_refresh_already_in_progress(test_session, monkeypatch, mo
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_already_in_progress_bytes(test_session, monkeypatch, mock_redis):
+async def test_refresh_all_trip_prices_already_in_progress_bytes(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when lock value is bytes."""
     user = await create_test_user(test_session, "refresh-bytes@example.com")
 
@@ -956,7 +956,7 @@ async def test_trigger_refresh_already_in_progress_bytes(test_session, monkeypat
     mock_redis.get = AsyncMock(return_value=b"existing-refresh-id")
     monkeypatch.setattr("app.tools.trigger_refresh.redis_client", mock_redis)
 
-    tool = TriggerRefreshTool()
+    tool = RefreshAllTripPricesTool()
     result = await tool.execute({}, str(user.id), test_session)
 
     assert result.success is False
@@ -964,7 +964,7 @@ async def test_trigger_refresh_already_in_progress_bytes(test_session, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_workflow_failure(test_session, monkeypatch, mock_redis):
+async def test_refresh_all_trip_prices_workflow_failure(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when workflow fails to start."""
     user = await create_test_user(test_session, "refresh-fail@example.com")
 
@@ -975,7 +975,7 @@ async def test_trigger_refresh_workflow_failure(test_session, monkeypatch, mock_
     mock_start = AsyncMock(side_effect=Exception("Workflow error"))
     monkeypatch.setattr("app.tools.trigger_refresh.start_refresh_all_workflow", mock_start)
 
-    tool = TriggerRefreshTool()
+    tool = RefreshAllTripPricesTool()
     result = await tool.execute({}, str(user.id), test_session)
 
     assert result.success is False
@@ -984,12 +984,12 @@ async def test_trigger_refresh_workflow_failure(test_session, monkeypatch, mock_
 
 
 # =============================================================================
-# TriggerRefreshTripTool Tests
+# RefreshTripPricesTool Tests
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_success(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_success(test_session, monkeypatch, mock_redis):
     """Test triggering refresh for a specific trip successfully."""
     user = await create_test_user(test_session, "refresh-trip@example.com")
     trip = await create_test_trip(test_session, user.id, "Refresh Trip", TripStatus.ACTIVE)
@@ -1000,7 +1000,7 @@ async def test_trigger_refresh_trip_success(test_session, monkeypatch, mock_redi
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     assert result.success is True
@@ -1011,14 +1011,14 @@ async def test_trigger_refresh_trip_success(test_session, monkeypatch, mock_redi
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_not_found(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_not_found(test_session, monkeypatch, mock_redis):
     """Test triggering refresh for a non-existent trip."""
     user = await create_test_user(test_session, "refresh-trip-not-found@example.com")
 
     mock_redis.set = AsyncMock(return_value=True)
     monkeypatch.setattr("app.tools.trigger_refresh.redis_client", mock_redis)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(uuid.uuid4())}, str(user.id), test_session)
 
     assert result.success is False
@@ -1026,7 +1026,7 @@ async def test_trigger_refresh_trip_not_found(test_session, monkeypatch, mock_re
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_wrong_user(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_wrong_user(test_session, monkeypatch, mock_redis):
     """Test triggering refresh for another user's trip."""
     user1 = await create_test_user(test_session, "user1-refresh-trip@example.com")
     user2 = await create_test_user(test_session, "user2-refresh-trip@example.com")
@@ -1038,7 +1038,7 @@ async def test_trigger_refresh_trip_wrong_user(test_session, monkeypatch, mock_r
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user2.id), test_session)
 
     assert result.success is False
@@ -1047,7 +1047,7 @@ async def test_trigger_refresh_trip_wrong_user(test_session, monkeypatch, mock_r
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_paused(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_paused(test_session, monkeypatch, mock_redis):
     """Test triggering refresh for a paused trip fails."""
     user = await create_test_user(test_session, "refresh-trip-paused@example.com")
     trip = await create_test_trip(test_session, user.id, "Paused Trip", TripStatus.PAUSED)
@@ -1058,7 +1058,7 @@ async def test_trigger_refresh_trip_paused(test_session, monkeypatch, mock_redis
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     assert result.success is False
@@ -1068,7 +1068,7 @@ async def test_trigger_refresh_trip_paused(test_session, monkeypatch, mock_redis
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_already_in_progress(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_already_in_progress(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when one is already in progress for the trip."""
     user = await create_test_user(test_session, "refresh-trip-lock@example.com")
     trip = await create_test_trip(test_session, user.id, "Lock Trip", TripStatus.ACTIVE)
@@ -1080,7 +1080,7 @@ async def test_trigger_refresh_trip_already_in_progress(test_session, monkeypatc
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     assert result.success is False
@@ -1090,7 +1090,7 @@ async def test_trigger_refresh_trip_already_in_progress(test_session, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_already_in_progress_bytes(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_already_in_progress_bytes(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when lock value is bytes."""
     user = await create_test_user(test_session, "refresh-trip-bytes@example.com")
     trip = await create_test_trip(test_session, user.id, "Bytes Trip", TripStatus.ACTIVE)
@@ -1102,7 +1102,7 @@ async def test_trigger_refresh_trip_already_in_progress_bytes(test_session, monk
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     assert result.success is False
@@ -1111,7 +1111,7 @@ async def test_trigger_refresh_trip_already_in_progress_bytes(test_session, monk
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_workflow_failure(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_workflow_failure(test_session, monkeypatch, mock_redis):
     """Test triggering refresh when workflow fails to start."""
     user = await create_test_user(test_session, "refresh-trip-fail@example.com")
     trip = await create_test_trip(test_session, user.id, "Fail Trip", TripStatus.ACTIVE)
@@ -1123,7 +1123,7 @@ async def test_trigger_refresh_trip_workflow_failure(test_session, monkeypatch, 
     mock_trigger = AsyncMock(side_effect=Exception("Workflow error"))
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     assert result.success is False
@@ -1132,13 +1132,13 @@ async def test_trigger_refresh_trip_workflow_failure(test_session, monkeypatch, 
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_missing_trip_id(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_missing_trip_id(test_session, monkeypatch, mock_redis):
     """Test triggering refresh without trip_id."""
     user = await create_test_user(test_session, "refresh-trip-missing@example.com")
 
     monkeypatch.setattr("app.tools.trigger_refresh.redis_client", mock_redis)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({}, str(user.id), test_session)
 
     assert result.success is False
@@ -1146,13 +1146,13 @@ async def test_trigger_refresh_trip_missing_trip_id(test_session, monkeypatch, m
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_invalid_trip_id(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_invalid_trip_id(test_session, monkeypatch, mock_redis):
     """Test triggering refresh with invalid trip_id format."""
     user = await create_test_user(test_session, "refresh-trip-invalid@example.com")
 
     monkeypatch.setattr("app.tools.trigger_refresh.redis_client", mock_redis)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": "invalid-uuid"}, str(user.id), test_session)
 
     assert result.success is False
@@ -1160,7 +1160,7 @@ async def test_trigger_refresh_trip_invalid_trip_id(test_session, monkeypatch, m
 
 
 @pytest.mark.asyncio
-async def test_trigger_refresh_trip_error_status(test_session, monkeypatch, mock_redis):
+async def test_refresh_trip_prices_error_status(test_session, monkeypatch, mock_redis):
     """Test triggering refresh for a trip in error status still works."""
     user = await create_test_user(test_session, "refresh-trip-error@example.com")
     trip = await create_test_trip(test_session, user.id, "Error Trip", TripStatus.ERROR)
@@ -1171,7 +1171,7 @@ async def test_trigger_refresh_trip_error_status(test_session, monkeypatch, mock
     mock_trigger = AsyncMock()
     monkeypatch.setattr("app.tools.trigger_refresh.trigger_price_check_workflow", mock_trigger)
 
-    tool = TriggerRefreshTripTool()
+    tool = RefreshTripPricesTool()
     result = await tool.execute({"trip_id": str(trip.id)}, str(user.id), test_session)
 
     # Trips in error status can still be refreshed (they're not paused)
@@ -1195,8 +1195,8 @@ def test_tool_names_and_descriptions():
         SetNotificationTool(),
         PauseTripTool(),
         ResumeTripTool(),
-        TriggerRefreshTool(),
-        TriggerRefreshTripTool(),
+        RefreshAllTripPricesTool(),
+        RefreshTripPricesTool(),
     ]
 
     for tool in tools:

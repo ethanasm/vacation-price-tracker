@@ -337,6 +337,38 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
     });
 
+    it("handles elicitation chunks", async () => {
+      const mockStream = createMockSSEStream([
+        { type: "content", content: "I need more info" },
+        {
+          type: "elicitation",
+          elicitation: {
+            tool_call_id: "call_elicit_123",
+            tool_name: "create_trip",
+            component: "create-trip-form",
+            prefilled: { name: "Test Trip" },
+            missing_fields: ["origin_airport"],
+          },
+        },
+      ]);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const onElicitation = jest.fn();
+      const { result } = renderHook(() => useChat({ onElicitation }));
+
+      await act(async () => {
+        await result.current.sendMessage("Create a trip");
+      });
+
+      expect(onElicitation).toHaveBeenCalledWith({
+        tool_call_id: "call_elicit_123",
+        tool_name: "create_trip",
+        component: "create-trip-form",
+        prefilled: { name: "Test Trip" },
+        missing_fields: ["origin_airport"],
+      });
+    });
+
     it("handles done chunks with thread_id", async () => {
       const serverThreadId = "done-chunk-thread-id";
       const mockStream = createMockSSEStreamWithDoneThreadId(serverThreadId);
@@ -900,6 +932,146 @@ describe("useChat thread management", () => {
       ]);
     });
 
+    it("transforms tool_calls in Groq API format (nested under function)", async () => {
+      const threadId = "test-thread-groq";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: null,
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_groq",
+                  type: "function",
+                  function: {
+                    name: "create_trip",
+                    arguments: '{"name":"Test Trip"}',
+                  },
+                },
+              ],
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(result.current.messages[0].toolCalls).toEqual([
+        { id: "call_groq", name: "create_trip", arguments: { name: "Test Trip" } },
+      ]);
+    });
+
+    it("handles tool_calls with pre-parsed object arguments", async () => {
+      const threadId = "test-thread-parsed";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: null,
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_parsed",
+                  name: "get_trip",
+                  arguments: { trip_id: "123" }, // Already an object, not a string
+                },
+              ],
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(result.current.messages[0].toolCalls).toEqual([
+        { id: "call_parsed", name: "get_trip", arguments: { trip_id: "123" } },
+      ]);
+    });
+
+    it("handles tool_calls with missing name/arguments gracefully", async () => {
+      const threadId = "test-thread-minimal";
+      const mockConversation = {
+        data: {
+          conversation: {
+            id: threadId,
+            title: null,
+            created_at: "2024-01-15T10:00:00Z",
+            updated_at: "2024-01-15T11:00:00Z",
+          },
+          messages: [
+            {
+              id: "msg-1",
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_minimal",
+                  // Missing name and arguments
+                },
+              ],
+              tool_call_id: null,
+              name: null,
+              created_at: "2024-01-15T10:00:00Z",
+            },
+          ],
+        },
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockConversation),
+      });
+
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        await result.current.loadThread(threadId);
+      });
+
+      expect(result.current.messages[0].toolCalls).toEqual([
+        { id: "call_minimal", name: "", arguments: {} },
+      ]);
+    });
+
     it("transforms tool result messages", async () => {
       const threadId = "test-thread-789";
       const mockConversation = {
@@ -1155,5 +1327,431 @@ describe("useChat thread management", () => {
       expect(result.current.error).toBeNull();
     });
   });
+
+  describe("processElicitationResponse", () => {
+    it("throws error if response body is empty", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = {
+        ok: true,
+        body: null,
+      } as unknown as Response;
+
+      await expect(
+        act(async () => {
+          await result.current.processElicitationResponse(mockResponse);
+        })
+      ).rejects.toThrow("Response body is empty");
+    });
+
+    it("processes tool_result chunks and extracts trip_id", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_result",
+          tool_result: {
+            tool_call_id: "call_123",
+            name: "create_trip",
+            result: { trip_id: "trip-456", success: true },
+            success: true,
+          },
+        },
+        { type: "done", thread_id: "thread-789" },
+      ]);
+
+      let tripResult: { tripId: string | null } | undefined;
+      await act(async () => {
+        tripResult = await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(tripResult?.tripId).toBe("trip-456");
+
+      // Check that tool message was added
+      const toolMessage = result.current.messages.find(m => m.role === "tool");
+      expect(toolMessage).toBeDefined();
+      expect(toolMessage?.toolResult?.name).toBe("create_trip");
+    });
+
+    it("processes content chunks and creates assistant message lazily", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "content", content: "Trip created " },
+        { type: "content", content: "successfully!" },
+        { type: "done", thread_id: "thread-789" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // Assistant message should be created with accumulated content
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage).toBeDefined();
+      expect(assistantMessage?.content).toBe("Trip created successfully!");
+    });
+
+    it("processes tool_call chunks and adds to assistant message", async () => {
+      const onToolCall = jest.fn();
+      const { result } = renderHook(() => useChat({ onToolCall }));
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_call",
+          tool_call: {
+            id: "call_refresh",
+            name: "trigger_refresh",
+            arguments: '{"trip_id":"trip-456"}',
+          },
+        },
+        { type: "done", thread_id: "thread-789" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(onToolCall).toHaveBeenCalledWith({
+        id: "call_refresh",
+        name: "trigger_refresh",
+        arguments: { trip_id: "trip-456" },
+      });
+
+      // Assistant message should have the tool call
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage?.toolCalls).toContainEqual({
+        id: "call_refresh",
+        name: "trigger_refresh",
+        arguments: { trip_id: "trip-456" },
+      });
+    });
+
+    it("calls onToolResult callback for tool results", async () => {
+      const onToolResult = jest.fn();
+      const { result } = renderHook(() => useChat({ onToolResult }));
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_result",
+          tool_result: {
+            tool_call_id: "call_123",
+            name: "create_trip",
+            result: { trip_id: "trip-456" },
+            success: true,
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(onToolResult).toHaveBeenCalledWith({
+        toolCallId: "call_123",
+        name: "create_trip",
+        result: { trip_id: "trip-456" },
+        isError: false,
+      });
+    });
+
+    it("sets threadId from done chunk", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "content", content: "Done" },
+        { type: "done", thread_id: "new-thread-id" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(result.current.threadId).toBe("new-thread-id");
+    });
+
+    it("sets threadId from content chunk", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "content", content: "Response", thread_id: "content-thread-id" },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(result.current.threadId).toBe("content-thread-id");
+    });
+
+    it("throws error on error chunk", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "error", error: "Something went wrong" },
+      ]);
+
+      await expect(
+        act(async () => {
+          await result.current.processElicitationResponse(mockResponse);
+        })
+      ).rejects.toThrow("Something went wrong");
+    });
+
+    it("handles tool_result without trip_id", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_result",
+          tool_result: {
+            tool_call_id: "call_123",
+            name: "trigger_refresh",
+            result: { status: "refreshed" },
+            success: true,
+          },
+        },
+        { type: "done" },
+      ]);
+
+      let tripResult: { tripId: string | null } | undefined;
+      await act(async () => {
+        tripResult = await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // tripId should be null since it wasn't in the result
+      expect(tripResult?.tripId).toBeNull();
+    });
+
+    it("handles failed tool results with isError flag", async () => {
+      const onToolResult = jest.fn();
+      const { result } = renderHook(() => useChat({ onToolResult }));
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_result",
+          tool_result: {
+            tool_call_id: "call_123",
+            name: "create_trip",
+            result: { error: "Failed to create trip" },
+            success: false,
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(onToolResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isError: true,
+        })
+      );
+    });
+
+    it("removes tool call from previous assistant message during elicitation processing", async () => {
+      const mockStream = createMockSSEStream([
+        { type: "content", content: "I'll help you create a trip." },
+        {
+          type: "tool_call",
+          tool_call: {
+            id: "call_elicit",
+            name: "create_trip",
+            arguments: "{}",
+          },
+        },
+      ]);
+      mockFetch.mockResolvedValueOnce(mockStream);
+
+      const { result } = renderHook(() => useChat());
+
+      // First, send a message that results in an elicitation tool call
+      await act(async () => {
+        await result.current.sendMessage("Create a trip");
+      });
+
+      // Verify the assistant message has the tool call before processing elicitation
+      const assistantBefore = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantBefore?.toolCalls).toHaveLength(1);
+      expect(assistantBefore?.toolCalls?.[0].name).toBe("create_trip");
+
+      // Now process the elicitation response
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_result",
+          tool_result: {
+            tool_call_id: "call_elicit",
+            name: "create_trip",
+            result: { trip_id: "trip-new" },
+            success: true,
+          },
+        },
+        { type: "content", content: "Trip created!" },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // The original assistant message should have its tool call removed
+      const assistantMessages = result.current.messages.filter(m => m.role === "assistant");
+      const firstAssistant = assistantMessages[0];
+      // Tool call should be removed (toolCalls becomes undefined when empty)
+      expect(firstAssistant?.toolCalls).toBeUndefined();
+
+      // A new assistant message with content should be created
+      const lastAssistant = assistantMessages[assistantMessages.length - 1];
+      expect(lastAssistant?.content).toBe("Trip created!");
+    });
+
+    it("skips invalid JSON in stream", async () => {
+      const { result } = renderHook(() => useChat());
+
+      // Create a response with invalid JSON that should be skipped
+      const text = 'data: {invalid json}\n\ndata: {"type":"content","content":"Valid"}\n\ndata: {"type":"done"}\n\ndata: [DONE]\n\n';
+      let position = 0;
+
+      const mockResponse = {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (position >= text.length) {
+                return { done: true, value: undefined };
+              }
+              const chunk = text.slice(position, position + 200);
+              position += 200;
+              return {
+                done: false,
+                value: new TextEncoder().encode(chunk),
+              };
+            },
+          }),
+        },
+      } as unknown as Response;
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // Should have processed the valid content chunk
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage?.content).toBe("Valid");
+    });
+
+    it("handles tool_call without prior assistant message", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        {
+          type: "tool_call",
+          tool_call: {
+            id: "call_1",
+            name: "refresh",
+            arguments: "{}",
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // Should create assistant message for tool call
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage).toBeDefined();
+      expect(assistantMessage?.toolCalls).toHaveLength(1);
+    });
+
+    it("skips [DONE] SSE marker", async () => {
+      const { result } = renderHook(() => useChat());
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "content", content: "Test" },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      // Should complete without error
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage?.content).toBe("Test");
+    });
+
+    it("handles multiple tool calls in sequence", async () => {
+      const onToolCall = jest.fn();
+      const { result } = renderHook(() => useChat({ onToolCall }));
+
+      const mockResponse = createMockElicitationResponse([
+        { type: "content", content: "Processing..." },
+        {
+          type: "tool_call",
+          tool_call: {
+            id: "call_1",
+            name: "create_trip",
+            arguments: "{}",
+          },
+        },
+        {
+          type: "tool_call",
+          tool_call: {
+            id: "call_2",
+            name: "trigger_refresh",
+            arguments: '{"trip_id":"123"}',
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await act(async () => {
+        await result.current.processElicitationResponse(mockResponse);
+      });
+
+      expect(onToolCall).toHaveBeenCalledTimes(2);
+
+      const assistantMessage = result.current.messages.find(m => m.role === "assistant");
+      expect(assistantMessage?.toolCalls).toHaveLength(2);
+    });
+  });
 });
+
+// Helper to create mock elicitation response stream
+function createMockElicitationResponse(
+  chunks: Array<{ type: string; [key: string]: unknown }>
+): Response {
+  const lines = chunks.map(
+    (chunk) => `data: ${JSON.stringify(chunk)}\n\n`
+  );
+  lines.push("data: [DONE]\n\n");
+  const text = lines.join("");
+
+  let position = 0;
+
+  return {
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (position >= text.length) {
+            return { done: true, value: undefined };
+          }
+          const chunk = text.slice(position, position + 200);
+          position += 200;
+          return {
+            done: false,
+            value: new TextEncoder().encode(chunk),
+          };
+        },
+      }),
+    },
+  } as unknown as Response;
+}
 

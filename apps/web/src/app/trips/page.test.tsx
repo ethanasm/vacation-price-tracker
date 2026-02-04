@@ -996,7 +996,7 @@ describe("DashboardPage", () => {
       });
     });
 
-    it("handles trigger_refresh tool result by starting polling", async () => {
+    it("handles refresh_all_trip_prices tool result by starting polling", async () => {
       jest.useFakeTimers();
 
       (api.trips.getRefreshStatus as jest.Mock).mockResolvedValue({
@@ -1010,11 +1010,11 @@ describe("DashboardPage", () => {
         expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
-      // Simulate trigger_refresh tool result
+      // Simulate refresh_all_trip_prices tool result
       await act(async () => {
         if (capturedOnToolResult) {
           capturedOnToolResult({
-            name: "trigger_refresh",
+            name: "refresh_all_trip_prices",
             toolCallId: "call-3",
             isError: false,
             result: { workflow_id: "workflow-123" },
@@ -1035,7 +1035,7 @@ describe("DashboardPage", () => {
       jest.useRealTimers();
     });
 
-    it("tracks pending refresh for trigger_refresh_trip tool result", async () => {
+    it("tracks pending refresh for refresh_trip_prices tool result", async () => {
       render(<DashboardPage />);
 
       // Wait for initial load
@@ -1043,11 +1043,11 @@ describe("DashboardPage", () => {
         expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
       });
 
-      // Simulate trigger_refresh_trip tool result
+      // Simulate refresh_trip_prices tool result
       await act(async () => {
         if (capturedOnToolResult) {
           capturedOnToolResult({
-            name: "trigger_refresh_trip",
+            name: "refresh_trip_prices",
             toolCallId: "call-4",
             isError: false,
             result: { trip_id: "1" },

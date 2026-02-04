@@ -10,7 +10,7 @@ from app.tools.get_trip_details import GetTripDetailsTool
 from app.tools.list_trips import ListTripsTool
 from app.tools.pause_resume import PauseTripTool, ResumeTripTool
 from app.tools.set_notification import SetNotificationTool
-from app.tools.trigger_refresh import TriggerRefreshTool, TriggerRefreshTripTool
+from app.tools.trigger_refresh import RefreshAllTripPricesTool, RefreshTripPricesTool
 
 __all__ = [
     "BaseTool",
@@ -19,10 +19,10 @@ __all__ = [
     "GetTripDetailsTool",
     "ListTripsTool",
     "PauseTripTool",
+    "RefreshAllTripPricesTool",
+    "RefreshTripPricesTool",
     "ResumeTripTool",
     "SetNotificationTool",
-    "TriggerRefreshTool",
-    "TriggerRefreshTripTool",
 ]
 
 # Tool registry for easy access
@@ -34,8 +34,8 @@ TRIP_TOOLS = {
     "set_notification": SetNotificationTool,
     "pause_trip": PauseTripTool,
     "resume_trip": ResumeTripTool,
-    "trigger_refresh": TriggerRefreshTool,
-    "trigger_refresh_trip": TriggerRefreshTripTool,
+    "refresh_all_trip_prices": RefreshAllTripPricesTool,
+    "refresh_trip_prices": RefreshTripPricesTool,
 }
 
 

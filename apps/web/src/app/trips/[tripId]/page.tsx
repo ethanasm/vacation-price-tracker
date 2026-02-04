@@ -670,9 +670,11 @@ export default function TripDetailPage({
   const [selectedHotelKey, setSelectedHotelKey] = useState<string | null>(null);
   const [selectedFlightKey, setSelectedFlightKey] = useState<string | null>(null);
 
-  const fetchTripDetails = useCallback(async () => {
+  const fetchTripDetails = useCallback(async (showLoading = true) => {
     try {
-      setIsLoading(true);
+      if (showLoading) {
+        setIsLoading(true);
+      }
       setError(null);
       const response = await api.trips.getDetails(tripId);
       setTrip(response.data.trip);
@@ -709,7 +711,9 @@ export default function TripDetailPage({
         setError("Failed to load trip");
       }
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   }, [tripId]);
 
@@ -733,12 +737,16 @@ export default function TripDetailPage({
     if (tripUpdate.updated_at === lastUpdateRef.current) return;
     lastUpdateRef.current = tripUpdate.updated_at;
 
-    // Skip if we're already loading or refreshing (avoid duplicate fetches)
-    if (isLoading || isRefreshing) return;
+    // Skip if we're already loading initial data (avoid duplicate fetches)
+    if (isLoading) return;
 
     // Refetch trip details to get the full snapshot with offers
-    fetchTripDetails();
-  }, [priceUpdates, tripId, isLoading, isRefreshing, fetchTripDetails]);
+    // Don't show loading skeleton during refresh - keep existing UI visible
+    fetchTripDetails(false).then(() => {
+      // Stop the spinner once data is fetched
+      setIsRefreshing(false);
+    });
+  }, [priceUpdates, tripId, isLoading, fetchTripDetails]);
 
   const handleStatusToggle = async (checked: boolean) => {
     if (!tripId || !trip) return;
@@ -797,21 +805,6 @@ export default function TripDetailPage({
       setIsRefreshing(false);
     }
   };
-
-  // Stop refreshing spinner when we receive new data via SSE
-  useEffect(() => {
-    if (isRefreshing && priceHistory.length > 0) {
-      // Check if the latest snapshot is recent (within last 60 seconds)
-      const latestTimestamp = priceHistory[0]?.created_at;
-      if (latestTimestamp) {
-        const latestDate = new Date(latestTimestamp);
-        const now = new Date();
-        if (now.getTime() - latestDate.getTime() < 60000) {
-          setIsRefreshing(false);
-        }
-      }
-    }
-  }, [priceHistory, isRefreshing]);
 
   const handleBack = useCallback(() => {
     router.push("/trips");

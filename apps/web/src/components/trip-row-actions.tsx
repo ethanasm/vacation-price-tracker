@@ -258,7 +258,7 @@ export function TripRowKebab({
   const actions = useTripActions({ tripId, tripName, tripStatus, onRefresh, onDeleted, onStatusChange, onUpdatedAtChange });
 
   return (
-    <TableCell className="relative z-10">
+    <TableCell className="relative z-[5]">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

@@ -91,17 +91,19 @@ const TableCaption = React.forwardRef<
 ));
 TableCaption.displayName = "TableCaption";
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, children, ...props }, ref) => {
-  const hasHeader = React.Children.toArray(children).some((child) => {
-    if (!React.isValidElement(child)) return false;
-    return child.type === TableHeader;
-  });
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /** When true, removes the overflow wrapper to allow parent container to handle scrolling */
+  noWrapper?: boolean;
+}
 
-  return (
-    <div className="relative w-full overflow-auto">
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, children, noWrapper, ...props }, ref) => {
+    const hasHeader = React.Children.toArray(children).some((child) => {
+      if (!React.isValidElement(child)) return false;
+      return child.type === TableHeader;
+    });
+
+    const table = (
       <table
         ref={ref}
         className={cn("w-full caption-bottom text-sm", className)}
@@ -116,9 +118,15 @@ const Table = React.forwardRef<
         )}
         {children}
       </table>
-    </div>
-  );
-});
+    );
+
+    if (noWrapper) {
+      return table;
+    }
+
+    return <div className="relative w-full overflow-auto">{table}</div>;
+  }
+);
 Table.displayName = "Table";
 
 export {

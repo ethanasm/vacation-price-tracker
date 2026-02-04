@@ -141,6 +141,8 @@ export interface UseChatReturn {
   loadThread: (threadId: string) => Promise<void>;
   switchThread: (threadId: string) => Promise<void>;
   startNewThread: () => void;
+  /** Process a streaming response from an elicitation submission */
+  processElicitationResponse: (response: Response) => Promise<{ tripId: string | null }>;
 }
 
 /**

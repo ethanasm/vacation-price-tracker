@@ -43,7 +43,9 @@ def mock_user():
     user = MagicMock(spec=User)
     user.id = uuid.uuid4()
     user.email = "test@example.com"
+    user.google_sub = "google_123"
     user.created_at = datetime.now()
+    user.updated_at = datetime.now()
     return user
 
 
@@ -59,13 +61,38 @@ def mock_conversation():
     return conv
 
 
-def make_mock_db_session():
-    """Create a mock database session."""
+def make_mock_db_session(mock_user=None):
+    """Create a mock database session.
+
+    Args:
+        mock_user: Optional mock user to return from db.execute() queries.
+    """
     db = AsyncMock()
-    db.execute = AsyncMock()
+
+    # Create a proper mock for scalars().first() chain
+    if mock_user:
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_user
+        mock_scalars.all.return_value = []  # For trip queries
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+
+        db.execute = AsyncMock(return_value=mock_result)
+    else:
+        db.execute = AsyncMock()
+
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
+
+
+async def mock_llm_continuation_generator(conversation_id):
+    """Mock generator that yields LLM continuation chunks."""
+    # Yield content chunk
+    yield ChatChunk.text("Trip created successfully!")
+    # Yield done chunk
+    yield ChatChunk.done_chunk(thread_id=conversation_id)
 
 
 # =============================================================================
@@ -353,9 +380,10 @@ class TestSubmitElicitationEndpoint:
     def test_submit_elicitation_returns_sse(self, elicitation_app, mock_user, mock_conversation):
         """Test that submit_elicitation returns SSE content type."""
         from app.db.deps import get_db
+        from app.services.chat import chat_service
         from app.services.conversation import conversation_service
 
-        mock_db = make_mock_db_session()
+        mock_db = make_mock_db_session(mock_user=mock_user)
 
         async def override_db():
             yield mock_db
@@ -388,31 +416,44 @@ class TestSubmitElicitationEndpoint:
                     "app.services.mcp_router.get_mcp_router",
                     return_value=mock_router,
                 ):
-                    client = TestClient(elicitation_app)
-                    response = client.post(
-                        "/v1/chat/elicitation/call_123",
-                        json={
-                            "thread_id": str(mock_conversation.id),
-                            "tool_name": "create_trip",
-                            "data": {
-                                "name": "Seattle Trip",
-                                "origin_airport": "SFO",
-                                "destination_code": "SEA",
-                                "depart_date": "2024-06-15",
-                                "return_date": "2024-06-20",
-                            },
-                        },
-                    )
+                    # Mock _get_user_trips_for_context
+                    with patch(
+                        "app.routers.chat._get_user_trips_for_context",
+                        new_callable=AsyncMock,
+                        return_value=([], {}),
+                    ):
+                        # Mock chat_service.continue_after_elicitation
+                        with patch.object(
+                            chat_service,
+                            "continue_after_elicitation",
+                            return_value=mock_llm_continuation_generator(mock_conversation.id),
+                        ):
+                            client = TestClient(elicitation_app)
+                            response = client.post(
+                                "/v1/chat/elicitation/call_123",
+                                json={
+                                    "thread_id": str(mock_conversation.id),
+                                    "tool_name": "create_trip",
+                                    "data": {
+                                        "name": "Seattle Trip",
+                                        "origin_airport": "SFO",
+                                        "destination_code": "SEA",
+                                        "depart_date": "2024-06-15",
+                                        "return_date": "2024-06-20",
+                                    },
+                                },
+                            )
 
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
 
     def test_submit_elicitation_streams_chunks(self, elicitation_app, mock_user, mock_conversation):
-        """Test that submit_elicitation streams tool_result and done chunks."""
+        """Test that submit_elicitation streams tool_result, content, and done chunks."""
         from app.db.deps import get_db
+        from app.services.chat import chat_service
         from app.services.conversation import conversation_service
 
-        mock_db = make_mock_db_session()
+        mock_db = make_mock_db_session(mock_user=mock_user)
 
         async def override_db():
             yield mock_db
@@ -445,21 +486,33 @@ class TestSubmitElicitationEndpoint:
                     "app.services.mcp_router.get_mcp_router",
                     return_value=mock_router,
                 ):
-                    client = TestClient(elicitation_app)
-                    response = client.post(
-                        "/v1/chat/elicitation/call_456",
-                        json={
-                            "thread_id": str(mock_conversation.id),
-                            "tool_name": "create_trip",
-                            "data": {"name": "Test"},
-                        },
-                    )
+                    # Mock _get_user_trips_for_context
+                    with patch(
+                        "app.routers.chat._get_user_trips_for_context",
+                        new_callable=AsyncMock,
+                        return_value=([], {}),
+                    ):
+                        # Mock chat_service.continue_after_elicitation
+                        with patch.object(
+                            chat_service,
+                            "continue_after_elicitation",
+                            return_value=mock_llm_continuation_generator(mock_conversation.id),
+                        ):
+                            client = TestClient(elicitation_app)
+                            response = client.post(
+                                "/v1/chat/elicitation/call_456",
+                                json={
+                                    "thread_id": str(mock_conversation.id),
+                                    "tool_name": "create_trip",
+                                    "data": {"name": "Test"},
+                                },
+                            )
 
         # Parse SSE events
         lines = response.text.strip().split("\n\n")
-        assert len(lines) == 2  # tool_result + done
+        assert len(lines) >= 3  # tool_result + content + done (at minimum)
 
-        # Verify tool_result chunk
+        # Verify tool_result chunk (first)
         tool_result_data = json.loads(lines[0][6:])  # Remove "data: " prefix
         assert tool_result_data["type"] == "tool_result"
         assert tool_result_data["tool_result"]["tool_call_id"] == "call_456"
@@ -467,8 +520,12 @@ class TestSubmitElicitationEndpoint:
         assert tool_result_data["tool_result"]["success"] is True
         assert tool_result_data["tool_result"]["result"]["trip_id"] == trip_id
 
-        # Verify done chunk
-        done_data = json.loads(lines[1][6:])
+        # Verify content chunk (from LLM continuation)
+        content_data = json.loads(lines[1][6:])
+        assert content_data["type"] == "content"
+
+        # Verify done chunk (last)
+        done_data = json.loads(lines[-1][6:])
         assert done_data["type"] == "done"
         assert done_data["thread_id"] == str(mock_conversation.id)
 
@@ -542,9 +599,10 @@ class TestSubmitElicitationEndpoint:
     def test_submit_elicitation_handles_tool_failure(self, elicitation_app, mock_user, mock_conversation):
         """Test handles tool execution failure gracefully."""
         from app.db.deps import get_db
+        from app.services.chat import chat_service
         from app.services.conversation import conversation_service
 
-        mock_db = make_mock_db_session()
+        mock_db = make_mock_db_session(mock_user=mock_user)
 
         async def override_db():
             yield mock_db
@@ -575,15 +633,27 @@ class TestSubmitElicitationEndpoint:
                     "app.services.mcp_router.get_mcp_router",
                     return_value=mock_router,
                 ):
-                    client = TestClient(elicitation_app)
-                    response = client.post(
-                        "/v1/chat/elicitation/call_789",
-                        json={
-                            "thread_id": str(mock_conversation.id),
-                            "tool_name": "create_trip",
-                            "data": {"name": ""},
-                        },
-                    )
+                    # Mock _get_user_trips_for_context
+                    with patch(
+                        "app.routers.chat._get_user_trips_for_context",
+                        new_callable=AsyncMock,
+                        return_value=([], {}),
+                    ):
+                        # Mock chat_service.continue_after_elicitation
+                        with patch.object(
+                            chat_service,
+                            "continue_after_elicitation",
+                            return_value=mock_llm_continuation_generator(mock_conversation.id),
+                        ):
+                            client = TestClient(elicitation_app)
+                            response = client.post(
+                                "/v1/chat/elicitation/call_789",
+                                json={
+                                    "thread_id": str(mock_conversation.id),
+                                    "tool_name": "create_trip",
+                                    "data": {"name": ""},
+                                },
+                            )
 
         assert response.status_code == 200
 
@@ -596,9 +666,10 @@ class TestSubmitElicitationEndpoint:
     def test_submit_elicitation_saves_to_conversation(self, elicitation_app, mock_user, mock_conversation):
         """Test that tool result is saved to conversation history."""
         from app.db.deps import get_db
+        from app.services.chat import chat_service
         from app.services.conversation import conversation_service
 
-        mock_db = make_mock_db_session()
+        mock_db = make_mock_db_session(mock_user=mock_user)
 
         async def override_db():
             yield mock_db
@@ -631,15 +702,27 @@ class TestSubmitElicitationEndpoint:
                     "app.services.mcp_router.get_mcp_router",
                     return_value=mock_router,
                 ):
-                    client = TestClient(elicitation_app)
-                    client.post(
-                        "/v1/chat/elicitation/call_abc",
-                        json={
-                            "thread_id": str(mock_conversation.id),
-                            "tool_name": "create_trip",
-                            "data": {"name": "Test"},
-                        },
-                    )
+                    # Mock _get_user_trips_for_context
+                    with patch(
+                        "app.routers.chat._get_user_trips_for_context",
+                        new_callable=AsyncMock,
+                        return_value=([], {}),
+                    ):
+                        # Mock chat_service.continue_after_elicitation
+                        with patch.object(
+                            chat_service,
+                            "continue_after_elicitation",
+                            return_value=mock_llm_continuation_generator(mock_conversation.id),
+                        ):
+                            client = TestClient(elicitation_app)
+                            client.post(
+                                "/v1/chat/elicitation/call_abc",
+                                json={
+                                    "thread_id": str(mock_conversation.id),
+                                    "tool_name": "create_trip",
+                                    "data": {"name": "Test"},
+                                },
+                            )
 
         # Verify add_message was called
         add_message_mock.assert_called_once()
@@ -675,9 +758,10 @@ class TestSubmitElicitationEndpoint:
     def test_submit_elicitation_has_correct_headers(self, elicitation_app, mock_user, mock_conversation):
         """Test response has correct SSE headers."""
         from app.db.deps import get_db
+        from app.services.chat import chat_service
         from app.services.conversation import conversation_service
 
-        mock_db = make_mock_db_session()
+        mock_db = make_mock_db_session(mock_user=mock_user)
 
         async def override_db():
             yield mock_db
@@ -705,15 +789,27 @@ class TestSubmitElicitationEndpoint:
                     "app.services.mcp_router.get_mcp_router",
                     return_value=mock_router,
                 ):
-                    client = TestClient(elicitation_app)
-                    response = client.post(
-                        "/v1/chat/elicitation/call_123",
-                        json={
-                            "thread_id": str(mock_conversation.id),
-                            "tool_name": "list_trips",
-                            "data": {},
-                        },
-                    )
+                    # Mock _get_user_trips_for_context
+                    with patch(
+                        "app.routers.chat._get_user_trips_for_context",
+                        new_callable=AsyncMock,
+                        return_value=([], {}),
+                    ):
+                        # Mock chat_service.continue_after_elicitation
+                        with patch.object(
+                            chat_service,
+                            "continue_after_elicitation",
+                            return_value=mock_llm_continuation_generator(mock_conversation.id),
+                        ):
+                            client = TestClient(elicitation_app)
+                            response = client.post(
+                                "/v1/chat/elicitation/call_123",
+                                json={
+                                    "thread_id": str(mock_conversation.id),
+                                    "tool_name": "list_trips",
+                                    "data": {},
+                                },
+                            )
 
         assert response.headers["cache-control"] == "no-cache"
         assert response.headers["x-accel-buffering"] == "no"

@@ -74,30 +74,33 @@ export function ChatMessage({ message, toolResults = [], pendingUpdateIds, class
           isUser && "items-end"
         )}
       >
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-2.5",
-            isUser
-              ? "bg-primary text-primary-foreground rounded-tr-sm"
-              : "bg-muted dark:bg-white/10 rounded-tl-sm"
-          )}
-        >
-          {message.content ? (
-            isUser ? (
-              <p className="text-sm whitespace-pre-wrap break-words">
-                {message.content}
-              </p>
+        {/* Only render the bubble if there's content OR if we're showing "Thinking..." */}
+        {(message.content || (isAssistant && !message.toolCalls?.length)) && (
+          <div
+            className={cn(
+              "rounded-2xl px-4 py-2.5",
+              isUser
+                ? "bg-primary text-primary-foreground rounded-tr-sm"
+                : "bg-muted dark:bg-white/10 rounded-tl-sm"
+            )}
+          >
+            {message.content ? (
+              isUser ? (
+                <p className="text-sm whitespace-pre-wrap break-words">
+                  {message.content}
+                </p>
+              ) : (
+                <div className="text-sm prose prose-sm dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 max-w-none break-words">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
+              )
             ) : (
-              <div className="text-sm prose prose-sm dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 max-w-none break-words">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-              </div>
-            )
-          ) : isAssistant && !message.toolCalls?.length ? (
-            <span className="text-sm text-muted-foreground italic">
-              Thinking...
-            </span>
-          ) : null}
-        </div>
+              <span className="text-sm text-muted-foreground italic">
+                Thinking...
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Tool calls */}
         {isAssistant && message.toolCalls && message.toolCalls.length > 0 && (
@@ -135,7 +138,19 @@ interface ChatMessageListProps {
  */
 export function ChatMessageList({ messages, pendingUpdateIds, className }: ChatMessageListProps) {
   // Filter out tool messages as they're rendered inline with tool calls
-  const visibleMessages = messages.filter((msg) => msg.role !== "tool");
+  // Also filter out empty assistant messages that are NOT the last message
+  // (the last empty assistant message shows "Thinking..." while waiting for response)
+  // Empty assistant messages earlier in the list occur when elicitation is triggered -
+  // the placeholder message never gets content because the response goes to elicitation
+  const visibleMessages = messages.filter((msg, index) => {
+    if (msg.role === "tool") return false;
+    // Keep empty assistant messages only if they're the last message (still loading)
+    if (msg.role === "assistant" && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0)) {
+      const isLastMessage = index === messages.length - 1;
+      return isLastMessage;
+    }
+    return true;
+  });
 
   // Collect all tool results from tool messages
   const toolResultsByCallId = new Map<string, ChatMessageType["toolResult"]>();

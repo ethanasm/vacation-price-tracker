@@ -278,12 +278,22 @@
   width: 100%;
 }
 
+.tripTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
 .tripTable th {
-  background: hsl(var(--muted) / 0.3);
+  background: hsl(var(--background));
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+:global(.dark) .tripTable th {
+  background: hsl(240 10% 10%);
 }
 
 .tripTable td {

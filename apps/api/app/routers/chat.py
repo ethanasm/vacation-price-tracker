@@ -323,6 +323,7 @@ async def submit_elicitation(
     db: AsyncSession = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
     conv_svc: ConversationService = Depends(lambda: conversation_service),
+    svc: ChatService = Depends(lambda: chat_service),
 ) -> StreamingResponse:
     """Submit elicitation form data to complete a pending tool execution.
 
@@ -332,7 +333,8 @@ async def submit_elicitation(
 
     The response is an SSE stream containing:
     - **tool_result**: Result from the tool execution
-    - **content**: Optional follow-up text from the LLM
+    - **content**: Follow-up text from the LLM
+    - **tool_call**: Any additional tool calls (e.g., trigger_refresh)
     - **done**: Stream completion marker
 
     Args:
@@ -341,6 +343,7 @@ async def submit_elicitation(
         db: Database session.
         current_user: Authenticated user.
         conv_svc: Conversation service instance.
+        svc: Chat service instance.
 
     Returns:
         StreamingResponse with SSE content.
@@ -349,6 +352,7 @@ async def submit_elicitation(
         ConversationNotFound: If the conversation doesn't exist or doesn't belong to user.
         ToolNotRegistered: If the specified tool is not registered.
     """
+    from app.models.user import User
     from app.services.mcp_router import get_mcp_router
 
     user_id = uuid.UUID(current_user.id)
@@ -365,8 +369,22 @@ async def submit_elicitation(
     if not router_instance.is_registered(request.tool_name):
         raise ToolNotRegistered(request.tool_name)
 
+    # Get user from database for system prompt context
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+
+    if not user:
+        # This shouldn't happen if auth is working correctly
+        logger.error("User not found in database: %s", user_id)
+        raise ConversationNotFound()
+
+    # Get user's trips for context in LLM continuation
+    trips, trip_prices = await _get_user_trips_for_context(user_id, db)
+
     async def generate() -> AsyncGenerator[str, None]:
-        """Execute the tool and stream results."""
+        """Execute the tool and stream results, then continue LLM conversation."""
+        import json
+
         # Execute the tool with submitted data
         result = await router_instance.execute(
             tool_name=request.tool_name,
@@ -379,8 +397,6 @@ async def submit_elicitation(
         yield f"data: {ChatChunk.tool_executed(tool_call_id=tool_call_id, name=request.tool_name, result=result.data if result.success else {'error': result.error}, success=result.success).model_dump_json()}\n\n"
 
         # Save tool result to conversation history
-        import json
-
         await conv_svc.add_message(
             conversation_id=conversation.id,
             role="tool",
@@ -390,10 +406,16 @@ async def submit_elicitation(
             name=request.tool_name,
         )
 
-        await db.commit()
-
-        # Yield done chunk with thread_id
-        yield f"data: {ChatChunk.done_chunk(thread_id=request.thread_id).model_dump_json()}\n\n"
+        # Continue the LLM conversation to generate follow-up response
+        # This allows the LLM to provide a summary and call additional tools
+        async for chunk in svc.continue_after_elicitation(
+            user=user,
+            conversation_id=conversation.id,
+            db=db,
+            trips=trips,
+            trip_prices=trip_prices,
+        ):
+            yield f"data: {chunk.model_dump_json()}\n\n"
 
     return StreamingResponse(
         generate(),

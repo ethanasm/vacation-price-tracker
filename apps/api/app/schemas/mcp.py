@@ -231,8 +231,8 @@ RESUME_TRIP_TOOL = _make_tool(
 )
 
 
-TRIGGER_REFRESH_TOOL = _make_tool(
-    name="trigger_refresh",
+REFRESH_ALL_TRIP_PRICES_TOOL = _make_tool(
+    name="refresh_all_trip_prices",
     description=(
         "Trigger an immediate price refresh for all active trips. This will fetch the latest flight and hotel prices."
     ),
@@ -241,8 +241,8 @@ TRIGGER_REFRESH_TOOL = _make_tool(
 )
 
 
-TRIGGER_REFRESH_TRIP_TOOL = _make_tool(
-    name="trigger_refresh_trip",
+REFRESH_TRIP_PRICES_TOOL = _make_tool(
+    name="refresh_trip_prices",
     description=(
         "Trigger an immediate price refresh for a specific trip. "
         "Use this when the user wants to update prices for just one trip. "
@@ -309,8 +309,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     SET_NOTIFICATION_TOOL,
     PAUSE_TRIP_TOOL,
     RESUME_TRIP_TOOL,
-    TRIGGER_REFRESH_TOOL,
-    TRIGGER_REFRESH_TRIP_TOOL,
+    REFRESH_ALL_TRIP_PRICES_TOOL,
+    REFRESH_TRIP_PRICES_TOOL,
     DELETE_TRIP_TOOL,
     SEARCH_AIRPORTS_TOOL,
 ]

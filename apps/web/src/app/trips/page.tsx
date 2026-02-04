@@ -192,6 +192,7 @@ function ChatPanelWithElicitation({
     threadId,
     pendingElicitation,
     setPendingElicitation,
+    processElicitationResponse,
   } = useChatContext();
 
   // Handle elicitation form completion
@@ -228,36 +229,9 @@ function ChatPanelWithElicitation({
       // Clear the pending elicitation
       setPendingElicitation(null);
 
-      // Parse the streaming response to get the trip_id
-      let tripId: string | null = null;
-      if (response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const chunk = JSON.parse(line.slice(6));
-                // Extract trip_id from tool_result chunk
-                if (chunk.type === "tool_result" && chunk.tool_result?.result?.trip_id) {
-                  tripId = chunk.tool_result.result.trip_id;
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
-          }
-        }
-      }
+      // Process the streaming response through the chat context
+      // This updates the chat messages with the assistant's response
+      const { tripId } = await processElicitationResponse(response);
 
       // Show success toast
       toast.success(`Trip "${data.name}" created`, {
@@ -289,7 +263,7 @@ function ChatPanelWithElicitation({
         });
       }
     }
-  }, [threadId, pendingElicitation, setPendingElicitation, onTripCreated]);
+  }, [threadId, pendingElicitation, setPendingElicitation, processElicitationResponse, onTripCreated]);
 
   // Handle elicitation cancellation
   const handleElicitationCancel = useCallback(() => {
@@ -560,8 +534,8 @@ export default function DashboardPage() {
   const handleToolResult = useCallback((result: ToolResult) => {
     console.log("[trips/page] handleToolResult called:", result.name, result);
 
-    // For trigger_refresh (all trips), start polling for completion instead of immediate refetch
-    if (result.name === "trigger_refresh" && !result.isError) {
+    // For refresh_all_trip_prices (all trips), start polling for completion instead of immediate refetch
+    if (result.name === "refresh_all_trip_prices" && !result.isError) {
       const workflowId = (result.result as { workflow_id?: string })?.workflow_id;
       if (workflowId) {
         // Start polling for refresh completion (same as dashboard button)
@@ -581,9 +555,9 @@ export default function DashboardPage() {
       }
     }
 
-    // For trigger_refresh_trip (single trip), track the pending state
+    // For refresh_trip_prices (single trip), track the pending state
     // The SSE will deliver the price update and clear this pending state
-    if (result.name === "trigger_refresh_trip" && !result.isError) {
+    if (result.name === "refresh_trip_prices" && !result.isError) {
       const tripId = (result.result as { trip_id?: string })?.trip_id;
       if (tripId) {
         console.log("[trips/page] Adding pending refresh for trip:", tripId, "toolCallId:", result.toolCallId);
@@ -682,7 +656,7 @@ export default function DashboardPage() {
             <FailedState onRetry={handleRetry} />
           ) : isLoading ? (
             <div className={styles.tableWrapper}>
-              <Table className={styles.tripTable}>
+              <Table className={styles.tripTable} noWrapper>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Trip Name</TableHead>
@@ -705,7 +679,7 @@ export default function DashboardPage() {
             <EmptyState />
           ) : (
             <div className={styles.tableWrapper}>
-              <Table className={styles.tripTable}>
+              <Table className={styles.tripTable} noWrapper>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Trip Name</TableHead>

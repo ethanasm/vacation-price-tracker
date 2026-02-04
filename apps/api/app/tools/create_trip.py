@@ -36,7 +36,7 @@ class CreateTripTool(BaseTool):
         "Create a new vacation price tracking trip. "
         "Sets up monitoring for flights and hotels between the specified locations and dates. "
         "New trips are created with 'active' status by default. "
-        "After creating a trip, call trigger_refresh_trip with the returned trip_id to fetch initial prices."
+        "After creating a trip, call refresh_trip_prices with the returned trip_id to fetch initial prices."
     )
 
     # Required fields for trip creation
@@ -92,7 +92,7 @@ class CreateTripTool(BaseTool):
                 "origin": trip.origin_airport,
                 "destination": trip.destination_code,
                 "dates": f"{trip.depart_date} to {trip.return_date}",
-                "message": f"Created trip '{trip.name}'. Call trigger_refresh_trip to fetch initial prices.",
+                "message": f"Created trip '{trip.name}'. Call refresh_trip_prices to fetch initial prices.",
             }
         )
 

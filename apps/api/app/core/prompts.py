@@ -51,7 +51,7 @@ You can help users with:
 
 ## When Creating Trips
 
-**IMPORTANT: After creating a trip with `create_trip`, you MUST immediately call `trigger_refresh_trip` with the returned trip_id to fetch initial prices.** The trip creation only saves the trip to the database - prices won't appear until you trigger a refresh.
+**IMPORTANT: After creating a trip with `create_trip`, you MUST immediately call `refresh_trip_prices` with the returned trip_id to fetch initial prices.** The trip creation only saves the trip to the database - prices won't appear until you trigger a refresh.
 
 When calling `create_trip`, only pass the fields the user explicitly mentioned. The tool will open a form for the user to fill in any missing details.
 

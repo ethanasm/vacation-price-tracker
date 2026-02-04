@@ -16,13 +16,13 @@ from app.services.temporal import start_refresh_all_workflow, trigger_price_chec
 from app.tools.base import BaseTool
 
 
-class TriggerRefreshTool(BaseTool):
+class RefreshAllTripPricesTool(BaseTool):
     """Trigger an immediate price refresh for all active trips.
 
     This will fetch the latest flight and hotel prices.
     """
 
-    name = "trigger_refresh"
+    name = "refresh_all_trip_prices"
     description = (
         "Trigger an immediate price refresh for ALL active trips. "
         "Use this when the user wants to update prices or refresh their trips. "
@@ -80,13 +80,13 @@ class TriggerRefreshTool(BaseTool):
         )
 
 
-class TriggerRefreshTripTool(BaseTool):
+class RefreshTripPricesTool(BaseTool):
     """Trigger an immediate price refresh for a specific trip.
 
     This will fetch the latest flight and hotel prices for the specified trip.
     """
 
-    name = "trigger_refresh_trip"
+    name = "refresh_trip_prices"
     description = (
         "Trigger an immediate price refresh for a SPECIFIC trip. "
         "Use this when the user wants to update prices for just one trip. "

@@ -37,6 +37,8 @@ interface ChatContextValue {
   retryLastMessage: () => Promise<void>;
   switchThread: (threadId: string) => Promise<void>;
   startNewThread: () => void;
+  /** Process a streaming response from an elicitation submission */
+  processElicitationResponse: (response: Response) => Promise<{ tripId: string | null }>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -128,6 +130,7 @@ export function ChatProvider({
       retryLastMessage: chat.retryLastMessage,
       switchThread: chat.switchThread,
       startNewThread: chat.startNewThread,
+      processElicitationResponse: chat.processElicitationResponse,
     }),
     [
       chat.messages,
@@ -143,6 +146,7 @@ export function ChatProvider({
       chat.retryLastMessage,
       chat.switchThread,
       chat.startNewThread,
+      chat.processElicitationResponse,
     ]
   );
 

@@ -19,11 +19,11 @@ from app.schemas.mcp import (
     LIST_TRIPS_TOOL,
     MCP_TOOLS,
     PAUSE_TRIP_TOOL,
+    REFRESH_ALL_TRIP_PRICES_TOOL,
     RESUME_TRIP_TOOL,
     SEARCH_AIRPORTS_TOOL,
     SET_NOTIFICATION_TOOL,
     TOOL_SCHEMAS,
-    TRIGGER_REFRESH_TOOL,
     ToolCall,
     ToolCallFunction,
     ToolResult,
@@ -251,11 +251,11 @@ class TestToolSchemas:
         assert schema["name"] == "resume_trip"
         assert schema["parameters"]["required"] == ["trip_id"]
 
-    def test_trigger_refresh_tool_schema(self):
-        """Test trigger_refresh tool schema."""
-        schema = TRIGGER_REFRESH_TOOL["function"]
+    def test_refresh_all_trip_prices_tool_schema(self):
+        """Test refresh_all_trip_prices tool schema."""
+        schema = REFRESH_ALL_TRIP_PRICES_TOOL["function"]
 
-        assert schema["name"] == "trigger_refresh"
+        assert schema["name"] == "refresh_all_trip_prices"
         assert len(schema["parameters"]["required"]) == 0
 
     def test_search_airports_tool_schema(self):

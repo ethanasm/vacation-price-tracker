@@ -41,7 +41,7 @@ function StatusIcon({ isExecuting, hasResult, isError, isPendingUpdate }: {
     return (
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-        <span>Fetching prices...</span>
+        <span>Fetching prices</span>
       </span>
     );
   }

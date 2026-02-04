@@ -812,6 +812,118 @@ class ChatService:
         messages = await self._conversation_svc.get_messages(conversation.id, db, limit=limit)
         return conversation, messages
 
+    async def continue_after_elicitation(
+        self,
+        user: User,
+        conversation_id: uuid.UUID,
+        db: AsyncSession,
+        trips: list[Trip] | None = None,
+        trip_prices: dict[str, float] | None = None,
+    ) -> AsyncGenerator[ChatChunk, None]:
+        """Continue a conversation after elicitation tool result is saved.
+
+        This method is called after an elicitation form is submitted and the tool
+        result has been saved to the conversation history. It continues the LLM
+        conversation loop to generate a follow-up response and any additional
+        tool calls (e.g., trigger_refresh after create_trip).
+
+        Args:
+            user: The authenticated user.
+            conversation_id: UUID of the existing conversation.
+            db: Database session.
+            trips: Optional list of user's trips for context.
+            trip_prices: Optional dict of trip_id -> current price.
+
+        Yields:
+            ChatChunk objects for each piece of the response.
+        """
+        logger.info(
+            "Continuing conversation after elicitation: user=%s conversation=%s",
+            str(user.id)[:8],
+            str(conversation_id)[:8],
+        )
+
+        # 1. Build system prompt with user context
+        system_prompt = build_system_prompt(user, trips, trip_prices)
+
+        # 2. Get message history that fits in context window
+        history_messages = await self._conversation_svc.get_messages_for_context(
+            conversation_id, db, system_prompt=system_prompt
+        )
+
+        # 3. Convert to Groq format with system prompt first
+        groq_messages: list[GroqMessage] = [GroqMessage(role="system", content=system_prompt)]
+        groq_messages.extend(self._conversation_svc.messages_to_groq_format(history_messages))
+
+        # 4. Process chat with tools and stream response
+        full_response = ""
+        tool_calls_made: list[dict[str, Any]] = []
+        tool_results_to_save: list[dict[str, Any]] = []
+        first_chunk = True
+
+        try:
+            async for chunk in process_chat_with_tools(
+                messages=groq_messages,
+                user_id=str(user.id),
+                db=db,
+                client=self._groq_client,
+                router=self._mcp_router,
+            ):
+                # Include thread_id in first chunk
+                if first_chunk:
+                    chunk.thread_id = conversation_id
+                    first_chunk = False
+
+                # Accumulate content for persistence
+                if chunk.content:
+                    full_response += chunk.content
+
+                # Track tool calls for persistence
+                if chunk.tool_call:
+                    tool_calls_made.append(
+                        {
+                            "id": chunk.tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": chunk.tool_call.name,
+                                "arguments": chunk.tool_call.arguments,
+                            },
+                        }
+                    )
+
+                # Track tool results for persistence
+                if chunk.tool_result:
+                    tool_results_to_save.append(
+                        {
+                            "tool_call_id": chunk.tool_result.tool_call_id,
+                            "name": chunk.tool_result.name,
+                            "result": chunk.tool_result.result,
+                            "success": chunk.tool_result.success,
+                        }
+                    )
+
+                yield chunk
+
+            # 5. Save assistant response and tool results
+            await self._save_messages(
+                conversation_id, db, full_response, tool_calls_made, tool_results_to_save
+            )
+
+            # 6. Prune old messages if needed
+            await self._conversation_svc.prune_old_messages(conversation_id, db)
+
+            # 7. Commit the transaction
+            await db.commit()
+
+            # 8. Send done chunk with thread_id
+            yield ChatChunk.done_chunk(thread_id=conversation_id)
+
+        except Exception as e:
+            logger.exception("Error during elicitation continuation")
+            await db.rollback()
+            yield ChatChunk.error_chunk(f"Chat processing error: {e}")
+            yield ChatChunk.done_chunk(thread_id=conversation_id)
+
 
 # Singleton instance for shared use
 chat_service = ChatService()
