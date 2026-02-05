@@ -9,6 +9,8 @@ from app.tools.delete_trip import DeleteTripTool
 from app.tools.get_trip_details import GetTripDetailsTool
 from app.tools.list_trips import ListTripsTool
 from app.tools.pause_resume import PauseTripTool, ResumeTripTool
+from app.tools.search_airports import SearchAirportsTool
+from app.tools.search_flights_kiwi import SearchFlightsKiwiTool
 from app.tools.set_notification import SetNotificationTool
 from app.tools.trigger_refresh import RefreshAllTripPricesTool, RefreshTripPricesTool
 
@@ -22,6 +24,8 @@ __all__ = [
     "RefreshAllTripPricesTool",
     "RefreshTripPricesTool",
     "ResumeTripTool",
+    "SearchAirportsTool",
+    "SearchFlightsKiwiTool",
     "SetNotificationTool",
 ]
 
@@ -36,6 +40,8 @@ TRIP_TOOLS = {
     "resume_trip": ResumeTripTool,
     "refresh_all_trip_prices": RefreshAllTripPricesTool,
     "refresh_trip_prices": RefreshTripPricesTool,
+    "search_airports": SearchAirportsTool,
+    "search_flights_kiwi": SearchFlightsKiwiTool,
 }
 
 

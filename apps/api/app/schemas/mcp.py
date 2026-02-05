@@ -297,6 +297,52 @@ SEARCH_AIRPORTS_TOOL = _make_tool(
 )
 
 
+SEARCH_FLIGHTS_KIWI_TOOL = _make_tool(
+    name="search_flights_kiwi",
+    description=(
+        "Search for flights using Kiwi.com. "
+        "Optimized for finding the cheapest prices and creative routing "
+        "with detailed layover information. "
+        "Use when the user wants the lowest price or flexible routing options. "
+        "NOTE: Does NOT provide airline names or carrier codes "
+        "(use search_flights_amadeus for airline details). "
+        "Returns prices, layover details, duration, and booking links. "
+        "IMPORTANT: Always pass currency='USD' unless the user explicitly requests a different currency."
+    ),
+    parameters={
+        "fly_from": {
+            "type": "string",
+            "description": "Origin airport/city (IATA code or city name, e.g., 'MXP', 'Milan')",
+        },
+        "fly_to": {
+            "type": "string",
+            "description": "Destination airport/city (IATA code or city name, e.g., 'LGW', 'London')",
+        },
+        "departure_date": {
+            "type": "string",
+            "description": "Departure date in YYYY-MM-DD format",
+            "format": "date",
+        },
+        "return_date": {
+            "type": "string",
+            "description": "Return date in YYYY-MM-DD format for round trips (optional)",
+            "format": "date",
+        },
+        "adults": {
+            "type": "integer",
+            "description": "Number of adult passengers (default: 1)",
+            "minimum": 1,
+            "maximum": 9,
+        },
+        "currency": {
+            "type": "string",
+            "description": "Currency code for prices (always use 'USD' unless user requests otherwise)",
+        },
+    },
+    required=["fly_from", "fly_to", "departure_date"],
+)
+
+
 # =============================================================================
 # Complete Tool Registry
 # =============================================================================
@@ -313,6 +359,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
     REFRESH_TRIP_PRICES_TOOL,
     DELETE_TRIP_TOOL,
     SEARCH_AIRPORTS_TOOL,
+    SEARCH_FLIGHTS_KIWI_TOOL,
 ]
 
 # Tool name to schema mapping for validation

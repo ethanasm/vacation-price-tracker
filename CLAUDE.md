@@ -51,16 +51,14 @@ For conversational flight search in Phase 2, we use free hosted MCP servers:
 
 | Provider | Endpoint | Returns | Missing |
 |----------|----------|---------|---------|
-| **lastminute.com** | `mcp.lastminute.com/mcp` | Airline names, carrier codes, routes, times, prices | Flight numbers, detailed segments |
 | **Kiwi.com** | `mcp.kiwi.com` | Prices, detailed layovers, virtual interlining | Airline names, carrier codes, flight numbers |
 | **Amadeus** | Custom MCP tools | Flight numbers, segments, terminals, fare details, amenities | Direct booking links |
 
 **When to use each:**
-- **lastminute.com** - Primary chat search (shows airline names)
 - **Kiwi** - Cheapest prices, creative routing, detailed layover times
-- **Amadeus** - Flight numbers (required for tracking), fare details, hotels
+- **Amadeus** - Flight numbers (required for tracking), fare details, airline names, hotels
 
-**Airline coverage:** Free MCP servers show LCCs (Southwest, JetBlue, Spirit, Ryanair). Amadeus found Frontier on routes where MCP servers didn't. None reliably show AA, UA, DL.
+**Airline coverage:** Kiwi MCP shows LCCs (Southwest, JetBlue, Spirit, Ryanair). Amadeus found Frontier on routes where Kiwi didn't. None reliably show AA, UA, DL.
 
 ### Custom MCP Server (Trip Management + Amadeus)
 Our custom MCP server implements:
@@ -105,10 +103,10 @@ Each flight offer card must show ALL segments for the complete itinerary:
 
 | Phase | Flights (Chat) | Flights (Tracking) | Hotels | Optimizer | Monthly Cost |
 |:------|:---------------|:-------------------|:-------|:----------|:-------------|
-| MVP (Phase 1-3) | lastminute.com MCP | Amadeus HTTP | Custom Amadeus MCP | N/A | $0 |
-| Phase 4 | lastminute.com MCP | Amadeus HTTP (`search_flight_cheapest_dates`) | Custom Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
+| MVP (Phase 1-3) | Kiwi MCP + Amadeus | Amadeus HTTP | Custom Amadeus MCP | N/A | $0 |
+| Phase 4 | Kiwi MCP + Amadeus | Amadeus HTTP (`search_flight_cheapest_dates`) | Custom Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
 
-**Chat vs Tracking:** Chat uses free hosted MCP servers (lastminute.com) for quick searches. Price tracking workflows use Amadeus HTTP API for detailed segment data needed for flight number matching.
+**Chat vs Tracking:** Chat uses Kiwi MCP for quick/cheap searches and Amadeus for detailed data. Price tracking workflows use Amadeus HTTP API for detailed segment data needed for flight number matching.
 
 **Phase 4 SearchAPI Rationale:** The flexible date optimizer needs to survey 90+ date combinations for hotels. SearchAPI provides $40/month for 10,000 searches, making it cost-effective for date-range surveying. For flights, the `search_flight_cheapest_dates` API provides cached date-price grids.
 

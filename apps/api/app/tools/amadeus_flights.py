@@ -6,7 +6,6 @@ Use when:
 - Need detailed segment/layover information
 - User wants to filter by airline
 - Need to track a specific flight for price monitoring
-- lastminute.com MCP doesn't provide enough detail
 """
 
 from __future__ import annotations
@@ -84,7 +83,6 @@ class AmadeusFlightTool(BaseTool):
     - Need detailed segment/layover information
     - User wants to filter by airline
     - Need to track a specific flight for price monitoring
-    - lastminute.com MCP doesn't provide enough detail
 
     Returns detailed itineraries with flight numbers, airline codes,
     all segments, layover times, and real-time pricing.

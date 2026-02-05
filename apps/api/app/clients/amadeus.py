@@ -198,6 +198,33 @@ class AmadeusClient:
         return response.json()
 
 
+    async def search_airports(
+        self,
+        keyword: str,
+        max_results: int = 10,
+    ) -> dict[str, Any]:
+        """
+        Search for airports and cities using Amadeus Location Search API v1.
+
+        Args:
+            keyword: Search query (city name, airport name, or IATA code).
+            max_results: Maximum results to return (default: 10).
+
+        Returns:
+            dict with "data" array of location entries.
+
+        Raises:
+            AmadeusRequestError: If the API request fails.
+        """
+        params = {
+            "subType": "AIRPORT,CITY",
+            "keyword": keyword.strip().upper(),
+            "page[limit]": str(max_results),
+            "view": "LIGHT",
+        }
+        response = await self._authorized_get("/v1/reference-data/locations", params)
+        return response.json()
+
     async def search_hotels_by_city(
         self,
         city_code: str,

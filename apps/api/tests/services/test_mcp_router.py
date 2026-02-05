@@ -22,6 +22,7 @@ from app.schemas.mcp import (
     REFRESH_ALL_TRIP_PRICES_TOOL,
     RESUME_TRIP_TOOL,
     SEARCH_AIRPORTS_TOOL,
+    SEARCH_FLIGHTS_KIWI_TOOL,
     SET_NOTIFICATION_TOOL,
     TOOL_SCHEMAS,
     ToolCall,
@@ -143,7 +144,7 @@ class TestToolSchemas:
     def test_mcp_tools_is_list(self):
         """Test MCP_TOOLS is a list of tool definitions."""
         assert isinstance(MCP_TOOLS, list)
-        assert len(MCP_TOOLS) == 10  # 10 tools defined
+        assert len(MCP_TOOLS) == 11  # 11 tools defined
 
     def test_all_tools_have_required_structure(self):
         """Test all tools have the required OpenAI function structure."""
@@ -265,6 +266,24 @@ class TestToolSchemas:
         assert schema["name"] == "search_airports"
         assert "query" in schema["parameters"]["required"]
         assert schema["parameters"]["properties"]["query"]["minLength"] == 2
+
+    def test_search_flights_kiwi_tool_schema(self):
+        """Test search_flights_kiwi tool schema."""
+        schema = SEARCH_FLIGHTS_KIWI_TOOL["function"]
+
+        assert schema["name"] == "search_flights_kiwi"
+        assert set(schema["parameters"]["required"]) == {
+            "fly_from",
+            "fly_to",
+            "departure_date",
+        }
+        assert "fly_from" in schema["parameters"]["properties"]
+        assert "fly_to" in schema["parameters"]["properties"]
+        assert "departure_date" in schema["parameters"]["properties"]
+        assert "return_date" in schema["parameters"]["properties"]
+        assert "adults" in schema["parameters"]["properties"]
+        assert "currency" in schema["parameters"]["properties"]
+        assert schema["parameters"]["properties"]["departure_date"]["format"] == "date"
 
 
 # =============================================================================

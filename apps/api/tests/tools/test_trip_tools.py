@@ -108,7 +108,7 @@ def test_get_trip_tool_returns_none_for_unknown():
 def test_get_all_trip_tools():
     """Test get_all_trip_tools returns all tools."""
     tools = get_all_trip_tools()
-    assert len(tools) == 9
+    assert len(tools) == 11
     assert "create_trip" in tools
     assert "delete_trip" in tools
     assert "list_trips" in tools

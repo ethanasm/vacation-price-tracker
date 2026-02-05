@@ -469,6 +469,8 @@ def _register_tools(router: MCPRouter) -> None:
         RefreshAllTripPricesTool,
         RefreshTripPricesTool,
         ResumeTripTool,
+        SearchAirportsTool,
+        SearchFlightsKiwiTool,
         SetNotificationTool,
     )
 
@@ -482,6 +484,8 @@ def _register_tools(router: MCPRouter) -> None:
     router.register("resume_trip", ResumeTripTool())
     router.register("refresh_all_trip_prices", RefreshAllTripPricesTool())
     router.register("refresh_trip_prices", RefreshTripPricesTool())
+    router.register("search_airports", SearchAirportsTool())
+    router.register("search_flights_kiwi", SearchFlightsKiwiTool())
 
     logger.info("Registered %d MCP tools", len(router.get_registered_tools()))
 

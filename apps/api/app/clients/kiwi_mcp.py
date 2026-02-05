@@ -41,8 +41,11 @@ from app.schemas.flight_search import FlightLayover, FlightSearchFlight, FlightS
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MCP_URL = "https://mcp.kiwi.com"
+DEFAULT_MCP_URL = "https://mcp.kiwi.com/mcp"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# MCP protocol version for Streamable HTTP transport
+MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
 class KiwiMCPError(Exception):
@@ -74,6 +77,9 @@ class KiwiMCPClient:
         """
         self._mcp_url = mcp_url.rstrip("/")
         self._timeout = httpx.Timeout(timeout_seconds)
+        self._session_id: str | None = None
+        self._initialized: bool = False
+        self._request_id: int = 0
 
     async def search_flight(
         self,
@@ -162,9 +168,54 @@ class KiwiMCPClient:
             currency=currency,
         )
 
+    def _next_request_id(self) -> int:
+        """Get the next JSON-RPC request ID."""
+        self._request_id += 1
+        return self._request_id
+
+    async def _ensure_initialized(self) -> None:
+        """Ensure the MCP session is initialized.
+
+        The Streamable HTTP MCP transport requires an initialize handshake
+        before any tool calls can be made. This sends the initialize request
+        and captures the session ID from the response headers.
+
+        Raises:
+            KiwiConnectionError: If connection fails.
+            KiwiRequestError: If initialization fails.
+        """
+        if self._initialized:
+            return
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": self._next_request_id(),
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "vacation-price-tracker",
+                    "version": "1.0.0",
+                },
+            },
+        }
+
+        response = await self._send_request(payload, include_session=False)
+        session_id = response.headers.get("mcp-session-id")
+        if session_id:
+            self._session_id = session_id
+
+        # Parse the SSE response to verify initialization succeeded
+        self._parse_sse_json_rpc(response)
+        self._initialized = True
+        logger.debug("Kiwi MCP session initialized: session_id=%s", self._session_id)
+
     async def _call_mcp(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """
         Call the MCP server with JSON-RPC format.
+
+        Ensures the session is initialized before making the tool call.
 
         Args:
             tool_name: Name of the MCP tool to call.
@@ -177,9 +228,11 @@ class KiwiMCPClient:
             KiwiConnectionError: If connection fails.
             KiwiRequestError: If the request fails.
         """
+        await self._ensure_initialized()
+
         payload = {
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": self._next_request_id(),
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -188,17 +241,41 @@ class KiwiMCPClient:
         }
 
         response = await self._send_request(payload)
-        data = self._parse_json_response(response)
+        data = self._parse_sse_json_rpc(response)
         return self._extract_result(data)
 
-    async def _send_request(self, payload: dict[str, Any]) -> httpx.Response:
-        """Send HTTP request to MCP server."""
+    async def _send_request(
+        self,
+        payload: dict[str, Any],
+        *,
+        include_session: bool = True,
+    ) -> httpx.Response:
+        """Send HTTP request to MCP server.
+
+        Args:
+            payload: JSON-RPC payload to send.
+            include_session: Whether to include the session ID header.
+
+        Returns:
+            HTTP response from the MCP server.
+
+        Raises:
+            KiwiConnectionError: If connection fails.
+            KiwiRequestError: If the request returns an error status.
+        """
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if include_session and self._session_id:
+            headers["mcp-session-id"] = self._session_id
+
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
                     self._mcp_url,
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                 )
         except httpx.ConnectError as e:
             logger.error("Failed to connect to Kiwi MCP: %s", e)
@@ -211,6 +288,10 @@ class KiwiMCPClient:
             raise KiwiConnectionError(f"HTTP error: {e}") from e
 
         if response.status_code >= 400:
+            # Reset session on auth/session errors so next call re-initializes
+            if response.status_code in (400, 401, 403):
+                self._initialized = False
+                self._session_id = None
             logger.warning(
                 "Kiwi MCP request failed: status=%s body=%s",
                 response.status_code,
@@ -218,15 +299,44 @@ class KiwiMCPClient:
             )
             raise KiwiRequestError(f"MCP request failed with status {response.status_code}")
 
+        # Update session ID if server sends a new one
+        new_session_id = response.headers.get("mcp-session-id")
+        if new_session_id:
+            self._session_id = new_session_id
+
         return response
 
-    def _parse_json_response(self, response: httpx.Response) -> dict[str, Any]:
-        """Parse JSON from response and check for JSON-RPC errors."""
-        try:
-            data = response.json()
-        except ValueError as e:
-            logger.error("Invalid JSON response from Kiwi MCP: %s", response.text[:500])
-            raise KiwiRequestError("Invalid JSON response from MCP server") from e
+    def _parse_sse_json_rpc(self, response: httpx.Response) -> dict[str, Any]:
+        """Parse JSON-RPC data from an SSE or JSON response.
+
+        The Kiwi MCP server uses Streamable HTTP transport, which returns
+        responses as Server-Sent Events (SSE) with ``text/event-stream``
+        content type. Each event has the format::
+
+            event: message
+            data: {"jsonrpc": "2.0", ...}
+
+        This method handles both SSE and plain JSON responses.
+
+        Args:
+            response: HTTP response to parse.
+
+        Returns:
+            Parsed JSON-RPC response data.
+
+        Raises:
+            KiwiRequestError: If parsing fails or the response contains an error.
+        """
+        content_type = response.headers.get("content-type", "")
+
+        if "text/event-stream" in content_type:
+            data = self._extract_json_from_sse(response.text)
+        else:
+            try:
+                data = response.json()
+            except ValueError as e:
+                logger.error("Invalid JSON response from Kiwi MCP: %s", response.text[:500])
+                raise KiwiRequestError("Invalid JSON response from MCP server") from e
 
         if "error" in data:
             error_msg = data["error"].get("message", "Unknown error")
@@ -234,6 +344,36 @@ class KiwiMCPClient:
             raise KiwiRequestError(f"MCP error: {error_msg}")
 
         return data
+
+    @staticmethod
+    def _extract_json_from_sse(text: str) -> dict[str, Any]:
+        """Extract JSON-RPC payload from SSE event stream text.
+
+        Args:
+            text: Raw SSE response text.
+
+        Returns:
+            Parsed JSON data from the last ``data:`` line.
+
+        Raises:
+            KiwiRequestError: If no valid JSON data line is found.
+        """
+        import json
+
+        # Extract data lines from SSE (may have multiple events; use last one)
+        last_data: dict[str, Any] | None = None
+        for line in text.splitlines():
+            if line.startswith("data: "):
+                try:
+                    last_data = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+
+        if last_data is None:
+            logger.error("No valid JSON data in SSE response: %s", text[:500])
+            raise KiwiRequestError("No valid data in SSE response from MCP server")
+
+        return last_data
 
     @staticmethod
     def _try_parse_text_content(content: list[Any]) -> dict[str, Any] | None:

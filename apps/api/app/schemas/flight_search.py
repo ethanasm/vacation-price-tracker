@@ -48,7 +48,7 @@ class FlightSearchFlight(BaseModel):
     booking_link: str | None = Field(default=None, description="Deep link for booking")
 
     # Provider metadata
-    provider: str = Field(description="Data source provider (e.g., 'lastminute', 'kiwi')")
+    provider: str = Field(description="Data source provider (e.g., 'kiwi', 'amadeus')")
     raw_data: dict | None = Field(default=None, description="Original response data for debugging")
 
 
