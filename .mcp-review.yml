@@ -1,0 +1,44 @@
+model: qwen3-coder
+focus:
+  - security
+  - performance
+  - ux
+  - ai-cost-minimization
+  - api-quota-awareness
+  - error-handling
+  - data-consistency
+ignore:
+  - "*.test.ts"
+  - "*.test.tsx"
+  - "*.spec.ts"
+  - "__tests__/**"
+  - ".next/**"
+  - dist
+  - node_modules
+  - coverage
+  - htmlcov
+  - __pycache__
+  - .pytest_cache
+  - .ruff_cache
+  - ".nx/cache/**"
+  - ".nx/workspace-data/**"
+  - "apps/web/src/lib/api/types.ts"
+  - "apps/web/src/lib/api/openapi.json"
+  - "certs/**"
+  - "*.pem"
+  - "*.crt"
+  - "*.key"
+  - migrations
+conventions:
+  - "Use RFC 7807 Problem Details for all API error responses (AppError hierarchy)"
+  - "Require X-Idempotency-Key header for POST/PUT/PATCH/DELETE endpoints"
+  - "Use Conventional Commits with scopes: feat(api), fix(web), refactor(worker), etc."
+  - "TypeScript files use kebab-case; Python modules use snake_case"
+  - "React components use PascalCase; hooks use camelCase with 'use' prefix"
+  - "Guard Amadeus API calls — free tier is 2,000 calls/month shared across flights and hotels"
+  - "Groq chat is rate-limited to 10 messages/min per user; enforce server-side"
+  - "Never expose API keys or secrets in frontend code or error responses"
+  - "Temporal activities must be idempotent and handle retries gracefully"
+  - "Use Pydantic/SQLModel for all backend data validation; zod or TypeScript types on frontend"
+max_files: 20
+context_lines: 5

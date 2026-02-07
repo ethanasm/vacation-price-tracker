@@ -223,6 +223,21 @@ pnpm sonar
 ```
 Connect the SonarQube/SonarCloud project in your IDE via SonarLint to surface warnings before pushing.
 
+#### Local Code Review (mcp-review) — Optional
+
+You can optionally use [mcp-review](https://github.com/ethanasm/mcp-review) for AI-powered, context-aware code review against your local git history — no PR required. It's pre-configured via `.mcp-review.yml` in the project root with focus areas tailored to this project (security, performance, UX, API quota awareness, and more).
+
+```bash
+# Install mcp-review globally (one-time setup — see the mcp-review README)
+# Then review from this repo:
+
+# Review staged changes before committing
+mcp-review --staged
+
+# Review last 3 commits
+mcp-review --last 3
+```
+
 #### Type Checking (mypy) - Optional
 ```bash
 uv run mypy apps/api/app/

@@ -21,3 +21,7 @@
 # Nx
 .nx/cache
 .nx/workspace-data
+
+# mcp-review
+.mcp-review-history.json
+.mcp-review-cache
