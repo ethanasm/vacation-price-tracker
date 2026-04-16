@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -20,7 +20,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
-class AuditEventType(str, Enum):
+class AuditEventType(StrEnum):
     """Types of audit events."""
 
     TOOL_CALL = "tool_call"

@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ChatChunkType(str, Enum):
+class ChatChunkType(StrEnum):
     """Types of SSE chunks in the chat stream."""
 
     CONTENT = "content"  # Text content from the LLM

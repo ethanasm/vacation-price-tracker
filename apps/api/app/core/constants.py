@@ -6,7 +6,7 @@ Organized by domain:
 - Trip/tracking constants (Phase 1-3)
 """
 
-from enum import Enum
+from enum import StrEnum
 
 # =============================================================================
 # AUTH CONSTANTS (Phase 1)
@@ -37,7 +37,7 @@ class JWTClaims:
     TYPE = "type"  # "access" or "refresh"
 
 
-class TokenType(str, Enum):
+class TokenType(StrEnum):
     """Token type identifiers (used in function signatures and comparisons)."""
 
     ACCESS = "access"
@@ -49,7 +49,7 @@ class TokenType(str, Enum):
 # =============================================================================
 
 
-class TripStatus(str, Enum):
+class TripStatus(StrEnum):
     """Trip tracking status values."""
 
     ACTIVE = "active"
@@ -57,7 +57,7 @@ class TripStatus(str, Enum):
     ERROR = "error"
 
 
-class RefreshFrequency(str, Enum):
+class RefreshFrequency(StrEnum):
     """Valid refresh frequency options (Phase 3: scheduled tracking)."""
 
     DAILY = "daily"
@@ -70,7 +70,7 @@ class RefreshFrequency(str, Enum):
 # =============================================================================
 
 
-class ThresholdType(str, Enum):
+class ThresholdType(StrEnum):
     """Notification threshold types for price alerts."""
 
     TRIP_TOTAL = "trip_total"
@@ -83,7 +83,7 @@ class ThresholdType(str, Enum):
 # =============================================================================
 
 
-class StopsMode(str, Enum):
+class StopsMode(StrEnum):
     """Flight stops preference modes."""
 
     NONSTOP = "nonstop"
@@ -91,7 +91,7 @@ class StopsMode(str, Enum):
     ANY = "any"
 
 
-class CabinClass(str, Enum):
+class CabinClass(StrEnum):
     """Flight cabin class options."""
 
     ECONOMY = "economy"
@@ -105,7 +105,7 @@ class CabinClass(str, Enum):
 # =============================================================================
 
 
-class RoomSelectionMode(str, Enum):
+class RoomSelectionMode(StrEnum):
     """Hotel room selection preference modes."""
 
     CHEAPEST = "cheapest"
