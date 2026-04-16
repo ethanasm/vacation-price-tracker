@@ -2,6 +2,14 @@
 
 Returns Skiplagged-shaped responses with realistic variation.
 Used when MOCK_SKIPLAGGED_API=true in environment.
+
+The randomness in this module is purely cosmetic — it drives variation in
+fake review counts, prices, coordinates, etc., served only when
+MOCK_SKIPLAGGED_API=true (a non-production setting). Nothing here gates
+authentication, authorization, tokens, secrets, or pricing decisions in
+production code paths. We use ``random.SystemRandom`` (os.urandom-backed)
+so SonarQube S2245 doesn't flag the file; functionally it is a drop-in
+replacement for the module-level ``random`` API.
 """
 
 from __future__ import annotations
@@ -11,6 +19,9 @@ import random
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Cryptographically-strong RNG; same API as the `random` module.
+_rng = random.SystemRandom()
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +181,7 @@ def mock_flight_search(
         flight_index = offset + i
         base_price = flight["base_price"]
         # Add ±15% random variation
-        variation = base_price * random.uniform(-0.15, 0.15)
+        variation = base_price * _rng.uniform(-0.15, 0.15)
         price = round(base_price + variation, 2)
         # Multiply by adults
         total_price = round(price * adults, 2)
@@ -361,7 +372,7 @@ def mock_hotel_search(
     for hotel in page_source:
         base_price = hotel["base_price"]
         # Add ±15% random variation
-        variation = base_price * random.uniform(-0.15, 0.15)
+        variation = base_price * _rng.uniform(-0.15, 0.15)
         price = round(base_price + variation, 2)
         # Multiply by rooms
         total_price = round(price * rooms, 2)
@@ -488,7 +499,7 @@ def mock_hotel_details(
 
     base_price = hotel["base_price"]
     # Add ±10% variation
-    variation = base_price * random.uniform(-0.10, 0.10)
+    variation = base_price * _rng.uniform(-0.10, 0.10)
     nightly_price = round(base_price + variation, 2)
 
     # Calculate nights
@@ -504,7 +515,7 @@ def mock_hotel_details(
     total_price = round(nightly_price * nights * rooms, 2)
 
     # Build 3-5 rooms
-    room_count = random.randint(3, 5)
+    room_count = _rng.randint(3, 5)
     room_types = _MOCK_ROOM_TYPES[:room_count]
     mock_rooms = []
     for i, room_type in enumerate(room_types):
@@ -537,8 +548,8 @@ def mock_hotel_details(
         "hotelId": str(hotel_id),
         "hotelName": hotel["name"],
         "starRating": hotel["star_rating"],
-        "reviewRating": round(random.uniform(3.5, 5.0), 1),
-        "reviewCount": random.randint(50, 2000),
+        "reviewRating": round(_rng.uniform(3.5, 5.0), 1),
+        "reviewCount": _rng.randint(50, 2000),
         "totalPriceInDollars": total_price,
         "chainName": hotel["chain"],
         "amenityNames": hotel["amenities"],
@@ -552,8 +563,8 @@ def mock_hotel_details(
         "checkinDate": checkin,
         "checkoutDate": checkout,
         "location": {
-            "lat": round(48.8566 + random.uniform(-0.02, 0.02), 6),
-            "lng": round(2.3522 + random.uniform(-0.02, 0.02), 6),
+            "lat": round(48.8566 + _rng.uniform(-0.02, 0.02), 6),
+            "lng": round(2.3522 + _rng.uniform(-0.02, 0.02), 6),
         },
         "rooms": mock_rooms,
     }

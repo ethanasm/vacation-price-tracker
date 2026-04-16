@@ -838,10 +838,14 @@ class SkiplaggedClient:
 
         import re
 
+        # Bound the digit quantifier to a fixed upper limit so the engine
+        # cannot backtrack across an unbounded run of digits — flight
+        # durations comfortably fit in 3 digits each (max 999h / 999m).
+        # Sonar S5852: avoid super-linear regex on potentially adversarial input.
         hours = 0
         minutes = 0
-        h_match = re.search(r"(\d+)h", duration_str)
-        m_match = re.search(r"(\d+)m", duration_str)
+        h_match = re.search(r"(\d{1,3})h", duration_str)
+        m_match = re.search(r"(\d{1,3})m", duration_str)
         if h_match:
             hours = int(h_match.group(1))
         if m_match:
