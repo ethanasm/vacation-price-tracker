@@ -260,7 +260,12 @@ class TestToolSchemas:
         assert len(schema["parameters"]["required"]) == 0
 
     def test_search_flights_tool_schema(self):
-        """Test search_flights tool schema."""
+        """Test search_flights tool schema.
+
+        Integer-typed optional params (adults/limit/offset) are intentionally
+        omitted because Llama-3.3 sometimes emits them as strings, which Groq's
+        strict tool validation rejects. Defaults are applied in the wrapper.
+        """
         schema = SEARCH_FLIGHTS_TOOL["function"]
 
         assert schema["name"] == "search_flights"
@@ -273,13 +278,17 @@ class TestToolSchemas:
         assert "destination" in schema["parameters"]["properties"]
         assert "departure_date" in schema["parameters"]["properties"]
         assert "return_date" in schema["parameters"]["properties"]
-        assert "adults" in schema["parameters"]["properties"]
         assert "max_stops" in schema["parameters"]["properties"]
         assert "sort" in schema["parameters"]["properties"]
         assert schema["parameters"]["properties"]["departure_date"]["format"] == "date"
 
     def test_search_hotels_tool_schema(self):
-        """Test search_hotels tool schema."""
+        """Test search_hotels tool schema.
+
+        Integer-typed optional params (adults/rooms/limit/offset) are intentionally
+        omitted because Llama-3.3 sometimes emits them as strings, which Groq's
+        strict tool validation rejects. Defaults are applied in the wrapper.
+        """
         schema = SEARCH_HOTELS_TOOL["function"]
 
         assert schema["name"] == "search_hotels"
@@ -287,8 +296,6 @@ class TestToolSchemas:
         assert "city" in schema["parameters"]["properties"]
         assert "checkin" in schema["parameters"]["properties"]
         assert "checkout" in schema["parameters"]["properties"]
-        assert "adults" in schema["parameters"]["properties"]
-        assert "rooms" in schema["parameters"]["properties"]
         assert "sort" in schema["parameters"]["properties"]
         assert schema["parameters"]["properties"]["checkin"]["format"] == "date"
 

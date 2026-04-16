@@ -176,6 +176,29 @@ class TestSkiplaggedFlightSearch:
         assert result.flights == []
         assert result.total_results == 0
 
+    @pytest.mark.anyio
+    async def test_search_flights_unexpected_exception_returns_error_result(self):
+        """Non-MCP exceptions in _search_flights_page produce a failed result."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(
+            client, "_call_mcp", side_effect=RuntimeError("network gone")
+        ):
+            result = await client.search_flights(
+                "SFO", "CDG", "2026-06-15", return_date="2026-06-22"
+            )
+        assert result.success is False
+        assert result.flights == []
+        assert result.origin == "SFO"
+        assert result.destination == "CDG"
+        assert result.departure_date == "2026-06-15"
+        assert result.return_date == "2026-06-22"
+        assert result.is_round_trip is True
+        assert result.provider == "skiplagged"
+        assert result.total_results == 0
+        assert "network gone" in (result.error or "")
+
 
 class TestSkiplaggedHotelSearch:
     @pytest.mark.anyio
@@ -192,6 +215,25 @@ class TestSkiplaggedHotelSearch:
         assert len(result.hotels) == 2
         assert result.hotels[0].name == "Test Hotel 0"
         assert result.hotels[0].price_per_night == Decimal("100.0")
+
+    @pytest.mark.anyio
+    async def test_search_hotels_unexpected_exception_returns_error_result(self):
+        """Non-MCP exceptions in _search_hotels_page produce a failed result."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(
+            client, "_call_mcp", side_effect=RuntimeError("boom")
+        ):
+            result = await client.search_hotels("Paris", "2026-06-15", "2026-06-18")
+        assert result.success is False
+        assert result.hotels == []
+        assert result.city == "Paris"
+        assert result.checkin == "2026-06-15"
+        assert result.checkout == "2026-06-18"
+        assert result.provider == "skiplagged"
+        assert result.total_results == 0
+        assert "boom" in (result.error or "")
 
 
 class TestSkiplaggedPagination:
@@ -443,3 +485,84 @@ class TestSkiplaggedSseParsing:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             with pytest.raises(SkiplaggedConnectionError):
                 await client.search_flights("SFO", "CDG", "2026-06-15")
+
+    @pytest.mark.anyio
+    async def test_sse_skips_invalid_json_lines(self):
+        """Malformed `data:` lines in SSE are skipped; later valid ones win."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        valid_payload = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "structuredContent": {
+                    "flights": [],
+                    "pagination": {
+                        "totalAvailable": 0,
+                        "currentlyShowing": 0,
+                        "offset": 0,
+                        "limit": 75,
+                        "hasMoreResults": False,
+                    },
+                },
+            },
+        }
+        sse_text = (
+            "data: {not valid json\n\n"
+            f"data: {json.dumps(valid_payload)}\n\n"
+        )
+        sse_response = httpx.Response(
+            status_code=200,
+            text=sse_text,
+            headers={"content-type": "text/event-stream", "mcp-session-id": "test-session"},
+        )
+        mock_post = AsyncMock(return_value=sse_response)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_flights("SFO", "CDG", "2026-06-15")
+        assert result.success is True
+        assert result.flights == []
+
+    @pytest.mark.anyio
+    async def test_extract_result_falls_back_to_text_content(self):
+        """When `structuredContent` is absent, parse JSON from `content[].text`."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        embedded = {
+            "flights": [],
+            "pagination": {
+                "totalAvailable": 0,
+                "currentlyShowing": 0,
+                "offset": 0,
+                "limit": 75,
+                "hasMoreResults": False,
+            },
+        }
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                # No structuredContent — forces the content[] text fallback.
+                "content": [
+                    {"type": "image", "data": "ignored"},
+                    {"type": "text", "text": "{ not valid json"},
+                    {"type": "text", "text": json.dumps(embedded)},
+                ],
+            },
+        }
+        json_response = httpx.Response(
+            status_code=200,
+            text=json.dumps(payload),
+            headers={"content-type": "application/json", "mcp-session-id": "test-session"},
+        )
+        mock_post = AsyncMock(return_value=json_response)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_flights("SFO", "CDG", "2026-06-15")
+        # The valid JSON in content[1].text was returned, so we get an empty (but successful) result
+        assert result.success is True
+        assert result.flights == []
