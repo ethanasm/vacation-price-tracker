@@ -513,10 +513,10 @@ class SkiplaggedClient:
         """Internal: search one page of hotels, returning (result, pagination)."""
         params: dict[str, Any] = {
             "city": city,
-            "checkinDate": checkin,
-            "checkoutDate": checkout,
-            "adults": adults,
-            "rooms": rooms,
+            "checkin": checkin,
+            "checkout": checkout,
+            "numAdults": adults,
+            "numRooms": rooms,
             "sort": sort,
             "limit": limit,
             "offset": offset,
@@ -639,10 +639,10 @@ class SkiplaggedClient:
         """
         params: dict[str, Any] = {
             "hotelId": hotel_id,
-            "checkinDate": checkin,
-            "checkoutDate": checkout,
-            "adults": adults,
-            "rooms": rooms,
+            "checkin": checkin,
+            "checkout": checkout,
+            "numAdults": adults,
+            "numRooms": rooms,
         }
 
         response = await self._call_mcp("sk_hotel_details", params)
