@@ -7,10 +7,11 @@ export default defineConfig({
   retries: 1,
   reporter: [["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "https://localhost:3000",
+    ignoreHTTPSErrors: true,
   },
   projects: [
-    { name: "setup", testMatch: /auth\.setup\.ts/, teardown: "light" },
+    { name: "setup", testMatch: /auth\.setup\.ts/ },
     {
       name: "light",
       use: { colorScheme: "light", storageState: "./playwright/.auth/user.json" },
@@ -24,7 +25,8 @@ export default defineConfig({
   ],
   webServer: {
     command: "echo 'Assumes Docker stack is running'",
-    url: "http://localhost:3000",
+    url: "https://localhost:3000",
     reuseExistingServer: true,
+    ignoreHTTPSErrors: true,
   },
 });
