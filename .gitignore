@@ -25,3 +25,8 @@
 # mcp-review
 .mcp-review-history.json
 .mcp-review-cache
+
+# Playwright
+apps/web/playwright/
+apps/web/playwright-report/
+apps/web/test-results/

@@ -183,6 +183,44 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     return response
 
 
+@router.post("/v1/auth/test-login")
+async def test_login(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Test-only login. Creates a test user and sets JWT cookie.
+    Only available when ENVIRONMENT=test.
+    """
+    from fastapi import HTTPException
+
+    if settings.environment != "test":
+        raise HTTPException(status_code=403, detail="Test login only available in test environment")
+
+    # Find or create test user
+    test_google_sub = "test-user-000"
+    result = await db.execute(select(User).where(User.google_sub == test_google_sub))
+    user = result.scalars().first()
+    if not user:
+        user = User(
+            google_sub=test_google_sub,
+            email="test@example.com",
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    # Create access and refresh tokens
+    jwt_data = _build_jwt_data(user.id)
+    access_token = create_access_token(data=jwt_data)
+    refresh_token = create_refresh_token(data=jwt_data)
+
+    # Store refresh token
+    await _store_refresh_token(user.id, refresh_token)
+
+    _set_auth_cookies(response, access_token, refresh_token)
+    return {"id": str(user.id), "email": user.email}
+
+
 @router.get("/v1/auth/me", response_model=UserResponse)
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     """Returns the current authenticated user's info."""
