@@ -1,12 +1,14 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Trip Creation and Price Refresh", () => {
-  test("creates a trip, refreshes prices, and shows results", async ({ page }) => {
+  test("creates a trip, refreshes prices, and shows results", async ({ page }, testInfo) => {
     // Navigate to create trip
     await page.goto("/trips/new");
 
-    // Fill trip name (input#name)
-    await page.locator("#name").fill("Paris Vacation E2E");
+    // Use a unique trip name per run/project so the (user_id, name) unique
+    // constraint doesn't cause 409 Conflict between light/dark projects or repeats.
+    const tripName = `Paris E2E ${testInfo.project.name} ${Date.now()}`;
+    await page.locator("#name").fill(tripName);
 
     // Fill origin airport using the autocomplete (input inside the origin section)
     const originInput = page.locator("#origin");
@@ -27,25 +29,18 @@ test.describe("Trip Creation and Price Refresh", () => {
       await destOption.click();
     }
 
-    // Select departure date via the DatePicker button (Departure Date section)
-    const departureDateBtn = page.getByRole("button", { name: /select departure/i });
-    await departureDateBtn.click();
-    // Click a future date in the calendar (find any date cell with a number)
-    await page.locator("[role='gridcell'] button:not([disabled])").first().click();
-
-    // Select return date
-    const returnDateBtn = page.getByRole("button", { name: /select return/i });
-    await returnDateBtn.click();
-    await page.locator("[role='gridcell'] button:not([disabled])").last().click();
+    // Departure/Return dates are pre-filled with sensible defaults (tomorrow / +8 days),
+    // so we don't need to interact with the date pickers. The test focuses on
+    // trip creation + refresh, not date picking UX.
 
     // Submit the form
     await page.getByRole("button", { name: /create trip/i }).click();
 
-    // Should redirect to trips page after successful creation
-    await expect(page).toHaveURL(/\/trips/, { timeout: 15_000 });
+    // Should redirect to /trips list after successful creation
+    await expect(page).toHaveURL(/\/trips$/, { timeout: 15_000 });
 
-    // The new trip should appear in the list — click it to navigate to detail
-    const tripLink = page.locator("a[href*='/trips/']").first();
+    // The new trip should appear in the list — find by its unique name and click
+    const tripLink = page.getByRole("link", { name: tripName });
     await expect(tripLink).toBeVisible({ timeout: 10_000 });
     await tripLink.click();
 
