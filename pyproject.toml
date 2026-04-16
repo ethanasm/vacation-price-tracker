@@ -9,7 +9,7 @@ dependencies = [
     "asyncpg",
     "alembic",
     "temporalio",
-    "authlib",
+    "authlib>=1.6.9",
     "httpx",
     "python-jose[cryptography]",
     "uvicorn",
@@ -17,7 +17,12 @@ dependencies = [
     "pydantic-settings",
     "greenlet",
     "itsdangerous",
-    "pyasn1>=0.6.2",
+    "pyasn1>=0.6.3",
+    # Pinned for known CVEs (transitive); see `pnpm verify` audit step
+    "cryptography>=46.0.7",
+    "ecdsa>=0.19.2",
+    "pygments>=2.20.0",
+    "requests>=2.33.0",
     "fast-flights>=0.5.0",
     "groq>=0.11.0",
     "tiktoken>=0.7.0",
@@ -25,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
+    "pytest>=9.0.3",
     "pytest-asyncio",
     "pytest-cov",
     "aiosqlite",

@@ -43,10 +43,10 @@ fi
 echo ""
 echo "${PURPLE}${BOLD}━━━ Step 3: Security Audits ━━━${NC}"
 
-pnpm audit --prod
+pnpm audit --prod --ignore-registry-errors
 AUDIT_NPM=$?
 
-uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703 --skip-editable
+uv run pip-audit --skip-editable
 AUDIT_PIP=$?
 
 if [ $AUDIT_NPM -ne 0 ] || [ $AUDIT_PIP -ne 0 ]; then

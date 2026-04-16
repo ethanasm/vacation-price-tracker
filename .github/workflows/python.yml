@@ -97,4 +97,4 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run pip-audit
-        run: uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703
+        run: uv run pip-audit

@@ -90,16 +90,20 @@ jobs:
         if: steps.filter.outputs.web == 'true'
         run: pnpm install --frozen-lockfile
 
+      # `--ignore-registry-errors` exits 0 when the audit endpoint itself
+      # errors. The legacy npm audit endpoint that pnpm uses returns 410 since
+      # npm retired it in favour of the bulk advisory endpoint; until pnpm
+      # migrates we tolerate registry errors so CI is not permanently red.
       - name: Run pnpm audit
         if: steps.filter.outputs.web == 'true'
         working-directory: apps/web
-        run: pnpm audit --audit-level=moderate
+        run: pnpm audit --audit-level=moderate --ignore-registry-errors
         continue-on-error: true
 
       - name: Run pnpm audit (production only)
         if: steps.filter.outputs.web == 'true'
         working-directory: apps/web
-        run: pnpm audit --prod
+        run: pnpm audit --prod --ignore-registry-errors
 
       - name: Skip message
         if: steps.filter.outputs.web != 'true'
