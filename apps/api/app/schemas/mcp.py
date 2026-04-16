@@ -280,43 +280,20 @@ DELETE_TRIP_TOOL = _make_tool(
 # Search Tools
 # -----------------------------------------------------------------------------
 
-SEARCH_AIRPORTS_TOOL = _make_tool(
-    name="search_airports",
+SEARCH_FLIGHTS_TOOL = _make_tool(
+    name="search_flights",
     description=(
-        "Search for airports by city name, airport name, or IATA code. "
-        "Use this to help users find the correct airport codes."
+        "Search for flights between airports. "
+        "Returns airline names, flight numbers, prices, durations, stops, and booking links."
     ),
     parameters={
-        "query": {
+        "origin": {
             "type": "string",
-            "description": "Search query (city name, airport name, or IATA code)",
-            "minLength": 2,
+            "description": "Origin airport IATA code (e.g., 'SFO', 'JFK')",
         },
-    },
-    required=["query"],
-)
-
-
-SEARCH_FLIGHTS_KIWI_TOOL = _make_tool(
-    name="search_flights_kiwi",
-    description=(
-        "Search for flights using Kiwi.com. "
-        "Optimized for finding the cheapest prices and creative routing "
-        "with detailed layover information. "
-        "Use when the user wants the lowest price or flexible routing options. "
-        "NOTE: Does NOT provide airline names or carrier codes "
-        "(use search_flights_amadeus for airline details). "
-        "Returns prices, layover details, duration, and booking links. "
-        "IMPORTANT: Always pass currency='USD' unless the user explicitly requests a different currency."
-    ),
-    parameters={
-        "fly_from": {
+        "destination": {
             "type": "string",
-            "description": "Origin airport/city (IATA code or city name, e.g., 'MXP', 'Milan')",
-        },
-        "fly_to": {
-            "type": "string",
-            "description": "Destination airport/city (IATA code or city name, e.g., 'LGW', 'London')",
+            "description": "Destination airport IATA code (e.g., 'CDG', 'LHR')",
         },
         "departure_date": {
             "type": "string",
@@ -334,12 +311,83 @@ SEARCH_FLIGHTS_KIWI_TOOL = _make_tool(
             "minimum": 1,
             "maximum": 9,
         },
-        "currency": {
+        "max_stops": {
             "type": "string",
-            "description": "Currency code for prices (always use 'USD' unless user requests otherwise)",
+            "description": "Maximum stops filter (optional)",
+            "enum": ["none", "one", "many"],
+        },
+        "sort": {
+            "type": "string",
+            "description": "Sort order (default: 'value')",
+            "enum": ["price", "duration", "value"],
+        },
+        "limit": {
+            "type": "integer",
+            "description": "Maximum results per page (default: 75)",
+            "minimum": 1,
+            "maximum": 300,
+        },
+        "offset": {
+            "type": "integer",
+            "description": "Pagination offset (default: 0)",
+            "minimum": 0,
         },
     },
-    required=["fly_from", "fly_to", "departure_date"],
+    required=["origin", "destination", "departure_date"],
+)
+
+
+SEARCH_HOTELS_TOOL = _make_tool(
+    name="search_hotels",
+    description=(
+        "Search for hotels in a city. "
+        "Returns hotel name, star rating, review score, nightly price, amenities, and booking links."
+    ),
+    parameters={
+        "city": {
+            "type": "string",
+            "description": "City name (e.g., 'Paris', 'Tokyo')",
+        },
+        "checkin": {
+            "type": "string",
+            "description": "Check-in date in YYYY-MM-DD format",
+            "format": "date",
+        },
+        "checkout": {
+            "type": "string",
+            "description": "Check-out date in YYYY-MM-DD format",
+            "format": "date",
+        },
+        "adults": {
+            "type": "integer",
+            "description": "Number of adult guests per room (default: 2)",
+            "minimum": 1,
+            "maximum": 9,
+        },
+        "rooms": {
+            "type": "integer",
+            "description": "Number of rooms (default: 1)",
+            "minimum": 1,
+            "maximum": 9,
+        },
+        "sort": {
+            "type": "string",
+            "description": "Sort order (default: 'value')",
+            "enum": ["price", "ranking", "value"],
+        },
+        "limit": {
+            "type": "integer",
+            "description": "Maximum results per page (default: 75)",
+            "minimum": 1,
+            "maximum": 300,
+        },
+        "offset": {
+            "type": "integer",
+            "description": "Pagination offset (default: 0)",
+            "minimum": 0,
+        },
+    },
+    required=["city", "checkin", "checkout"],
 )
 
 
@@ -358,8 +406,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     REFRESH_ALL_TRIP_PRICES_TOOL,
     REFRESH_TRIP_PRICES_TOOL,
     DELETE_TRIP_TOOL,
-    SEARCH_AIRPORTS_TOOL,
-    SEARCH_FLIGHTS_KIWI_TOOL,
+    SEARCH_FLIGHTS_TOOL,
+    SEARCH_HOTELS_TOOL,
 ]
 
 # Tool name to schema mapping for validation
