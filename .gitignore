@@ -6,8 +6,10 @@
 /apps/web/node_modules
 /apps/web/.next
 /apps/web/.pnpm-store
-/apps/api/*/*/__pycache__
-/apps/api/*/__pycache__
+# Python bytecode (anywhere in the tree)
+__pycache__/
+*.pyc
+*.pyo
 /.scannerwork
 .DS_Store
 
