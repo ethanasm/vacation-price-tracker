@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.clients.amadeus import AmadeusClient, AmadeusClientError
-from app.clients.amadeus_mock import mock_flight_search, mock_hotel_search
-from app.clients.flight_provider import get_provider_name
+from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
+from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
+from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
@@ -28,29 +28,8 @@ VIEW_KEYWORDS = {
 PRICE_FIELDS = ("price", "total_price", "amount")
 NESTED_PRICE_FIELDS = ("total", "total_price", "amount", "grandTotal", "base")
 
-# Cabin class mapping from internal format to Amadeus API format
-CABIN_CLASS_MAP = {
-    "economy": "ECONOMY",
-    "premium_economy": "PREMIUM_ECONOMY",
-    "business": "BUSINESS",
-    "first": "FIRST",
-}
-
-# Flight provider is lazily initialized to avoid import errors when fast-flights isn't installed
-_flight_provider = None
-
-
-def _get_flight_provider():
-    """Lazily get the flight provider to avoid import errors at module load time."""
-    global _flight_provider
-    if _flight_provider is None:
-        from app.clients.flight_provider import get_flight_provider
-        _flight_provider = get_flight_provider()
-    return _flight_provider
-
-
-# Amadeus HTTP client for hotel searches
-_amadeus_client = AmadeusClient()
+# Maximum number of hotels to fetch full details for (avoids API abuse)
+MAX_HOTEL_DETAIL_CALLS = 20
 
 
 @activity.defn
@@ -95,132 +74,233 @@ async def load_trip_details(trip_id: str) -> TripDetails:
 
 @activity.defn
 async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
-    """Fetch flight offers from configured flight provider or mock data."""
-    travel_class = _map_cabin_class(trip["flight_prefs"]["cabin"])
-    non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
-    provider_name = get_provider_name()
-
-    # Use mock data if configured (only for Amadeus provider)
-    if settings.mock_amadeus_api and provider_name == "amadeus":
-        logger.info("Using mock Amadeus flights for trip_id=%s", trip["trip_id"])
+    """Fetch flight offers from Skiplagged MCP or mock data."""
+    # Use mock data if configured
+    if settings.mock_skiplagged_api:
+        logger.info("Using mock Skiplagged flights for trip_id=%s", trip["trip_id"])
+        non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
+        max_stops = "none" if non_stop else None
         response = mock_flight_search(
             origin=trip["origin_airport"],
             destination=trip["destination_code"],
             departure_date=trip["depart_date"],
             return_date=trip["return_date"] if trip["is_round_trip"] else None,
             adults=trip["adults"],
-            travel_class=travel_class,
-            non_stop=non_stop,
+            max_stops=max_stops,
         )
-        offers = _extract_offers(response)
+        # mock_flight_search returns raw Skiplagged-shaped dict; normalize to offers
+        offers = _extract_skiplagged_flight_offers(response)
         return {
             "offers": offers,
-            "raw": _normalize_raw(response, "amadeus_mock"),
+            "raw": _normalize_raw(response, "skiplagged_mock"),
             "error": None,
         }
 
-    # Use configured flight provider
-    logger.info(
-        "Fetching flights for trip_id=%s via %s provider",
-        trip["trip_id"],
-        provider_name,
-    )
+    logger.info("Fetching flights for trip_id=%s via Skiplagged MCP", trip["trip_id"])
+    non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
+    max_stops = "none" if non_stop else None
+
     try:
-        response = await _get_flight_provider().search_flights(
+        client = SkiplaggedClient()
+        result = await client.search_flights_all(
             origin=trip["origin_airport"],
             destination=trip["destination_code"],
             departure_date=trip["depart_date"],
             return_date=trip["return_date"] if trip["is_round_trip"] else None,
             adults=trip["adults"],
-            travel_class=travel_class,
-            non_stop=non_stop,
+            max_stops=max_stops,
+            max_pages=4,
         )
-    except AmadeusClientError as exc:
+    except SkiplaggedMCPError as exc:
         logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
             "offers": [],
-            "raw": {"status": "error", "provider": provider_name},
+            "raw": {"status": "error", "provider": "skiplagged"},
             "error": str(exc),
         }
     except Exception as exc:
-        # Catch errors from other providers (e.g., GoogleFlightsError)
-        logger.warning(
-            "Flight fetch failed for trip_id=%s (provider=%s)",
-            trip["trip_id"],
-            provider_name,
-            exc_info=exc,
-        )
+        logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
             "offers": [],
-            "raw": {"status": "error", "provider": provider_name},
+            "raw": {"status": "error", "provider": "skiplagged"},
             "error": str(exc),
         }
 
-    offers = _extract_offers(response)
-    logger.info(
-        "Fetched %d flight offers for trip_id=%s via %s",
-        len(offers),
-        trip["trip_id"],
-        provider_name,
-    )
+    # Normalize FlightSearchResult to list of offer dicts
+    offers = [_flight_to_offer_dict(flight) for flight in result.flights]
+    logger.info("Fetched %d flight offers for trip_id=%s via Skiplagged", len(offers), trip["trip_id"])
     return {
         "offers": offers,
-        "raw": _normalize_raw(response, provider_name),
+        "raw": {"provider": "skiplagged", "total_results": result.total_results},
         "error": None,
     }
 
 
-def _map_cabin_class(cabin: str) -> str:
-    """Map internal cabin class to Amadeus travelClass parameter."""
-    return CABIN_CLASS_MAP.get(cabin.lower(), "ECONOMY")
+def _flight_to_offer_dict(flight: Any) -> dict[str, Any]:
+    """Convert a FlightSearchFlight to a normalized offer dict."""
+    return {
+        "id": flight.raw_data.get("id") if flight.raw_data else None,
+        "airlines": flight.airline_name,
+        "carrier_code": flight.carrier_code,
+        "departure_airport": flight.departure_airport,
+        "arrival_airport": flight.arrival_airport,
+        "departure_time": flight.departure_time.isoformat() if flight.departure_time else None,
+        "arrival_time": flight.arrival_time.isoformat() if flight.arrival_time else None,
+        "duration_minutes": flight.duration_minutes,
+        "stops": flight.stops,
+        "price": str(flight.price_amount) if flight.price_amount is not None else None,
+        "price_currency": flight.price_currency,
+        "booking_link": flight.booking_link,
+        "provider": "skiplagged",
+        # Keep raw for downstream use
+        **(flight.raw_data or {}),
+    }
+
+
+def _extract_skiplagged_flight_offers(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract flight list from a raw Skiplagged mock response dict."""
+    flights_raw = response.get("flights", [])
+    return [f for f in flights_raw if isinstance(f, dict)]
 
 
 @activity.defn
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
-    """Fetch hotel offers from Amadeus HTTP API or mock data."""
-    if settings.mock_amadeus_api:
-        logger.info("Using mock Amadeus hotels for trip_id=%s", trip["trip_id"])
+    """Fetch hotel offers from Skiplagged MCP or mock data."""
+    if settings.mock_skiplagged_api:
+        logger.info("Using mock Skiplagged hotels for trip_id=%s", trip["trip_id"])
         adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
         response = mock_hotel_search(
-            city_code=trip["destination_code"],
-            check_in_date=trip["depart_date"],
-            check_out_date=trip["return_date"],
+            city=trip["destination_code"],
+            checkin=trip["depart_date"],
+            checkout=trip["return_date"],
             adults=adults,
             rooms=trip["hotel_prefs"]["rooms"],
         )
-        offers = _extract_offers(response)
+        offers = _extract_skiplagged_hotel_offers(response)
         return {
             "offers": offers,
-            "raw": _normalize_raw(response, "amadeus_mock"),
+            "raw": _normalize_raw(response, "skiplagged_mock"),
             "error": None,
         }
 
-    logger.info("Fetching hotels for trip_id=%s via Amadeus HTTP", trip["trip_id"])
+    logger.info("Fetching hotels for trip_id=%s via Skiplagged MCP", trip["trip_id"])
     adults = trip["hotel_prefs"]["adults_per_room"]
 
     try:
-        response = await _amadeus_client.search_hotels(
-            city_code=trip["destination_code"],
-            check_in_date=trip["depart_date"],
-            check_out_date=trip["return_date"],
+        client = SkiplaggedClient()
+        hotel_result = await client.search_hotels_all(
+            city=trip["destination_code"],
+            checkin=trip["depart_date"],
+            checkout=trip["return_date"],
             adults=adults,
             rooms=trip["hotel_prefs"]["rooms"],
+            max_pages=4,
         )
-    except AmadeusClientError as exc:
-        logger.warning("Hotel fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
+    except SkiplaggedMCPError as exc:
+        logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
         return {
             "offers": [],
-            "raw": {"status": "error", "provider": "amadeus"},
+            "raw": {"status": "error", "provider": "skiplagged"},
+            "error": str(exc),
+        }
+    except Exception as exc:
+        logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
+        return {
+            "offers": [],
+            "raw": {"status": "error", "provider": "skiplagged"},
             "error": str(exc),
         }
 
-    offers = _extract_offers(response)
+    # Sort by price ascending and cap at MAX_HOTEL_DETAIL_CALLS
+    sorted_hotels = sorted(hotel_result.hotels, key=lambda h: h.price_per_night)
+    top_hotels = sorted_hotels[:MAX_HOTEL_DETAIL_CALLS]
+
+    logger.info(
+        "Fetching details for %d/%d hotels for trip_id=%s",
+        len(top_hotels),
+        len(hotel_result.hotels),
+        trip["trip_id"],
+    )
+
+    # Fetch details for each hotel
+    offers: list[dict[str, Any]] = []
+    for hotel in top_hotels:
+        try:
+            detail = await client.get_hotel_details(
+                hotel_id=hotel.id,
+                checkin=trip["depart_date"],
+                checkout=trip["return_date"],
+                adults=adults,
+                rooms=trip["hotel_prefs"]["rooms"],
+            )
+            offers.append(_normalize_hotel_detail(detail, hotel))
+        except Exception as exc:
+            logger.warning("Failed to get details for hotel_id=%s: %s", hotel.id, exc)
+            # Fall back to search-level data
+            offers.append(_hotel_to_offer_dict(hotel))
+
     logger.info("Fetched %d hotel offers for trip_id=%s", len(offers), trip["trip_id"])
     return {
         "offers": offers,
-        "raw": _normalize_raw(response, "amadeus"),
+        "raw": {"provider": "skiplagged", "total_results": hotel_result.total_results},
         "error": None,
     }
+
+
+def _normalize_hotel_detail(detail: Any, hotel: Any) -> dict[str, Any]:
+    """Normalize SkiplaggedHotelDetail + HotelSearchHotel to offer dict."""
+    rooms = [
+        {
+            "id": room.id,
+            "title": room.title,
+            "occupancy_limit": room.occupancyLimit,
+            "price_per_night": room.pricePerNightInDollars,
+            "price_total": room.totalPriceInDollars,
+            "taxes_and_fees": room.taxesAndFeesInDollars,
+            "currency": room.currency,
+            "refundable": room.refundable,
+            "free_cancellation": room.freeCancellation,
+            "bed_types": room.bedTypes,
+            "booking_link": room.bookingLink,
+        }
+        for room in (detail.rooms or [])
+    ]
+    cheapest_room_price = min((r["price_total"] for r in rooms), default=None)
+
+    return {
+        "id": detail.hotelId,
+        "name": detail.hotelName,
+        "star_rating": detail.starRating,
+        "review_rating": detail.reviewRating,
+        "review_count": detail.reviewCount,
+        "price": cheapest_room_price or detail.totalPriceInDollars,
+        "total_price": detail.totalPriceInDollars,
+        "amenities": detail.amenityNames,
+        "address": detail.address,
+        "city": detail.cityName,
+        "description": detail.description,
+        "rooms": rooms,
+        "provider": "skiplagged",
+    }
+
+
+def _hotel_to_offer_dict(hotel: Any) -> dict[str, Any]:
+    """Convert HotelSearchHotel (no detail) to offer dict."""
+    return {
+        "id": hotel.id,
+        "name": hotel.name,
+        "star_rating": hotel.star_rating,
+        "price": float(hotel.price_per_night),
+        "amenities": hotel.amenities,
+        "rooms": [],
+        "provider": "skiplagged",
+    }
+
+
+def _extract_skiplagged_hotel_offers(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract hotel list from a raw Skiplagged mock response dict."""
+    results_raw = response.get("results", [])
+    return [h for h in results_raw if isinstance(h, dict)]
 
 
 @activity.defn
@@ -326,24 +406,25 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
 def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
     """Extract all carrier codes from a flight offer.
 
-    Supports both Amadeus format (validatingAirlineCodes, itineraries.segments.carrierCode)
+    Supports Skiplagged format (flight id field with trip= segments)
     and legacy formats (carrier, operating_carrier, airline).
     """
     carrier_codes: list[str] = []
 
-    # Amadeus format: validatingAirlineCodes array
-    validating_codes = flight.get("validatingAirlineCodes", [])
-    if isinstance(validating_codes, list):
-        carrier_codes.extend([str(code).upper() for code in validating_codes])
+    # Skiplagged format: parse from flight id field
+    flight_id = flight.get("id", "")
+    if flight_id and "trip=" in flight_id:
+        outbound_segs, return_segs = parse_flight_segments(flight_id)
+        for seg in outbound_segs + return_segs:
+            code = seg.carrier_code.upper()
+            if code not in carrier_codes:
+                carrier_codes.append(code)
+        return carrier_codes
 
-    # Amadeus format: extract from itinerary segments
-    for itinerary in flight.get("itineraries", []):
-        for segment in itinerary.get("segments", []):
-            if segment.get("carrierCode"):
-                carrier_codes.append(str(segment["carrierCode"]).upper())
-            operating = segment.get("operating", {})
-            if operating.get("carrierCode"):
-                carrier_codes.append(str(operating["carrierCode"]).upper())
+    # Legacy format: carrier_code field (from normalized offer dict)
+    carrier_code = flight.get("carrier_code")
+    if carrier_code:
+        carrier_codes.append(str(carrier_code).upper())
 
     # Legacy format fallback
     if not carrier_codes:
@@ -366,16 +447,64 @@ def _filter_flights(flights: list[dict[str, Any]], prefs: dict[str, Any]) -> lis
 
 
 def _filter_hotels(hotels: list[dict[str, Any]], prefs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Filter hotels by preferred room types and views.
+
+    Matches against:
+    - room 'title' field in hotel['rooms'] list for room types
+    - room 'title' field and hotel 'amenities' for views
+    """
     filtered = hotels
+
     preferred_room_types = [t.lower() for t in prefs.get("preferred_room_types", []) if isinstance(t, str)]
     if preferred_room_types:
-        filtered = [room for room in filtered if _matches_keywords(room.get("description"), preferred_room_types)]
+        filtered = [
+            hotel for hotel in filtered
+            if _hotel_matches_room_types(hotel, preferred_room_types)
+        ]
 
     preferred_views = [v.lower() for v in prefs.get("preferred_views", []) if isinstance(v, str)]
     if preferred_views:
-        filtered = [room for room in filtered if _matches_view(room.get("description"), preferred_views)]
+        filtered = [
+            hotel for hotel in filtered
+            if _hotel_matches_views(hotel, preferred_views)
+        ]
 
     return filtered
+
+
+def _hotel_matches_room_types(hotel: dict[str, Any], preferred_types: list[str]) -> bool:
+    """Check if any room title in the hotel matches preferred room types."""
+    rooms = hotel.get("rooms", [])
+    if not rooms:
+        return False
+    for room in rooms:
+        title = room.get("title", "")
+        if title and _matches_keywords(title, preferred_types):
+            return True
+    return False
+
+
+def _hotel_matches_views(hotel: dict[str, Any], preferred_views: list[str]) -> bool:
+    """Check if hotel has a matching view via room titles or amenities."""
+    # Check room titles
+    rooms = hotel.get("rooms", [])
+    for room in rooms:
+        title = room.get("title", "")
+        if title and _matches_view(title, preferred_views):
+            return True
+
+    # Check amenities list
+    amenities = hotel.get("amenities", [])
+    for amenity in amenities:
+        if _matches_view(str(amenity), preferred_views):
+            return True
+
+    # Check description field if present
+    description = hotel.get("description")
+    if description and _matches_view(description, preferred_views):
+        return True
+
+    return False
 
 
 def _matches_keywords(description: Any, keywords: list[str]) -> bool:
