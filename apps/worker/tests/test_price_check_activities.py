@@ -128,86 +128,163 @@ async def test_load_trip_details_not_found(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_mock_mode(monkeypatch):
-    """Test that mock mode returns mock data without calling the API."""
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", True)
+    """Test that mock mode returns mock data without calling the Skiplagged API."""
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", True)
     result = await pc.fetch_flights_activity(_trip_details())
 
     assert len(result["offers"]) > 0
     assert result["error"] is None
-    assert result["raw"]["provider"] == "amadeus_mock"
+    assert result["raw"]["provider"] == "skiplagged_mock"
 
 
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_success(monkeypatch):
-    """Test successful flight search via configured flight provider."""
+    """Test successful flight search via Skiplagged client."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
 
-    class DummyClient:
-        async def search_flights(self, **_kwargs):
-            return {"data": [{"price": {"total": "199.99"}, "validatingAirlineCodes": ["UA"]}]}
+    from app.schemas.flight_search import FlightSearchFlight, FlightSearchResult
 
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "_flight_provider", DummyClient())
-    result = await pc.fetch_flights_activity(_trip_details())
+    mock_flight = FlightSearchFlight(
+        departure_airport="SFO",
+        arrival_airport="MCO",
+        price_amount=Decimal("199.99"),
+        price_currency="USD",
+        price_display="$199.99 USD",
+        provider="skiplagged",
+        raw_data={"id": "SFO-MCO-2026-02-01-trip=UA200"},
+    )
+    mock_result = FlightSearchResult(
+        flights=[mock_flight],
+        origin="SFO",
+        destination="MCO",
+        departure_date="2026-02-01",
+        return_date="2026-02-08",
+        is_round_trip=True,
+        provider="skiplagged",
+        total_results=1,
+        currency="USD",
+        success=True,
+        error=None,
+    )
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(return_value=mock_result)
 
-    assert result["offers"][0]["price"]["total"] == "199.99"
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_flights_activity(_trip_details())
+
+    assert len(result["offers"]) == 1
+    assert result["offers"][0]["price"] == "199.99"
     assert result["error"] is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_error(monkeypatch):
-    """Test error handling when flight provider fails."""
+    """Test error handling when Skiplagged client fails."""
+    from unittest.mock import AsyncMock, patch
 
-    class DummyClient:
-        async def search_flights(self, **_kwargs):
-            raise pc.AmadeusClientError("API error")
+    from app.clients.skiplagged import SkiplaggedConnectionError
 
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "_flight_provider", DummyClient())
-    result = await pc.fetch_flights_activity(_trip_details())
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("API error"))
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_flights_activity(_trip_details())
 
     assert result["error"] == "API error"
+    assert result["offers"] == []
 
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_success(monkeypatch):
-    """Test successful hotel search via Amadeus HTTP client."""
+    """Test successful hotel search via Skiplagged client."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
 
-    class DummyClient:
-        async def search_hotels(self, **_kwargs):
-            return {"data": [{"price": {"total": "499.99"}, "description": "Ocean view suite"}]}
+    from app.schemas.hotel_search import HotelSearchHotel, HotelSearchResult
+    from app.schemas.skiplagged import SkiplaggedHotelDetail, SkiplaggedRoom
 
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "_amadeus_client", DummyClient())
-    result = await pc.fetch_hotels_activity(_trip_details())
+    hotels = [
+        HotelSearchHotel(
+            id="hotel_1",
+            name="Ocean View Hotel",
+            price_per_night=Decimal("499.99"),
+            price_currency="USD",
+            provider="skiplagged",
+        )
+    ]
+    mock_hotel_result = HotelSearchResult(
+        hotels=hotels,
+        city="MCO",
+        checkin="2026-02-01",
+        checkout="2026-02-08",
+        total_results=1,
+        success=True,
+    )
+    mock_detail = SkiplaggedHotelDetail(
+        hotelId="hotel_1",
+        hotelName="Ocean View Hotel",
+        totalPriceInDollars=499.99,
+        checkinDate="2026-02-01",
+        checkoutDate="2026-02-08",
+        rooms=[
+            SkiplaggedRoom(
+                id="r1",
+                title="Ocean View Suite",
+                occupancyLimit=2,
+                pricePerNightInDollars=499.99,
+                totalPriceInDollars=3499.93,
+                taxesAndFeesInDollars=350.0,
+                currency="USD",
+                refundable=True,
+                freeCancellation=True,
+                bookingLink="https://example.com",
+            )
+        ],
+    )
 
-    assert result["offers"][0]["price"]["total"] == "499.99"
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(return_value=mock_hotel_result)
+    mock_client.get_hotel_details = AsyncMock(return_value=mock_detail)
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(_trip_details())
+
+    assert len(result["offers"]) == 1
+    assert result["offers"][0]["name"] == "Ocean View Hotel"
     assert result["error"] is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_error(monkeypatch):
-    """Test error handling when Amadeus HTTP client fails."""
+    """Test error handling when Skiplagged hotel search fails."""
+    from unittest.mock import AsyncMock, patch
 
-    class DummyClient:
-        async def search_hotels(self, **_kwargs):
-            raise pc.AmadeusClientError("API error")
+    from app.clients.skiplagged import SkiplaggedConnectionError
 
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", False)
-    monkeypatch.setattr(pc, "_amadeus_client", DummyClient())
-    result = await pc.fetch_hotels_activity(_trip_details())
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(side_effect=SkiplaggedConnectionError("API error"))
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(_trip_details())
 
     assert result["error"] == "API error"
+    assert result["offers"] == []
 
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_mock_mode(monkeypatch):
-    """Test that mock mode returns mock data without calling the API."""
-    monkeypatch.setattr(pc.settings, "mock_amadeus_api", True)
+    """Test that mock mode returns mock data without calling the Skiplagged API."""
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", True)
     result = await pc.fetch_hotels_activity(_trip_details())
 
     assert len(result["offers"]) > 0
     assert result["error"] is None
-    assert result["raw"]["provider"] == "amadeus_mock"
+    assert result["raw"]["provider"] == "skiplagged_mock"
 
 
 @pytest.mark.asyncio
@@ -372,9 +449,18 @@ def test_filter_helpers_and_price_extraction():
         {"carrier": ["AA", "DL"], "price": "140"},
         {"price": "160"},
     ]
+    # Skiplagged hotel format: filtering by room titles
     hotels = [
-        {"description": "Ocean view suite", "price": {"total": "300"}},
-        {"description": "Garden room", "price": {"total": "200"}},
+        {
+            "rooms": [{"title": "Ocean View Suite"}, {"title": "Standard Room"}],
+            "amenities": ["Pool"],
+            "price": {"total": "300"},
+        },
+        {
+            "rooms": [{"title": "Garden Room"}],
+            "amenities": ["Gym"],
+            "price": {"total": "200"},
+        },
     ]
     flight_prefs = {"airlines": ["UA"]}
     hotel_prefs = {"preferred_room_types": ["Suite"], "preferred_views": ["Ocean"]}
@@ -395,16 +481,260 @@ def test_filter_helpers_and_price_extraction():
     assert pc._extract_offers({"data": {"offers": [{"price": "75"}]}})[0]["price"] == "75"
     assert pc._extract_offers({"data": {"note": "none"}}) == []
     assert pc._extract_offers("bad") == []
-    assert pc._normalize_raw([{"ok": True}], "kiwi")["provider"] == "kiwi"
-    assert pc._normalize_raw("raw", "kiwi")["response"] == "raw"
+    assert pc._normalize_raw([{"ok": True}], "skiplagged")["provider"] == "skiplagged"
+    assert pc._normalize_raw("raw", "skiplagged")["response"] == "raw"
     assert pc._matches_keywords(None, ["suite"]) is False
     assert pc._matches_view("standard room", ["ocean"]) is False
     assert pc._matches_view(None, ["ocean"]) is False
     assert pc._to_decimal(None) is None
     assert pc._to_decimal("nope") is None
-    # Amadeus V3 hotel-offers nested price extraction
-    v3_hotel = {"hotel": {"name": "Test"}, "offers": [{"price": {"total": "289.00"}}]}
-    assert pc._extract_price_value(v3_hotel) == Decimal("289.00")
-    assert pc._extract_min_price([v3_hotel]) == Decimal("289.00")
+    # Nested price extraction (offers array)
+    nested_hotel = {"hotel": {"name": "Test"}, "offers": [{"price": {"total": "289.00"}}]}
+    assert pc._extract_price_value(nested_hotel) == Decimal("289.00")
+    assert pc._extract_min_price([nested_hotel]) == Decimal("289.00")
     # No offers array
     assert pc._extract_price_value({"hotel": {"name": "Test"}}) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 9: fetch_flights_activity uses SkiplaggedClient
+# ---------------------------------------------------------------------------
+
+sample_trip_details = _trip_details()
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_uses_skiplagged(monkeypatch):
+    """Verify fetch_flights_activity calls SkiplaggedClient.search_flights_all."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.flight_search import FlightSearchResult
+
+    mock_result = FlightSearchResult(
+        flights=[],
+        origin="SFO",
+        destination="CDG",
+        departure_date="2026-06-15",
+        return_date="2026-06-22",
+        is_round_trip=True,
+        provider="skiplagged",
+        total_results=0,
+        currency="USD",
+        success=True,
+        error=None,
+    )
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(return_value=mock_result)
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        await pc.fetch_flights_activity(sample_trip_details)
+
+    mock_client.search_flights_all.assert_called_once()
+    call_kwargs = mock_client.search_flights_all.call_args
+    assert call_kwargs.kwargs.get("max_pages") == 4 or (
+        call_kwargs[1].get("max_pages") == 4 if call_kwargs[1] else False
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_skiplagged_error(monkeypatch):
+    """Verify fetch_flights_activity handles SkiplaggedClient errors gracefully."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.clients.skiplagged import SkiplaggedConnectionError
+
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("connection refused"))
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_flights_activity(sample_trip_details)
+
+    assert result["error"] is not None
+    assert "connection refused" in result["error"]
+    assert result["offers"] == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_mock_mode_skiplagged(monkeypatch):
+    """Verify mock mode returns mock data when mock_skiplagged_api is True."""
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", True)
+    result = await pc.fetch_flights_activity(sample_trip_details)
+
+    assert len(result["offers"]) > 0
+    assert result["error"] is None
+    assert result["raw"]["provider"] == "skiplagged_mock"
+
+
+# ---------------------------------------------------------------------------
+# Task 10: fetch_hotels_activity uses SkiplaggedClient with details cap at 20
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_uses_skiplagged_with_details(monkeypatch):
+    """Verify fetch_hotels_activity calls search_hotels_all then get_hotel_details for top 20."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.hotel_search import HotelSearchHotel, HotelSearchResult
+    from app.schemas.skiplagged import SkiplaggedHotelDetail, SkiplaggedRoom
+
+    # Create 25 mock hotels (should only detail-check top 20)
+    hotels = [
+        HotelSearchHotel(
+            id=f"hotel_{i}",
+            name=f"Hotel {i}",
+            price_per_night=Decimal(str(50 + i * 10)),
+            price_currency="USD",
+            provider="skiplagged",
+        )
+        for i in range(25)
+    ]
+    mock_hotel_result = HotelSearchResult(
+        hotels=hotels,
+        city="PAR",
+        checkin="2026-06-15",
+        checkout="2026-06-22",
+        total_results=25,
+        success=True,
+    )
+    mock_detail = SkiplaggedHotelDetail(
+        hotelId="1",
+        hotelName="Test",
+        totalPriceInDollars=500.0,
+        checkinDate="2026-06-15",
+        checkoutDate="2026-06-22",
+        rooms=[
+            SkiplaggedRoom(
+                id="r1",
+                title="Standard Room",
+                occupancyLimit=2,
+                pricePerNightInDollars=70.0,
+                totalPriceInDollars=490.0,
+                taxesAndFeesInDollars=50.0,
+                currency="USD",
+                refundable=False,
+                freeCancellation=False,
+                bookingLink="https://example.com",
+            )
+        ],
+    )
+
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(return_value=mock_hotel_result)
+    mock_client.get_hotel_details = AsyncMock(return_value=mock_detail)
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(sample_trip_details)
+
+    # Should call get_hotel_details exactly 20 times (capped)
+    assert mock_client.get_hotel_details.call_count == 20
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_detail_cap_respects_fewer_than_20(monkeypatch):
+    """Verify when fewer than 20 hotels returned, details called for each."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.hotel_search import HotelSearchHotel, HotelSearchResult
+    from app.schemas.skiplagged import SkiplaggedHotelDetail, SkiplaggedRoom
+
+    hotels = [
+        HotelSearchHotel(
+            id=f"hotel_{i}",
+            name=f"Hotel {i}",
+            price_per_night=Decimal(str(100 + i * 10)),
+            price_currency="USD",
+            provider="skiplagged",
+        )
+        for i in range(5)
+    ]
+    mock_hotel_result = HotelSearchResult(
+        hotels=hotels, city="PAR", checkin="2026-06-15", checkout="2026-06-22", total_results=5, success=True
+    )
+    mock_detail = SkiplaggedHotelDetail(
+        hotelId="1",
+        hotelName="Test",
+        totalPriceInDollars=200.0,
+        checkinDate="2026-06-15",
+        checkoutDate="2026-06-22",
+        rooms=[
+            SkiplaggedRoom(
+                id="r1",
+                title="Deluxe Room",
+                occupancyLimit=2,
+                pricePerNightInDollars=100.0,
+                totalPriceInDollars=200.0,
+                taxesAndFeesInDollars=20.0,
+                currency="USD",
+                refundable=True,
+                freeCancellation=True,
+                bookingLink="https://example.com",
+            )
+        ],
+    )
+
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(return_value=mock_hotel_result)
+    mock_client.get_hotel_details = AsyncMock(return_value=mock_detail)
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(sample_trip_details)
+
+    assert mock_client.get_hotel_details.call_count == 5
+    assert result["error"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 11: Updated filter functions for Skiplagged format
+# ---------------------------------------------------------------------------
+
+
+def test_extract_carrier_codes_skiplagged_format():
+    """Carrier codes extracted from Skiplagged flight ID."""
+    flight = {"id": "SFO-CDG-2026-06-15-trip=AF81-LH200,TS251"}
+    codes = pc._extract_carrier_codes(flight)
+    assert "AF" in codes
+    assert "LH" in codes
+
+
+def test_extract_carrier_codes_skiplagged_single():
+    """Single segment Skiplagged flight ID."""
+    flight = {"id": "SFO-CDG-2026-06-15-trip=UA200"}
+    codes = pc._extract_carrier_codes(flight)
+    assert "UA" in codes
+
+
+def test_filter_hotels_by_room_title():
+    """Hotels filtered by room title matching preferred_room_types."""
+    hotels = [
+        {"rooms": [{"title": "Deluxe Suite"}, {"title": "Standard Room"}]},
+        {"rooms": [{"title": "Standard Room"}]},
+    ]
+    prefs = {"preferred_room_types": ["suite"], "preferred_views": []}
+    result = pc._filter_hotels(hotels, prefs)
+    assert len(result) == 1  # Only the one with "Deluxe Suite"
+
+
+def test_filter_hotels_by_view_in_amenities():
+    """Hotels filtered by view keyword in amenities when no room title match."""
+    hotels = [
+        {"rooms": [{"title": "Standard Room"}], "amenities": ["Ocean View", "Pool"]},
+        {"rooms": [{"title": "Standard Room"}], "amenities": ["Gym"]},
+    ]
+    prefs = {"preferred_room_types": [], "preferred_views": ["ocean"]}
+    result = pc._filter_hotels(hotels, prefs)
+    assert len(result) == 1
+
+
+def test_filter_hotels_no_prefs_returns_all():
+    """Hotels are all returned when no room type or view prefs."""
+    hotels = [
+        {"rooms": [{"title": "Standard Room"}]},
+        {"rooms": [{"title": "Suite"}]},
+    ]
+    prefs = {"preferred_room_types": [], "preferred_views": []}
+    result = pc._filter_hotels(hotels, prefs)
+    assert len(result) == 2

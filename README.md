@@ -8,69 +8,51 @@ Vacation Price Tracker is a full-stack web application designed for travelers to
 - **AI-Powered Chat**: Natural language interface using Groq (Llama 3.3) and MCP for conversational trip management.
 - **Distributed Reliability**: Orchestrated workflows via **Temporal** for reliable price fetching.
 - **Smart Notifications**: Automated alerts via Email (MVP) and optional SMS (Future).
-- **Flexible Date Optimizer** (Phase 4): Survey date ranges to find cheaper travel windows using SearchAPI.
+- **Flexible Date Optimizer** (Phase 4): Survey date ranges to find cheaper travel windows.
 
 ## Tech Stack
 - **Frontend**: Next.js 14, Tailwind, shadcn/ui, assistant-ui.
 - **Backend**: FastAPI (Python 3.12), SQLModel/PostgreSQL.
 - **Orchestration**: Temporal SDK for Python.
 - **Auth**: Google OAuth 2.0 (No local passwords).
-- **Testing**: pytest (API), Jest (web).
+- **Testing**: pytest (API), Jest (web), Playwright (E2E).
 - **Code Quality**: Ruff, SonarQube (SonarCloud).
-- **Flight Data**:
-  - **Primary**: Kiwi MCP Server (Free, cheapest prices, virtual interlining).
-  - **Detailed**: Amadeus API (Free tier: 2,000 calls/month, flight numbers & segments).
-- **Hotel Data**: 
-  - **MVP**: Amadeus API (Free tier: 2,000 calls/month).
-  - **Phase 4**: SearchAPI Google Hotels (for flexible date optimization).
+- **Flight & Hotel Data**: [Skiplagged MCP](https://mcp.skiplagged.com/mcp) — public, no auth required. Provides flights and hotels through a single JSON-RPC endpoint with airline names, flight numbers (parsed from the offer ID), room-level pricing, and booking links.
 
-## External MCP Servers & Flight Data Providers
+## Flight & Hotel Data Provider
 
-This project uses a multi-provider strategy to balance data quality, coverage, and cost:
+### Skiplagged MCP
+- **Endpoint**: `https://mcp.skiplagged.com/mcp`
+- **Transport**: JSON-RPC 2.0 over Streamable HTTP with SSE responses
+- **Auth**: None — public endpoint
+- **Tools used**:
+  - `sk_flights_search` — flights by route and dates, with pagination, airline names, flight numbers encoded in the offer ID, deep booking links
+  - `sk_hotels_search` — hotels by city and dates, with ratings, amenities, nightly prices
+  - `sk_hotel_details` — room-level data for a specific hotel (room types, bed configurations, cancellation policies, taxes)
 
-### Kiwi MCP Server (Primary Flight Search)
-- **Endpoint**: `mcp.kiwi.com`
-- **Tool**: `search-flight`
-- **Cost**: Free, no API key required
-- **Best For**: Virtual interlining (creative multi-carrier routing), often finds cheaper prices
-- **Limitation**: Does NOT include airline names, carrier codes, or flight numbers
+### Flight Numbers
+Skiplagged encodes flight numbers inside the offer `id` field (e.g., `trip=AC744-LH6825,TS251-AC401`). The `SkiplaggedClient` parses this into structured carrier codes and flight numbers via `app.clients.skiplagged_parser`.
 
-### Amadeus API (Detailed Flight Data & Hotels)
-- **Source**: Direct Amadeus REST API (wrapped as custom MCP tools)
-- **Tools**: `search_flights_amadeus`, `search_hotels`, `search_hotel_offers`
-- **Cost**: Free tier (~2,000 calls/month), then €0.001-0.025/call
-- **Best For**: 
-  - Flight numbers, segment details, airline filtering
-  - Hotel searches with availability and pricing
-  - Price tracking (requires flight numbers to match offers)
-
-### When Each Provider Is Used
-
-| User Request | Provider | Reason |
-|-------------|----------|--------|
-| "Find flights to Paris" | Kiwi | Quick search, cheapest prices |
-| "What's the cheapest flight?" | Kiwi | Often lower prices |
-| "I want to fly Delta" | Amadeus | Airline filtering |
-| "Show me flight UA200" | Amadeus | Need flight numbers |
-| "Find hotels in Rome" | Amadeus | Only option with hotels |
+### Pagination
+The client exposes `search_flights_all()` and `search_hotels_all()` that follow `pagination.hasMoreResults`, with `limit=75` and `max_pages=4` (up to 300 results) for comprehensive price tracking.
 
 ### Custom MCP Tools (Trip Management)
-Our custom MCP server handles trip management operations:
-- `create_trip` - Create a new price tracking trip
-- `list_trips` - List user's tracked trips
-- `get_trip_details` - Get trip details with price history
-- `set_notification` - Update alert thresholds
-- `pause_trip` / `resume_trip` - Control tracking status
-- `trigger_refresh` - Force price check for all trips
+In addition to Skiplagged search, the app exposes custom MCP tools to the chat LLM for trip management:
+- `create_trip` / `delete_trip` — create or remove a price tracking trip
+- `list_trips` / `get_trip_details` — inspect tracked trips and price history
+- `set_notification` — update alert thresholds
+- `pause_trip` / `resume_trip` — toggle tracking
+- `refresh_trip_prices` / `refresh_all_trip_prices` — force an immediate price check
+- `search_flights` / `search_hotels` — conversational search powered by Skiplagged
 
 ## Directory Structure
 ```text
 vacation-price-tracker/
 ├── apps/
-│   ├── web/              # Next.js frontend
+│   ├── web/              # Next.js frontend (+ Playwright E2E in apps/web/e2e/)
 │   ├── api/              # FastAPI backend
-│   ├── worker/           # Temporal workflows
-│   └── mcp-server/       # Custom tools only (trip management)
+│   └── worker/           # Temporal workflows
+├── docs/                 # Design specs, implementation plans, research notes
 ├── infra/                # Docker Compose
 └── .env.example          # Configuration template
 ```
@@ -102,10 +84,7 @@ vacation-price-tracker/
 
 3. **Install dependencies:**
    ```bash
-   # Install Python dependencies
    uv sync --extra dev
-
-   # Install frontend dependencies
    pnpm install
    ```
 
@@ -113,11 +92,11 @@ vacation-price-tracker/
    ```bash
    cp .env.example .env
    # Edit .env with your credentials:
-   # - DATABASE_URL: Postgres connection
+   # - DATABASE_URL: Postgres connection (pre-configured for Docker)
    # - GROQ_API_KEY: For LLM chat
-   # - AMADEUS_API_KEY/SECRET: For flight details & hotel searches
    # - GOOGLE_CLIENT_ID/SECRET: For OAuth
    # - TEMPORAL_ADDRESS: Temporal server
+   # - SKIPLAGGED_MCP_URL: defaults to https://mcp.skiplagged.com/mcp
    # - SEARCHAPI_KEY: (Phase 4) For date optimizer
    ```
 
@@ -133,10 +112,7 @@ vacation-price-tracker/
 
 7. **Start development servers:**
    ```bash
-   # Terminal 1: Start API with HTTPS
    pnpm api:dev
-
-   # Terminal 2: Start web with HTTPS
    pnpm web:dev
    ```
 
@@ -152,95 +128,70 @@ vacation-price-tracker/
    - API Docs: `https://localhost:8000/docs`
    - Temporal UI: `http://localhost:8080`
 
-   **Note:** Your browser will show a security warning for self-signed certificates. Click "Advanced" → "Proceed to localhost" to bypass.
-
 ## Development
 
 ### Running Tests
+
+#### Backend (pytest)
 ```bash
-# Run all tests
 uv run pytest apps/api/tests/ -v
-
-# Run specific test file
-uv run pytest apps/api/tests/test_auth.py -v
-
-# Run with coverage
+uv run pytest apps/worker/tests/ -v
 uv run pytest apps/api/tests/ --cov=app --cov-report=html
 ```
 
-#### Frontend Tests (Jest)
+#### Frontend (Jest)
 ```bash
-# Run web tests
 pnpm web:test
-
-# Watch mode
 pnpm web:test:watch
+```
+
+#### E2E (Playwright)
+End-to-end tests live in `apps/web/e2e/` and run against the full Docker stack. They exercise chat flight/hotel search, trip creation + refresh, and theme validation in both light and dark mode.
+
+```bash
+# Start the full stack first
+docker compose up -d
+
+# Run all E2E tests
+pnpm web:test:e2e
+
+# Interactive UI mode
+pnpm web:test:e2e:ui
+```
+
+#### Full Verification
+`pnpm verify` runs dependency install, build, lint, typecheck, unit test coverage, security audits, and E2E tests across all projects.
+
+```bash
+pnpm verify
 ```
 
 ### Code Quality
 
 #### Linting & Formatting (Ruff)
 ```bash
-# Check for issues
 uv run ruff check apps/api/app/
-
-# Auto-fix issues
 uv run ruff check apps/api/app/ --fix
-
-# Format code
 uv run ruff format apps/api/app/
-
-# Run both lint and format
-uv run ruff check apps/api/app/ --fix && uv run ruff format apps/api/app/
 ```
 
-#### Security Scanning (pip-audit)
+#### Security Scanning
 ```bash
-# Scan dependencies for known vulnerabilities
 uv run pip-audit
-
-# Ignore accepted risks (see SECURITY_AUDIT.md)
-uv run pip-audit --ignore-vuln CVE-2024-23342 --ignore-vuln CVE-2026-0994 --ignore-vuln CVE-2026-1703
-```
-
-#### Security Scanning (pnpm audit)
-```bash
-# Scan frontend dependencies for known vulnerabilities
-cd apps/web
-pnpm audit
-
-# Limit to production dependencies
-pnpm audit --prod
-
-# JSON output (CI-friendly)
-pnpm audit --json
+pnpm --filter vacation-price-tracker-web audit --prod
 ```
 
 #### Code Quality (SonarQube)
 ```bash
-# Run SonarQube scan (configured in sonar-project.properties)
 pnpm sonar
 ```
-Connect the SonarQube/SonarCloud project in your IDE via SonarLint to surface warnings before pushing.
 
 #### Local Code Review (mcp-review) — Optional
-
-You can optionally use [mcp-review](https://github.com/ethanasm/mcp-review) for AI-powered, context-aware code review against your local git history — no PR required. It's pre-configured via `.mcp-review.yml` in the project root with focus areas tailored to this project (security, performance, UX, API quota awareness, and more).
+You can optionally use [mcp-review](https://github.com/ethanasm/mcp-review) for AI-powered, context-aware code review against your local git history — no PR required. It's pre-configured via `.mcp-review.yml`.
 
 ```bash
-# Install mcp-review globally (one-time setup — see the mcp-review README)
-# Then review from this repo:
-
-# Review staged changes before committing
 mcp-review --staged
-
-# Review last 3 commits
 mcp-review --last 3
-```
-
-#### Type Checking (mypy) - Optional
-```bash
-uv run mypy apps/api/app/
 ```
 
 ### Project Structure
@@ -248,7 +199,7 @@ uv run mypy apps/api/app/
 apps/api/
 ├── app/
 │   ├── core/          # Config, constants, security
-│   ├── clients/       # External API clients (Amadeus, Groq, MCP)
+│   ├── clients/       # External API clients (Skiplagged, Groq)
 │   ├── db/            # Database session, deps
 │   ├── models/        # SQLModel database models
 │   ├── routers/       # FastAPI route handlers
@@ -264,45 +215,41 @@ apps/api/
     ├── services/      # Service layer tests
     ├── tools/         # MCP tool tests
     └── *.py           # Unit tests (auth, models, schemas, etc.)
+
+apps/web/
+├── src/               # Next.js app
+├── e2e/               # Playwright E2E tests
+└── playwright.config.ts
 ```
 
 ## Data Provider Strategy
 
-| Phase | Flights | Hotels | Cost |
-|:------|:--------|:-------|:-----|
-| MVP | Kiwi MCP (primary) + Amadeus (details) | Amadeus API | $0 (free tiers) |
-| Phase 4 | Same as MVP | Amadeus + SearchAPI | ~$40/mo for optimizer |
+| Phase | Flights | Hotels | Date Optimizer | Cost |
+|:------|:--------|:-------|:---------------|:-----|
+| MVP (Phase 1-3) | Skiplagged MCP | Skiplagged MCP | N/A | $0 |
+| Phase 4 | Skiplagged MCP | Skiplagged MCP | SearchAPI (optional) | ~$40/mo for optimizer |
 
-## Technical Challenges Overcome
+## Technical Notes
 
-1. **Multi-Provider Flight Data Strategy:** No single free provider offers complete data. Solved by using Kiwi for cheapest prices/virtual interlining, and Amadeus for flight numbers, airline names, and detailed segments needed for price tracking.
-2. **Airline Filtering on Non-Filterable APIs:** Designed post-fetch filtering strategy since MCP servers return all airlines without query-level filtering.
-4. **Room Type/View Filtering:** No hotel API supports query-level room filtering—implemented post-fetch parsing of room descriptions.
-5. **OAuth on Home Server:** Solved using Cloudflare Tunnel to provide a public callback URL without port forwarding.
-6. **Distributed Workflow Reliability:** Used Temporal's Saga pattern to ensure partial failures don't corrupt state.
+1. **Single-Provider Strategy**: Skiplagged MCP provides both flights and hotels via one public endpoint. No auth, no quota juggling, no carrier gaps to work around.
+2. **Airline Filtering**: MCP responses don't expose query-level airline filters, so the worker extracts carrier codes from Skiplagged flight IDs and filters post-fetch against `trip.flight_prefs.airlines`.
+3. **Room Type / View Filtering**: For each trip refresh the worker pulls `sk_hotel_details` for the top 20 hotels by price and matches room titles / amenities against `preferred_room_types` and `preferred_views`.
+4. **OAuth on Home Server**: Resolved via Cloudflare Tunnel for a public OAuth callback URL without port forwarding.
+5. **Distributed Workflow Reliability**: Temporal's Saga pattern ensures partial failures don't corrupt state during multi-step price fetches.
 
 ## Deployment
 
 ### Frontend (Next.js)
-The `web` app is hosted on **Vercel** for optimized Next.js deployment. Vercel provides:
-- Automatic deployments from GitHub branches.
-- Preview environments for pull requests.
-- Global CDN for fast load times.
-
-To deploy:
+The `web` app is hosted on **Vercel**:
 1. Connect your GitHub repository to Vercel.
 2. Select the `apps/web/` directory as the project root.
-3. Configure environment variables in the Vercel dashboard:
-   - `NEXT_PUBLIC_API_URL`: URL of the FastAPI backend (e.g., `https://api.yourdomain.com`).
+3. Configure `NEXT_PUBLIC_API_URL` in the Vercel dashboard to point at your FastAPI backend.
 
 ### Backend (FastAPI)
-The FastAPI backend can be hosted on platforms like **Fly.io**, **Render**, or **AWS Free Tier**. Ensure the backend is accessible to the Vercel-hosted frontend.
+Host on **Fly.io**, **Render**, **AWS**, or any container platform. Must be reachable from the Vercel frontend.
 
 ### CORS Configuration
-
-Since the frontend is hosted separately on Vercel, you need to configure **CORS** in the FastAPI backend to allow requests from the Vercel domain.
-
-Example FastAPI CORS setup:
+With the frontend on Vercel and backend elsewhere, configure CORS:
 ```python
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -315,25 +262,5 @@ app.add_middleware(
 )
 ```
 
-Replace `https://your-vercel-domain.vercel.app` with your actual Vercel domain.
-
 ### CSRF Protection
-
-To prevent Cross-Site Request Forgery (CSRF) attacks, the backend requires CSRF tokens for all state-changing requests (e.g., `POST`, `PUT`, `DELETE`).
-
-- **Frontend**: Include the CSRF token in the request headers or body.
-- **Backend**: Validate the CSRF token in middleware or route handlers.
-
-Example FastAPI middleware for CSRF validation:
-```python
-from fastapi import Request, HTTPException
-
-async def csrf_protection(request: Request):
-    token = request.headers.get("X-CSRF-Token")
-    if not token or token != "expected_token_value":
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
-
-app.middleware("http")(csrf_protection)
-```
-
-Replace `"expected_token_value"` with your actual token logic.
+All state-changing requests require a CSRF token. Frontend includes the token in request headers; backend middleware validates it.

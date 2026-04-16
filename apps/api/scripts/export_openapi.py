@@ -17,8 +17,8 @@ _DUMMY_ENV = {
     "GOOGLE_CLIENT_SECRET": "dummy-client-secret",
     "DATABASE_URL": "sqlite+aiosqlite:///./dummy.db",  # Use SQLite to avoid psycopg2
     "GROQ_API_KEY": "dummy-groq-key",
-    "AMADEUS_API_KEY": "dummy-amadeus-key",
-    "AMADEUS_API_SECRET": "dummy-amadeus-secret",
+    "SKIPLAGGED_MCP_URL": "https://mcp.skiplagged.com/mcp",
+    "MOCK_SKIPLAGGED_API": "false",
     "REDIS_URL": "redis://localhost:6379",
 }
 

@@ -21,8 +21,8 @@ from app.schemas.mcp import (
     PAUSE_TRIP_TOOL,
     REFRESH_ALL_TRIP_PRICES_TOOL,
     RESUME_TRIP_TOOL,
-    SEARCH_AIRPORTS_TOOL,
-    SEARCH_FLIGHTS_KIWI_TOOL,
+    SEARCH_FLIGHTS_TOOL,
+    SEARCH_HOTELS_TOOL,
     SET_NOTIFICATION_TOOL,
     TOOL_SCHEMAS,
     ToolCall,
@@ -259,31 +259,38 @@ class TestToolSchemas:
         assert schema["name"] == "refresh_all_trip_prices"
         assert len(schema["parameters"]["required"]) == 0
 
-    def test_search_airports_tool_schema(self):
-        """Test search_airports tool schema."""
-        schema = SEARCH_AIRPORTS_TOOL["function"]
+    def test_search_flights_tool_schema(self):
+        """Test search_flights tool schema."""
+        schema = SEARCH_FLIGHTS_TOOL["function"]
 
-        assert schema["name"] == "search_airports"
-        assert "query" in schema["parameters"]["required"]
-        assert schema["parameters"]["properties"]["query"]["minLength"] == 2
-
-    def test_search_flights_kiwi_tool_schema(self):
-        """Test search_flights_kiwi tool schema."""
-        schema = SEARCH_FLIGHTS_KIWI_TOOL["function"]
-
-        assert schema["name"] == "search_flights_kiwi"
+        assert schema["name"] == "search_flights"
         assert set(schema["parameters"]["required"]) == {
-            "fly_from",
-            "fly_to",
+            "origin",
+            "destination",
             "departure_date",
         }
-        assert "fly_from" in schema["parameters"]["properties"]
-        assert "fly_to" in schema["parameters"]["properties"]
+        assert "origin" in schema["parameters"]["properties"]
+        assert "destination" in schema["parameters"]["properties"]
         assert "departure_date" in schema["parameters"]["properties"]
         assert "return_date" in schema["parameters"]["properties"]
         assert "adults" in schema["parameters"]["properties"]
-        assert "currency" in schema["parameters"]["properties"]
+        assert "max_stops" in schema["parameters"]["properties"]
+        assert "sort" in schema["parameters"]["properties"]
         assert schema["parameters"]["properties"]["departure_date"]["format"] == "date"
+
+    def test_search_hotels_tool_schema(self):
+        """Test search_hotels tool schema."""
+        schema = SEARCH_HOTELS_TOOL["function"]
+
+        assert schema["name"] == "search_hotels"
+        assert set(schema["parameters"]["required"]) == {"city", "checkin", "checkout"}
+        assert "city" in schema["parameters"]["properties"]
+        assert "checkin" in schema["parameters"]["properties"]
+        assert "checkout" in schema["parameters"]["properties"]
+        assert "adults" in schema["parameters"]["properties"]
+        assert "rooms" in schema["parameters"]["properties"]
+        assert "sort" in schema["parameters"]["properties"]
+        assert schema["parameters"]["properties"]["checkin"]["format"] == "date"
 
 
 # =============================================================================
@@ -528,12 +535,10 @@ class TestValidateToolArgs:
         }
         validate_tool_args("get_trip_details", args)  # Should not raise
 
-    def test_validate_search_airports_min_length(self):
-        """Test search_airports query minLength validation."""
-        with pytest.raises(ToolValidationError) as exc_info:
-            validate_tool_args("search_airports", {"query": "a"})
-
-        assert "length must be >= 2" in str(exc_info.value.details)
+    def test_validate_search_flights_missing_required(self):
+        """Test search_flights requires origin, destination, departure_date."""
+        with pytest.raises(ToolValidationError):
+            validate_tool_args("search_flights", {"origin": "SFO", "destination": "CDG"})
 
     def test_validate_create_trip_adults_any_value(self):
         """Test create_trip accepts any adults value (simplified schema)."""

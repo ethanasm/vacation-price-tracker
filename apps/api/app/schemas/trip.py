@@ -142,7 +142,7 @@ class TripCreate(BaseModel):
     @field_validator("depart_date", "return_date")
     @classmethod
     def validate_date_within_range(cls, v: date) -> date:
-        """Ensure dates are not more than 359 days out (Amadeus limit)."""
+        """Ensure dates are not more than 359 days out."""
         max_date = date.today() + timedelta(days=359)
         if v > max_date:
             raise ValueError(f"Date cannot be more than 359 days out. Maximum: {max_date}")

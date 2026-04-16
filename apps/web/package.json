@@ -14,7 +14,9 @@
     "test:watch": "NODE_NO_WARNINGS=1 jest --watch",
     "test:coverage": "NODE_NO_WARNINGS=1 jest --coverage",
     "generate:api-types": "cd ../api && uv run python scripts/export_openapi.py ../web/src/lib/api/openapi.json && cd ../web && npx openapi-typescript src/lib/api/openapi.json -o src/lib/api/types.ts",
-    "generate:api-types:check": "cd ../api && uv run python scripts/export_openapi.py /tmp/openapi-check.json && cd ../web && diff -q /tmp/openapi-check.json src/lib/api/openapi.json"
+    "generate:api-types:check": "cd ../api && uv run python scripts/export_openapi.py /tmp/openapi-check.json && cd ../web && diff -q /tmp/openapi-check.json src/lib/api/openapi.json",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.12.3",
@@ -46,6 +48,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/typography": "^0.5.19",
     "@testing-library/jest-dom": "^6.9.1",

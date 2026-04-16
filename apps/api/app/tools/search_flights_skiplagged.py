@@ -1,4 +1,4 @@
-"""MCP tool for searching flights via Kiwi.com."""
+"""MCP tool for searching flights via Skiplagged."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.kiwi_mcp import (
-    KiwiMCPClient,
-    KiwiMCPError,
-    kiwi_mcp_client,
+from app.clients.skiplagged import (
+    SkiplaggedClient,
+    SkiplaggedMCPError,
+    skiplagged_client,
 )
 from app.schemas.flight_search import FlightSearchResult
 from app.schemas.mcp import ToolResult
@@ -19,21 +19,21 @@ from app.tools.base import BaseTool
 logger = logging.getLogger(__name__)
 
 
-class SearchFlightsKiwiTool(BaseTool):
-    """Search for flights using the Kiwi.com MCP server.
+class SearchFlightsSkiplaggedTool(BaseTool):
+    """Search for flights using the Skiplagged MCP server.
 
-    Optimized for cheapest prices and creative routing with detailed
-    layover information. Does NOT provide airline names or carrier codes.
+    Returns airline names, flight numbers (parsed from ID), prices,
+    durations, stops, and booking links.
     """
 
-    name = "search_flights_kiwi"
+    name = "search_flights"
     description = (
-        "Search for flights using Kiwi.com. Optimized for cheapest prices "
-        "and creative routing with detailed layover information."
+        "Search for flights between airports. Returns airline names, flight numbers, "
+        "prices, durations, stops, and booking links."
     )
 
-    def __init__(self, client: KiwiMCPClient | None = None) -> None:
-        self._client = client or kiwi_mcp_client
+    def __init__(self, client: SkiplaggedClient | None = None) -> None:
+        self._client = client or skiplagged_client
 
     async def execute(
         self,
@@ -41,31 +41,37 @@ class SearchFlightsKiwiTool(BaseTool):
         user_id: str,
         db: AsyncSession,
     ) -> ToolResult:
-        """Execute flight search via Kiwi.com."""
-        fly_from = args.get("fly_from")
-        fly_to = args.get("fly_to")
+        """Execute flight search via Skiplagged."""
+        origin = args.get("origin")
+        destination = args.get("destination")
         departure_date = args.get("departure_date")
 
-        if not fly_from or not fly_to or not departure_date:
+        if not origin or not destination or not departure_date:
             missing = [
                 p
-                for p in ("fly_from", "fly_to", "departure_date")
+                for p in ("origin", "destination", "departure_date")
                 if not args.get(p)
             ]
             return self.error(f"Missing required parameters: {', '.join(missing)}")
 
         return_date = args.get("return_date")
         adults = args.get("adults", 1)
-        currency = args.get("currency", "EUR")
+        max_stops = args.get("max_stops")
+        sort = args.get("sort", "value")
+        limit = args.get("limit", 75)
+        offset = args.get("offset", 0)
 
         try:
-            result = await self._client.search_flight(
-                fly_from=fly_from,
-                fly_to=fly_to,
+            result = await self._client.search_flights(
+                origin=origin,
+                destination=destination,
                 departure_date=departure_date,
                 return_date=return_date,
                 adults=adults,
-                currency=currency,
+                max_stops=max_stops,
+                sort=sort,
+                limit=limit,
+                offset=offset,
             )
 
             if not result.success:
@@ -73,11 +79,11 @@ class SearchFlightsKiwiTool(BaseTool):
 
             formatted = self._format_results(result)
             return self.success(formatted)
-        except KiwiMCPError as e:
-            logger.warning("Kiwi.com flight search failed: %s", e)
+        except SkiplaggedMCPError as e:
+            logger.warning("Skiplagged flight search failed: %s", e)
             return self.error(f"Flight search failed: {e}")
         except Exception as e:
-            logger.exception("Unexpected error in Kiwi flight search")
+            logger.exception("Unexpected error in Skiplagged flight search")
             return self.error(f"An unexpected error occurred: {e}")
 
     @staticmethod
@@ -85,23 +91,16 @@ class SearchFlightsKiwiTool(BaseTool):
         """Format FlightSearchResult for LLM consumption."""
         flights = []
         for f in result.flights:
-            layovers = []
-            for lay in f.layovers:
-                layovers.append({
-                    "airport": lay.airport,
-                    "city": lay.city,
-                    "duration_minutes": lay.duration_minutes,
-                })
-
             flights.append({
                 "departure_airport": f.departure_airport,
                 "arrival_airport": f.arrival_airport,
                 "departure_time": f.departure_time.isoformat() if f.departure_time else None,
                 "arrival_time": f.arrival_time.isoformat() if f.arrival_time else None,
+                "airline_name": f.airline_name,
+                "carrier_code": f.carrier_code,
                 "duration_minutes": f.duration_minutes,
                 "stops": f.stops,
                 "stops_text": f.stops_text,
-                "layovers": layovers,
                 "price": str(f.price_amount),
                 "price_display": f.price_display,
                 "currency": f.price_currency,
@@ -116,6 +115,6 @@ class SearchFlightsKiwiTool(BaseTool):
             "departure_date": result.departure_date,
             "return_date": result.return_date,
             "is_round_trip": result.is_round_trip,
-            "provider": "kiwi",
+            "provider": "skiplagged",
             "currency": result.currency,
         }

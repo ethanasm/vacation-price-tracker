@@ -25,42 +25,46 @@ Vacation Price Tracker is a full-stack web application that tracks flight and ho
 
 Use kebab-case for new files in the web app (`apps/web/`).
 
-## Amadeus API Integration
+## Skiplagged MCP Integration
 
-Both flights and hotels are fetched via the **Amadeus API** (developers.amadeus.com). Free tier: ~2,000 calls/month shared between all endpoints.
+All flights and hotels are fetched via the **Skiplagged MCP** at `https://mcp.skiplagged.com/mcp`. No API key or authentication is required. The client speaks JSON-RPC 2.0 over Streamable HTTP (one initialize handshake, then `tools/call` requests with the session ID from the `mcp-session-id` response header).
+
+Implementation: `apps/api/app/clients/skiplagged.py`
 
 ### Flight Search APIs
 
-| API | Use Case | Data Type |
-|-----|----------|-----------|
-| `search_flights()` | User has specific dates, ready to see/book flights | Real-time, full details |
-| `search_flight_cheapest_dates()` | User has flexible dates, wants to find best day to fly | Cached, date-price grid |
-
-**Recommended Flow:**
-1. User creates trip with flexible dates → `search_flight_cheapest_dates()` for price calendar
-2. User picks specific dates → `search_flights()` for real-time offers with full details
+| Method | Use Case | Notes |
+|--------|----------|-------|
+| `search_flights()` | Single-page search (chat tools, quick queries) | Returns up to `limit` (default 75) results |
+| `search_flights_all()` | Full result set (worker tracking) | Follows `pagination.hasMoreResults` up to `max_pages=4` (up to 300 results) |
 
 ### Hotel Search APIs
-Hotels are searched using **custom MCP tools** that call the Amadeus HTTP API directly (via `apps/api/app/clients/amadeus.py`).
 
-### External Flight Search MCP Servers (Chat Integration)
+| Method | Use Case | Notes |
+|--------|----------|-------|
+| `search_hotels()` / `search_hotels_all()` | Find hotels in a city by check-in/out dates | Returns price per night, amenities, booking links |
+| `get_hotel_details()` | Room-level data for a specific hotel | Returns room titles, bed types, cancellation policy, per-room pricing |
 
-> **Detailed Research:** See [`doc/research/MCP_FLIGHT_SERVERS.md`](doc/research/MCP_FLIGHT_SERVERS.md) for complete testing results, response formats, and provider comparison.
+**Worker hotel flow:** `search_hotels_all(max_pages=4)` to get the full hotel list, then `get_hotel_details` for the top 20 cheapest hotels to populate room-level data needed for `preferred_room_types` filtering.
 
-For conversational flight search in Phase 2, we use free hosted MCP servers:
+### Flight Number Parsing
 
-| Provider | Endpoint | Returns | Missing |
-|----------|----------|---------|---------|
-| **Kiwi.com** | `mcp.kiwi.com` | Prices, detailed layovers, virtual interlining | Airline names, carrier codes, flight numbers |
-| **Amadeus** | Custom MCP tools | Flight numbers, segments, terminals, fare details, amenities | Direct booking links |
+Skiplagged encodes flight numbers in the `id` field rather than returning them as structured data:
 
-**When to use each:**
-- **Kiwi** - Cheapest prices, creative routing, detailed layover times
-- **Amadeus** - Flight numbers (required for tracking), fare details, airline names, hotels
+```
+id: "SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741"
+```
 
-**Airline coverage:** Kiwi MCP shows LCCs (Southwest, JetBlue, Spirit, Ryanair). Amadeus found Frontier on routes where Kiwi didn't. None reliably show AA, UA, DL.
+Parser (`apps/api/app/clients/skiplagged_parser.py`):
+1. Split on `trip=` to get the segment string
+2. Split on `,` to separate outbound and return legs
+3. Split each leg on `-` to get individual segments
+4. Strip `~` suffix (hidden-city marker)
+5. Extract carrier code (letters) + flight number (digits) from each segment
 
-### Custom MCP Server (Trip Management + Amadeus)
+Result: `outbound=[{"carrier_code": "AC", "flight_number": "744"}, ...]`, `return_segs=[...]`
+
+### Custom MCP Server (Trip Management)
 Our custom MCP server implements:
 
 **Trip Management Tools:**
@@ -71,10 +75,9 @@ Our custom MCP server implements:
 - `pause_trip` / `resume_trip` - Toggle tracking
 - `trigger_refresh` - Force price check
 
-**Amadeus API Tools (for detailed data):**
-- `search_flights_amadeus` - Full flight data with flight numbers, segments
-- `search_hotels` - Hotel search by city
-- `search_hotel_offers` - Specific hotel pricing
+**Skiplagged Search Tools (chat):**
+- `search_flights` - Flight search via Skiplagged MCP (airline names, flight numbers, prices, booking links)
+- `search_hotels` - Hotel search via Skiplagged MCP (name, stars, review score, nightly price, amenities, booking links)
 
 ### Flight Display Requirements
 
@@ -85,7 +88,7 @@ Each flight offer card must show ALL segments for the complete itinerary:
 - **Return**: All segments from destination back to origin (for round trips)
 
 **Per-segment display:**
-- Flight number (e.g., "UA200")
+- Flight number — parsed from the Skiplagged `id` field (e.g., "AC744")
 - Route (e.g., "SFO → DEN")
 - Departure and arrival times
 - Duration
@@ -95,37 +98,37 @@ Each flight offer card must show ALL segments for the complete itinerary:
 **Price:** Total for entire itinerary (all segments combined).
 
 **Implementation:**
-- Backend extracts full segment data via `_extract_itineraries()` in `apps/api/app/routers/trips.py`
+- Flight numbers extracted via `parse_flight_segments()` in `apps/api/app/clients/skiplagged_parser.py`
 - Schema models: `FlightSegment`, `FlightItinerary` in `apps/api/app/schemas/trip.py`
 - Frontend renders via `ItinerarySection` and `SegmentRow` components in `apps/web/src/app/trips/[tripId]/page.tsx`
 
 ## Data Provider Strategy
 
+All phases use a single provider: **Skiplagged MCP** (`mcp.skiplagged.com/mcp`). No API keys or paid plans required.
+
 | Phase | Flights (Chat) | Flights (Tracking) | Hotels | Optimizer | Monthly Cost |
 |:------|:---------------|:-------------------|:-------|:----------|:-------------|
-| MVP (Phase 1-3) | Kiwi MCP + Amadeus | Amadeus HTTP | Custom Amadeus MCP | N/A | $0 |
-| Phase 4 | Kiwi MCP + Amadeus | Amadeus HTTP (`search_flight_cheapest_dates`) | Custom Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
+| MVP (Phase 1-3) | Skiplagged `search_flights` | Skiplagged `search_flights_all` | Skiplagged `search_hotels_all` + `get_hotel_details` | N/A | $0 |
+| Phase 4 | Skiplagged `search_flights` | Skiplagged `search_flights_all` | Skiplagged `search_hotels_all` + `get_hotel_details` | Skiplagged flex calendar | $0 |
 
-**Chat vs Tracking:** Chat uses Kiwi MCP for quick/cheap searches and Amadeus for detailed data. Price tracking workflows use Amadeus HTTP API for detailed segment data needed for flight number matching.
+**Single provider simplicity:** Chat tools and price-tracking worker both call the same Skiplagged client. The worker uses `search_flights_all`/`search_hotels_all` (up to 300 results across 4 pages) for comprehensive tracking data. Chat tools use single-page `search_flights`/`search_hotels` for speed.
 
-**Phase 4 SearchAPI Rationale:** The flexible date optimizer needs to survey 90+ date combinations for hotels. SearchAPI provides $40/month for 10,000 searches, making it cost-effective for date-range surveying. For flights, the `search_flight_cheapest_dates` API provides cached date-price grids.
-
-**Amadeus Limitations:** The free tier doesn't include some major carriers (American, Delta, British Airways) and most low-cost carriers. The 2,000 calls/month limit is shared between flights and hotels.
+**No documented rate limits:** Skiplagged MCP is a public endpoint with no authentication and no published rate limit. Caching (24-hour TTL in Redis) remains in place as a courtesy and for performance.
 
 ## Post-Fetch Filtering Strategy
 
-Both airline and room type/view preferences require **post-fetch filtering** because the underlying APIs don't support these filters natively:
+Both airline and room type/view preferences require **post-fetch filtering** because the underlying API does not support these filters natively:
 
-1. **Airline Filtering:** Amadeus returns flights from multiple airlines. The `PriceCheckWorkflow` (Temporal worker) filters results in-memory against `trip.flight_prefs.airlines` using the `validatingAirlineCodes` and `itineraries.segments[].carrierCode` fields.
+1. **Airline Filtering:** Skiplagged returns flights from multiple airlines. The `PriceCheckWorkflow` (Temporal worker) filters results in-memory against `trip.flight_prefs.airlines` using carrier codes parsed from the Skiplagged `id` field via `parse_flight_segments()` in `apps/api/app/clients/skiplagged_parser.py`.
 
-2. **Room Type/View Filtering:** No hotel API supports query-level room filtering. The worker parses `room.description` text for keywords like "King", "Suite", "Ocean View", etc.
+2. **Room Type/View Filtering:** Skiplagged does not support query-level room filtering. After fetching hotel details with `get_hotel_details`, the worker matches `preferred_room_types` and `preferred_views` against each room's `title` field and the hotel's `amenityNames` list.
 
-Implementation is in the Temporal worker's `filter_results_activity`.
+Implementation is in the Temporal worker's `filter_results_activity` in `apps/worker/worker/activities/price_check.py`.
 
 ## Core Architectural Patterns
 
-- **Saga Pattern:** Managed via Temporal. Multi-step price fetches (flights + hotels via Amadeus) either complete or fail gracefully with automatic retries.
-- **Strategy Pattern:** Different hotel providers (Amadeus for MVP, SearchAPI for Phase 4) use unified `HotelProvider` interface.
+- **Saga Pattern:** Managed via Temporal. Multi-step price fetches (flights + hotels via Skiplagged) either complete or fail gracefully with automatic retries.
+- **Single Provider:** All flight and hotel data comes from Skiplagged MCP. The `SkiplaggedClient` in `apps/api/app/clients/skiplagged.py` handles both chat tools and worker activities.
 - **Outbox Pattern:** Notification events queued in database during price runs, processed by dedicated activity for at-least-once delivery.
 - **Idempotency:** `X-Idempotency-Key` header required for `POST /v1/trips`. Stored in Redis with 24-hour TTL.
 
@@ -137,12 +140,12 @@ Copy `.env.example` to `.env` and configure:
 - `DATABASE_URL` - PostgreSQL connection string
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - OAuth credentials
 - `GROQ_API_KEY` - LLM chat functionality
-- `AMADEUS_API_KEY` / `AMADEUS_API_SECRET` - Flights and hotels data
 
 **Optional:**
+- `SKIPLAGGED_MCP_URL` - Defaults to `https://mcp.skiplagged.com/mcp` (no auth required)
+- `MOCK_SKIPLAGGED_API` - Set to `true` to use mock data in development
 - `SEARCHAPI_KEY` - Phase 4 flexible date optimizer only
 - `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` - Email notifications
-- `MOCK_AMADEUS_API` - Set to `true` to use mock data in development
 
 **Feature Flags:**
 - `ENABLE_BETA_OPTIMIZER` - Set to `true` only after configuring SearchAPI
@@ -162,7 +165,6 @@ vacation-price-tracker/
 └── .env.example          # Configuration template
 ```
 
-**Note:** As of this writing, the `apps/` directory has not been created yet. This is a greenfield project with documentation only.
 
 ## Local Development (Docker)
 
@@ -219,19 +221,19 @@ Orchestrates updating all active trips for a user. Called by:
 
 ### PriceCheckWorkflow
 Fetches data for a single trip:
-1. Call Amadeus HTTP `search_flights` (parallel)
-2. Call Amadeus MCP `amadeus_hotel_search` (parallel)
-3. Apply post-fetch filters (airlines, room types, views)
+1. Call Skiplagged `search_flights_all` (up to 4 pages)
+2. Call Skiplagged `search_hotels_all` + `get_hotel_details` for top 20 hotels (parallel)
+3. Apply post-fetch filters (airlines via ID parsing, room types/views via room `title`)
 4. Save `PriceSnapshot` to database
 5. Check notification thresholds
 6. Push update to UI via SSE
 
 ### RunOptimizerWorkflow (Phase 4)
-Surveys date ranges using SearchAPI:
+Surveys date ranges using Skiplagged flexible calendar:
 1. Generate date combinations (up to 90)
 2. Fetch prices in parallel with rate limiting
 3. Rank candidates by total price
-4. Verify top 5 with live Amadeus data
+4. Verify top 5 with live Skiplagged data
 
 ## API Error Handling
 
@@ -250,8 +252,8 @@ This app runs on a home server without port forwarding. Google OAuth callbacks r
 ## Rate Limit Management
 
 - **Aggressive Caching:** 24-hour TTL for identical route/date queries (Redis)
-- **Token Bucket Throttling:** Per-user limits to stay within Amadeus free tier (2,000 calls/month)
-- **SearchAPI Hourly Limit:** Phase 4 optimizer spreads queries across hours (20% of plan credits/hour)
+- **Per-User Throttling:** Token bucket limits prevent any single user from overwhelming the Skiplagged MCP endpoint
+- **Pagination Cap:** `max_pages=4` (300 results) per worker fetch to keep individual requests bounded
 
 ## Development Phases
 
@@ -265,11 +267,10 @@ Refer to `doc/PROJECT_PLAN.md` for detailed checklists.
 ## Important Constraints
 
 - Max 10 trips per user (configurable via `MAX_TRIPS_PER_USER`)
-- Amadeus free tier: ~2,000 calls/month (shared between flights and hotels)
-- Amadeus max check-in date: 359 days out
-- No room images in Amadeus V3 API
-- Amadeus doesn't include some major carriers (AA, DL, BA) and most low-cost carriers
-- Airline filtering requires post-fetch processing using `validatingAirlineCodes`
+- Skiplagged MCP is a public endpoint with no auth and no documented rate limits
+- Flight numbers are not returned as structured fields — they must be parsed from the Skiplagged `id` field using `parse_flight_segments()`
+- Airline filtering requires post-fetch processing using carrier codes extracted from the `id` field
+- Room type/view filtering requires fetching hotel details (`get_hotel_details`) and matching against room `title` text
 
 ## Pre-Commit Validation
 

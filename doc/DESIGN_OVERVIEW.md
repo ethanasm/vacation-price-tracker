@@ -14,18 +14,18 @@ The application is a monorepo composed of containerized services orchestrated vi
 - Exposes REST endpoints for the Frontend.
 - Handles Google OAuth callbacks.
 - **LLM Integration:** Connects to **Groq** for chat responses.
-- **MCP Orchestration:** Routes tool calls to appropriate MCP servers (Kiwi, Amadeus, or internal).
+- **MCP Orchestration:** Routes tool calls to Skiplagged MCP (flights + hotels) or internal trip management tools.
 
 ### 1.3 Worker (Temporal)
 - **Role:** Executes long-running business logic reliably.
 - **Workflows:**
   - `RefreshAllTripsWorkflow`: Orchestrates updating all enabled trips.
-  - `PriceCheckWorkflow`: Fetches data for a single trip via MCP servers.
-  - `RunOptimizerWorkflow` (Phase 4): Scans date ranges using SearchAPI.
-- **Logic - Airline Filtering:** Since Kiwi MCP returns *all* airlines, the `PriceCheckWorkflow` filters results in-memory against `trip.flight_prefs.airlines`.
-- **Logic - Room Type Filtering:** Since no hotel API supports query-level room filtering, the worker parses `room.description` text for keywords.
+  - `PriceCheckWorkflow`: Fetches data for a single trip via Skiplagged MCP.
+  - `RunOptimizerWorkflow` (Phase 4): Scans date ranges using Skiplagged flex calendar.
+- **Logic - Airline Filtering:** Carrier codes are parsed from the Skiplagged `id` field using `parse_flight_segments()`. The `PriceCheckWorkflow` filters results in-memory against `trip.flight_prefs.airlines`.
+- **Logic - Room Type Filtering:** After fetching hotel details via `get_hotel_details`, the worker matches room `title` fields against `trip.hotel_prefs.preferred_room_types` and `preferred_views`.
 
-### 1.4 MCP Architecture (Hybrid)
+### 1.4 MCP Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -36,94 +36,77 @@ The application is a monorepo composed of containerized services orchestrated vi
                     │   MCP Router      │
                     │   (FastAPI)       │
                     └─────────┬─────────┘
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│   Kiwi MCP      │ │  Amadeus MCP    │ │  Custom MCP     │
-│   (External)    │ │  (External)     │ │  (Internal)     │
-│                 │ │                 │ │                 │
-│ • search-flight │ │ • hotel_list    │ │ • create_trip   │
-│                 │ │ • hotel_search  │ │ • list_trips    │
-│                 │ │ • hotel_offer   │ │ • set_notif     │
-│                 │ │ • hotel_booking │ │ • trigger_refresh│
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-       │                   │                   │
-       ▼                   ▼                   ▼
-   Kiwi API          Amadeus API         PostgreSQL
-   (Free)            (Free Tier)         (Internal)
+                 ┌────────────┴────────────┐
+                 ▼                         ▼
+┌──────────────────────────┐  ┌────────────────────────────────┐
+│  Skiplagged MCP          │  │  Internal Trip Management      │
+│  (mcp.skiplagged.com)    │  │  Tools                         │
+│                          │  │                                │
+│ • search_flights         │  │ • create_trip                  │
+│ • search_hotels          │  │ • list_trips                   │
+│                          │  │ • get_trip_details             │
+│ HTTP/JSON-RPC            │  │ • set_notification             │
+│ No auth required         │  │ • pause_trip / resume_trip     │
+└──────────────────────────┘  │ • trigger_refresh              │
+           │                  └────────────────────────────────┘
+           ▼                               │
+  Skiplagged API                    PostgreSQL
+  (Free, public)                    (Internal)
 ```
 
-## 2. External MCP Servers (Pre-Built)
+## 2. Skiplagged MCP Integration
 
-### 2.1 Kiwi MCP Server (Flights)
-- **Source:** Available via Claude.ai connectors or self-hosted
-- **Cost:** Free, no API key required
-- **Tool:** `search-flight`
-- **Capabilities:**
-  - Search one-way and round-trip flights
-  - Filter by cabin class, stops
-  - Returns all airlines (requires post-fetch filtering)
+**Endpoint:** `https://mcp.skiplagged.com/mcp`
+**Protocol:** JSON-RPC 2.0 over Streamable HTTP (no auth required)
+**Client:** `apps/api/app/clients/skiplagged.py`
 
-### 2.2 Amadeus MCP Server (Hotels)
-- **Source:** [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp)
-- **Cost:** Free tier ~2,000 calls/month, then €0.001-0.025/call
-- **Tools:**
-  | Tool | Amadeus API Endpoint | Purpose |
-  |:-----|:---------------------|:--------|
-  | `amadeus_hotel_list` | `/v1/reference-data/locations/hotels` | List hotels in a location |
-  | `amadeus_hotel_search` | `/v2/shopping/hotel-offers` | Find availability and pricing |
-  | `amadeus_hotel_offer` | `/v2/shopping/hotel-offers/{offerId}` | Get specific offer details |
-  | `amadeus_hotel_booking` | `/v1/booking/hotel-bookings` | Book hotel rooms |
+### Session Lifecycle
 
-- **Setup:**
-  ```json
-  {
-    "mcpServers": {
-      "amadeus-hotel": {
-        "command": "node",
-        "args": ["/path/to/amadeus-mcp/dist/index.js"],
-        "env": {
-          "AMADEUS_API_KEY": "your_api_key",
-          "AMADEUS_API_SECRET": "your_api_secret"
-        }
-      }
-    }
-  }
-  ```
+1. `initialize` handshake — POST with `protocolVersion: "2024-11-05"`, receive session ID in `mcp-session-id` response header
+2. Subsequent `tools/call` requests — include session ID header
+3. Session auto-resets on 400/401/403 responses
 
-- **Limitations:**
-  - No room type filtering at query level (post-fetch required)
-  - No hotel images in V3 API
-  - Max check-in date is 359 days out
-  - Post-paid booking model only
+### Available Tools
+
+| Tool | Parameters | Used By |
+|------|-----------|---------|
+| `sk_flights_search` | origin, destination, departure_date, return_date, adults, max_stops, sort, limit, offset | Chat `search_flights` tool, worker `fetch_flights_activity` |
+| `sk_hotels_search` | city, checkin, checkout, adults, rooms, sort, limit, offset | Chat `search_hotels` tool, worker `fetch_hotels_activity` |
+| `sk_hotel_details` | hotel_id, checkin, checkout, adults, rooms | Worker (room-level data for filtering) |
+| `sk_flex_departure_calendar` | origin, destination, year, month | Phase 4 date optimizer |
+| `sk_flex_return_calendar` | origin, destination, departure_date, year, month | Phase 4 date optimizer |
+
+### Flight Number Parsing
+
+Skiplagged encodes flight segments in the `id` field:
+
+```
+"SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741"
+```
+
+Parser in `apps/api/app/clients/skiplagged_parser.py`:
+- Split on `trip=` → get segment string
+- Split on `,` → outbound leg, return leg
+- Split each leg on `-` → individual segments (strip `~` hidden-city marker)
+- Regex `^([A-Z]{2,3})(\d+)$` → carrier code + flight number
 
 ## 3. Architectural Patterns
 
-This project demonstrates several advanced distributed system patterns:
-
-- **Saga Pattern (Orchestration):** Managed via **Temporal**, ensuring that multi-step price fetches (Kiwi + Amadeus) either complete or fail gracefully with retries.
-- **Strategy Pattern:** Used in the backend to handle different hotel providers (Amadeus for MVP, SearchAPI for Phase 4 optimizer) through a unified `HotelProvider` interface.
-- **Outbox Pattern:** Notification events are queued in the database during price runs and processed by a dedicated activity to ensure "at-least-once" delivery.
-- **Post-Fetch Filtering:** Both airline preferences and room type/view preferences are applied after fetching raw data from APIs that don't support these filters natively.
+- **Saga Pattern (Orchestration):** Managed via **Temporal**, ensuring that multi-step price fetches (flights + hotels via Skiplagged) either complete or fail gracefully with retries.
+- **Single Provider:** All flight and hotel data comes from the single Skiplagged MCP endpoint. No provider abstraction layer needed.
+- **Outbox Pattern:** Notification events are queued in the database during price runs and processed by a dedicated activity for at-least-once delivery.
+- **Post-Fetch Filtering:** Airline preferences are applied by parsing carrier codes from the Skiplagged `id` field. Room type/view preferences are applied by matching against room `title` text after calling `get_hotel_details`.
 
 ## 4. Data Provider Strategy
 
+All phases use Skiplagged MCP. No paid APIs required.
+
 | Phase | Flights | Hotels | Optimizer | Monthly Cost |
 |:------|:--------|:-------|:----------|:-------------|
-| **MVP** | Kiwi MCP | Amadeus MCP | N/A | $0 |
-| **Phase 2** | Kiwi MCP | Amadeus MCP | N/A | $0 |
-| **Phase 3** | Kiwi MCP | Amadeus MCP | N/A | $0 |
-| **Phase 4** | Kiwi MCP | Amadeus MCP + SearchAPI | SearchAPI | ~$40 |
-
-### Why SearchAPI for Phase 4?
-The Flexible Date Optimizer needs to survey prices across 90+ date combinations (3-month window). Amadeus's free tier (2,000 calls/month) is insufficient for this bulk querying.
-
-**SearchAPI Google Hotels:**
-- $40/month for 10,000 searches (Developer plan)
-- $4 per 1,000 searches
-- Property-level pricing with amenities
-- No commission model
-- Rate limit: 20% of plan credits per hour
+| **MVP** | Skiplagged `search_flights_all` | Skiplagged `search_hotels_all` + `get_hotel_details` | N/A | $0 |
+| **Phase 2** | Skiplagged `search_flights` (chat) | Skiplagged `search_hotels` (chat) | N/A | $0 |
+| **Phase 3** | Skiplagged `search_flights_all` | Skiplagged `search_hotels_all` + `get_hotel_details` | N/A | $0 |
+| **Phase 4** | Skiplagged `search_flights_all` | Skiplagged `search_hotels_all` + `get_hotel_details` | Skiplagged flex calendar | $0 |
 
 ## 5. Data Model (Simplified ERD)
 
@@ -159,40 +142,37 @@ The Flexible Date Optimizer needs to survey prices across 90+ date combinations 
 
 ## 6. Room Type & View Filtering Logic
 
-Since no hotel API supports query-level room type or view filtering, we implement **post-fetch filtering**:
+Skiplagged does not support query-level room type or view filtering. We implement **post-fetch filtering** against room detail data:
 
 ```python
-# Pseudocode for room filtering
-def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
+# Worker filter logic (apps/worker/worker/activities/price_check.py)
+def _filter_hotels(hotels, prefs):
     filtered = []
-    for room in rooms:
-        description = room.description.lower()
-        
-        # Check room type (King, Suite, Double, etc.)
-        if prefs.preferred_room_types:
-            type_match = any(
-                rt.lower() in description or rt.lower() in room.type_estimated.category.lower()
-                for rt in prefs.preferred_room_types
-            )
-            if not type_match:
+    for hotel in hotels:
+        # Collect all room titles and amenity names
+        room_titles = [r.get("title", "").lower() for r in hotel.get("rooms", [])]
+        amenities = [a.lower() for a in hotel.get("amenityNames", [])]
+        all_text = room_titles + amenities
+
+        # Match preferred room types against room title
+        if prefs.get("preferred_room_types"):
+            if not any(
+                rt.lower() in text
+                for rt in prefs["preferred_room_types"]
+                for text in room_titles
+            ):
                 continue
-        
-        # Check view (Ocean, City, Garden, etc.)
-        if prefs.preferred_views:
-            view_keywords = {
-                "ocean": ["ocean", "sea", "water", "beach"],
-                "city": ["city", "skyline", "urban"],
-                "garden": ["garden", "courtyard", "pool"]
-            }
-            view_match = any(
-                any(kw in description for kw in view_keywords.get(view.lower(), [view.lower()]))
-                for view in prefs.preferred_views
-            )
-            if not view_match:
+
+        # Match preferred views against room title and amenities
+        if prefs.get("preferred_views"):
+            if not any(
+                view.lower() in text
+                for view in prefs["preferred_views"]
+                for text in all_text
+            ):
                 continue
-        
-        filtered.append(room)
-    
+
+        filtered.append(hotel)
     return filtered
 ```
 
@@ -200,15 +180,15 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 
 ### 7.1 Manual Refresh
 1. User clicks "Refresh".
-2. API calls `temporal_client.execute_workflow("RefreshAllTrips")`.
-3. Workflow iterates active trips.
-4. For each trip:
-   - Call Kiwi MCP `search-flight` (parallel)
-   - Call Amadeus MCP `amadeus_hotel_search` (parallel)
-5. Apply post-fetch filters (airlines, room types, views).
-6. Save PriceSnapshot to database.
-7. Check notification thresholds.
-8. Push update to UI via SSE.
+2. API calls `temporal_client.execute_workflow("PriceCheckWorkflow", trip_id)`.
+3. Workflow:
+   - Call Skiplagged `search_flights_all(max_pages=4)` for up to 300 flight results
+   - Call Skiplagged `search_hotels_all(max_pages=4)` for hotel list
+   - Call Skiplagged `get_hotel_details` for top 20 hotels (by price) to get room data
+4. Apply post-fetch filters (airlines via ID parsing, room types/views via room title).
+5. Save PriceSnapshot to database.
+6. Check notification thresholds.
+7. Push update to UI via SSE.
 
 ### 7.2 Error Handling
 - **API Level:** Global exception handlers return standardized JSON errors (RFC 7807 Problem Details).
@@ -218,4 +198,4 @@ def filter_rooms(rooms: List[Room], prefs: HotelPrefs) -> List[Room]:
 ## 8. Deployment Strategy
 - **Local/Home Server:** Orchestrated via `docker-compose`.
 - **Ingress:** Cloudflare Tunnel for secure public access to Google OAuth callbacks without port forwarding.
-- **MCP Servers:** Run as sidecars in Docker Compose or connect to hosted versions.
+- **Skiplagged MCP:** Public hosted endpoint, no sidecar containers required.

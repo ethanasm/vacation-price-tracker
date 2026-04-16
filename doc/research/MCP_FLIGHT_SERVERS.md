@@ -1,425 +1,209 @@
 # MCP Flight Search Servers Research
 
-**Last Updated:** January 2026
-**Purpose:** Document findings from testing free hosted MCP servers for flight search integration in Phase 2.
+**Last Updated:** April 2026
+**Purpose:** Document findings from testing free hosted MCP servers for flight and hotel search integration.
 
 ---
 
-## Available Free Hosted MCP Servers
+## Current Provider: Skiplagged MCP
 
-| Provider | Endpoint | Free? | Auth Required |
-|----------|----------|-------|---------------|
-| **lastminute.com** | `mcp.lastminute.com/mcp` | Yes | No |
-| **Kiwi.com** | `mcp.kiwi.com` | Yes | No |
+> **Status: ACTIVE — sole provider as of April 2026 migration.**
+> Amadeus and Kiwi sections below are retained for historical reference.
 
-### Important: Kiwi MCP vs Kiwi Tequila API
+### Skiplagged MCP
 
-These are **different products**:
+**Endpoint:** `https://mcp.skiplagged.com/mcp`
+**Protocol:** JSON-RPC 2.0 over Streamable HTTP
+**Auth:** None required (public endpoint)
+**Client:** `apps/api/app/clients/skiplagged.py`
 
-1. **Kiwi Tequila API** (affiliate program)
-   - Full API with flight numbers, airline codes, segment details
-   - Requires affiliate partnership (50K MAU minimum)
-   - NOT available to individual developers
+#### Session Protocol
 
-2. **Kiwi MCP Server** (free, hosted)
-   - Curated subset of data for AI assistants
-   - Does NOT include airline names or carrier codes
-   - Available to anyone via `mcp.kiwi.com`
+```bash
+# 1. Initialize (get session ID)
+curl -X POST https://mcp.skiplagged.com/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 
----
+# Response includes mcp-session-id header and server info:
+# {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"@skiplagged/mcp","version":"0.0.4"},...}}
 
-## Response Field Comparison
+# 2. Call a tool (use the session ID from step 1)
+curl -X POST https://mcp.skiplagged.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "mcp-session-id: <session-id>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sk_flights_search","arguments":{"origin":"SFO","destination":"CDG","departureDate":"2026-06-15"}}}'
+```
 
-| Field | Kiwi MCP | lastminute.com MCP | Amadeus API |
-|-------|----------|-------------------|-------------|
-| Airline name | **NO** | Yes | Yes (via dictionaries) |
-| Carrier code | **NO** | Yes | Yes |
-| Flight number | **NO** | **NO** | **Yes** (e.g., F9 4402) |
-| Route (airports) | Yes (IATA codes) | Yes (formatted) | Yes |
-| Times | Yes (UTC + local) | Yes (local only) | Yes (local) |
-| Duration | Yes (seconds) | Yes (text) | Yes (ISO 8601: PT6H56M) |
-| Layover details | **Detailed** (airport, city, times) | "1 stop" only | **Detailed** (per segment) |
-| Segment details | **NO** | **NO** | **Yes** (full breakdown) |
-| Terminal info | **NO** | **NO** | **Yes** |
-| Aircraft type | **NO** | **NO** | **Yes** (e.g., AIRBUS A321) |
-| Cabin class | **NO** | **NO** | **Yes** (ECONOMY, BUSINESS, etc.) |
-| Fare details | **NO** | **NO** | **Yes** (fareBasis, brandedFare) |
-| Amenities | **NO** | **NO** | **Yes** (baggage, seats, etc.) |
-| Bookable seats | **NO** | **NO** | **Yes** (availability count) |
-| Last ticketing date | **NO** | **NO** | **Yes** |
-| Price breakdown | **NO** | **NO** | **Yes** (base + fees) |
-| Price | Yes | Yes | Yes |
-| Booking link | Yes | Yes | No (requires booking flow) |
-| Hotels | **NO** | **NO** | Yes |
-| Virtual interlining | **Yes** | No | No |
-| Free | Yes | Yes | Yes (2K/mo) |
-
----
-
-## Detailed Response Formats
-
-### lastminute.com MCP Response
+#### Flight Response Format
 
 ```json
 {
-  "airline": "Ryanair",
-  "carrier_id": "FR",
-  "departure": "BGY 09:25",
-  "arrival": "STN 10:30",
-  "duration": "2 hours and 5 min",
-  "stops": "Direct",
-  "price": "35.85 $",
-  "price_amount": 3585,
-  "deeplink": "https://www.lastminute.ie/...",
-  "is_roundtrip": false
+  "type": "FlightCard",
+  "id": "SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741",
+  "airlines": "Air Canada, Lufthansa",
+  "departure": { "airport": "SFO", "dateTime": "2026-06-15T13:00:00-07:00" },
+  "arrival": { "airport": "CDG", "dateTime": "2026-06-16T08:45:00+02:00" },
+  "duration": "13h 45m",
+  "layovers": 1,
+  "price": { "amount": 892.0, "currency": "USD" },
+  "deepLink": "https://skiplagged.com/flights/SFO/CDG/2026-06-15/...",
+  "attributes": ["standard"],
+  "returnFlight": {
+    "airlines": "Air Canada",
+    "departure": { "airport": "CDG", "dateTime": "2026-06-22T10:30:00+02:00" },
+    "arrival": { "airport": "SFO", "dateTime": "2026-06-22T14:15:00-07:00" },
+    "duration": "12h 45m",
+    "layovers": 1
+  }
 }
 ```
 
-**Strengths:**
-- Airline names AND carrier codes
-- Simple, human-readable format
-- Price in cents for calculations
+#### Flight Number Parsing
 
-**Weaknesses:**
-- No detailed layover info (just "1 stop")
-- No flight numbers
-- No segment breakdown for connections
+Flight numbers are not returned as structured fields. They are encoded in the `id` field:
 
-### Kiwi MCP Response
+```
+"SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741"
+                                         ^^^^^^^^^ ^^^^^^^^
+                                         outbound  return
+```
+
+Format after `trip=`:
+- `,` separates outbound from return legs
+- `-` separates segments within a leg
+- Each segment is `{CARRIER_CODE}{FLIGHT_NUMBER}` (e.g., `AC744`, `LH6825`)
+- Trailing `~` indicates a hidden-city itinerary (strip before parsing)
+
+Parser: `apps/api/app/clients/skiplagged_parser.py` → `parse_flight_segments(flight_id)`
+
+```python
+# Returns: (outbound_segments, return_segments)
+# Each segment: SkiplaggedFlightSegment(carrier_code="AC", flight_number="744")
+parse_flight_segments("SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741")
+# → ([AC744, LH6825], [TS251, AC401, AC741])
+```
+
+#### Hotel Response Format
 
 ```json
 {
-  "flyFrom": "MXP",
-  "flyTo": "LGW",
-  "cityFrom": "Milan",
-  "cityTo": "London",
-  "departure": {
-    "utc": "2026-02-15T06:50:00.000Z",
-    "local": "2026-02-15T07:50:00.000"
-  },
-  "arrival": {
-    "utc": "2026-02-15T08:50:00.000Z",
-    "local": "2026-02-15T08:50:00.000"
-  },
-  "totalDurationInSeconds": 7200,
-  "durationInSeconds": 7200,
-  "price": 51,
-  "deepLink": "https://on.kiwi.com/42QuYx",
-  "currency": "USD",
-  "layovers": [
+  "type": "HotelCard",
+  "id": "hotel_12345",
+  "name": "Le Grand Hotel Paris",
+  "imageUrl": "https://images.skiplagged.com/hotels/12345.jpg",
+  "rating": { "stars": 4, "text": "4 stars" },
+  "price": { "amount": 220.0, "currency": "USD", "text": "$220/night" },
+  "chain": "Marriott",
+  "location": "Paris, France",
+  "amenities": ["Free Wi-Fi", "Pool", "Fitness Center", "Restaurant"],
+  "deepLink": "https://skiplagged.com/hotels/paris/..."
+}
+```
+
+#### Hotel Detail Response (from `sk_hotel_details`)
+
+```json
+{
+  "hotelId": "12345",
+  "hotelName": "Le Grand Hotel Paris",
+  "starRating": 4,
+  "reviewRating": 8.7,
+  "reviewCount": 1243,
+  "totalPriceInDollars": 1540.0,
+  "amenityNames": ["Free Wi-Fi", "Pool", "Fitness Center", "Restaurant", "Spa"],
+  "address": "2 Rue Scribe, 75009 Paris",
+  "checkinDate": "2026-06-15",
+  "checkoutDate": "2026-06-22",
+  "rooms": [
     {
-      "at": "MUC",
-      "city": "Munich",
-      "cityCode": "MUC",
-      "arrival": {
-        "utc": "2026-02-15T08:10:00.000Z",
-        "local": "2026-02-15T09:10:00.000"
-      },
-      "departure": {
-        "utc": "2026-02-15T11:00:00.000Z",
-        "local": "2026-02-15T12:00:00.000"
-      }
+      "id": "room_1",
+      "title": "Standard Double Room",
+      "occupancyLimit": 2,
+      "pricePerNightInDollars": 200.0,
+      "totalPriceInDollars": 1400.0,
+      "taxesAndFeesInDollars": 140.0,
+      "currency": "USD",
+      "refundable": false,
+      "freeCancellation": false,
+      "bedTypes": ["Double"],
+      "bookingLink": "https://skiplagged.com/book/...",
+      "source": "Booking.com"
+    },
+    {
+      "id": "room_2",
+      "title": "Deluxe King Suite with City View",
+      "occupancyLimit": 2,
+      "pricePerNightInDollars": 320.0,
+      "totalPriceInDollars": 2240.0,
+      "taxesAndFeesInDollars": 224.0,
+      "currency": "USD",
+      "refundable": true,
+      "freeCancellation": true,
+      "bedTypes": ["King"],
+      "bookingLink": "https://skiplagged.com/book/...",
+      "source": "Hotels.com"
     }
   ]
 }
 ```
 
-**Strengths:**
-- Detailed layover information with exact times
-- UTC and local timestamps
-- Virtual interlining (combining non-partner airlines)
-- Often cheaper prices due to creative routing
-- City names included
+#### Pagination
 
-**Weaknesses:**
-- NO airline names or carrier codes
-- NO flight numbers
-- Cannot identify which airline is operating
-
-### Amadeus API Response
+All search endpoints support pagination:
 
 ```json
-{
-  "type": "flight-offer",
-  "id": "1",
-  "source": "GDS",
-  "lastTicketingDate": "2026-01-29",
-  "numberOfBookableSeats": 4,
-  "itineraries": [
-    {
-      "duration": "PT6H56M",
-      "segments": [
-        {
-          "departure": {
-            "iataCode": "SFO",
-            "terminal": "I",
-            "at": "2026-02-15T20:34:00"
-          },
-          "arrival": {
-            "iataCode": "LAS",
-            "terminal": "3",
-            "at": "2026-02-15T22:16:00"
-          },
-          "carrierCode": "F9",
-          "number": "4402",
-          "aircraft": { "code": "321" },
-          "operating": { "carrierCode": "F9" },
-          "duration": "PT1H42M",
-          "numberOfStops": 0
-        },
-        {
-          "departure": {
-            "iataCode": "LAS",
-            "terminal": "3",
-            "at": "2026-02-15T23:03:00"
-          },
-          "arrival": {
-            "iataCode": "MCO",
-            "terminal": "0",
-            "at": "2026-02-16T06:30:00"
-          },
-          "carrierCode": "F9",
-          "number": "1876",
-          "aircraft": { "code": "32Q" },
-          "duration": "PT4H27M"
-        }
-      ]
-    }
-  ],
-  "price": {
-    "currency": "USD",
-    "total": "299.96",
-    "base": "232.16",
-    "grandTotal": "299.96"
-  },
-  "validatingAirlineCodes": ["F9"],
-  "travelerPricings": [
-    {
-      "fareDetailsBySegment": [
-        {
-          "segmentId": "1",
-          "cabin": "ECONOMY",
-          "fareBasis": "R07PXP4",
-          "brandedFare": "ECO",
-          "brandedFareLabel": "BASIC",
-          "amenities": [
-            { "description": "FIRST CHECKED BAG", "isChargeable": true },
-            { "description": "PRE RESERVED SEAT ASSIGNMENT", "isChargeable": true }
-          ]
-        }
-      ]
-    }
-  ],
-  "dictionaries": {
-    "carriers": { "F9": "FRONTIER AIRLINES" },
-    "aircraft": { "321": "AIRBUS A321", "32Q": "AIRBUS A321NEO" }
-  }
+"pagination": {
+  "totalAvailable": 342,
+  "currentlyShowing": 75,
+  "offset": 0,
+  "limit": 75,
+  "hasMoreResults": true
 }
 ```
 
-**Strengths (UNIQUE to Amadeus):**
-- Flight numbers (e.g., F9 4402, F9 1876)
-- Full segment-by-segment breakdown
-- Terminal information
-- Aircraft type (AIRBUS A321, A321NEO)
-- Cabin class (ECONOMY, BUSINESS, FIRST)
-- Fare details (fareBasis, brandedFare, brandedFareLabel)
-- Amenities with chargeability (baggage, seat selection, priority boarding)
-- Last ticketing date (booking deadline)
-- Number of bookable seats (availability)
-- Price breakdown (base price + fees)
-- Operating carrier vs marketing carrier
-- Dictionaries for carrier/aircraft name lookup
+The `search_flights_all` and `search_hotels_all` client methods follow `hasMoreResults` up to `max_pages=4` (default), yielding up to 300 results.
 
-**Weaknesses:**
-- No direct booking link (requires separate booking flow)
-- Rate limited (2K calls/month free tier)
-- Missing some carriers (AA, DL, BA in free tier)
-- More complex response structure
+#### Airline Coverage
 
-**Key Amadeus-Only Fields for Price Tracking:**
-- `validatingAirlineCodes` - For airline filtering
-- `segments[].carrierCode` + `segments[].number` - Flight identification
-- `numberOfBookableSeats` - Availability monitoring
-- `lastTicketingDate` - Price validity window
+Skiplagged aggregates from multiple booking sources and covers a broad set of airlines including LCCs, legacy carriers, and international carriers. The `airlines` field returns airline display names (e.g., "Air Canada, Lufthansa").
+
+**Note:** Carrier codes are parsed from the `id` field, not returned directly. Not all flights have parseable flight numbers (some complex itineraries may omit the `trip=` segment encoding).
 
 ---
 
-## Airline Coverage Testing (Jan 2026)
+## Removed Providers
 
-### Routes Tested
+### Kiwi MCP — Removed (replaced by Skiplagged)
 
-| Route | lastminute.com Airlines | Kiwi Flights Found |
-|-------|-------------------------|-------------------|
-| JFK → LAX | JetBlue (B6), Hawaiian (HA) | Yes (airline unknown) |
-| SFO → MCO | Southwest (WN) | Yes (airline unknown) |
-| DFW → ORD | Southwest (WN), Spirit (NK) | Yes (airline unknown) |
-| MIL → LON | Ryanair (FR), Wizz Air (W4), EasyJet (U2) | Yes (airline unknown) |
+> **Status: REMOVED as of April 2026 migration.**
+> Kiwi MCP (`mcp.kiwi.com`) was the primary chat flight search provider in Phases 1-2. It was removed because it did not return airline names or carrier codes, making it impossible to display or filter by airline without a secondary Amadeus lookup.
 
-### Cross-Reference: Same Flights, Different Prices
+**Key limitation that drove removal:** `airlines` field was absent from all responses; no carrier codes; no flight numbers.
 
-By matching flight times, we confirmed both servers return the same flights:
+### Amadeus MCP + HTTP API — Removed (replaced by Skiplagged)
 
-| Route | Time | Kiwi Price | lastminute Price | Airline |
-|-------|------|------------|------------------|---------|
-| MIL → LON | MXP 12:55 → LTN 14:00 | **$20** | $44 | Wizz Air (W4) |
-| MIL → LON | MXP 21:45 → LGW 22:55 | **$39** | $56 | EasyJet (U2) |
+> **Status: REMOVED as of April 2026 migration.**
+> Amadeus was used for:
+> - Flight details with flight numbers and segment data (via HTTP API)
+> - Hotel search and offer details (via custom MCP tools calling `apps/api/app/clients/amadeus.py`)
+>
+> Removed because: 2,000 calls/month free tier was shared between flights and hotels; missing major carriers (AA, DL, BA) in free tier; complex MCP server setup required; Skiplagged provides equivalent data with no rate limits and no auth.
 
-**Key Finding:** Kiwi often shows **cheaper prices** for the same flights (possibly different fare classes or booking sources).
+**What Amadeus provided (now handled by Skiplagged):**
 
-### Airline Coverage Summary
-
-**lastminute.com shows (LCCs):**
-- Southwest (WN)
-- JetBlue (B6)
-- Spirit (NK)
-- Ryanair (FR)
-- EasyJet (U2)
-- Wizz Air (W4)
-- Hawaiian (HA)
-
-**lastminute.com missing (Legacy carriers):**
-- American (AA)
-- United (UA)
-- Delta (DL)
-- British Airways (BA)
-
-**Kiwi coverage:** Unknown - includes flights but doesn't expose airline info. May include legacy carriers.
+| Capability | Amadeus approach | Skiplagged approach |
+|-----------|-----------------|---------------------|
+| Flight numbers | `segments[].carrierCode` + `segments[].number` | Parsed from `id` field via `parse_flight_segments()` |
+| Airline names | `dictionaries.carriers` lookup | Returned directly in `airlines` field |
+| Hotel list | `/v2/shopping/hotel-offers` | `sk_hotels_search` |
+| Room details | `/v2/shopping/hotel-offers/{id}` | `sk_hotel_details` with `rooms[]` |
+| Booking links | Separate booking flow required | `deepLink` / `bookingLink` fields |
 
 ---
 
-## When to Use Each Provider
+## Historical: lastminute.com MCP
 
-| User Request | Best Provider | Reason |
-|-------------|---------------|--------|
-| "Find flights to Paris" | lastminute.com | Shows airline names, quick response |
-| "What's the cheapest flight?" | Kiwi | Often lower prices, virtual interlining |
-| "Show layover airports and times" | Kiwi | Detailed layover data with timestamps |
-| "Creative routing options" | Kiwi | Virtual interlining combines non-partners |
-| "I want to fly Delta" | Amadeus | Need `validatingAirlineCodes` filtering |
-| "Book me on UA200" | Amadeus | Only source with flight numbers |
-| "What aircraft is this?" | Amadeus | Aircraft codes + dictionary lookup |
-| "What's included in the fare?" | Amadeus | Amenities (baggage, seats, etc.) |
-| "Is this a basic economy fare?" | Amadeus | `brandedFare` and `brandedFareLabel` |
-| "How many seats are left?" | Amadeus | `numberOfBookableSeats` |
-| "When does the price expire?" | Amadeus | `lastTicketingDate` |
-| "Find hotels in Rome" | Amadeus | Only option with hotels |
-| "Track this specific flight" | Amadeus | Flight number for price monitoring |
+**Status: Evaluated but not adopted.** Considered as an alternative to Kiwi during Phase 2 research. Skiplagged was selected instead for its broader airline coverage and hotel support.
 
-### Decision Matrix
-
-```
-User asks about flights?
-├── Wants airline name? → lastminute.com
-├── Wants cheapest price? → Kiwi (often cheaper)
-├── Wants specific flight number? → Amadeus
-├── Wants fare/amenity details? → Amadeus
-├── Wants creative routing? → Kiwi (virtual interlining)
-└── Just browsing? → lastminute.com (best balance)
-
-User asks about hotels?
-└── Always Amadeus (only option)
-
-Price tracking workflow?
-└── Always Amadeus (need flight numbers for matching)
-```
-
----
-
-## Connection Configuration
-
-### lastminute.com MCP
-
-**Via Claude Code CLI:**
-```bash
-claude mcp add --transport http --scope local lastminute https://mcp.lastminute.com/mcp
-```
-
-**Via .mcp.json:**
-```json
-{
-  "mcpServers": {
-    "lastminute": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://mcp.lastminute.com/mcp"],
-      "enabled": true
-    }
-  }
-}
-```
-
-**Features:**
-- Two modes: "cheapest" (price sorted) and "best" (intelligent ranking)
-- Real-time flight search
-- Support: mcp@lastminute.com
-
-### Kiwi MCP
-
-**Via Claude Code CLI:**
-```bash
-claude mcp add --transport http --scope local kiwi https://mcp.kiwi.com
-```
-
-**Via .mcp.json:**
-```json
-{
-  "mcpServers": {
-    "kiwi": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://mcp.kiwi.com"],
-      "enabled": true
-    }
-  }
-}
-```
-
----
-
-## Cross-Provider Price Comparison (Same Route: SFO → MCO)
-
-| Provider | Airline | Price | Flight Numbers | Notes |
-|----------|---------|-------|----------------|-------|
-| **Kiwi** | Unknown | $279 | N/A | Via LAS, 6h 56m |
-| **lastminute.com** | Southwest (WN) | $283 | N/A | 1 stop |
-| **Amadeus** | Frontier (F9) | $300 | F9 4402 → F9 1876 | Via LAS, includes fare details |
-
-**Key Insight:** Amadeus found Frontier (F9) which neither MCP server showed. This LCC wasn't visible in the free MCP servers, demonstrating Amadeus has different inventory access.
-
----
-
-## Recommendations for Phase 2
-
-### Primary Strategy
-
-1. **lastminute.com** as primary for chat flight searches
-   - Best data quality (airline names, carrier codes)
-   - Good LCC coverage
-   - Simple response format
-
-2. **Kiwi** as backup/supplement
-   - Use for virtual interlining options
-   - Use when detailed layover info needed
-   - Cross-reference for potentially cheaper prices
-
-3. **Custom Amadeus MCP tools** for:
-   - Flight numbers (for tracking)
-   - Fare/amenity details
-   - Legacy carrier searches
-   - Hotel searches
-   - Segment-level details
-
-### Limitations to Document for Users
-
-- Neither free MCP server shows American, United, or Delta
-- Flight numbers not available from free MCP servers
-- Amadeus free tier (2K calls/month) also has carrier gaps
-- For comprehensive carrier coverage, paid API may be needed in Phase 4
-
----
-
-## Future Considerations
-
-- Monitor if Kiwi adds airline info to MCP responses
-- Consider caching lastminute.com results to reduce latency
-- Evaluate paid flight APIs for Phase 4 if carrier coverage is insufficient
-- Test Google Flights API when available
+lastminute.com MCP (`mcp.lastminute.com/mcp`) returned airline names and carrier codes but lacked hotel support and showed limited carrier coverage (LCCs only, no legacy carriers).

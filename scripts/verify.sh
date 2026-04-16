@@ -57,6 +57,29 @@ else
 fi
 
 echo ""
+echo "${PURPLE}${BOLD}━━━ Step 4: E2E Tests (Playwright) ━━━${NC}"
+echo "Note: Requires full Docker stack running. Set SKIP_E2E=1 to skip."
+
+if [ "${SKIP_E2E}" = "1" ]; then
+  echo "${GREEN}${CHECK} E2E tests skipped (SKIP_E2E=1)${NC}"
+else
+  # Check Docker stack is up
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^web$'; then
+    echo "${RED}${CROSS} Docker stack not running (web container missing). Run 'docker compose up -d' first.${NC}"
+    echo "         Or set SKIP_E2E=1 to skip E2E in this run."
+    FAILED=1
+  else
+    pnpm --filter vacation-price-tracker-web test:e2e
+    if [ $? -ne 0 ]; then
+      echo "${RED}${CROSS} E2E tests failed${NC}"
+      FAILED=1
+    else
+      echo "${GREEN}${CHECK} E2E tests passed${NC}"
+    fi
+  fi
+fi
+
+echo ""
 echo "${BOLD}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${NC}"
 echo "${BOLD}┃                      VERIFICATION SUMMARY                         ┃${NC}"
 echo "${BOLD}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${NC}"

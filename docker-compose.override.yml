@@ -9,7 +9,7 @@ services:
       - .:/app
       - /app/.venv  # Exclude virtualenv from mount
     environment:
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${API_ENVIRONMENT:-development}
       - LOG_LEVEL=DEBUG
       - DEBUG=1  # Connect to PyCharm's debug server on port 5678
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

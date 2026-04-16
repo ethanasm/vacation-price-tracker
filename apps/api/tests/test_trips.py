@@ -547,162 +547,68 @@ async def test_trip_helpers_handle_missing_data(test_session):
     assert latest_snapshot is None
 
 
-def test_amadeus_flight_parsing_helpers():
-    """Test Amadeus flight data extraction helpers."""
-    # Test _extract_amadeus_airline_code
-    # From validatingAirlineCodes
-    item_with_validating = {"validatingAirlineCodes": ["UA", "AA"]}
-    assert trips_module._extract_amadeus_airline_code(item_with_validating) == "UA"
+def test_skiplagged_segment_id_parsing():
+    """Test parsing of individual segment IDs from Skiplagged format."""
+    # Standard format
+    assert trips_module._parse_skiplagged_segment_id("AF81") == ("AF", "81")
+    assert trips_module._parse_skiplagged_segment_id("AC744") == ("AC", "744")
 
-    # From itineraries
-    item_with_itineraries = {
-        "itineraries": [{"segments": [{"carrierCode": "DL"}]}]
-    }
-    assert trips_module._extract_amadeus_airline_code(item_with_itineraries) == "DL"
+    # Hidden-city marker stripped
+    assert trips_module._parse_skiplagged_segment_id("AF81~") == ("AF", "81")
 
-    # Fallback to legacy fields
-    item_legacy = {"carrier": "AA"}
-    assert trips_module._extract_amadeus_airline_code(item_legacy) == "AA"
+    # 3-letter carrier code
+    assert trips_module._parse_skiplagged_segment_id("9W123") == (None, None)  # starts with digit
 
-    # Empty item
-    assert trips_module._extract_amadeus_airline_code({}) is None
+    # Invalid formats
+    assert trips_module._parse_skiplagged_segment_id("") == (None, None)
+    assert trips_module._parse_skiplagged_segment_id("invalid") == (None, None)
 
-    # Test _extract_amadeus_flight_number
-    item_with_number = {
-        "itineraries": [{"segments": [{"carrierCode": "UA", "number": "1234"}]}]
-    }
-    assert trips_module._extract_amadeus_flight_number(item_with_number) == "UA1234"
 
-    # Missing number
-    item_no_number = {
-        "itineraries": [{"segments": [{"carrierCode": "UA"}]}]
-    }
-    assert trips_module._extract_amadeus_flight_number(item_no_number) is None
+def test_skiplagged_trip_segments_parsing():
+    """Test parsing of full trip= portion of Skiplagged flight IDs."""
+    # Single outbound segment
+    outbound, return_segs = trips_module._parse_skiplagged_trip_segments(
+        "SFO-CDG-2026-06-15-trip=AF81"
+    )
+    assert outbound == [("AF", "81")]
+    assert return_segs == []
 
-    # Empty itineraries
-    assert trips_module._extract_amadeus_flight_number({}) is None
-    assert trips_module._extract_amadeus_flight_number({"itineraries": []}) is None
+    # Multi-segment outbound, no return
+    outbound, return_segs = trips_module._parse_skiplagged_trip_segments(
+        "SFO-CDG-2026-06-15-trip=AC744-LH6825"
+    )
+    assert outbound == [("AC", "744"), ("LH", "6825")]
+    assert return_segs == []
 
-    # Legacy fallback
-    item_legacy_number = {"flight_number": "DL567"}
-    assert trips_module._extract_amadeus_flight_number(item_legacy_number) == "DL567"
+    # Round trip
+    outbound, return_segs = trips_module._parse_skiplagged_trip_segments(
+        "SFO-CDG-2026-06-15-2026-06-22-trip=AF81,TS251-AC401"
+    )
+    assert outbound == [("AF", "81")]
+    assert return_segs == [("TS", "251"), ("AC", "401")]
 
-    # Test _extract_amadeus_times
-    item_with_times = {
-        "itineraries": [{
-            "segments": [
-                {"departure": {"at": "2024-03-15T09:30:00"}, "arrival": {"at": "2024-03-15T10:00:00"}},
-                {"departure": {"at": "2024-03-15T11:00:00"}, "arrival": {"at": "2024-03-15T12:30:00"}},
-            ]
-        }]
-    }
-    dep, arr = trips_module._extract_amadeus_times(item_with_times)
-    assert dep == "2024-03-15T09:30:00"
-    assert arr == "2024-03-15T12:30:00"
+    # Hidden-city marker
+    outbound, return_segs = trips_module._parse_skiplagged_trip_segments(
+        "SFO-CDG-2026-06-15-trip=AF81~"
+    )
+    assert outbound == [("AF", "81")]
 
-    # Legacy fields fallback
-    item_legacy_times = {"departure_time": "10:00", "arrival_time": "12:00"}
-    dep, arr = trips_module._extract_amadeus_times(item_legacy_times)
-    assert dep == "10:00"
-    assert arr == "12:00"
-
-    # Empty item
-    dep, arr = trips_module._extract_amadeus_times({})
-    assert dep is None
-    assert arr is None
-
-    # Test _parse_amadeus_duration
-    item_duration = {"itineraries": [{"duration": "PT1H6M"}]}
-    assert trips_module._parse_amadeus_duration(item_duration) == 66
-
-    item_hours_only = {"itineraries": [{"duration": "PT2H"}]}
-    assert trips_module._parse_amadeus_duration(item_hours_only) == 120
-
-    item_minutes_only = {"itineraries": [{"duration": "PT45M"}]}
-    assert trips_module._parse_amadeus_duration(item_minutes_only) == 45
-
-    # Invalid duration
-    item_invalid = {"itineraries": [{"duration": "invalid"}]}
-    assert trips_module._parse_amadeus_duration(item_invalid) is None
-
-    # Legacy int fallback
-    item_legacy_duration = {"duration": 90}
-    assert trips_module._parse_amadeus_duration(item_legacy_duration) == 90
-
-    # Empty item
-    assert trips_module._parse_amadeus_duration({}) is None
-
-    # Test _count_amadeus_stops
-    item_nonstop = {"itineraries": [{"segments": [{"carrierCode": "UA"}]}]}
-    assert trips_module._count_amadeus_stops(item_nonstop) == 0
-
-    item_one_stop = {"itineraries": [{"segments": [{"carrierCode": "UA"}, {"carrierCode": "UA"}]}]}
-    assert trips_module._count_amadeus_stops(item_one_stop) == 1
-
-    item_two_stops = {"itineraries": [{"segments": [{}, {}, {}]}]}
-    assert trips_module._count_amadeus_stops(item_two_stops) == 2
-
-    # Legacy fallback
-    item_legacy_stops = {"stops": 3}
-    assert trips_module._count_amadeus_stops(item_legacy_stops) == 3
-
-    # Empty item
-    assert trips_module._count_amadeus_stops({}) == 0
-
-    # Test _get_airline_name
-    flights_data = {
-        "dictionaries": {"carriers": {"UA": "United Airlines", "DL": "Delta Air Lines"}}
-    }
-    item = {"validatingAirlineCodes": ["UA"]}
-    assert trips_module._get_airline_name(item, flights_data) == "United Airlines"
-
-    # From item itself
-    item_with_name = {"validatingAirlineCodes": ["XX"], "airline_name": "Unknown Airline"}
-    assert trips_module._get_airline_name(item_with_name, {}) == "Unknown Airline"
-
-    # Test _extract_return_flight
-    item_round_trip = {
-        "itineraries": [
-            {"segments": [{"departure": {"at": "2024-03-15T09:00:00"}, "arrival": {"at": "2024-03-15T11:00:00"}}]},
-            {
-                "duration": "PT2H30M",
-                "segments": [
-                    {"carrierCode": "DL", "number": "456", "departure": {"at": "2024-03-20T14:00:00"}, "arrival": {"at": "2024-03-20T15:00:00"}},
-                    {"departure": {"at": "2024-03-20T16:00:00"}, "arrival": {"at": "2024-03-20T17:30:00"}},
-                ]
-            }
-        ]
-    }
-    return_flight = trips_module._extract_return_flight(item_round_trip)
-    assert return_flight is not None
-    assert return_flight["flight_number"] == "DL456"
-    assert return_flight["departure_time"] == "2024-03-20T14:00:00"
-    assert return_flight["arrival_time"] == "2024-03-20T17:30:00"
-    assert return_flight["duration_minutes"] == 150
-    assert return_flight["stops"] == 1
-
-    # One-way flight (no return)
-    item_one_way = {"itineraries": [{"segments": [{}]}]}
-    assert trips_module._extract_return_flight(item_one_way) is None
-
-    # Legacy fallback
-    item_legacy_return = {"return_flight": {"departure": "15:00"}}
-    assert trips_module._extract_return_flight(item_legacy_return) == {"departure": "15:00"}
+    # No trip marker
+    outbound, return_segs = trips_module._parse_skiplagged_trip_segments("SFO-CDG-2026-06-15")
+    assert outbound == []
+    assert return_segs == []
 
 
 def test_extract_price_helper():
-    """Test _extract_price helper."""
-    # From price.total
-    assert trips_module._extract_price({"price": {"total": "199.99"}}) == "199.99"
-
-    # From price.grandTotal
-    assert trips_module._extract_price({"price": {"grandTotal": "299.99"}}) == "299.99"
-
-    # From price.amount
-    assert trips_module._extract_price({"price": {"amount": "399.99"}}) == "399.99"
-
-    # Direct price value
+    """Test _extract_price helper for Skiplagged-shaped offers."""
+    # Direct price value (Skiplagged flight offers store price as string)
     assert trips_module._extract_price({"price": "99.99"}) == "99.99"
+
+    # From price.amount (Skiplagged raw response)
+    assert trips_module._extract_price({"price": {"amount": 399.99}}) == 399.99
+
+    # From price.total (legacy shape)
+    assert trips_module._extract_price({"price": {"total": "199.99"}}) == "199.99"
 
     # From total_price
     assert trips_module._extract_price({"total_price": 149.99}) == "149.99"
@@ -710,15 +616,23 @@ def test_extract_price_helper():
     # Missing price
     assert trips_module._extract_price({}) is None
 
-    # Amadeus V3 hotel-offers nested price
-    assert trips_module._extract_price({"hotel": {"name": "Test"}, "offers": [{"price": {"total": "289.00"}}]}) == "289.00"
+    # Hotel offer with rooms array: takes cheapest room total
+    hotel_with_rooms = {
+        "name": "Test Hotel",
+        "rooms": [
+            {"title": "Deluxe", "price_total": 500.00},
+            {"title": "Standard", "price_total": 300.00},
+            {"title": "Suite", "price_total": 800.00},
+        ],
+    }
+    assert trips_module._extract_price(hotel_with_rooms) == "300.0"
 
-    # No offers array
-    assert trips_module._extract_price({"hotel": {"name": "Test"}}) is None
+    # No rooms, no price
+    assert trips_module._extract_price({"name": "Test Hotel"}) is None
 
 
-def test_snapshot_to_response_with_amadeus_data(test_session):
-    """Test _snapshot_to_response extracts Amadeus flight data correctly."""
+def test_snapshot_to_response_with_skiplagged_data(test_session):
+    """Test _snapshot_to_response extracts Skiplagged-shaped flight and hotel data."""
     snapshot = PriceSnapshot(
         id=uuid.uuid4(),
         trip_id=uuid.uuid4(),
@@ -730,44 +644,40 @@ def test_snapshot_to_response_with_amadeus_data(test_session):
             "flights": {
                 "data": [
                     {
-                        "id": "1",
-                        "price": {"total": "350.00"},
-                        "validatingAirlineCodes": ["UA"],
-                        "itineraries": [
-                            {
-                                "duration": "PT1H6M",
-                                "segments": [
-                                    {
-                                        "carrierCode": "UA",
-                                        "number": "1234",
-                                        "departure": {"at": "2024-03-15T21:30:00"},
-                                        "arrival": {"at": "2024-03-15T22:36:00"},
-                                    }
-                                ]
-                            },
-                            {
-                                "duration": "PT1H10M",
-                                "segments": [
-                                    {
-                                        "carrierCode": "UA",
-                                        "number": "5678",
-                                        "departure": {"at": "2024-03-20T14:00:00"},
-                                        "arrival": {"at": "2024-03-20T15:10:00"},
-                                    }
-                                ]
-                            }
-                        ]
+                        "id": "SFO-CDG-2026-06-15-2026-06-22-trip=UA1234,UA5678",
+                        "airlines": "United Airlines",
+                        "carrier_code": "UA",
+                        "departure_airport": "SFO",
+                        "arrival_airport": "CDG",
+                        "departure_time": "2026-06-15T21:30:00",
+                        "arrival_time": "2026-06-15T22:36:00",
+                        "duration_minutes": 66,
+                        "stops": 0,
+                        "price": "350.00",
+                        "price_currency": "USD",
+                        "booking_link": "https://skiplagged.com/test",
+                        "provider": "skiplagged",
+                        "return_flight": {
+                            "departure_airport": "CDG",
+                            "arrival_airport": "SFO",
+                            "departure_time": "2026-06-20T14:00:00",
+                            "arrival_time": "2026-06-20T15:10:00",
+                            "duration_minutes": 70,
+                        },
                     }
                 ],
-                "dictionaries": {"carriers": {"UA": "United Airlines"}}
             },
             "hotels": {
                 "data": [
                     {
-                        "id": "H1",
-                        "price": {"total": "500.00"},
+                        "id": "hotel_123",
                         "name": "Grand Hotel",
+                        "price": "500.00",
                         "rating": 4,
+                        "address": "1 Main Street",
+                        "rooms": [
+                            {"title": "King Suite", "price_total": 500.00},
+                        ],
                     }
                 ]
             }
@@ -778,22 +688,26 @@ def test_snapshot_to_response_with_amadeus_data(test_session):
 
     assert len(response.flight_offers) == 1
     flight = response.flight_offers[0]
-    assert flight.id == "1"
     assert flight.airline_code == "UA"
     assert flight.flight_number == "UA1234"
     assert flight.airline_name == "United Airlines"
     assert flight.price == Decimal("350.00")
-    assert flight.departure_time == "2024-03-15T21:30:00"
-    assert flight.arrival_time == "2024-03-15T22:36:00"
+    assert flight.departure_time == "2026-06-15T21:30:00"
+    assert flight.arrival_time == "2026-06-15T22:36:00"
     assert flight.duration_minutes == 66
     assert flight.stops == 0
     assert flight.return_flight is not None
     assert flight.return_flight["flight_number"] == "UA5678"
-    assert flight.return_flight["departure_time"] == "2024-03-20T14:00:00"
+    # Itineraries should include both outbound and return
+    assert len(flight.itineraries) == 2
+    assert flight.itineraries[0].direction == "outbound"
+    assert flight.itineraries[0].segments[0].flight_number == "UA1234"
+    assert flight.itineraries[1].direction == "return"
+    assert flight.itineraries[1].segments[0].flight_number == "UA5678"
 
     assert len(response.hotel_offers) == 1
     hotel = response.hotel_offers[0]
-    assert hotel.id == "H1"
+    assert hotel.id == "hotel_123"
     assert hotel.name == "Grand Hotel"
     assert hotel.price == Decimal("500.00")
     assert hotel.rating == 4
