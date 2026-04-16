@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     amadeus_base_url: str = "https://test.api.amadeus.com"
     mock_amadeus_api: bool = False  # Return mock data instead of calling Amadeus
 
+    # Skiplagged MCP (no auth required)
+    skiplagged_mcp_url: str = "https://mcp.skiplagged.com/mcp"
+    mock_skiplagged_api: bool = False  # Return mock data instead of calling Skiplagged MCP
+
     # External Flight Price Provider
     # Options: "amadeus" (default), "fast-flights" (Google Flights scraper)
     external_flight_price_provider: str = "amadeus"
