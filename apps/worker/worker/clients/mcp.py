@@ -4,8 +4,6 @@ import logging
 import os
 from typing import Any
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -128,20 +126,3 @@ class MCPClient:
             self._process.kill()
             await self._process.wait()
         self._process = None
-
-
-def build_amadeus_client() -> MCPClient | None:
-    if not settings.amadeus_mcp_path:
-        return None
-    env = {
-        "AMADEUS_API_KEY": settings.amadeus_api_key,
-        "AMADEUS_API_SECRET": settings.amadeus_api_secret,
-    }
-    return MCPClient(
-        name="Amadeus",
-        command=settings.mcp_node_path,
-        args=[settings.amadeus_mcp_path],
-        env=env,
-        timeout_seconds=settings.mcp_timeout_seconds,
-        max_restart_attempts=settings.mcp_max_restart_attempts,
-    )

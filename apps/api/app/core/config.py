@@ -31,28 +31,9 @@ class Settings(BaseSettings):
     groq_api_key: str
     groq_model: str = "llama-3.3-70b-versatile"
 
-    # Amadeus API (Flights and Hotels)
-    amadeus_api_key: str
-    amadeus_api_secret: str
-    amadeus_base_url: str = "https://test.api.amadeus.com"
-    mock_amadeus_api: bool = False  # Return mock data instead of calling Amadeus
-
     # Skiplagged MCP (no auth required)
     skiplagged_mcp_url: str = "https://mcp.skiplagged.com/mcp"
     mock_skiplagged_api: bool = False  # Return mock data instead of calling Skiplagged MCP
-
-    # External Flight Price Provider
-    # Options: "amadeus" (default), "fast-flights" (Google Flights scraper)
-    external_flight_price_provider: str = "amadeus"
-
-    # fast-flights fetch mode (only used when external_flight_price_provider = "fast-flights")
-    # Options:
-    #   - "common": Direct requests (your server IP exposed to Google)
-    #   - "fallback": Tries direct first, serverless if fails
-    #   - "local": Uses local Playwright installation (requires playwright in container)
-    # Note: "force-fallback" (serverless Playwright) is currently broken upstream
-    # See: https://github.com/AWeirdDev/flights/issues/53
-    fast_flights_fetch_mode: str = "common"
 
     # SearchAPI (Phase 4)
     searchapi_key: str = ""
@@ -63,12 +44,6 @@ class Settings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "vacation-price-tracker-tasks"
-
-    # MCP (stdio subprocesses for hotel search)
-    mcp_node_path: str = "node"
-    amadeus_mcp_path: str = "node_modules/@modelcontextprotocol/server-amadeus-travel/dist/index.js"
-    mcp_timeout_seconds: int = 30
-    mcp_max_restart_attempts: int = 3
 
     # Email Notifications
     smtp_host: str = "smtp.smtp2go.com"
