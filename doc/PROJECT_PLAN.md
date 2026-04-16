@@ -1,20 +1,17 @@
 # Project Implementation Plan
 
-## Scope Reduction: External MCP Servers
+## Data Provider: Skiplagged MCP
 
-**Key Insight:** The Amadeus MCP server ([github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp)) already exposes hotel search, offer details, and booking tools. Combined with the Kiwi MCP server for flights, we do **not** need to build custom flight/hotel search tools.
+All flight and hotel data is provided by the **Skiplagged MCP** at `https://mcp.skiplagged.com/mcp`. No API keys or paid plans required. The single `SkiplaggedClient` in `apps/api/app/clients/skiplagged.py` is used for both chat tools and worker activities.
 
-### What We DON'T Need to Build:
-- ❌ `kiwi_search_flights` tool (use Kiwi MCP)
-- ❌ `amadeus_search_hotels` tool (use Amadeus MCP)
-- ❌ `search_airports` tool (can use Amadeus location search)
-
-### What We DO Need to Build:
-- ✅ Trip management tools (create, list, pause, delete)
+### What We Have Built:
+- ✅ Trip management tools (create, list, pause, delete, trigger refresh)
 - ✅ Notification preference tools
-- ✅ Refresh orchestration
-- ✅ Post-fetch filtering logic (airlines, room types, views)
+- ✅ Refresh orchestration (Temporal workflows)
+- ✅ Post-fetch filtering logic (airlines via ID parsing, room types/views via room title)
 - ✅ Price snapshot storage and history
+- ✅ `search_flights` chat tool (Skiplagged)
+- ✅ `search_hotels` chat tool (Skiplagged — new in Phase 2)
 
 ---
 
@@ -22,39 +19,38 @@
 **Goal:** A working dashboard running locally or on a home server.
 
 ### Infrastructure
-- [ ] Docker Compose with Postgres, Temporal, FastAPI
-- [ ] Configure Amadeus MCP server as a sidecar container
-- [ ] Set up Kiwi MCP connection (via Claude.ai or self-hosted)
+- [x] Docker Compose with Postgres, Temporal, FastAPI
+- [x] Skiplagged MCP client (HTTP/JSON-RPC, no auth)
 
 ### Authentication
-- [ ] Implement Google OAuth flow (Frontend + Backend)
-- [ ] JWT token management with HTTP-only cookies
-- [ ] No local password storage
+- [x] Implement Google OAuth flow (Frontend + Backend)
+- [x] JWT token management with HTTP-only cookies
+- [x] No local password storage
 
 ### Data Layer
-- [ ] SQLModel/SQLAlchemy models for User, Trip, PriceSnapshot, NotificationRule
-- [ ] Alembic migrations
-- [ ] Pydantic schemas with validation
+- [x] SQLModel/SQLAlchemy models for User, Trip, PriceSnapshot, NotificationRule
+- [x] Alembic migrations
+- [x] Pydantic schemas with validation
 
 ### API
-- [ ] CRUD endpoints for Trips
-- [ ] Idempotency key handling for POST requests
-- [ ] Error handling with RFC 7807 Problem Details
+- [x] CRUD endpoints for Trips
+- [x] Idempotency key handling for POST requests
+- [x] Error handling with RFC 7807 Problem Details
 
 ### Worker (Temporal)
-- [ ] `RefreshAllTripsWorkflow` - orchestrates all trip updates
-- [ ] `PriceCheckWorkflow` - fetches data for single trip
-- [ ] Activities:
-  - `fetch_flights_activity` - calls Kiwi MCP
-  - `fetch_hotels_activity` - calls Amadeus MCP
+- [x] `RefreshAllTripsWorkflow` - orchestrates all trip updates
+- [x] `PriceCheckWorkflow` - fetches data for single trip
+- [x] Activities:
+  - `fetch_flights_activity` - calls Skiplagged `search_flights_all`
+  - `fetch_hotels_activity` - calls Skiplagged `search_hotels_all` + `get_hotel_details` for top 20
   - `filter_results_activity` - applies airline/room preferences
   - `save_snapshot_activity` - persists to database
 
 ### UI
-- [ ] Dashboard table with trip list and current prices
-- [ ] Trip detail modal with price history chart
-- [ ] Manual refresh button
-- [ ] Error boundary components
+- [x] Dashboard table with trip list and current prices
+- [x] Trip detail modal with price history chart
+- [x] Manual refresh button
+- [x] Error boundary components
 
 ---
 
@@ -62,27 +58,29 @@
 **Goal:** Conversational control using Groq.
 
 ### LLM Setup
-- [ ] Groq API client configuration (Llama 3.3 70B)
-- [ ] System prompts for travel assistant persona
-- [ ] Tool-calling configuration for MCP integration
+- [x] Groq API client configuration (Llama 3.3 70B)
+- [x] System prompts for travel assistant persona
+- [x] Tool-calling configuration for MCP integration
 
-### Custom MCP Tools (Trip Management Only)
-- [ ] `create_trip` - validates input, stores trip, triggers initial price check
-- [ ] `list_trips` - returns user's tracked trips with current prices
-- [ ] `get_trip_details` - full history and offer details
-- [ ] `set_notification` - update threshold preferences
-- [ ] `pause_trip` / `resume_trip` - toggle tracking status
-- [ ] `trigger_refresh` - manual price check
+### Custom MCP Tools
+- [x] `create_trip` - validates input, stores trip, triggers initial price check
+- [x] `list_trips` - returns user's tracked trips with current prices
+- [x] `get_trip_details` - full history and offer details
+- [x] `set_notification` - update threshold preferences
+- [x] `pause_trip` / `resume_trip` - toggle tracking status
+- [x] `trigger_refresh` - manual price check
+- [x] `search_flights` - conversational flight search via Skiplagged (airline names, flight numbers, prices, booking links)
+- [x] `search_hotels` - conversational hotel search via Skiplagged (name, stars, reviews, nightly price, amenities)
 
 ### UI
-- [ ] Integrate `assistant-ui` chat component
-- [ ] Streaming response display
-- [ ] Tool call visualization (optional)
+- [x] Integrate `assistant-ui` chat component
+- [x] Streaming response display
+- [x] Tool call visualization
 
 ### Elicitation Logic
-- [ ] Prompt engineering for missing parameters
-- [ ] Airline preference collection
-- [ ] Room type/view preference collection
+- [x] Prompt engineering for missing parameters
+- [x] Airline preference collection
+- [x] Room type/view preference collection
 
 ---
 
@@ -97,7 +95,7 @@
 ### Scheduler
 - [ ] Enable Temporal Schedules for daily cron
 - [ ] Per-user schedule configuration
-- [ ] Rate limiting to stay within API free tiers
+- [ ] Rate limiting (caching + per-user token bucket for Skiplagged)
 
 ### Pause/Unpause
 - [ ] UI toggle for individual trip tracking
@@ -113,28 +111,19 @@
 ---
 
 ## Phase 4: Flexible Date Optimizer
-**Goal:** "Find me cheaper dates" feature using SearchAPI.
+**Goal:** "Find me cheaper dates" feature using Skiplagged flex calendar.
 
-### SearchAPI Integration
-- [ ] SearchAPI Google Hotels client
-- [ ] Rate limiting (20% of plan credits per hour)
-- [ ] Response parsing for property-level pricing
-
-### Why SearchAPI Instead of Amadeus for Optimizer?
-| Aspect | Amadeus | SearchAPI |
-|:-------|:--------|:----------|
-| Free Tier | ~2,000 calls/month | 100 calls (test) |
-| Paid Tier | €0.001-0.025/call | $40/month for 10,000 |
-| Best For | Individual trip lookups | Bulk date surveying |
-| Date Range Survey (90 combos) | Would consume 4.5 months of free tier | ~1% of monthly quota |
+### Skiplagged Flexible Calendar Integration
+- [ ] Use Skiplagged `sk_flex_departure_calendar` / `sk_flex_return_calendar` for date-range price grids
+- [ ] No additional cost or API key needed (same Skiplagged MCP endpoint)
 
 ### Optimizer Workflow
 - [ ] `RunOptimizerWorkflow` - Temporal workflow for date surveying
 - [ ] Activities:
-  - `generate_date_combinations` - create search grid
-  - `fetch_prices_batch` - parallel SearchAPI calls with rate limiting
+  - `generate_date_combinations` - create search grid (up to 90 combos)
+  - `fetch_prices_batch` - parallel Skiplagged flex calendar calls with rate limiting
   - `rank_candidates` - sort by total price
-  - `verify_top_candidates` - re-check top 5 with live Amadeus data
+  - `verify_top_candidates` - re-check top 5 with live `search_flights_all`
 
 ### UI
 - [ ] "Find Cheaper Dates" button on trip detail
@@ -148,38 +137,37 @@
 ## Testing Strategy
 
 ### Unit Tests (Pytest)
-- [ ] Pydantic model validation
-- [ ] Post-fetch filtering logic
-- [ ] Notification threshold comparison
-- [ ] Date combination generator
+- [x] Pydantic model validation
+- [x] Post-fetch filtering logic (Skiplagged carrier code parsing, room title matching)
+- [x] Notification threshold comparison
+- [x] Skiplagged client (HTTP mock, pagination, error handling)
+- [x] Flight number parser (normal, hidden-city, multi-segment, round-trip)
+- [x] Chat tool tests (search_flights, search_hotels)
+- [ ] Date combination generator (Phase 4)
 
 ### Integration Tests
-- [ ] Temporal workflow tests with mocked activities
-- [ ] MCP tool integration tests
-- [ ] Database transaction tests
+- [x] Temporal workflow tests with mocked activities
+- [x] MCP tool integration tests
+- [x] Database transaction tests
 
 ### E2E Tests (Playwright)
-- [ ] Google OAuth login flow
-- [ ] Create trip via chat
-- [ ] Manual refresh and price display
+- [x] Chat flight search in light + dark mode
+- [x] Chat hotel search in light + dark mode
+- [x] Trip creation + price refresh in light + dark mode
+- [x] Theme validation across all pages
+- [ ] Google OAuth login flow (requires live server)
 - [ ] Notification threshold setting
-
-### Contract Tests
-- [ ] Validate Pydantic schemas match frontend TypeScript types
-- [ ] MCP tool response schema validation
 
 ---
 
 ## Milestones
 
-| Phase | Duration | Key Deliverable |
-|:------|:---------|:----------------|
-| Phase 1 | 4-6 weeks | Working dashboard with manual refresh |
-| Phase 2 | 2-3 weeks | Chat interface with trip management |
-| Phase 3 | 2 weeks | Daily automated tracking + notifications |
-| Phase 4 | 3-4 weeks | Flexible date optimizer |
-
-**Total Estimated Time:** 11-15 weeks for full feature set
+| Phase | Status | Key Deliverable |
+|:------|:-------|:----------------|
+| Phase 1 | Complete | Working dashboard with manual refresh |
+| Phase 2 | Complete | Chat interface with Skiplagged flight + hotel search |
+| Phase 3 | In Progress | Daily automated tracking + notifications |
+| Phase 4 | Planned | Flexible date optimizer via Skiplagged calendar |
 
 ---
 
@@ -187,8 +175,8 @@
 
 | Risk | Mitigation |
 |:-----|:-----------|
-| Amadeus free tier exceeded | Implement aggressive caching (24h TTL for same route/date) |
-| Kiwi MCP rate limits | Queue requests with exponential backoff |
-| SearchAPI hourly limit (20%) | Spread optimizer queries across multiple hours |
-| Room type parsing failures | Fallback to showing all rooms if filtering fails |
+| Skiplagged MCP availability | 24h Redis cache reduces live calls; graceful error handling in worker |
+| Skiplagged undocumented rate limits | Per-user token bucket throttling + `max_pages=4` cap per fetch |
+| Room type parsing failures | Fallback to showing all rooms if `title` matching finds no matches |
+| Flight number parsing failures | Parser returns empty list on failure; carrier filtering skipped gracefully |
 | Google OAuth callback issues | Document Cloudflare Tunnel setup thoroughly |

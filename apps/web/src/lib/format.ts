@@ -93,7 +93,7 @@ export function formatDuration(minutes: number): string {
 /**
  * Format an ISO datetime string as time of day (e.g., "10:30 AM").
  * Parses the time directly from the string to avoid timezone conversion.
- * Amadeus returns times in local airport time, so we display as-is.
+ * Provider returns times in local airport time, so we display as-is.
  */
 export function formatFlightTime(dateString: string): string {
   // Extract time part from ISO string (e.g., "2024-02-13T22:48:00" -> "22:48")

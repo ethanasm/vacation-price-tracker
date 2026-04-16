@@ -27,7 +27,7 @@ class FlightSearchFlight(BaseModel):
     departure_time: datetime | None = Field(default=None, description="Departure datetime (local)")
     arrival_time: datetime | None = Field(default=None, description="Arrival datetime (local)")
 
-    # Airline info (may be None for Kiwi)
+    # Airline info
     airline_name: str | None = Field(default=None, description="Airline name (e.g., 'Ryanair')")
     carrier_code: str | None = Field(default=None, description="Airline IATA code (e.g., 'FR')")
 
@@ -36,7 +36,7 @@ class FlightSearchFlight(BaseModel):
     stops: int = Field(default=0, description="Number of stops (0 = direct)")
     stops_text: str | None = Field(default=None, description="Human-readable stops (e.g., 'Direct', '1 stop')")
 
-    # Layover details (available from Kiwi)
+    # Layover details
     layovers: list[FlightLayover] = Field(default_factory=list, description="Detailed layover information")
 
     # Pricing
@@ -48,7 +48,7 @@ class FlightSearchFlight(BaseModel):
     booking_link: str | None = Field(default=None, description="Deep link for booking")
 
     # Provider metadata
-    provider: str = Field(description="Data source provider (e.g., 'kiwi', 'amadeus')")
+    provider: str = Field(description="Data source provider (e.g., 'skiplagged')")
     raw_data: dict | None = Field(default=None, description="Original response data for debugging")
 
 

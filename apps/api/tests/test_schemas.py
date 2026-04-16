@@ -218,7 +218,7 @@ class TestTripCreate:
         assert "cannot be in the past" in str(exc_info.value)
 
     def test_date_within_359_days(self, valid_trip_data):
-        """Test dates cannot be more than 359 days out (Amadeus limit)."""
+        """Test dates cannot be more than 359 days out."""
         valid_trip_data["depart_date"] = date.today() + timedelta(days=360)
         valid_trip_data["return_date"] = date.today() + timedelta(days=367)
         with pytest.raises(ValidationError) as exc_info:

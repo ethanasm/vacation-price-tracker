@@ -551,7 +551,7 @@ def _extract_price_value(item: dict[str, Any]) -> Decimal | None:
     result = _extract_from_fields(item)
     if result is not None:
         return result
-    # Amadeus V3 hotel-offers: price is nested in offers[0].price.total
+    # Hotel offers may nest price in offers[0].price.total (legacy shape)
     offers = item.get("offers")
     if isinstance(offers, list) and offers:
         first_offer = offers[0]
