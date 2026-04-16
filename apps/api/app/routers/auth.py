@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from jose import ExpiredSignatureError, JWTError, jwt
 from pydantic import BaseModel
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -188,10 +189,17 @@ async def test_login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Test-only login. Creates a test user and sets JWT cookie.
-    Only available when ENVIRONMENT=test.
+    """Test-only login. Creates a test user, wipes their existing trips, and
+    sets JWT cookies. Only available when ENVIRONMENT=test.
+
+    The trip wipe keeps E2E runs idempotent — without it, the per-user
+    `MAX_TRIPS_PER_USER` cap (10) is hit after a few runs of any test that
+    creates a trip, and subsequent POST /v1/trips calls fail with 400
+    `TripLimitExceeded` even though the request itself is valid.
     """
     from fastapi import HTTPException
+
+    from app.models.trip import Trip
 
     if settings.environment != "test":
         raise HTTPException(status_code=403, detail="Test login only available in test environment")
@@ -208,6 +216,10 @@ async def test_login(
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+    # Reset trip state so each test run starts from zero
+    await db.execute(delete(Trip).where(Trip.user_id == user.id))
+    await db.commit()
 
     # Create access and refresh tokens
     jwt_data = _build_jwt_data(user.id)
