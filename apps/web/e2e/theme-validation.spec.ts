@@ -61,7 +61,11 @@ async function toggleToLight(page: Page) {
 
 // Only run in light project to avoid duplicates (theme tests manage their own mode)
 test.describe("Theme Validation", () => {
-  test.skip((_fixtures, testInfo) => testInfo.project.name === "dark", "Theme tests manage their own mode");
+  test.beforeEach((_fixtures, testInfo) => {
+    if (testInfo.project.name === "dark") {
+      testInfo.skip(true, "Theme tests manage their own mode");
+    }
+  });
 
   test("dashboard light mode has correct background color", async ({ page }) => {
     await page.goto("/trips");

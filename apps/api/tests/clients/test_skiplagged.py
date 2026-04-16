@@ -252,3 +252,194 @@ class TestSkiplaggedErrorHandling:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             with pytest.raises(SkiplaggedConnectionError):
                 await client.search_flights("SFO", "CDG", "2026-06-15")
+
+
+def _hotel_details_response() -> httpx.Response:
+    """Create a mock hotel details response."""
+    return _make_sse_response({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+            "content": [{"type": "text", "text": "hotel details"}],
+            "structuredContent": {
+                "hotelId": "1001",
+                "hotelName": "Test Hotel",
+                "starRating": 4,
+                "reviewRating": 8.5,
+                "reviewCount": 250,
+                "totalPriceInDollars": 500.0,
+                "chainName": "Test Chain",
+                "amenityNames": ["Pool", "Gym"],
+                "address": "123 Main St",
+                "cityName": "Paris",
+                "countryName": "France",
+                "description": "A lovely hotel",
+                "checkinDate": "2026-06-15",
+                "checkoutDate": "2026-06-18",
+                "location": {"lat": 48.85, "lng": 2.35},
+                "rooms": [
+                    {
+                        "id": "room-1",
+                        "title": "Deluxe King",
+                        "occupancyLimit": 2,
+                        "pricePerNightInDollars": 150.0,
+                        "totalPriceInDollars": 450.0,
+                        "taxesAndFeesInDollars": 50.0,
+                        "currency": "USD",
+                        "refundable": True,
+                        "freeCancellation": True,
+                        "bedTypes": ["King"],
+                        "bookingLink": "https://skiplagged.com/book",
+                        "source": "test",
+                    }
+                ],
+            },
+        },
+    })
+
+
+class TestSkiplaggedHotelPagination:
+    @pytest.mark.anyio
+    async def test_search_hotels_all_follows_pages(self):
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        responses = [_hotels_response(2, has_more=True), _hotels_response(1, has_more=False)]
+        mock_post = AsyncMock(side_effect=responses)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_hotels_all(
+                "Paris", "2026-06-15", "2026-06-18", max_pages=4,
+            )
+        assert result.success is True
+        assert len(result.hotels) == 3
+
+    @pytest.mark.anyio
+    async def test_search_hotels_all_respects_max_pages(self):
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        responses = [_hotels_response(2, has_more=True), _hotels_response(2, has_more=True)]
+        mock_post = AsyncMock(side_effect=responses)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_hotels_all(
+                "Paris", "2026-06-15", "2026-06-18", max_pages=2,
+            )
+        assert len(result.hotels) == 4
+
+
+class TestSkiplaggedHotelDetails:
+    @pytest.mark.anyio
+    async def test_get_hotel_details_success(self):
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_hotel_details_response())
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            detail = await client.get_hotel_details(
+                "hotel_1001", "2026-06-15", "2026-06-18",
+            )
+        assert detail.hotelId == "1001"
+        assert detail.hotelName == "Test Hotel"
+        assert len(detail.rooms) == 1
+        assert detail.rooms[0].title == "Deluxe King"
+
+    @pytest.mark.anyio
+    async def test_get_hotel_details_handles_string_id(self):
+        """Hotel IDs from search results may be 'hotel_123' format."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_hotel_details_response())
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            # Pass with prefix
+            detail = await client.get_hotel_details(
+                "hotel_1001", "2026-06-15", "2026-06-18",
+            )
+        assert detail.hotelId == "1001"
+
+
+class TestSkiplaggedSseParsing:
+    @pytest.mark.anyio
+    async def test_sse_with_json_rpc_error_raises(self):
+        """JSON-RPC errors in SSE response should raise SkiplaggedRequestError."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        error_response = _make_sse_response({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {"code": -32603, "message": "Internal error"},
+        })
+        mock_post = AsyncMock(return_value=error_response)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRequestError, match="Internal error"):
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+
+    @pytest.mark.anyio
+    async def test_plain_json_response_is_parsed(self):
+        """Non-SSE JSON responses should be parsed directly."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        data = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{"type": "text", "text": "ok"}],
+                "structuredContent": {"flights": [], "pagination": {
+                    "totalAvailable": 0, "currentlyShowing": 0,
+                    "offset": 0, "limit": 75, "hasMoreResults": False,
+                }},
+            },
+        }
+        json_response = httpx.Response(
+            status_code=200,
+            text=json.dumps(data),
+            headers={"content-type": "application/json", "mcp-session-id": "test-session"},
+        )
+        mock_post = AsyncMock(return_value=json_response)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_flights("SFO", "CDG", "2026-06-15")
+        assert result.success is True
+        assert result.flights == []
+
+    @pytest.mark.anyio
+    async def test_invalid_json_response_raises(self):
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        bad_response = httpx.Response(
+            status_code=200,
+            text="not json at all",
+            headers={"content-type": "application/json", "mcp-session-id": "test-session"},
+        )
+        mock_post = AsyncMock(return_value=bad_response)
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRequestError):
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+
+    @pytest.mark.anyio
+    async def test_http_error_raises_connection_error(self):
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(side_effect=httpx.HTTPError("generic http error"))
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedConnectionError):
+                await client.search_flights("SFO", "CDG", "2026-06-15")

@@ -2,11 +2,13 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  baseURL: "http://localhost:3000",
   timeout: 60_000,
   expect: { timeout: 10_000 },
   retries: 1,
   reporter: [["html", { open: "never" }]],
+  use: {
+    baseURL: "http://localhost:3000",
+  },
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/, teardown: "light" },
     {

@@ -47,6 +47,7 @@ export default function RootLayout({
     <html lang="en" className={`${display.variable} ${body.variable}`} suppressHydrationWarning>
       <head>
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: static theme-detection snippet to prevent FOUC; no user input is interpolated
           dangerouslySetInnerHTML={{
             __html: `
 (function() {
