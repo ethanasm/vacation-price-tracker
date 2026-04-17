@@ -305,7 +305,8 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: #9ca3af !important;
+  color: #1a1a2e !important;
+  opacity: 1;
 }
 
 /* All buttons and select triggers */
@@ -391,7 +392,8 @@ button svg,
 
 .dark input::placeholder,
 .dark textarea::placeholder {
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: white !important;
+  opacity: 1;
 }
 
 /* All buttons and select triggers */
