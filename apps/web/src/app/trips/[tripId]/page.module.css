@@ -341,16 +341,13 @@
   justify-self: center;
 }
 
-/* Shared grid template so the header row and each card row align. */
-.flightsHeaderRow,
-.cardHeaderRowMain {
+/* Header row above the flight cards - shares column template with
+   .cardHeaderRowMain (defined below) so columns align down the list. */
+.flightsHeaderRow {
   display: grid;
   grid-template-columns: 20px 92px minmax(160px, 1fr) 96px 80px 16px;
   column-gap: 12px;
   align-items: center;
-}
-
-.flightsHeaderRow {
   padding: 6px 12px 8px;
   border-bottom: 1px solid hsl(var(--border) / 0.5);
   margin-bottom: 2px;
@@ -429,8 +426,20 @@
   min-height: 24px;
 }
 
+/* The main (outbound) row overrides the flex layout above with a grid
+   template shared with .flightsHeaderRow so columns align down the list. */
+.cardHeaderRowMain {
+  display: grid;
+  grid-template-columns: 20px 92px minmax(160px, 1fr) 96px 80px 16px;
+  column-gap: 12px;
+  align-items: center;
+  gap: 0;
+}
+
 .cardHeaderRowReturn {
   opacity: 0.6;
+  /* Indent under the airline column so return times align with outbound. */
+  padding-left: 32px;
 }
 
 .dateRange {
