@@ -79,78 +79,47 @@
 
 ## 2. Scheduled Price Tracking
 
-### 2.1 Temporal Schedules
-- [ ] Create scheduled workflow for daily price checks:
+**Decision:** Ship a single global daily Temporal Schedule that fans out to every user's existing `RefreshAllTripsWorkflow`. No user-facing configuration of time or frequency. Paused trips continue to be skipped by `get_active_trips`. This is the minimum viable automation; per-user preferences and smart per-trip tiering are deferred (see §2.4 below).
+
+### 2.1 Temporal Schedule (global daily cron)
+- [x] `ensure_daily_refresh_schedule` bootstrap runs at worker startup (`apps/worker/worker/schedule_bootstrap.py`) and is idempotent (create, or update on `ScheduleAlreadyRunningError`):
   ```python
-  # Schedule configuration
   schedule = Schedule(
       action=ScheduleActionStartWorkflow(
-          RefreshAllTripsWorkflow.run,
-          args=[],  # All users
-          id="daily-refresh",
-          task_queue="main-queue"
+          "ScheduledRefreshAllUsersWorkflow",
+          id="scheduled-refresh-all-users",
+          task_queue=settings.temporal_task_queue,
       ),
-      spec=ScheduleSpec(
-          cron_expressions=["0 6 * * *"]  # 6 AM daily
-      ),
-      policy=SchedulePolicy(
-          overlap=ScheduleOverlapPolicy.SKIP  # Skip if previous still running
-      )
-  )
-
-  await client.create_schedule(
-      "daily-price-refresh",
-      schedule
+      spec=ScheduleSpec(cron_expressions=[settings.daily_refresh_cron]),
+      policy=SchedulePolicy(overlap=ScheduleOverlapPolicy.SKIP),
   )
   ```
+- [x] Cron is controlled by env var `DAILY_REFRESH_CRON` (default `"0 6 * * *"` = 06:00 UTC).
+- [x] Overlap policy `SKIP` prevents a late tick from stacking on a still-running previous run.
 
-### 2.2 User-Level Scheduling
-- [ ] Add `refresh_frequency` column to User model:
+### 2.2 Fan-out workflow
+- [x] `ScheduledRefreshAllUsersWorkflow` (`apps/worker/worker/workflows/scheduled_refresh.py`):
+  - Calls `get_all_user_ids_with_active_trips` activity (distinct `user_id` from non-paused trips).
+  - For each user, starts `RefreshAllTripsWorkflow` as a child workflow (`ParentClosePolicy.ABANDON`).
+  - Batches child starts 3 at a time to avoid a thundering herd on Skiplagged.
+  - Returns `{users_total, users_successful, users_failed}` for Temporal UI observability.
+
+### 2.3 Activity: list users with active trips
+- [x] `get_all_user_ids_with_active_trips` in `apps/worker/worker/activities/trips.py`:
   ```python
-  class User(SQLModel, table=True):
-      # ... existing fields
-      refresh_frequency: str = "daily"  # daily, every_3_days, weekly
-      refresh_hour_utc: int = 6  # Hour to run refresh (0-23)
-  ```
-- [ ] Create schedule management endpoints:
-  - `GET /v1/users/me/schedule` - Get current schedule
-  - `PATCH /v1/users/me/schedule` - Update schedule preferences
-- [ ] Modify `RefreshAllTripsWorkflow` to filter by user schedule:
-  ```python
-  @workflow.defn
-  class ScheduledRefreshWorkflow:
-      @workflow.run
-      async def run(self) -> None:
-          # Get users due for refresh
-          users = await workflow.execute_activity(
-              get_users_due_for_refresh,
-              start_to_close_timeout=timedelta(seconds=30)
+  @activity.defn
+  async def get_all_user_ids_with_active_trips() -> list[str]:
+      async with AsyncSessionLocal() as session:
+          result = await session.execute(
+              select(Trip.user_id).where(Trip.status != TripStatus.PAUSED).distinct()
           )
-
-          # Refresh each user's trips
-          for user in users:
-              await workflow.execute_child_workflow(
-                  RefreshAllTripsWorkflow.run,
-                  user.id
-              )
+          return [str(uid) for uid in result.scalars().all()]
   ```
 
-### 2.3 Smart Refresh Scheduling
-Implement tiered refresh frequency based on trip proximity:
-- [ ] Add logic to `get_active_trips` activity:
-  ```python
-  def get_refresh_priority(trip: Trip) -> str:
-      days_until_departure = (trip.depart_date - date.today()).days
-
-      if days_until_departure <= 30:
-          return "daily"  # Active trips: daily
-      elif days_until_departure <= 90:
-          return "every_3_days"  # Near-term: every 3 days
-      else:
-          return "weekly"  # Far future: weekly
-  ```
-- [ ] Filter trips by refresh priority in scheduled workflow
-- [ ] Track `last_refreshed_at` on Trip model
+### 2.4 Deferred (not in this phase)
+These were in earlier drafts of the plan and are intentionally excluded — they can be layered on later without rework since the schedule is a single global knob:
+- User-level time/frequency config (`User.refresh_frequency`, `User.refresh_hour_utc`, `GET/PATCH /v1/users/me/schedule`, UI schedule picker).
+- Smart per-trip tiered frequency (daily ≤30d, every 3 days ≤90d, weekly otherwise; `Trip.last_refreshed_at`).
 
 ---
 
@@ -714,7 +683,7 @@ Already implemented in Phase 1:
 Phase 3 is complete when:
 - [ ] Application runs on home server with Cloudflare Tunnel
 - [ ] OAuth works through public URL
-- [ ] Daily scheduled refresh runs automatically at configured time
+- [ ] Daily scheduled refresh runs automatically at the configured time (env var `DAILY_REFRESH_CRON`, default 06:00 UTC)
 - [ ] Paused trips are skipped in scheduled refresh
 - [ ] Email notifications send when price drops below threshold
 - [ ] Notification history is viewable

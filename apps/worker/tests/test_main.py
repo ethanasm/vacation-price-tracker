@@ -29,11 +29,16 @@ class DummyWorker:
         self._shutdown_event.set()
 
 
+async def _noop_ensure_schedule(_client):
+    return None
+
+
 @pytest.mark.asyncio
 async def test_main_triggers_shutdown_on_signal(monkeypatch):
     dummy_worker = DummyWorker()
     monkeypatch.setattr(worker_main, "Worker", lambda *args, **kwargs: dummy_worker)
     monkeypatch.setattr(worker_main, "Client", SimpleNamespace(connect=DummyClient.connect))
+    monkeypatch.setattr(worker_main, "ensure_daily_refresh_schedule", _noop_ensure_schedule)
 
     loop = asyncio.get_running_loop()
 
@@ -53,6 +58,7 @@ async def test_main_exits_when_worker_finishes(monkeypatch):
     dummy_worker = DummyWorker(run_immediate=True)
     monkeypatch.setattr(worker_main, "Worker", lambda *args, **kwargs: dummy_worker)
     monkeypatch.setattr(worker_main, "Client", SimpleNamespace(connect=DummyClient.connect))
+    monkeypatch.setattr(worker_main, "ensure_daily_refresh_schedule", _noop_ensure_schedule)
 
     loop = asyncio.get_running_loop()
 
@@ -72,6 +78,7 @@ async def test_main_uses_signal_fallback(monkeypatch):
     dummy_worker = DummyWorker(run_immediate=True)
     monkeypatch.setattr(worker_main, "Worker", lambda *args, **kwargs: dummy_worker)
     monkeypatch.setattr(worker_main, "Client", SimpleNamespace(connect=DummyClient.connect))
+    monkeypatch.setattr(worker_main, "ensure_daily_refresh_schedule", _noop_ensure_schedule)
 
     loop = asyncio.get_running_loop()
 

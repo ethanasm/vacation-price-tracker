@@ -45,3 +45,14 @@ async def test_get_active_trips(monkeypatch):
     result = await trips_activity.get_active_trips(str(uuid.uuid4()))
 
     assert result == [str(trip_id) for trip_id in trip_ids]
+
+
+@pytest.mark.asyncio
+async def test_get_all_user_ids_with_active_trips(monkeypatch):
+    user_ids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+    session = DummySession(user_ids)
+    monkeypatch.setattr(trips_activity, "AsyncSessionLocal", lambda: DummySessionManager(session))
+
+    result = await trips_activity.get_all_user_ids_with_active_trips()
+
+    assert result == [str(user_id) for user_id in user_ids]

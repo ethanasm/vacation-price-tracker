@@ -28,6 +28,17 @@ async def get_active_trips(user_id: str) -> list[str]:
 
 
 @activity.defn
+async def get_all_user_ids_with_active_trips() -> list[str]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Trip.user_id).where(Trip.status != TripStatus.PAUSED).distinct()
+        )
+        user_ids = [str(user_id) for user_id in result.scalars().all()]
+        logger.info("Found %d users with active trips for scheduled refresh", len(user_ids))
+        return user_ids
+
+
+@activity.defn
 async def clear_refresh_lock(user_id: str) -> bool:
     """Clear the refresh lock for a user after workflow completion."""
     lock_key = CacheKeys.refresh_lock(user_id)

@@ -18,14 +18,22 @@ from worker.activities.price_check import (
     load_trip_details,
     save_snapshot_activity,
 )
-from worker.activities.trips import clear_refresh_lock, get_active_trips
+from worker.activities.trips import (
+    clear_refresh_lock,
+    get_active_trips,
+    get_all_user_ids_with_active_trips,
+)
+from worker.schedule_bootstrap import ensure_daily_refresh_schedule
 from worker.workflows.price_check import PriceCheckWorkflow
 from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
+from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
 
 
 async def main() -> None:
     logging.basicConfig(level=settings.log_level)
     client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
+
+    await ensure_daily_refresh_schedule(client)
 
     # Configure sandbox to pass through modules that are only used in activities
     sandbox_runner = SandboxedWorkflowRunner(
@@ -39,9 +47,14 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[RefreshAllTripsWorkflow, PriceCheckWorkflow],
+        workflows=[
+            RefreshAllTripsWorkflow,
+            PriceCheckWorkflow,
+            ScheduledRefreshAllUsersWorkflow,
+        ],
         activities=[
             get_active_trips,
+            get_all_user_ids_with_active_trips,
             clear_refresh_lock,
             load_trip_details,
             fetch_flights_activity,
