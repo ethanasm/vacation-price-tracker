@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   type ReactNode,
@@ -152,18 +153,18 @@ export function SSEProvider({
     [showToasts, onConnectionStateChange]
   );
 
-  // Only auto-connect after the user is authenticated. On public pages (login)
-  // the SSE endpoint returns 401, which surfaces as an "updates disconnected"
-  // toast to anonymous visitors.
+  // Defer auto-connect to an effect below: useSSE's auto-connect only runs once
+  // on mount, so if autoConnect flips from false (auth loading) to true we'd
+  // never connect. Handle the transition imperatively with connect/disconnect.
   const { isAuthenticated } = useAuth();
   const sseOptions: UseSSEOptions = useMemo(
     () => ({
-      autoConnect: autoConnect && isAuthenticated,
+      autoConnect: false,
       onConnected: handleConnected,
       onPriceUpdate: handlePriceUpdate,
       onConnectionStateChange: handleConnectionStateChange,
     }),
-    [autoConnect, isAuthenticated, handleConnected, handlePriceUpdate, handleConnectionStateChange]
+    [handleConnected, handlePriceUpdate, handleConnectionStateChange]
   );
 
   const {
@@ -175,6 +176,15 @@ export function SSEProvider({
     disconnect,
     clearUpdates,
   } = useSSE(sseOptions);
+
+  useEffect(() => {
+    if (!autoConnect) return;
+    if (isAuthenticated) {
+      connect();
+    } else {
+      disconnect();
+    }
+  }, [autoConnect, isAuthenticated, connect, disconnect]);
 
   const getPriceUpdate = useCallback(
     (tripId: string) => {

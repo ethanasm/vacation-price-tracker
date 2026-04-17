@@ -190,6 +190,17 @@
   .gridCompact {
     grid-template-columns: 4fr 3fr 3fr;
   }
+  .gridCompactFlightsOnly {
+    grid-template-columns: 4fr 6fr;
+  }
+}
+
+.gridCompactFlightsOnly {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Chart Card */

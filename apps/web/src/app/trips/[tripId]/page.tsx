@@ -111,10 +111,12 @@ function PriceHistoryChart({
   priceHistory,
   selectedHotelKey,
   selectedFlightKey,
+  showHotel = true,
 }: {
   priceHistory: PriceSnapshot[];
   selectedHotelKey: string | null;
   selectedFlightKey: string | null;
+  showHotel?: boolean;
 }) {
   if (priceHistory.length === 0) {
     return (
@@ -219,29 +221,33 @@ function PriceHistoryChart({
             />
           }
         />
-        <Line
-          dataKey="total"
-          type="monotone"
-          stroke="var(--color-total)"
-          strokeWidth={2}
-          dot={{ r: 3 }}
-        />
+        {showHotel && (
+          <Line
+            dataKey="total"
+            type="monotone"
+            stroke="var(--color-total)"
+            strokeWidth={2}
+            dot={{ r: 3 }}
+          />
+        )}
         <Line
           dataKey="flight"
           type="monotone"
-          stroke="var(--color-flight)"
-          strokeWidth={1.5}
-          dot={false}
-          strokeDasharray="4 4"
+          stroke={showHotel ? "var(--color-flight)" : "var(--color-total)"}
+          strokeWidth={showHotel ? 1.5 : 2}
+          dot={showHotel ? false : { r: 3 }}
+          strokeDasharray={showHotel ? "4 4" : undefined}
         />
-        <Line
-          dataKey="hotel"
-          type="monotone"
-          stroke="var(--color-hotel)"
-          strokeWidth={1.5}
-          dot={false}
-          strokeDasharray="4 4"
-        />
+        {showHotel && (
+          <Line
+            dataKey="hotel"
+            type="monotone"
+            stroke="var(--color-hotel)"
+            strokeWidth={1.5}
+            dot={false}
+            strokeDasharray="4 4"
+          />
+        )}
       </LineChart>
     </ChartContainer>
   );
@@ -856,6 +862,7 @@ export default function TripDetailPage({
       : effectiveFlightPrice ?? effectiveHotelPrice;
 
   const isActive = trip.status.toLowerCase() === "active";
+  const hasHotelTracking = trip.hotel_prefs !== null && trip.hotel_prefs !== undefined;
 
   // Calculate trend from price history (API returns descending order - newest first)
   const hasTrend = priceHistory.length >= 2;
@@ -967,45 +974,59 @@ export default function TripDetailPage({
             {formatPrice(effectiveFlightPrice)}
           </span>
         </div>
-        <span className={styles.pricePlus}>+</span>
-        <div className={styles.priceItem}>
-          <Hotel className="h-4 w-4" />
-          <span className={styles.priceItemLabel}>Hotel</span>
-          <span className={styles.priceItemValue}>
-            {formatPrice(effectiveHotelPrice)}
-          </span>
-        </div>
-        <span className={styles.priceEquals}>=</span>
-        <div className={styles.priceTotal}>
-          <span className={styles.priceTotalValue}>
-            {formatPrice(effectiveTotalPrice)}
-          </span>
-          {hasTrend &&
-            previousTotal !== null &&
-            currentTotal !== previousTotal && (
-              <PriceTrend
-                currentPrice={currentTotal}
-                previousPrice={previousTotal}
-              />
-            )}
-        </div>
+        {hasHotelTracking && (
+          <>
+            <span className={styles.pricePlus}>+</span>
+            <div className={styles.priceItem}>
+              <Hotel className="h-4 w-4" />
+              <span className={styles.priceItemLabel}>Hotel</span>
+              <span className={styles.priceItemValue}>
+                {formatPrice(effectiveHotelPrice)}
+              </span>
+            </div>
+            <span className={styles.priceEquals}>=</span>
+            <div className={styles.priceTotal}>
+              <span className={styles.priceTotalValue}>
+                {formatPrice(effectiveTotalPrice)}
+              </span>
+              {hasTrend &&
+                previousTotal !== null &&
+                currentTotal !== previousTotal && (
+                  <PriceTrend
+                    currentPrice={currentTotal}
+                    previousPrice={previousTotal}
+                  />
+                )}
+            </div>
+          </>
+        )}
+        {!hasHotelTracking && hasTrend &&
+          previousTotal !== null &&
+          currentTotal !== previousTotal && (
+            <PriceTrend
+              currentPrice={currentTotal}
+              previousPrice={previousTotal}
+            />
+          )}
       </div>
 
       {/* Main Content Grid */}
-      <div className={styles.gridCompact}>
+      <div className={hasHotelTracking ? styles.gridCompact : styles.gridCompactFlightsOnly}>
         {/* Chart */}
         <Card className={styles.chartCard}>
           <CardContent className={styles.chartCardContent}>
             <div className={styles.chartHeader}>
               <span className={styles.chartTitle}>Price History</span>
               <div className={styles.chartLegendCompact}>
-                <span>
-                  <span
-                    className={styles.legendDot}
-                    style={{ background: "hsl(var(--chart-1))" }}
-                  />{" "}
-                  Total
-                </span>
+                {hasHotelTracking && (
+                  <span>
+                    <span
+                      className={styles.legendDot}
+                      style={{ background: "hsl(var(--chart-1))" }}
+                    />{" "}
+                    Total
+                  </span>
+                )}
                 <span>
                   <span
                     className={styles.legendDot}
@@ -1013,38 +1034,43 @@ export default function TripDetailPage({
                   />{" "}
                   Flight
                 </span>
-                <span>
-                  <span
-                    className={styles.legendDot}
-                    style={{ background: "hsl(var(--chart-3))" }}
-                  />{" "}
-                  Hotel
-                </span>
+                {hasHotelTracking && (
+                  <span>
+                    <span
+                      className={styles.legendDot}
+                      style={{ background: "hsl(var(--chart-3))" }}
+                    />{" "}
+                    Hotel
+                  </span>
+                )}
               </div>
             </div>
             <PriceHistoryChart
               priceHistory={priceHistory}
               selectedHotelKey={selectedHotelKey}
               selectedFlightKey={selectedFlightKey}
+              showHotel={hasHotelTracking}
             />
           </CardContent>
         </Card>
 
-        {/* Hotels List */}
-        <Card className={styles.listCard}>
-          <CardContent className={styles.listCardContent}>
-            <div className={styles.listHeader}>
-              <Hotel className="h-4 w-4" />
-              <span>Hotels</span>
-            </div>
-            <HotelsList
-              hotels={latestOffers.hotels}
-              selectedHotelKey={selectedHotelKey}
-              onSelectHotel={setSelectedHotelKey}
-              nights={nights}
-            />
-          </CardContent>
-        </Card>
+        {hasHotelTracking && (
+          /* Hotels List */
+          <Card className={styles.listCard}>
+            <CardContent className={styles.listCardContent}>
+              <div className={styles.listHeader}>
+                <Hotel className="h-4 w-4" />
+                <span>Hotels</span>
+              </div>
+              <HotelsList
+                hotels={latestOffers.hotels}
+                selectedHotelKey={selectedHotelKey}
+                onSelectHotel={setSelectedHotelKey}
+                nights={nights}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Flights List */}
         <Card className={styles.listCard}>

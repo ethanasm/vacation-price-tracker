@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -7,6 +8,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status
+
+logger = logging.getLogger(__name__)
 
 PROBLEM_TYPE_BASE = "https://vacation-price-tracker.dev/problems"
 PROBLEM_JSON_MEDIA_TYPE = "application/problem+json"
@@ -223,13 +226,17 @@ def http_exception_response(exc: HTTPException, request: Request) -> JSONRespons
 
 
 def validation_exception_response(exc: RequestValidationError, request: Request) -> JSONResponse:
+    errors = jsonable_encoder(exc.errors())
+    logger.warning(
+        "Validation error at %s %s: %s", request.method, request.url.path, errors
+    )
     payload = {
         "type": problem_type("validation-error"),
         "title": "Validation Error",
         "status": status.HTTP_422_UNPROCESSABLE_CONTENT,
         "detail": "Request validation failed.",
         "instance": request.url.path,
-        "errors": jsonable_encoder(exc.errors()),
+        "errors": errors,
     }
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

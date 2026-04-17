@@ -399,12 +399,20 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
             total_price,
         )
 
+        raw_data = dict(payload["raw_data"] or {})
+        raw_flights = dict(raw_data.get("flights") or {})
+        raw_flights["data"] = payload["flights"]
+        raw_data["flights"] = raw_flights
+        raw_hotels = dict(raw_data.get("hotels") or {})
+        raw_hotels["data"] = payload["hotels"]
+        raw_data["hotels"] = raw_hotels
+
         snapshot = PriceSnapshot(
             trip_id=trip_uuid,
             flight_price=flight_price,
             hotel_price=hotel_price,
             total_price=total_price,
-            raw_data=payload["raw_data"],
+            raw_data=raw_data,
         )
         session.add(snapshot)
         await session.commit()

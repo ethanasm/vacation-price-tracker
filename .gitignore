@@ -35,3 +35,4 @@ apps/web/test-results/
 
 # Git worktrees
 /.worktrees
+.playwright-mcp/
