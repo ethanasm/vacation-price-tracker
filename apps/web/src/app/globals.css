@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Use class-based dark mode (tailwind.config.ts sets darkMode: "class";
+   Tailwind v4 requires this explicit variant declaration to honor it). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Tailwind v4 theme configuration */
 @theme {
   --color-background: hsl(250 30% 98%);
@@ -395,6 +399,7 @@ button svg,
   color: white !important;
   opacity: 1;
 }
+
 
 /* All buttons and select triggers */
 .dark button {
