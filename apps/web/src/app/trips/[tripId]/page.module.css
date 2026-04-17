@@ -345,8 +345,8 @@
    .cardHeaderRowMain (defined below) so columns align down the list. */
 .flightsHeaderRow {
   display: grid;
-  grid-template-columns: 20px 92px minmax(160px, 1fr) 96px 80px 16px;
-  column-gap: 12px;
+  grid-template-columns: 24px 110px minmax(240px, 1fr) 120px 100px 20px;
+  column-gap: 16px;
   align-items: center;
   padding: 6px 12px 8px;
   border-bottom: 1px solid hsl(var(--border) / 0.5);
@@ -380,6 +380,13 @@
 
 .sortButtonRight {
   justify-self: end;
+  /* Put the sort arrow before the label so the label is flush with the
+     column's right edge, matching right-aligned numeric data below. */
+  flex-direction: row-reverse;
+}
+
+.sortButtonCenter {
+  justify-self: center;
 }
 
 .sortButtonActive {
@@ -430,10 +437,10 @@
    template shared with .flightsHeaderRow so columns align down the list. */
 .cardHeaderRowMain {
   display: grid;
-  grid-template-columns: 20px 92px minmax(160px, 1fr) 96px 80px 16px;
-  column-gap: 12px;
+  grid-template-columns: 24px 110px minmax(240px, 1fr) 120px 100px 20px;
   align-items: center;
-  gap: 0;
+  row-gap: 0;
+  column-gap: 16px;
 }
 
 .cardHeaderRowReturn {
@@ -465,6 +472,7 @@
   font-weight: 500;
   color: var(--ink-muted);
   white-space: nowrap;
+  justify-self: center;
 }
 
 .headerDepartTime {
@@ -494,7 +502,7 @@
   font-weight: 600;
   background: hsl(var(--muted) / 0.6);
   color: var(--ink-muted);
-  justify-self: start;
+  justify-self: center;
   white-space: nowrap;
 }
 

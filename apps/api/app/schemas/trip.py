@@ -143,14 +143,13 @@ class TripCreate(BaseModel):
     @field_validator("depart_date", "return_date")
     @classmethod
     def validate_date_within_range(cls, v: date | None) -> date | None:
-        """Ensure dates are not more than 359 days out."""
-        if v is None:
-            return v
-        max_date = date.today() + timedelta(days=359)
-        if v > max_date:
-            raise ValueError(f"Date cannot be more than 359 days out. Maximum: {max_date}")
-        if v < date.today():
-            raise ValueError("Date cannot be in the past")
+        """Ensure dates are not in the past and within a 359-day booking window."""
+        if v is not None:
+            max_date = date.today() + timedelta(days=359)
+            if v > max_date:
+                raise ValueError(f"Date cannot be more than 359 days out. Maximum: {max_date}")
+            if v < date.today():
+                raise ValueError("Date cannot be in the past")
         return v
 
     @model_validator(mode="after")

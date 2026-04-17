@@ -394,6 +394,52 @@ function ItinerarySection({
 }
 
 /**
+ * Render a "dep → arr" time range, falling back to a dash when empty.
+ * Extracted so the component tree avoids nested template literals.
+ */
+function formatTimeRange(dep: string | null | undefined, arr: string | null | undefined): string {
+  if (!dep && !arr) return "—";
+  if (dep && arr) return `${dep} → ${arr}`;
+  return dep ?? arr ?? "—";
+}
+
+function priceOrInfinity(value: string | null | undefined): number {
+  return parsePrice(value) ?? Number.POSITIVE_INFINITY;
+}
+
+function preselectCheapest(
+  latest: PriceSnapshot | undefined,
+  setFlight: (key: string | null) => void,
+  setHotel: (key: string | null) => void,
+): void {
+  if (!latest) return;
+  const flights = (latest.flight_offers ?? []) as ApiFlightOffer[];
+  if (flights.length > 0) {
+    const cheapest = flights.reduce(
+      (best, f) => (priceOrInfinity(f.price) < priceOrInfinity(best.price) ? f : best),
+      flights[0],
+    );
+    setFlight(flightStableKey(cheapest));
+  }
+  const hotels = (latest.hotel_offers ?? []) as ApiHotelOffer[];
+  if (hotels.length > 0) {
+    const cheapest = hotels.reduce(
+      (best, h) => (priceOrInfinity(h.price) < priceOrInfinity(best.price) ? h : best),
+      hotels[0],
+    );
+    setHotel(hotelStableKey(cheapest));
+  }
+}
+
+function resolveTripErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 404) return "Trip not found";
+    return err.detail || "Failed to load trip";
+  }
+  return "Failed to load trip";
+}
+
+/**
  * Extract display data from a flight offer for rendering
  */
 function extractFlightDisplayData(flight: ApiFlightOffer) {
@@ -436,38 +482,43 @@ function extractFlightDisplayData(flight: ApiFlightOffer) {
 type FlightSortKey = "airline" | "time" | "stops" | "price";
 type SortDir = "asc" | "desc";
 
-function SortHeader({
-  label,
-  sortKey,
-  activeKey,
-  direction,
-  align,
-  onSort,
-}: {
+type SortHeaderProps = Readonly<{
   label: string;
   sortKey: FlightSortKey;
   activeKey: FlightSortKey;
   direction: SortDir;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
   onSort: (key: FlightSortKey) => void;
-}) {
+}>;
+
+function getSortAlignClass(align: SortHeaderProps["align"]): string {
+  if (align === "right") return styles.sortButtonRight;
+  if (align === "center") return styles.sortButtonCenter;
+  return "";
+}
+
+function SortArrow({ isActive, direction }: Readonly<{ isActive: boolean; direction: SortDir }>) {
+  if (!isActive) {
+    return <ArrowUpDown className={`${styles.sortArrow} ${styles.sortArrowIdle}`} />;
+  }
+  return direction === "asc" ? (
+    <ArrowUp className={styles.sortArrow} />
+  ) : (
+    <ArrowDown className={styles.sortArrow} />
+  );
+}
+
+function SortHeader({ label, sortKey, activeKey, direction, align, onSort }: SortHeaderProps) {
   const isActive = activeKey === sortKey;
+  const alignClass = getSortAlignClass(align);
   return (
     <button
       type="button"
-      className={`${styles.sortButton} ${align === "right" ? styles.sortButtonRight : ""} ${isActive ? styles.sortButtonActive : ""}`}
+      className={`${styles.sortButton} ${alignClass} ${isActive ? styles.sortButtonActive : ""}`}
       onClick={() => onSort(sortKey)}
     >
       <span>{label}</span>
-      {isActive ? (
-        direction === "asc" ? (
-          <ArrowUp className={styles.sortArrow} />
-        ) : (
-          <ArrowDown className={styles.sortArrow} />
-        )
-      ) : (
-        <ArrowUpDown className={`${styles.sortArrow} ${styles.sortArrowIdle}`} />
-      )}
+      <SortArrow isActive={isActive} direction={direction} />
     </button>
   );
 }
@@ -494,7 +545,7 @@ function FlightsList({
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir(key === "price" || key === "stops" ? "asc" : "asc");
+      setSortDir("asc");
     }
   };
 
@@ -551,8 +602,8 @@ function FlightsList({
       <div className={styles.flightsHeaderRow}>
         <span aria-hidden /> {/* radio column */}
         <SortHeader label="Airline" sortKey="airline" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
-        <SortHeader label="Time" sortKey="time" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
-        <SortHeader label="Stops" sortKey="stops" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+        <SortHeader label="Time" sortKey="time" activeKey={sortKey} direction={sortDir} align="center" onSort={handleSort} />
+        <SortHeader label="Stops" sortKey="stops" activeKey={sortKey} direction={sortDir} align="center" onSort={handleSort} />
         <SortHeader label="Price" sortKey="price" activeKey={sortKey} direction={sortDir} align="right" onSort={handleSort} />
         <span aria-hidden /> {/* chevron column */}
       </div>
@@ -572,6 +623,11 @@ function FlightsList({
           outbound,
           returnItinerary,
         } = displayData;
+
+        const outboundTimes = formatTimeRange(outboundDepTime, outboundArrTime);
+        const returnTimes = formatTimeRange(returnDepTime, returnArrTime);
+        const stops = flight.stops ?? 0;
+        const stopsLabel = isDirect ? "Direct" : `${stops} ${stops === 1 ? "stop" : "stops"}`;
 
         return (
           <div
@@ -600,14 +656,10 @@ function FlightsList({
                   </div>
                 </div>
                 <span className={styles.headerAirline}>{airlineName}</span>
-                <span className={styles.headerTimes}>
-                  {outboundDepTime
-                    ? `${outboundDepTime}${outboundArrTime ? ` → ${outboundArrTime}` : ""}`
-                    : "—"}
-                </span>
+                <span className={styles.headerTimes}>{outboundTimes}</span>
                 <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
                   <Plane className="h-3 w-3" />
-                  {isDirect ? "Direct" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
+                  {stopsLabel}
                 </span>
                 <span className={styles.cardPrice}>
                   {formatPrice(flight.price)}
@@ -618,9 +670,7 @@ function FlightsList({
               {returnFirstSegment && (
                 <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowReturn}`}>
                   <span className={styles.headerReturnLabel}>Return</span>
-                  <span className={styles.headerTimes}>
-                    {returnDepTime}{returnArrTime ? ` → ${returnArrTime}` : ""}
-                  </span>
+                  <span className={styles.headerTimes}>{returnTimes}</span>
                 </div>
               )}
             </button>
@@ -787,37 +837,9 @@ export default function TripDetailPage({
       const response = await api.trips.getDetails(tripId);
       setTrip(response.data.trip);
       setPriceHistory(response.data.price_history);
-
-      // Pre-select the cheapest flight and hotel from the latest snapshot
-      const latest = response.data.price_history[0];
-      if (latest) {
-        const flights = (latest.flight_offers ?? []) as ApiFlightOffer[];
-        const hotels = (latest.hotel_offers ?? []) as ApiHotelOffer[];
-
-        if (flights.length > 0) {
-          const cheapest = flights.reduce((best, f) =>
-            (parsePrice(f.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? f : best
-          , flights[0]);
-          setSelectedFlightKey(flightStableKey(cheapest));
-        }
-
-        if (hotels.length > 0) {
-          const cheapest = hotels.reduce((best, h) =>
-            (parsePrice(h.price) ?? Number.POSITIVE_INFINITY) < (parsePrice(best.price) ?? Number.POSITIVE_INFINITY) ? h : best
-          , hotels[0]);
-          setSelectedHotelKey(hotelStableKey(cheapest));
-        }
-      }
+      preselectCheapest(response.data.price_history[0], setSelectedFlightKey, setSelectedHotelKey);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 404) {
-          setError("Trip not found");
-        } else {
-          setError(err.detail || "Failed to load trip");
-        }
-      } else {
-        setError("Failed to load trip");
-      }
+      setError(resolveTripErrorMessage(err));
     } finally {
       if (showLoading) {
         setIsLoading(false);
