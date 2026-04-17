@@ -4,6 +4,13 @@
 
 set -o pipefail
 
+RUN_E2E="${RUN_E2E:-0}"
+for arg in "$@"; do
+  case "$arg" in
+    --e2e) RUN_E2E=1 ;;
+  esac
+done
+
 GREEN=$'\033[0;32m'
 RED=$'\033[0;31m'
 PURPLE=$'\033[0;35m'
@@ -58,15 +65,13 @@ fi
 
 echo ""
 echo "${PURPLE}${BOLD}━━━ Step 4: E2E Tests (Playwright) ━━━${NC}"
-echo "Note: Requires full Docker stack running. Set SKIP_E2E=1 to skip."
 
-if [ "${SKIP_E2E}" = "1" ]; then
-  echo "${GREEN}${CHECK} E2E tests skipped (SKIP_E2E=1)${NC}"
+if [ "$RUN_E2E" != "1" ]; then
+  echo "${GREEN}${CHECK} E2E tests skipped (pass --e2e or set RUN_E2E=1 to run)${NC}"
 else
   # Check Docker stack is up
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^web$'; then
     echo "${RED}${CROSS} Docker stack not running (web container missing). Run 'docker compose up -d' first.${NC}"
-    echo "         Or set SKIP_E2E=1 to skip E2E in this run."
     FAILED=1
   else
     pnpm --filter vacation-price-tracker-web test:e2e
