@@ -4,6 +4,13 @@
 
 **Prerequisites:** Phase 1 complete (OAuth, Trip CRUD, Dashboard, Temporal workflows)
 
+> **Provider-strategy update (2026-04-16):** Skiplagged MCP is the sole
+> flight/hotel data provider. The lastminute.com / Kiwi / Amadeus sections
+> below (2.3, 3.7, etc.) are kept for historical context only — they are
+> **out of scope** and will not be implemented. Chat search tools route
+> through the shared `SkiplaggedClient` (see CLAUDE.md → Data Provider
+> Strategy).
+
 ---
 
 ## 1. LLM Infrastructure
@@ -829,13 +836,17 @@ Phase 2 is complete when:
 - [X] Chat panel is integrated into dashboard
 - [X] User can create trips via natural language
 - [X] User can list and manage trips via chat
-- [ ] User can set notification thresholds via chat
+- [X] User can set notification thresholds via chat (`set_notification` tool)
 - [X] Tool calls are executed correctly with authorization
-- [ ] Streaming responses display in real-time
+- [X] Streaming responses display in real-time (SSE via `/v1/chat/messages`)
 - [X] Conversation history is persisted
-- [ ] lastminute.com MCP server (hosted at mcp.lastminute.com) is callable for flight searches
-- [ ] Custom Amadeus MCP tools provide detailed flight data (flight numbers, airlines) and hotel searches
-- [ ] LLM uses lastminute.com for quick lookups, switches to Amadeus when user needs specific flight details
-- [ ] Kiwi MCP server available as backup for virtual interlining
+- [X] `search_flights` tool calls Skiplagged MCP (`mcp.skiplagged.com/mcp`)
+- [X] `search_hotels` tool calls Skiplagged MCP (`search_hotels` + `get_hotel_details`)
+- [X] Flight-number parsing from Skiplagged `id` field (`parse_flight_segments`)
 - [X] Elicitation prompts guide users through missing parameters
-- [ ] All tool operations respect user authorization
+- [X] All tool operations respect user authorization (user_id injected server-side)
+
+**Superseded / out of scope** (see provider-strategy update at top):
+- ~~lastminute.com MCP server integration~~
+- ~~Custom Amadeus MCP tools (flight + hotel)~~
+- ~~Kiwi MCP backup for virtual interlining~~
