@@ -9,7 +9,7 @@ dependencies = [
     "asyncpg",
     "alembic",
     "temporalio",
-    "authlib>=1.6.9",
+    "authlib>=1.6.11",
     "httpx",
     "python-jose[cryptography]",
     "uvicorn",
