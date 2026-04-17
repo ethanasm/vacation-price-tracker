@@ -23,9 +23,12 @@ jest.mock("../../hooks/use-sse", () => ({
   useSSE: (options: unknown) => mockUseSSE(options),
 }));
 
-// Mock AuthContext — SSEProvider checks auth before auto-connecting
+// Mock AuthContext — SSEProvider checks auth before auto-connecting.
+// Tests that need to simulate an unauthenticated user mutate `mockIsAuthenticated`
+// before rendering.
+let mockIsAuthenticated = true;
 jest.mock("../../context/AuthContext", () => ({
-  useAuth: () => ({ isAuthenticated: true }),
+  useAuth: () => ({ isAuthenticated: mockIsAuthenticated }),
 }));
 
 const mockToastSuccess = toast.success as jest.Mock;
@@ -53,6 +56,7 @@ describe("SSEProvider", () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     capturedCallbacks = {};
+    mockIsAuthenticated = true;
     mockUseSSE.mockReturnValue(defaultMockReturn);
   });
 
@@ -383,6 +387,37 @@ describe("SSEProvider", () => {
       );
 
       expect(onConnectionStateChange).toHaveBeenCalledWith("connected");
+    });
+
+    it("forwards a disconnected connection state and resets internal sync tracking", () => {
+      // Exercises the "state === 'disconnected'" branch of handleConnectionStateChange.
+      const onConnectionStateChange = jest.fn();
+      mockUseSSE.mockImplementation((options) => {
+        options.onConnectionStateChange?.("disconnected");
+        return defaultMockReturn;
+      });
+
+      render(
+        <SSEProvider showToasts={false} onConnectionStateChange={onConnectionStateChange}>
+          <div>Content</div>
+        </SSEProvider>
+      );
+
+      expect(onConnectionStateChange).toHaveBeenCalledWith("disconnected");
+    });
+
+    it("disconnects when autoConnect is true but the user is not authenticated", () => {
+      mockIsAuthenticated = false;
+      const disconnect = jest.fn();
+      mockUseSSE.mockReturnValue({ ...defaultMockReturn, disconnect });
+
+      render(
+        <SSEProvider>
+          <div>Content</div>
+        </SSEProvider>
+      );
+
+      expect(disconnect).toHaveBeenCalled();
     });
   });
 

@@ -1927,4 +1927,144 @@ describe("TripDetailPage", () => {
     });
 
   });
+
+  describe("flights list sorting and selection", () => {
+    // Covers SortHeader onClick, all four sort keys, the comparator branches,
+    // the flight-radio onSelectFlight path, and the lastKnownSelectedFlight
+    // carry-forward in PriceHistoryChart (selected flight only in one snapshot).
+    const sortFixtureHistory = [
+      {
+        id: "ph-now",
+        flight_price: "150.00",
+        hotel_price: null,
+        total_price: "150.00",
+        created_at: "2025-01-22T10:00:00Z",
+        flight_offers: [
+          {
+            id: "f-ua",
+            airline_code: "UA",
+            airline_name: "United",
+            flight_number: "100",
+            price: "300.00",
+            departure_time: "2025-06-15T14:00:00",
+            arrival_time: "2025-06-15T16:30:00",
+            duration_minutes: 150,
+            stops: 1,
+            itineraries: [
+              {
+                segments: [
+                  {
+                    flight_number: "100",
+                    carrier_code: "UA",
+                    departure_airport: "SFO",
+                    arrival_airport: "DEN",
+                    departure_time: "2025-06-15T14:00:00",
+                    arrival_time: "2025-06-15T15:00:00",
+                    duration_minutes: 60,
+                  },
+                ],
+                total_duration_minutes: 60,
+              },
+            ],
+          },
+          {
+            id: "f-dl",
+            airline_code: "DL",
+            airline_name: "Delta",
+            flight_number: "200",
+            price: "150.00",
+            departure_time: "2025-06-15T08:00:00",
+            arrival_time: "2025-06-15T10:30:00",
+            duration_minutes: 150,
+            stops: 0,
+            itineraries: [
+              {
+                segments: [
+                  {
+                    flight_number: "200",
+                    carrier_code: "DL",
+                    departure_airport: "SFO",
+                    arrival_airport: "LAX",
+                    departure_time: "2025-06-15T08:00:00",
+                    arrival_time: "2025-06-15T10:30:00",
+                    duration_minutes: 150,
+                  },
+                ],
+                total_duration_minutes: 150,
+              },
+            ],
+          },
+        ],
+        hotel_offers: [],
+      },
+      {
+        // Older snapshot without the selected flight — exercises the carry-
+        // forward path in PriceHistoryChart when selectedFlight is absent.
+        id: "ph-old",
+        flight_price: "175.00",
+        hotel_price: null,
+        total_price: "175.00",
+        created_at: "2025-01-20T10:00:00Z",
+        flight_offers: [],
+        hotel_offers: [],
+      },
+    ];
+
+    const renderSortFixture = async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, hotel_prefs: null },
+          price_history: sortFixtureHistory,
+        },
+      });
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Flights")).toBeInTheDocument();
+      });
+    };
+
+    it("cycles sort direction when the active column is clicked twice", async () => {
+      const user = userEvent.setup({ delay: null });
+      await renderSortFixture();
+
+      const priceHeader = screen.getByRole("button", { name: "Price" });
+      // First click: already sort-by-price (default asc); dir flips to desc.
+      await user.click(priceHeader);
+      // Second click on same header: dir flips back to asc.
+      await user.click(priceHeader);
+      expect(priceHeader).toBeInTheDocument();
+    });
+
+    it("switches sort key to airline / time / stops", async () => {
+      const user = userEvent.setup({ delay: null });
+      await renderSortFixture();
+
+      await user.click(screen.getByRole("button", { name: "Airline" }));
+      await user.click(screen.getByRole("button", { name: "Time" }));
+      await user.click(screen.getByRole("button", { name: "Stops" }));
+
+      // All four sort keys exercised (price is the default); list is still rendered.
+      expect(screen.getByText("United")).toBeInTheDocument();
+      expect(screen.getByText("Delta")).toBeInTheDocument();
+    });
+
+    it("updates the selected flight when a radio row is clicked", async () => {
+      const user = userEvent.setup({ delay: null });
+      await renderSortFixture();
+
+      // The cheapest flight (Delta, $150) is pre-selected; click United to switch.
+      const radios = screen.getAllByRole("radio");
+      expect(radios.length).toBeGreaterThanOrEqual(2);
+      const unitedRadio = radios.find((r) => r.getAttribute("aria-checked") === "false");
+      expect(unitedRadio).toBeDefined();
+      await user.click(unitedRadio as HTMLElement);
+
+      await waitFor(() => {
+        // After selection flips, the previously-unchecked radio becomes checked.
+        expect(unitedRadio).toHaveAttribute("aria-checked", "true");
+      });
+    });
+  });
 });

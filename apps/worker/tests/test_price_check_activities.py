@@ -783,3 +783,116 @@ def test_filter_hotels_no_prefs_returns_all():
     prefs = {"preferred_room_types": [], "preferred_views": []}
     result = pc._filter_hotels(hotels, prefs)
     assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# Coverage: generic-Exception fallback branches in fetch_*_activity and the
+# per-hotel details fallback. The SkiplaggedMCPError paths are covered
+# elsewhere; these tests pin the broader `except Exception` catch-alls so
+# unexpected runtime errors (TypeError, ValueError, etc.) degrade to an empty
+# result with error metadata rather than crashing the workflow.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_generic_exception_fallback(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions still degrade to an empty error result."""
+    from unittest.mock import AsyncMock, patch
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_flights_activity(sample_trip_details)
+
+    assert result["offers"] == []
+    assert result["error"] == "boom"
+    assert result["raw"]["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_generic_exception_fallback(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions in hotel search degrade gracefully."""
+    from unittest.mock import AsyncMock, patch
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(side_effect=RuntimeError("kaboom"))
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(sample_trip_details)
+
+    assert result["offers"] == []
+    assert result["error"] == "kaboom"
+    assert result["raw"]["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_details_failure_falls_back_to_search_data(monkeypatch):
+    """When get_hotel_details raises, the offer is built from search-level data."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.hotel_search import HotelSearchHotel, HotelSearchResult
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    hotel = HotelSearchHotel(
+        id="hotel-1",
+        name="Fallback Hotel",
+        star_rating=3,
+        price_per_night=Decimal("120"),
+        price_currency="USD",
+        amenities=["WiFi"],
+    )
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(
+        return_value=HotelSearchResult(
+            hotels=[hotel],
+            city="YYZ",
+            checkin="2026-09-10",
+            checkout="2026-09-15",
+            total_results=1,
+        )
+    )
+    mock_client.get_hotel_details = AsyncMock(side_effect=RuntimeError("details blew up"))
+
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        result = await pc.fetch_hotels_activity(sample_trip_details)
+
+    assert result["error"] is None
+    assert len(result["offers"]) == 1
+    offer = result["offers"][0]
+    assert offer["id"] == "hotel-1"
+    assert offer["name"] == "Fallback Hotel"
+    # Fallback offer is built from search data (no rooms list populated)
+    assert offer["rooms"] == []
+
+
+# ---------------------------------------------------------------------------
+# Coverage: helper branches for carrier extraction and hotel matching
+# ---------------------------------------------------------------------------
+
+
+def test_extract_carrier_codes_legacy_flat_field():
+    """A legacy offer dict with a `carrier_code` string returns that code upper-cased."""
+    flight = {"carrier_code": "dl"}
+    assert pc._extract_carrier_codes(flight) == ["DL"]
+
+
+def test_hotel_matches_room_types_empty_rooms_returns_false():
+    """Hotels without any rooms never match room-type filters."""
+    assert pc._hotel_matches_room_types({"rooms": []}, ["king"]) is False
+
+
+def test_hotel_matches_views_via_description():
+    """View keywords present only in the description field still match."""
+    hotel = {
+        "rooms": [{"title": "Standard Room"}],
+        "amenities": ["Pool"],
+        "description": "Stunning ocean view from the balcony.",
+    }
+    assert pc._hotel_matches_views(hotel, ["ocean"]) is True
