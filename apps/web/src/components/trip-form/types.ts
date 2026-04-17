@@ -96,7 +96,7 @@ export interface TripPayload {
   destination_code: string;
   is_round_trip: boolean;
   depart_date: string;
-  return_date: string;
+  return_date: string | null;
   adults: number;
   flight_prefs: {
     airlines: string[];

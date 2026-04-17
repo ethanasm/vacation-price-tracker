@@ -84,6 +84,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/test-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Login
+         * @description Test-only login. Creates a test user, wipes their existing trips, and
+         *     sets JWT cookies. Only available when ENVIRONMENT=test.
+         *
+         *     The trip wipe keeps E2E runs idempotent — without it, the per-user
+         *     `MAX_TRIPS_PER_USER` cap (10) is hit after a few runs of any test that
+         *     creates a trip, and subsequent POST /v1/trips calls fail with 400
+         *     `TripLimitExceeded` even though the request itself is valid.
+         */
+        post: operations["test_login_v1_auth_test_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/me": {
         parameters: {
             query?: never;
@@ -122,7 +148,11 @@ export interface paths {
          * @description Create a new trip for the current user.
          */
         post: operations["create_trip_v1_trips_post"];
-        delete?: never;
+        /**
+         * Delete All Trips
+         * @description Delete all trips for the current user.
+         */
+        delete: operations["delete_all_trips_v1_trips_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -212,7 +242,67 @@ export interface paths {
         patch: operations["update_trip_status_v1_trips__trip_id__status_patch"];
         trace?: never;
     };
-    "/v1/locations/search": {
+    "/v1/trips/{trip_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Trip
+         * @description Trigger a manual price refresh for a single trip.
+         */
+        post: operations["refresh_trip_v1_trips__trip_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Message
+         * @description Send a chat message and stream the response.
+         *
+         *     This endpoint accepts a user message and returns a Server-Sent Events (SSE)
+         *     stream with the assistant's response. The stream includes:
+         *
+         *     - **content**: Text content from the LLM
+         *     - **tool_call**: When the LLM invokes a tool
+         *     - **tool_result**: Result from tool execution
+         *     - **error**: If an error occurs
+         *     - **done**: Stream completion marker
+         *
+         *     Each chunk is a JSON object with a `type` field indicating the chunk type.
+         *
+         *     Args:
+         *         request: Chat message request body.
+         *         db: Database session.
+         *         current_user: Authenticated user.
+         *         svc: Chat service instance.
+         *
+         *     Returns:
+         *         StreamingResponse with SSE content.
+         */
+        post: operations["send_message_v1_chat_messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/conversations": {
         parameters: {
             query?: never;
             header?: never;
@@ -220,10 +310,168 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search Locations
-         * @description Search airports and cities by keyword.
+         * List Conversations
+         * @description List the current user's conversations.
+         *
+         *     Returns conversations sorted by most recently updated.
+         *
+         *     Args:
+         *         limit: Maximum number of conversations to return.
+         *         offset: Number of conversations to skip.
+         *         db: Database session.
+         *         current_user: Authenticated user.
+         *         svc: Conversation service instance.
+         *
+         *     Returns:
+         *         List of conversation metadata.
          */
-        get: operations["search_locations_v1_locations_search_get"];
+        get: operations["list_conversations_v1_chat_conversations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/conversations/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conversation
+         * @description Get a conversation with its message history.
+         *
+         *     Args:
+         *         thread_id: Conversation UUID.
+         *         limit: Maximum number of messages to return.
+         *         db: Database session.
+         *         current_user: Authenticated user.
+         *         svc: Chat service instance.
+         *
+         *     Returns:
+         *         Conversation metadata and messages.
+         *
+         *     Raises:
+         *         ConversationNotFound: If conversation doesn't exist or doesn't belong to user.
+         */
+        get: operations["get_conversation_v1_chat_conversations__thread_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation
+         * @description Delete a conversation and all its messages.
+         *
+         *     Args:
+         *         thread_id: Conversation UUID to delete.
+         *         db: Database session.
+         *         current_user: Authenticated user.
+         *         svc: Conversation service instance.
+         *
+         *     Raises:
+         *         ConversationNotFound: If conversation doesn't exist or doesn't belong to user.
+         */
+        delete: operations["delete_conversation_v1_chat_conversations__thread_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/elicitation/{tool_call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Elicitation
+         * @description Submit elicitation form data to complete a pending tool execution.
+         *
+         *     When a tool requests elicitation (missing required fields), the frontend
+         *     displays a form to collect the data. This endpoint receives the submitted
+         *     form data and executes the tool with complete arguments.
+         *
+         *     The response is an SSE stream containing:
+         *     - **tool_result**: Result from the tool execution
+         *     - **content**: Follow-up text from the LLM
+         *     - **tool_call**: Any additional tool calls (e.g., trigger_refresh)
+         *     - **done**: Stream completion marker
+         *
+         *     Args:
+         *         tool_call_id: Unique identifier from the elicitation request.
+         *         request: Elicitation submission containing thread_id, tool_name, and form data.
+         *         db: Database session.
+         *         current_user: Authenticated user.
+         *         conv_svc: Conversation service instance.
+         *         svc: Chat service instance.
+         *
+         *     Returns:
+         *         StreamingResponse with SSE content.
+         *
+         *     Raises:
+         *         ConversationNotFound: If the conversation doesn't exist or doesn't belong to user.
+         *         ToolNotRegistered: If the specified tool is not registered.
+         */
+        post: operations["submit_elicitation_v1_chat_elicitation__tool_call_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sse/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Price Updates
+         * @description Stream real-time price updates via Server-Sent Events.
+         *
+         *     This endpoint provides a persistent connection that streams price updates
+         *     for all of the authenticated user's trips.
+         *
+         *     Events:
+         *     - `connected`: Sent immediately upon connection.
+         *     - `price_update`: Sent when a trip's price snapshot is updated.
+         *     - `heartbeat`: Sent periodically to keep the connection alive.
+         *     - `error`: Sent when an error occurs.
+         *
+         *     Query Parameters:
+         *     - `heartbeat_interval`: Seconds between heartbeats (default: 30, range: 5-60).
+         *     - `poll_interval`: Seconds between database polls (default: 5, range: 1-30).
+         */
+        get: operations["stream_price_updates_v1_sse_updates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sse/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sse Status
+         * @description Check SSE endpoint availability.
+         *
+         *     Returns status information for debugging SSE connections.
+         */
+        get: operations["get_sse_status_v1_sse_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -236,6 +484,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** APIResponse[BulkDeleteResponse] */
+        APIResponse_BulkDeleteResponse_: {
+            data: components["schemas"]["BulkDeleteResponse"];
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** APIResponse[ChatResponse] */
+        APIResponse_ChatResponse_: {
+            data: components["schemas"]["ChatResponse"];
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** APIResponse[RefreshStartResponse] */
         APIResponse_RefreshStartResponse_: {
             data: components["schemas"]["RefreshStartResponse"];
@@ -276,10 +540,10 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** APIResponse[list[LocationResult]] */
-        APIResponse_list_LocationResult__: {
+        /** APIResponse[list[ConversationResponse]] */
+        APIResponse_list_ConversationResponse__: {
             /** Data */
-            data: components["schemas"]["LocationResult"][];
+            data: components["schemas"]["ConversationResponse"][];
             /** Meta */
             meta?: {
                 [key: string]: unknown;
@@ -295,30 +559,134 @@ export interface components {
             } | null;
         };
         /**
+         * BulkDeleteResponse
+         * @description Schema for bulk delete response.
+         */
+        BulkDeleteResponse: {
+            /** Deleted Count */
+            deleted_count: number;
+        };
+        /**
          * CabinClass
          * @description Flight cabin class options.
          * @enum {string}
          */
         CabinClass: "economy" | "premium_economy" | "business" | "first";
         /**
-         * FlightSegment
-         * @description A single flight segment.
+         * ChatMessageResponse
+         * @description Response model for a single chat message in history.
          */
-        FlightSegment: {
-            /** Carrier Code */
-            carrier_code?: string | null;
-            /** Flight Number */
-            flight_number?: string | null;
-            /** Departure Airport */
-            departure_airport?: string | null;
-            /** Arrival Airport */
-            arrival_airport?: string | null;
-            /** Departure Time */
-            departure_time?: string | null;
-            /** Arrival Time */
-            arrival_time?: string | null;
-            /** Duration Minutes */
-            duration_minutes?: number | null;
+        ChatMessageResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Role */
+            role: string;
+            /** Content */
+            content: string;
+            /** Tool Calls */
+            tool_calls?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * ChatRequest
+         * @description Request body for sending a chat message.
+         *
+         *     Attributes:
+         *         message: The user's message content.
+         *         thread_id: Optional conversation thread ID. If not provided,
+         *                   a new conversation will be created.
+         */
+        ChatRequest: {
+            /**
+             * Message
+             * @description The user's message content
+             */
+            message: string;
+            /**
+             * Thread Id
+             * @description Conversation thread ID. If not provided, creates a new conversation.
+             */
+            thread_id?: string | null;
+        };
+        /**
+         * ChatResponse
+         * @description Response model for non-streaming chat operations.
+         *
+         *     Used for conversation listing and retrieval, not for the
+         *     main streaming chat endpoint.
+         */
+        ChatResponse: {
+            conversation: components["schemas"]["ConversationResponse"];
+            /** Messages */
+            messages?: components["schemas"]["ChatMessageResponse"][];
+        };
+        /**
+         * ConversationResponse
+         * @description Response model for conversation metadata.
+         */
+        ConversationResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ElicitationSubmissionRequest
+         * @description Request body for submitting elicitation form data.
+         *
+         *     Used with POST /v1/chat/elicitation/{tool_call_id} to submit
+         *     user-provided form data and complete a pending tool execution.
+         *
+         *     Attributes:
+         *         thread_id: The conversation thread ID where elicitation occurred.
+         *         tool_name: Name of the tool being executed (for validation).
+         *         data: The form data submitted by the user.
+         */
+        ElicitationSubmissionRequest: {
+            /**
+             * Thread Id
+             * Format: uuid
+             * @description Conversation thread ID where the elicitation was requested.
+             */
+            thread_id: string;
+            /**
+             * Tool Name
+             * @description Name of the tool that requested elicitation.
+             */
+            tool_name: string;
+            /**
+             * Data
+             * @description Form data submitted by the user to complete the tool call.
+             */
+            data: {
+                [key: string]: unknown;
+            };
         };
         /**
          * FlightItinerary
@@ -396,6 +764,26 @@ export interface components {
              */
             cabin: components["schemas"]["CabinClass"];
         };
+        /**
+         * FlightSegment
+         * @description A single flight segment.
+         */
+        FlightSegment: {
+            /** Carrier Code */
+            carrier_code?: string | null;
+            /** Flight Number */
+            flight_number?: string | null;
+            /** Departure Airport */
+            departure_airport?: string | null;
+            /** Arrival Airport */
+            arrival_airport?: string | null;
+            /** Departure Time */
+            departure_time?: string | null;
+            /** Arrival Time */
+            arrival_time?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -451,27 +839,6 @@ export interface components {
              * @description Preferred views (e.g., ['Ocean', 'City'])
              */
             preferred_views?: string[];
-        };
-        /**
-         * LocationResult
-         * @description Airport or city location result.
-         */
-        LocationResult: {
-            /**
-             * Code
-             * @description IATA location code
-             */
-            code: string;
-            /**
-             * Name
-             * @description Location name
-             */
-            name: string;
-            /**
-             * Type
-             * @description Location type (AIRPORT or CITY)
-             */
-            type: string;
         };
         /**
          * NotificationPrefs
@@ -645,10 +1012,9 @@ export interface components {
             depart_date: string;
             /**
              * Return Date
-             * Format: date
-             * @description Return date
+             * @description Return date (omit or null for one-way trips)
              */
-            return_date: string;
+            return_date?: string | null;
             /**
              * Adults
              * @description Number of adult travelers
@@ -683,11 +1049,8 @@ export interface components {
              * Format: date
              */
             depart_date: string;
-            /**
-             * Return Date
-             * Format: date
-             */
-            return_date: string;
+            /** Return Date */
+            return_date?: string | null;
             status: components["schemas"]["TripStatus"];
             /** Current Flight Price */
             current_flight_price?: string | null;
@@ -745,11 +1108,8 @@ export interface components {
              * Format: date
              */
             depart_date: string;
-            /**
-             * Return Date
-             * Format: date
-             */
-            return_date: string;
+            /** Return Date */
+            return_date?: string | null;
             status: components["schemas"]["TripStatus"];
             /** Current Flight Price */
             current_flight_price?: string | null;
@@ -796,6 +1156,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -867,6 +1231,26 @@ export interface operations {
         };
     };
     logout_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    test_login_v1_auth_test_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -968,6 +1352,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_all_trips_v1_trips_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_BulkDeleteResponse_"];
                 };
             };
         };
@@ -1121,10 +1525,75 @@ export interface operations {
             };
         };
     };
-    search_locations_v1_locations_search_get: {
+    refresh_trip_v1_trips__trip_id__refresh_post: {
         parameters: {
-            query: {
-                q: string;
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_RefreshStartResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_v1_chat_messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conversations_v1_chat_conversations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -1138,7 +1607,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["APIResponse_list_LocationResult__"];
+                    "application/json": components["schemas"]["APIResponse_list_ConversationResponse__"];
                 };
             };
             /** @description Validation Error */
@@ -1148,6 +1617,155 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_v1_chat_conversations__thread_id__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_ChatResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_v1_chat_conversations__thread_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_elicitation_v1_chat_elicitation__tool_call_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElicitationSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_price_updates_v1_sse_updates_get: {
+        parameters: {
+            query?: {
+                heartbeat_interval?: number;
+                poll_interval?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sse_status_v1_sse_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

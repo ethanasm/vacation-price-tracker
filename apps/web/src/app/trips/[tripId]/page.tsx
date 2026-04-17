@@ -885,7 +885,9 @@ export default function TripDetailPage({
           </span>
           <span className={styles.headerDivider} />
           <span className={styles.routeCompact}>
-            {formatShortDate(trip.depart_date)}–{trip.return_date ? formatShortDate(trip.return_date) : ""}
+            {trip.return_date
+              ? `${formatShortDate(trip.depart_date)}–${formatShortDate(trip.return_date)}`
+              : formatShortDate(trip.depart_date)}
           </span>
           {nights > 0 && (
             <>

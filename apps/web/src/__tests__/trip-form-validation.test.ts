@@ -142,14 +142,25 @@ describe("validateTripForm and hasErrors", () => {
     expect(hasErrors(errors)).toBe(true);
   });
 
-  it("flags return date errors for one-way trips when return date is set", () => {
+  it("skips return date validation for one-way trips", () => {
+    const errors = validateTripForm({
+      ...baseTripFormData,
+      isRoundTrip: false,
+      returnDate: undefined,
+    });
+
+    expect(errors.returnDate).toBeUndefined();
+  });
+
+  it("ignores stale return date when one-way", () => {
+    // Even if a stale returnDate is still in form state, one-way mode skips its validation
     const errors = validateTripForm({
       ...baseTripFormData,
       isRoundTrip: false,
       returnDate: new Date(2025, 5, 9),
     });
 
-    expect(errors.returnDate).toBeDefined();
+    expect(errors.returnDate).toBeUndefined();
   });
 
   it("reports no errors for valid data", () => {

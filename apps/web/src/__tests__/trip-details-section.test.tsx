@@ -155,6 +155,42 @@ describe("TripDetailsSection", () => {
     expect(screen.getByText("Return Date")).toBeInTheDocument();
   });
 
+  it("hides the return date picker for one-way trips", () => {
+    const handlers = {
+      onNameChange: jest.fn(),
+      onOriginAirportChange: jest.fn(),
+      onDestinationCodeChange: jest.fn(),
+      onIsRoundTripChange: jest.fn(),
+      onDepartDateChange: jest.fn(),
+      onReturnDateChange: jest.fn(),
+      onAdultsChange: jest.fn(),
+    };
+
+    render(
+      <TripDetailsSection
+        name={baseTripFormData.name}
+        originAirport={baseTripFormData.originAirport}
+        destinationCode={baseTripFormData.destinationCode}
+        isRoundTrip={false}
+        departDate={baseTripFormData.departDate}
+        returnDate={undefined}
+        adults={baseTripFormData.adults}
+        errors={emptyTripFormErrors}
+        onNameChange={handlers.onNameChange}
+        onOriginAirportChange={handlers.onOriginAirportChange}
+        onDestinationCodeChange={handlers.onDestinationCodeChange}
+        onIsRoundTripChange={handlers.onIsRoundTripChange}
+        onDepartDateChange={handlers.onDepartDateChange}
+        onReturnDateChange={handlers.onReturnDateChange}
+        onAdultsChange={handlers.onAdultsChange}
+        searchLocations={mockSearchLocations}
+      />
+    );
+
+    expect(screen.queryByText("Return Date")).not.toBeInTheDocument();
+    expect(screen.getByText("Departure Date")).toBeInTheDocument();
+  });
+
   it("updates the trip name", () => {
     const handlers = renderTripDetails(emptyTripFormErrors);
 

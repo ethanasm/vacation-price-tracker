@@ -22,10 +22,10 @@ class TripDetails(TypedDict):
     destination_code: str
     is_round_trip: bool
     depart_date: str
-    return_date: str
+    return_date: str | None
     adults: int
     flight_prefs: FlightPrefsData
-    hotel_prefs: HotelPrefsData
+    hotel_prefs: HotelPrefsData | None
 
 
 class FetchResult(TypedDict):
@@ -38,7 +38,7 @@ class FilterInput(TypedDict):
     flight_result: FetchResult
     hotel_result: FetchResult
     flight_prefs: FlightPrefsData
-    hotel_prefs: HotelPrefsData
+    hotel_prefs: HotelPrefsData | None
 
 
 class FilterOutput(TypedDict):

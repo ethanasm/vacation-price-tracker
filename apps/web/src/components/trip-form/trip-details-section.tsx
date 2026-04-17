@@ -135,20 +135,22 @@ export function TripDetailsSection({
               <span className={styles.fieldError}>{errors.departDate}</span>
             )}
           </div>
-          <div className={styles.field}>
-            <Label className={styles.fieldLabel}>Return Date</Label>
-            <DatePicker
-              date={returnDate}
-              onSelect={onReturnDateChange}
-              placeholder="Select return"
-              fromDate={departDate || today}
-              toDate={maxDate}
-              defaultMonth={departDate}
-            />
-            {errors.returnDate && (
-              <span className={styles.fieldError}>{errors.returnDate}</span>
-            )}
-          </div>
+          {isRoundTrip && (
+            <div className={styles.field}>
+              <Label className={styles.fieldLabel}>Return Date</Label>
+              <DatePicker
+                date={returnDate}
+                onSelect={onReturnDateChange}
+                placeholder="Select return"
+                fromDate={departDate || today}
+                toDate={maxDate}
+                defaultMonth={departDate}
+              />
+              {errors.returnDate && (
+                <span className={styles.fieldError}>{errors.returnDate}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Travelers and Round Trip */}

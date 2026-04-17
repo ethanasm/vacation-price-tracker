@@ -163,7 +163,11 @@ export function useTripForm(
   );
   const setIsRoundTrip = useCallback(
     (value: boolean) =>
-      setFormData((prev) => ({ ...prev, isRoundTrip: value })),
+      setFormData((prev) => ({
+        ...prev,
+        isRoundTrip: value,
+        returnDate: value ? prev.returnDate : undefined,
+      })),
     []
   );
   const setDepartDate = useCallback(
@@ -400,10 +404,9 @@ export function useTripForm(
       destination_code: formData.destinationCode.trim().toUpperCase(),
       is_round_trip: formData.isRoundTrip,
       depart_date: formatDateForApi(formData.departDate),
-      // Return date is always required by API; for one-way trips, use depart_date
       return_date: formData.isRoundTrip
         ? formatDateForApi(formData.returnDate)
-        : formatDateForApi(formData.departDate),
+        : null,
       adults: parseNumber(formData.adults, 1),
       flight_prefs: hasFlightPrefs
         ? {

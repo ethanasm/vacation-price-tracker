@@ -86,7 +86,7 @@ export function validateTripForm(data: TripFormData): TripFormErrors {
   const departError = validateDepartDate(data.departDate);
   if (departError) errors.departDate = departError;
 
-  if (data.isRoundTrip || data.returnDate) {
+  if (data.isRoundTrip) {
     const returnError = validateReturnDate(data.returnDate, data.departDate);
     if (returnError) errors.returnDate = returnError;
   }

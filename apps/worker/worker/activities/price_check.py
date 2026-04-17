@@ -54,7 +54,7 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "destination_code": trip.destination_code,
             "is_round_trip": trip.is_round_trip,
             "depart_date": trip.depart_date.isoformat(),
-            "return_date": trip.return_date.isoformat(),
+            "return_date": trip.return_date.isoformat() if trip.return_date else None,
             "adults": trip.adults,
             "flight_prefs": {
                 "airlines": flight_prefs.airlines if flight_prefs else [],
@@ -63,12 +63,12 @@ async def load_trip_details(trip_id: str) -> TripDetails:
                 "cabin": flight_prefs.cabin.value if flight_prefs else "economy",
             },
             "hotel_prefs": {
-                "rooms": hotel_prefs.rooms if hotel_prefs else 1,
-                "adults_per_room": hotel_prefs.adults_per_room if hotel_prefs else 2,
-                "room_selection_mode": (hotel_prefs.room_selection_mode.value if hotel_prefs else "cheapest"),
-                "preferred_room_types": hotel_prefs.preferred_room_types if hotel_prefs else [],
-                "preferred_views": hotel_prefs.preferred_views if hotel_prefs else [],
-            },
+                "rooms": hotel_prefs.rooms,
+                "adults_per_room": hotel_prefs.adults_per_room,
+                "room_selection_mode": hotel_prefs.room_selection_mode.value,
+                "preferred_room_types": hotel_prefs.preferred_room_types,
+                "preferred_views": hotel_prefs.preferred_views,
+            } if hotel_prefs else None,
         }
 
 
@@ -166,15 +166,29 @@ def _extract_skiplagged_flight_offers(response: dict[str, Any]) -> list[dict[str
 @activity.defn
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     """Fetch hotel offers from Skiplagged MCP or mock data."""
+    hotel_prefs = trip.get("hotel_prefs")
+    if not hotel_prefs or not trip.get("return_date"):
+        logger.info(
+            "Skipping hotel fetch for trip_id=%s (hotel_prefs=%s, return_date=%s)",
+            trip["trip_id"],
+            bool(hotel_prefs),
+            trip.get("return_date"),
+        )
+        return {
+            "offers": [],
+            "raw": {"status": "skipped", "provider": "skiplagged"},
+            "error": None,
+        }
+
     if settings.mock_skiplagged_api:
         logger.info("Using mock Skiplagged hotels for trip_id=%s", trip["trip_id"])
-        adults = trip["hotel_prefs"]["rooms"] * trip["hotel_prefs"]["adults_per_room"]
+        adults = hotel_prefs["rooms"] * hotel_prefs["adults_per_room"]
         response = mock_hotel_search(
             city=trip["destination_code"],
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
-            rooms=trip["hotel_prefs"]["rooms"],
+            rooms=hotel_prefs["rooms"],
         )
         offers = _extract_skiplagged_hotel_offers(response)
         return {
@@ -184,7 +198,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         }
 
     logger.info("Fetching hotels for trip_id=%s via Skiplagged MCP", trip["trip_id"])
-    adults = trip["hotel_prefs"]["adults_per_room"]
+    adults = hotel_prefs["adults_per_room"]
 
     try:
         client = SkiplaggedClient()
@@ -193,7 +207,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
-            rooms=trip["hotel_prefs"]["rooms"],
+            rooms=hotel_prefs["rooms"],
             max_pages=4,
         )
     except SkiplaggedMCPError as exc:
@@ -231,7 +245,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
                 checkin=trip["depart_date"],
                 checkout=trip["return_date"],
                 adults=adults,
-                rooms=trip["hotel_prefs"]["rooms"],
+                rooms=hotel_prefs["rooms"],
             )
             offers.append(_normalize_hotel_detail(detail, hotel))
         except Exception as exc:
@@ -306,7 +320,7 @@ def _extract_skiplagged_hotel_offers(response: dict[str, Any]) -> list[dict[str,
 @activity.defn
 async def filter_results_activity(payload: FilterInput) -> FilterOutput:
     flights = _filter_flights(payload["flight_result"]["offers"], payload["flight_prefs"])
-    hotels = _filter_hotels(payload["hotel_result"]["offers"], payload["hotel_prefs"])
+    hotels = _filter_hotels(payload["hotel_result"]["offers"], payload.get("hotel_prefs") or {})
     logger.info("Filtered results flights=%d hotels=%d", len(flights), len(hotels))
     if payload["flight_result"]["error"] or payload["hotel_result"]["error"]:
         logger.debug(

@@ -225,6 +225,36 @@ class TestTripCreate:
             TripCreate(**valid_trip_data)
         assert "359 days" in str(exc_info.value)
 
+    def test_one_way_trip_accepts_null_return_date(self, valid_trip_data):
+        """One-way trips may omit return_date."""
+        valid_trip_data["is_round_trip"] = False
+        valid_trip_data["return_date"] = None
+        trip = TripCreate(**valid_trip_data)
+        assert trip.is_round_trip is False
+        assert trip.return_date is None
+
+    def test_one_way_trip_omits_return_date(self, valid_trip_data):
+        """One-way trips parse without a return_date key."""
+        valid_trip_data["is_round_trip"] = False
+        valid_trip_data.pop("return_date")
+        trip = TripCreate(**valid_trip_data)
+        assert trip.return_date is None
+
+    def test_round_trip_requires_return_date(self, valid_trip_data):
+        """Round trips (default) must include a return_date."""
+        valid_trip_data["return_date"] = None
+        with pytest.raises(ValidationError) as exc_info:
+            TripCreate(**valid_trip_data)
+        assert "return_date is required for round trips" in str(exc_info.value)
+
+    def test_one_way_rejects_return_date(self, valid_trip_data):
+        """One-way trips must not include a return_date."""
+        valid_trip_data["is_round_trip"] = False
+        # return_date still set from fixture
+        with pytest.raises(ValidationError) as exc_info:
+            TripCreate(**valid_trip_data)
+        assert "return_date must be omitted for one-way trips" in str(exc_info.value)
+
     def test_adults_constraints(self, valid_trip_data):
         """Test adults must be between 1 and 9."""
         valid_trip_data["adults"] = 1

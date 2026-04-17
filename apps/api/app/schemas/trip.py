@@ -120,8 +120,9 @@ class TripCreate(BaseModel):
     depart_date: date = Field(
         description="Departure date",
     )
-    return_date: date = Field(
-        description="Return date",
+    return_date: date | None = Field(
+        default=None,
+        description="Return date (omit or null for one-way trips)",
     )
     adults: Annotated[int, Field(ge=1, le=9)] = Field(
         default=1,
@@ -141,8 +142,10 @@ class TripCreate(BaseModel):
 
     @field_validator("depart_date", "return_date")
     @classmethod
-    def validate_date_within_range(cls, v: date) -> date:
+    def validate_date_within_range(cls, v: date | None) -> date | None:
         """Ensure dates are not more than 359 days out."""
+        if v is None:
+            return v
         max_date = date.today() + timedelta(days=359)
         if v > max_date:
             raise ValueError(f"Date cannot be more than 359 days out. Maximum: {max_date}")
@@ -152,8 +155,12 @@ class TripCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_return_after_depart(self) -> "TripCreate":
-        """Ensure return date is after departure date."""
-        if self.return_date <= self.depart_date:
+        """Ensure return date is after departure date, and matches is_round_trip."""
+        if self.is_round_trip and self.return_date is None:
+            raise ValueError("return_date is required for round trips")
+        if not self.is_round_trip and self.return_date is not None:
+            raise ValueError("return_date must be omitted for one-way trips")
+        if self.return_date is not None and self.return_date <= self.depart_date:
             raise ValueError("return_date must be after depart_date")
         return self
 
@@ -166,7 +173,7 @@ class TripResponse(BaseModel):
     origin_airport: str
     destination_code: str
     depart_date: date
-    return_date: date
+    return_date: date | None = None
     status: TripStatus
     current_flight_price: Decimal | None = None
     current_hotel_price: Decimal | None = None

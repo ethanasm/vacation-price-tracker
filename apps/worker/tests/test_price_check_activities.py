@@ -118,6 +118,51 @@ async def test_load_trip_details(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_load_trip_details_one_way(monkeypatch):
+    """One-way trip: return_date is None, no hotel_prefs attached."""
+    trip_id = uuid.uuid4()
+    trip = SimpleNamespace(
+        id=trip_id,
+        origin_airport="SFO",
+        destination_code="MCO",
+        is_round_trip=False,
+        depart_date=date(2026, 2, 1),
+        return_date=None,
+        adults=1,
+    )
+    flight_prefs = SimpleNamespace(
+        airlines=[],
+        stops_mode=StopsMode.ANY,
+        max_stops=None,
+        cabin=CabinClass.ECONOMY,
+    )
+
+    session = DummySession(trip, [DummyResult(flight_prefs), DummyResult(None)])
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))
+
+    result = await pc.load_trip_details(str(trip_id))
+
+    assert result["return_date"] is None
+    assert result["is_round_trip"] is False
+    assert result["hotel_prefs"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_skips_for_one_way(monkeypatch):
+    """fetch_hotels_activity returns empty offers when return_date is None."""
+    trip = _trip_details()
+    trip["is_round_trip"] = False
+    trip["return_date"] = None
+    trip["hotel_prefs"] = None
+
+    result = await pc.fetch_hotels_activity(trip)
+
+    assert result["offers"] == []
+    assert result["error"] is None
+    assert result["raw"]["status"] == "skipped"
+
+
+@pytest.mark.asyncio
 async def test_load_trip_details_not_found(monkeypatch):
     session = DummySession(None, [])
     monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))

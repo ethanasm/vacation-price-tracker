@@ -43,8 +43,8 @@ describe("useTripForm", () => {
     expect(payload?.origin_airport).toBe("SFO");
     expect(payload?.destination_code).toBe("LAX");
     expect(payload?.depart_date).toBe("2025-01-02");
-    // For one-way trips, return_date equals depart_date (API requirement)
-    expect(payload?.return_date).toBe("2025-01-02");
+    // One-way trips send return_date as null
+    expect(payload?.return_date).toBeNull();
     expect(payload?.adults).toBe(2);
   });
 

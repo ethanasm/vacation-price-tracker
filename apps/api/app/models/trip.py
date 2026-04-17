@@ -20,7 +20,7 @@ class Trip(SQLModel, table=True):
     destination_code: str = Field(max_length=3, nullable=False)  # IATA code
     is_round_trip: bool = Field(default=True, nullable=False)
     depart_date: date = Field(nullable=False)
-    return_date: date = Field(nullable=False)
+    return_date: date | None = Field(default=None, nullable=True)
     adults: int = Field(default=1, ge=1, le=9, nullable=False)
     status: TripStatus = Field(default=TripStatus.ACTIVE, nullable=False)
 

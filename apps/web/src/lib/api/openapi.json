@@ -85,6 +85,26 @@
         }
       }
     },
+    "/v1/auth/test-login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Test Login",
+        "description": "Test-only login. Creates a test user, wipes their existing trips, and\nsets JWT cookies. Only available when ENVIRONMENT=test.\n\nThe trip wipe keeps E2E runs idempotent \u2014 without it, the per-user\n`MAX_TRIPS_PER_USER` cap (10) is hit after a few runs of any test that\ncreates a trip, and subsequent POST /v1/trips calls fail with 400\n`TripLimitExceeded` even though the request itself is valid.",
+        "operationId": "test_login_v1_auth_test_login_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/me": {
       "get": {
         "tags": [
@@ -213,6 +233,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Delete All Trips",
+        "description": "Delete all trips for the current user.",
+        "operationId": "delete_all_trips_v1_trips_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_BulkDeleteResponse_"
                 }
               }
             }
@@ -442,24 +482,23 @@
         }
       }
     },
-    "/v1/locations/search": {
-      "get": {
+    "/v1/trips/{trip_id}/refresh": {
+      "post": {
         "tags": [
-          "locations"
+          "trips"
         ],
-        "summary": "Search Locations",
-        "description": "Search airports and cities by keyword.",
-        "operationId": "search_locations_v1_locations_search_get",
+        "summary": "Refresh Trip",
+        "description": "Trigger a manual price refresh for a single trip.",
+        "operationId": "refresh_trip_v1_trips__trip_id__refresh_post",
         "parameters": [
           {
-            "name": "q",
-            "in": "query",
+            "name": "trip_id",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 2,
-              "maxLength": 50,
-              "title": "Q"
+              "format": "uuid",
+              "title": "Trip Id"
             }
           }
         ],
@@ -469,7 +508,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_list_LocationResult__"
+                  "$ref": "#/components/schemas/APIResponse_RefreshStartResponse_"
                 }
               }
             }
@@ -486,10 +525,373 @@
           }
         }
       }
+    },
+    "/v1/chat/messages": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send Message",
+        "description": "Send a chat message and stream the response.\n\nThis endpoint accepts a user message and returns a Server-Sent Events (SSE)\nstream with the assistant's response. The stream includes:\n\n- **content**: Text content from the LLM\n- **tool_call**: When the LLM invokes a tool\n- **tool_result**: Result from tool execution\n- **error**: If an error occurs\n- **done**: Stream completion marker\n\nEach chunk is a JSON object with a `type` field indicating the chunk type.\n\nArgs:\n    request: Chat message request body.\n    db: Database session.\n    current_user: Authenticated user.\n    svc: Chat service instance.\n\nReturns:\n    StreamingResponse with SSE content.",
+        "operationId": "send_message_v1_chat_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/conversations": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List Conversations",
+        "description": "List the current user's conversations.\n\nReturns conversations sorted by most recently updated.\n\nArgs:\n    limit: Maximum number of conversations to return.\n    offset: Number of conversations to skip.\n    db: Database session.\n    current_user: Authenticated user.\n    svc: Conversation service instance.\n\nReturns:\n    List of conversation metadata.",
+        "operationId": "list_conversations_v1_chat_conversations_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_list_ConversationResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/conversations/{thread_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Conversation",
+        "description": "Get a conversation with its message history.\n\nArgs:\n    thread_id: Conversation UUID.\n    limit: Maximum number of messages to return.\n    db: Database session.\n    current_user: Authenticated user.\n    svc: Chat service instance.\n\nReturns:\n    Conversation metadata and messages.\n\nRaises:\n    ConversationNotFound: If conversation doesn't exist or doesn't belong to user.",
+        "operationId": "get_conversation_v1_chat_conversations__thread_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_ChatResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Delete Conversation",
+        "description": "Delete a conversation and all its messages.\n\nArgs:\n    thread_id: Conversation UUID to delete.\n    db: Database session.\n    current_user: Authenticated user.\n    svc: Conversation service instance.\n\nRaises:\n    ConversationNotFound: If conversation doesn't exist or doesn't belong to user.",
+        "operationId": "delete_conversation_v1_chat_conversations__thread_id__delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/elicitation/{tool_call_id}": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Submit Elicitation",
+        "description": "Submit elicitation form data to complete a pending tool execution.\n\nWhen a tool requests elicitation (missing required fields), the frontend\ndisplays a form to collect the data. This endpoint receives the submitted\nform data and executes the tool with complete arguments.\n\nThe response is an SSE stream containing:\n- **tool_result**: Result from the tool execution\n- **content**: Follow-up text from the LLM\n- **tool_call**: Any additional tool calls (e.g., trigger_refresh)\n- **done**: Stream completion marker\n\nArgs:\n    tool_call_id: Unique identifier from the elicitation request.\n    request: Elicitation submission containing thread_id, tool_name, and form data.\n    db: Database session.\n    current_user: Authenticated user.\n    conv_svc: Conversation service instance.\n    svc: Chat service instance.\n\nReturns:\n    StreamingResponse with SSE content.\n\nRaises:\n    ConversationNotFound: If the conversation doesn't exist or doesn't belong to user.\n    ToolNotRegistered: If the specified tool is not registered.",
+        "operationId": "submit_elicitation_v1_chat_elicitation__tool_call_id__post",
+        "parameters": [
+          {
+            "name": "tool_call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tool Call Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ElicitationSubmissionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sse/updates": {
+      "get": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Stream Price Updates",
+        "description": "Stream real-time price updates via Server-Sent Events.\n\nThis endpoint provides a persistent connection that streams price updates\nfor all of the authenticated user's trips.\n\nEvents:\n- `connected`: Sent immediately upon connection.\n- `price_update`: Sent when a trip's price snapshot is updated.\n- `heartbeat`: Sent periodically to keep the connection alive.\n- `error`: Sent when an error occurs.\n\nQuery Parameters:\n- `heartbeat_interval`: Seconds between heartbeats (default: 30, range: 5-60).\n- `poll_interval`: Seconds between database polls (default: 5, range: 1-30).",
+        "operationId": "stream_price_updates_v1_sse_updates_get",
+        "parameters": [
+          {
+            "name": "heartbeat_interval",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 5,
+              "default": 30,
+              "title": "Heartbeat Interval"
+            }
+          },
+          {
+            "name": "poll_interval",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 30,
+              "minimum": 1,
+              "default": 5,
+              "title": "Poll Interval"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sse/status": {
+      "get": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Get Sse Status",
+        "description": "Check SSE endpoint availability.\n\nReturns status information for debugging SSE connections.",
+        "operationId": "get_sse_status_v1_sse_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "APIResponse_BulkDeleteResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkDeleteResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[BulkDeleteResponse]"
+      },
+      "APIResponse_ChatResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChatResponse"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[ChatResponse]"
+      },
       "APIResponse_RefreshStartResponse_": {
         "properties": {
           "data": {
@@ -610,11 +1012,11 @@
         ],
         "title": "APIResponse[TripResponse]"
       },
-      "APIResponse_list_LocationResult__": {
+      "APIResponse_list_ConversationResponse__": {
         "properties": {
           "data": {
             "items": {
-              "$ref": "#/components/schemas/LocationResult"
+              "$ref": "#/components/schemas/ConversationResponse"
             },
             "type": "array",
             "title": "Data"
@@ -636,7 +1038,7 @@
         "required": [
           "data"
         ],
-        "title": "APIResponse[list[LocationResult]]"
+        "title": "APIResponse[list[ConversationResponse]]"
       },
       "APIResponse_list_TripResponse__": {
         "properties": {
@@ -666,6 +1068,20 @@
         ],
         "title": "APIResponse[list[TripResponse]]"
       },
+      "BulkDeleteResponse": {
+        "properties": {
+          "deleted_count": {
+            "type": "integer",
+            "title": "Deleted Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_count"
+        ],
+        "title": "BulkDeleteResponse",
+        "description": "Schema for bulk delete response."
+      },
       "CabinClass": {
         "type": "string",
         "enum": [
@@ -676,6 +1092,230 @@
         ],
         "title": "CabinClass",
         "description": "Flight cabin class options."
+      },
+      "ChatMessageResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "ChatMessageResponse",
+        "description": "Response model for a single chat message in history."
+      },
+      "ChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Message",
+            "description": "The user's message content"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "Conversation thread ID. If not provided, creates a new conversation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ChatRequest",
+        "description": "Request body for sending a chat message.\n\nAttributes:\n    message: The user's message content.\n    thread_id: Optional conversation thread ID. If not provided,\n              a new conversation will be created."
+      },
+      "ChatResponse": {
+        "properties": {
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationResponse"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageResponse"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation"
+        ],
+        "title": "ChatResponse",
+        "description": "Response model for non-streaming chat operations.\n\nUsed for conversation listing and retrieval, not for the\nmain streaming chat endpoint."
+      },
+      "ConversationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationResponse",
+        "description": "Response model for conversation metadata."
+      },
+      "ElicitationSubmissionRequest": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id",
+            "description": "Conversation thread ID where the elicitation was requested."
+          },
+          "tool_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Tool Name",
+            "description": "Name of the tool that requested elicitation."
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data",
+            "description": "Form data submitted by the user to complete the tool call."
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "tool_name",
+          "data"
+        ],
+        "title": "ElicitationSubmissionRequest",
+        "description": "Request body for submitting elicitation form data.\n\nUsed with POST /v1/chat/elicitation/{tool_call_id} to submit\nuser-provided form data and complete a pending tool execution.\n\nAttributes:\n    thread_id: The conversation thread ID where elicitation occurred.\n    tool_name: Name of the tool being executed (for validation).\n    data: The form data submitted by the user."
+      },
+      "FlightItinerary": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/FlightSegment"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "total_duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Duration Minutes"
+          },
+          "stops": {
+            "type": "integer",
+            "title": "Stops",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction"
+        ],
+        "title": "FlightItinerary",
+        "description": "Complete itinerary (outbound or return) with all segments."
       },
       "FlightOffer": {
         "properties": {
@@ -693,6 +1333,17 @@
               }
             ],
             "title": "Airline Code"
+          },
+          "flight_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flight Number"
           },
           "airline_name": {
             "anyOf": [
@@ -759,6 +1410,13 @@
               }
             ],
             "title": "Return Flight"
+          },
+          "itineraries": {
+            "items": {
+              "$ref": "#/components/schemas/FlightItinerary"
+            },
+            "type": "array",
+            "title": "Itineraries"
           }
         },
         "type": "object",
@@ -807,6 +1465,90 @@
         "type": "object",
         "title": "FlightPrefs",
         "description": "Flight preferences for a trip."
+      },
+      "FlightSegment": {
+        "properties": {
+          "carrier_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Code"
+          },
+          "flight_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flight Number"
+          },
+          "departure_airport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departure Airport"
+          },
+          "arrival_airport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Airport"
+          },
+          "departure_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departure Time"
+          },
+          "arrival_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Time"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          }
+        },
+        "type": "object",
+        "title": "FlightSegment",
+        "description": "A single flight segment."
       },
       "HTTPValidationError": {
         "properties": {
@@ -922,33 +1664,6 @@
         "type": "object",
         "title": "HotelPrefs",
         "description": "Hotel preferences for a trip."
-      },
-      "LocationResult": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code",
-            "description": "IATA location code"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Location name"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "description": "Location type (AIRPORT or CITY)"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "name",
-          "type"
-        ],
-        "title": "LocationResult",
-        "description": "Airport or city location result."
       },
       "NotificationPrefs-Input": {
         "properties": {
@@ -1223,10 +1938,17 @@
             "description": "Departure date"
           },
           "return_date": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Return Date",
-            "description": "Return date"
+            "description": "Return date (omit or null for one-way trips)"
           },
           "adults": {
             "type": "integer",
@@ -1269,7 +1991,6 @@
           "origin_airport",
           "destination_code",
           "depart_date",
-          "return_date",
           "notification_prefs"
         ],
         "title": "TripCreate",
@@ -1300,8 +2021,15 @@
             "title": "Depart Date"
           },
           "return_date": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Return Date"
           },
           "status": {
@@ -1411,7 +2139,6 @@
           "origin_airport",
           "destination_code",
           "depart_date",
-          "return_date",
           "status",
           "is_round_trip",
           "adults",
@@ -1467,8 +2194,15 @@
             "title": "Depart Date"
           },
           "return_date": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Return Date"
           },
           "status": {
@@ -1530,7 +2264,6 @@
           "origin_airport",
           "destination_code",
           "depart_date",
-          "return_date",
           "status"
         ],
         "title": "TripResponse",
@@ -1607,6 +2340,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

@@ -101,6 +101,45 @@ async def test_create_trip_success(client_with_csrf, test_session, mock_redis, m
 
 
 @pytest.mark.asyncio
+async def test_create_trip_one_way_success(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="oneway@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="One-way to Tokyo")
+    payload["is_round_trip"] = False
+    payload.pop("return_date")
+    response = _create_trip(client_with_csrf, payload, "trip-oneway-1")
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["is_round_trip"] is False
+    assert data["return_date"] is None
+
+    trip = await test_session.get(Trip, uuid.UUID(data["id"]))
+    assert trip is not None
+    assert trip.return_date is None
+    assert trip.is_round_trip is False
+
+
+@pytest.mark.asyncio
+async def test_create_trip_round_trip_missing_return_date(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="roundfail@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Round trip without return")
+    payload.pop("return_date")  # is_round_trip defaults to True
+    response = _create_trip(client_with_csrf, payload, "trip-round-missing-1")
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_trip_reports_price_check_failure(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="create-fail@example.com")
     _authorize_client(client_with_csrf, user)

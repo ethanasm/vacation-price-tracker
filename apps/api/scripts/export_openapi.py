@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import FastAPI to create a minimal app
 # Import the routers (these import the schemas)
 from app.core.config import settings  # noqa: E402
-from app.routers import auth, locations, trips  # noqa: E402
+from app.routers import auth, chat, sse, trips  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
 
@@ -43,10 +43,10 @@ def create_schema_app() -> FastAPI:
         version="0.1.0",
     )
 
-    # Include all routers
     app.include_router(auth.router, tags=["auth"])
     app.include_router(trips.router, tags=["trips"])
-    app.include_router(locations.router, tags=["locations"])
+    app.include_router(chat.router, tags=["chat"])
+    app.include_router(sse.router, tags=["sse"])
 
     return app
 
