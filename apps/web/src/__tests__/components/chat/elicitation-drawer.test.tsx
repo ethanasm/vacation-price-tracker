@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { ElicitationDrawer } from "../../../components/chat/elicitation-drawer";
 import type { ElicitationData } from "../../../lib/chat-types";
 
+// This suite renders a heavy trip-form tree and walks the full chat-elicitation
+// flow. Under `jest --coverage` the workers are loaded enough that individual
+// tests have hit the 5s default timeout and flaked. 10s leaves headroom
+// without masking real regressions — when the suite legitimately runs in
+// ~8s total, no single test comes close.
+jest.setTimeout(10000);
+
 // Mock CSS modules
 jest.mock("../../../components/trip-form/trip-details-section.module.css", () =>
   new Proxy({}, { get: (_target, prop) => prop })
@@ -280,7 +287,7 @@ describe("ElicitationDrawer", () => {
 
   describe("cancel behavior", () => {
     it("calls onCancel when Cancel button is clicked", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -296,7 +303,7 @@ describe("ElicitationDrawer", () => {
     });
 
     it("calls onCancel when drawer is closed via close button", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -316,7 +323,7 @@ describe("ElicitationDrawer", () => {
 
   describe("form submission", () => {
     it("calls onComplete with form data when submitted", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       // Prefill most data to reduce typing time
       render(
@@ -353,7 +360,7 @@ describe("ElicitationDrawer", () => {
     }, 10000);
 
     it("does not submit when form validation fails", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -371,7 +378,7 @@ describe("ElicitationDrawer", () => {
     });
 
     it("shows Creating... text while submitting", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       // Make onComplete return a promise that doesn't resolve immediately
       let resolveSubmit!: () => void;
@@ -415,7 +422,7 @@ describe("ElicitationDrawer", () => {
     });
 
     it("disables buttons while submitting", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       let resolveSubmit!: () => void;
       const submitPromise = new Promise<void>((resolve) => {
@@ -498,7 +505,7 @@ describe("ElicitationDrawer", () => {
 
   describe("section toggles", () => {
     it("toggles flight preferences section", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -524,7 +531,7 @@ describe("ElicitationDrawer", () => {
     });
 
     it("toggles hotel preferences section", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -552,7 +559,7 @@ describe("ElicitationDrawer", () => {
 
   describe("airport search", () => {
     it("triggers searchLocations when typing in airport field", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { api } = jest.requireMock("../../../lib/api");
 
       render(
@@ -646,7 +653,7 @@ describe("ElicitationDrawer", () => {
 
   describe("form validation", () => {
     it("shows validation errors when required fields are missing", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
@@ -680,7 +687,7 @@ describe("ElicitationDrawer", () => {
     });
 
     it("allows submission when all required fields are provided", async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
 
       render(
         <ElicitationDrawer
