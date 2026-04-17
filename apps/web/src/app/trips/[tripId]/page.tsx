@@ -1,19 +1,22 @@
 "use client";
 
-import React, { use, useState, useEffect, useCallback, useRef } from "react";
+import React, { use, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
   ChevronDown,
+  Hotel,
   Loader2,
   Pencil,
   Plane,
-  Hotel,
   RefreshCw,
   Trash2,
   TrendingDown,
   TrendingUp,
-  AlertCircle,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -416,6 +419,45 @@ function extractFlightDisplayData(flight: ApiFlightOffer) {
   };
 }
 
+type FlightSortKey = "airline" | "time" | "stops" | "price";
+type SortDir = "asc" | "desc";
+
+function SortHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  align,
+  onSort,
+}: {
+  label: string;
+  sortKey: FlightSortKey;
+  activeKey: FlightSortKey;
+  direction: SortDir;
+  align?: "left" | "right";
+  onSort: (key: FlightSortKey) => void;
+}) {
+  const isActive = activeKey === sortKey;
+  return (
+    <button
+      type="button"
+      className={`${styles.sortButton} ${align === "right" ? styles.sortButtonRight : ""} ${isActive ? styles.sortButtonActive : ""}`}
+      onClick={() => onSort(sortKey)}
+    >
+      <span>{label}</span>
+      {isActive ? (
+        direction === "asc" ? (
+          <ArrowUp className={styles.sortArrow} />
+        ) : (
+          <ArrowDown className={styles.sortArrow} />
+        )
+      ) : (
+        <ArrowUpDown className={`${styles.sortArrow} ${styles.sortArrowIdle}`} />
+      )}
+    </button>
+  );
+}
+
 function FlightsList({
   flights,
   departDate,
@@ -430,6 +472,44 @@ function FlightsList({
   onSelectFlight: (stableKey: string) => void;
 }) {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<FlightSortKey>("price");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const handleSort = (key: FlightSortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "price" || key === "stops" ? "asc" : "asc");
+    }
+  };
+
+  const sortedFlights = useMemo(() => {
+    const getValue = (f: ApiFlightOffer): number | string => {
+      const data = extractFlightDisplayData(f);
+      switch (sortKey) {
+        case "airline":
+          return (data.airlineName || "").toLowerCase();
+        case "time": {
+          const first = data.outbound?.segments?.[0]?.departure_time;
+          return first ?? "";
+        }
+        case "stops":
+          return f.stops ?? 0;
+        case "price":
+          return parsePrice(f.price) ?? Number.POSITIVE_INFINITY;
+      }
+    };
+    const arr = [...flights];
+    arr.sort((a, b) => {
+      const va = getValue(a);
+      const vb = getValue(b);
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }, [flights, sortKey, sortDir]);
 
   if (flights.length === 0) {
     return (
@@ -454,7 +534,15 @@ function FlightsList({
 
   return (
     <div className={styles.flightsList}>
-      {flights.map((flight) => {
+      <div className={styles.flightsHeaderRow}>
+        <span aria-hidden /> {/* radio column */}
+        <SortHeader label="Airline" sortKey="airline" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+        <SortHeader label="Time" sortKey="time" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+        <SortHeader label="Stops" sortKey="stops" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+        <SortHeader label="Price" sortKey="price" activeKey={sortKey} direction={sortDir} align="right" onSort={handleSort} />
+        <span aria-hidden /> {/* chevron column */}
+      </div>
+      {sortedFlights.map((flight) => {
         const stableKey = flightStableKey(flight);
         const isSelected = stableKey === selectedFlightKey;
         const isExpanded = expandedCards.has(flight.id);
@@ -484,7 +572,7 @@ function FlightsList({
               aria-expanded={isExpanded}
             >
               {/* Row 1: Outbound */}
-              <div className={styles.cardHeaderRow}>
+              <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowMain}`}>
                 <div
                   className={styles.flightRadio}
                   onClick={(e) => { e.stopPropagation(); onSelectFlight(stableKey); }}
@@ -498,11 +586,11 @@ function FlightsList({
                   </div>
                 </div>
                 <span className={styles.headerAirline}>{airlineName}</span>
-                {outboundDepTime && (
-                  <span className={styles.headerTimes}>
-                    {outboundDepTime}{outboundArrTime ? ` → ${outboundArrTime}` : ""}
-                  </span>
-                )}
+                <span className={styles.headerTimes}>
+                  {outboundDepTime
+                    ? `${outboundDepTime}${outboundArrTime ? ` → ${outboundArrTime}` : ""}`
+                    : "—"}
+                </span>
                 <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
                   <Plane className="h-3 w-3" />
                   {isDirect ? "Direct" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}

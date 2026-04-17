@@ -186,21 +186,21 @@
   min-height: 0;
 }
 
-@media (min-width: 900px) {
-  .gridCompact {
-    grid-template-columns: 4fr 3fr 3fr;
-  }
-  .gridCompactFlightsOnly {
-    grid-template-columns: 4fr 6fr;
-  }
-}
-
 .gridCompactFlightsOnly {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
   flex: 1;
   min-height: 0;
+}
+
+@media (min-width: 900px) {
+  .gridCompact {
+    grid-template-columns: 4fr 3fr 3fr;
+  }
+  .gridCompactFlightsOnly {
+    grid-template-columns: minmax(360px, 2fr) minmax(480px, 3fr);
+  }
 }
 
 /* Chart Card */
@@ -338,6 +338,65 @@
 .flightRadio {
   flex-shrink: 0;
   cursor: pointer;
+  justify-self: center;
+}
+
+/* Shared grid template so the header row and each card row align. */
+.flightsHeaderRow,
+.cardHeaderRowMain {
+  display: grid;
+  grid-template-columns: 20px 92px minmax(160px, 1fr) 96px 80px 16px;
+  column-gap: 12px;
+  align-items: center;
+}
+
+.flightsHeaderRow {
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+  margin-bottom: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.sortButton:hover {
+  color: var(--ink);
+}
+
+.sortButtonRight {
+  justify-self: end;
+}
+
+.sortButtonActive {
+  color: var(--ink);
+}
+
+.sortArrow {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.25;
+}
+
+.sortArrowIdle {
+  opacity: 0.35;
 }
 
 /* Card Header - Clickable collapsed view (two-row layout) */
@@ -389,8 +448,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 0;
-  max-width: 64px;
 }
 
 .headerTimes {
@@ -428,6 +485,8 @@
   font-weight: 600;
   background: hsl(var(--muted) / 0.6);
   color: var(--ink-muted);
+  justify-self: start;
+  white-space: nowrap;
 }
 
 .directBadge svg {
@@ -446,12 +505,13 @@
 }
 
 .cardPrice {
-  margin-left: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 15px;
   font-weight: 700;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  justify-self: end;
 }
 
 .chevron {
