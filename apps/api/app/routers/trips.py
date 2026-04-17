@@ -346,7 +346,7 @@ def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
     flights_data = raw.get("flights", {})
     if isinstance(flights_data, dict):
         flight_list = flights_data.get("data") or flights_data.get("offers") or []
-        for i, item in enumerate(flight_list[:10]):
+        for i, item in enumerate(flight_list):
             offer = _parse_flight_offer(item, i, flights_data)
             if offer:
                 flight_offers.append(offer)
@@ -356,7 +356,7 @@ def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
     hotels_data = raw.get("hotels", {})
     if isinstance(hotels_data, dict):
         hotel_list = hotels_data.get("data") or hotels_data.get("offers") or []
-        for i, item in enumerate(hotel_list[:10]):
+        for i, item in enumerate(hotel_list):
             offer = _parse_hotel_offer(item, i)
             if offer:
                 hotel_offers.append(offer)
