@@ -47,9 +47,6 @@ export type HotelOffer = components["schemas"]["HotelOffer"];
 export type RefreshStartResponse = components["schemas"]["RefreshStartResponse"];
 export type RefreshStatusResponse = components["schemas"]["RefreshStatusResponse"];
 
-// Location types
-export type LocationResult = components["schemas"]["LocationResult"];
-
 // API Response wrappers
 export type APIResponse<T> = {
   data: T;
@@ -83,6 +80,3 @@ export type GetRefreshStatusResponse = operations["refresh_status_v1_trips_refre
 export type UpdateTripStatusRequest = operations["update_trip_status_v1_trips__trip_id__status_patch"]["requestBody"]["content"]["application/json"];
 export type UpdateTripStatusResponse = operations["update_trip_status_v1_trips__trip_id__status_patch"]["responses"]["200"]["content"]["application/json"];
 
-// Search locations
-export type SearchLocationsParams = operations["search_locations_v1_locations_search_get"]["parameters"]["query"];
-export type SearchLocationsResponse = operations["search_locations_v1_locations_search_get"]["responses"]["200"]["content"]["application/json"];

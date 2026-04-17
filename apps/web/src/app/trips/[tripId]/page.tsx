@@ -481,7 +481,7 @@ function FlightsList({
 }: {
   flights: ApiFlightOffer[];
   departDate: string;
-  returnDate: string | null;
+  returnDate?: string | null;
   selectedFlightKey: string | null;
   onSelectFlight: (stableKey: string) => void;
 }) {
