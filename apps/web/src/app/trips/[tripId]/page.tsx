@@ -114,11 +114,13 @@ function PriceHistoryChart({
   priceHistory,
   selectedHotelKey,
   selectedFlightKey,
+  selectedFlightLabel,
   showHotel = true,
 }: {
   priceHistory: PriceSnapshot[];
   selectedHotelKey: string | null;
   selectedFlightKey: string | null;
+  selectedFlightLabel?: string;
   showHotel?: boolean;
 }) {
   if (priceHistory.length === 0) {
@@ -133,11 +135,11 @@ function PriceHistoryChart({
   // Build chart data with carry-forward for missing prices
   // When a selected item isn't found in a snapshot, use its last known price
   const reversedHistory = [...priceHistory].reverse();
-  let lastKnownFlightPrice: number | null = null;
+  let lastKnownSelectedFlight: number | null = null;
   let lastKnownHotelPrice: number | null = null;
 
   const chartData = reversedHistory.map((snapshot) => {
-    const defaultFlight = parsePrice(snapshot.flight_price) ?? 0;
+    const minFlight = parsePrice(snapshot.flight_price) ?? 0;
     const defaultHotel = parsePrice(snapshot.hotel_price) ?? 0;
 
     // Look up selected hotel price in this snapshot by stable key
@@ -150,41 +152,44 @@ function PriceHistoryChart({
         hotel = parsePrice(match.price) ?? defaultHotel;
         lastKnownHotelPrice = hotel;
       } else {
-        // Not found: use last known price, or fall back to default
         hotel = lastKnownHotelPrice ?? defaultHotel;
       }
     } else {
       hotel = defaultHotel;
     }
 
-    // Look up selected flight price in this snapshot by stable key
-    let flight: number;
+    // Selected flight is an optional separate line (only when a flight is selected)
+    let selectedFlight: number | undefined;
     if (selectedFlightKey && snapshot.flight_offers) {
       const match = (snapshot.flight_offers as ApiFlightOffer[]).find(
         (f) => flightStableKey(f) === selectedFlightKey
       );
       if (match) {
-        flight = parsePrice(match.price) ?? defaultFlight;
-        lastKnownFlightPrice = flight;
-      } else {
-        // Not found: use last known price, or fall back to default
-        flight = lastKnownFlightPrice ?? defaultFlight;
+        const price = parsePrice(match.price);
+        if (price != null) {
+          selectedFlight = price;
+          lastKnownSelectedFlight = price;
+        }
+      } else if (lastKnownSelectedFlight != null) {
+        selectedFlight = lastKnownSelectedFlight;
       }
-    } else {
-      flight = defaultFlight;
     }
 
     return {
       date: formatDateTime(snapshot.created_at),
-      total: flight + hotel,
-      flight,
+      total: minFlight + hotel,
+      minFlight,
+      selectedFlight,
       hotel,
     };
   });
 
+  const selectedLineLabel = selectedFlightLabel ?? "Selected Flight";
+
   const chartConfig = {
     total: { label: "Total", color: "hsl(var(--chart-1))" },
-    flight: { label: "Flight", color: "hsl(var(--chart-2))" },
+    minFlight: { label: "Flight (min)", color: "hsl(var(--chart-2))" },
+    selectedFlight: { label: selectedLineLabel, color: "hsl(var(--chart-4))" },
     hotel: { label: "Hotel", color: "hsl(var(--chart-3))" },
   } satisfies ChartConfig;
 
@@ -234,13 +239,22 @@ function PriceHistoryChart({
           />
         )}
         <Line
-          dataKey="flight"
+          dataKey="minFlight"
           type="monotone"
-          stroke={showHotel ? "var(--color-flight)" : "var(--color-total)"}
-          strokeWidth={showHotel ? 1.5 : 2}
-          dot={showHotel ? false : { r: 3 }}
-          strokeDasharray={showHotel ? "4 4" : undefined}
+          stroke="var(--color-minFlight)"
+          strokeWidth={2}
+          dot={{ r: 3 }}
         />
+        {selectedFlightKey && (
+          <Line
+            dataKey="selectedFlight"
+            type="monotone"
+            stroke="var(--color-selectedFlight)"
+            strokeWidth={2}
+            dot={{ r: 3 }}
+            connectNulls
+          />
+        )}
         {showHotel && (
           <Line
             dataKey="hotel"
@@ -944,6 +958,9 @@ export default function TripDetailPage({
 
   const effectiveHotelPrice = selectedHotel ? parsePrice(selectedHotel.price) : hotelPriceValue;
   const effectiveFlightPrice = selectedFlight ? parsePrice(selectedFlight.price) : flightPriceValue;
+  const selectedFlightLabel = selectedFlight
+    ? `${selectedFlight.airline_code}${selectedFlight.flight_number}`
+    : undefined;
   const effectiveTotalPrice =
     effectiveFlightPrice != null && effectiveHotelPrice != null
       ? effectiveFlightPrice + effectiveHotelPrice
@@ -1120,8 +1137,17 @@ export default function TripDetailPage({
                     className={styles.legendDot}
                     style={{ background: "hsl(var(--chart-2))" }}
                   />{" "}
-                  Flight
+                  Flight (min)
                 </span>
+                {selectedFlightKey && (
+                  <span>
+                    <span
+                      className={styles.legendDot}
+                      style={{ background: "hsl(var(--chart-4))" }}
+                    />{" "}
+                    {selectedFlightLabel ?? "Selected Flight"}
+                  </span>
+                )}
                 {hasHotelTracking && (
                   <span>
                     <span
@@ -1137,6 +1163,7 @@ export default function TripDetailPage({
               priceHistory={priceHistory}
               selectedHotelKey={selectedHotelKey}
               selectedFlightKey={selectedFlightKey}
+              selectedFlightLabel={selectedFlightLabel}
               showHotel={hasHotelTracking}
             />
           </CardContent>
