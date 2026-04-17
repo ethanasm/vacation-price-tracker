@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 import {
   useSSE,
   type PriceUpdateEvent,
@@ -151,14 +152,18 @@ export function SSEProvider({
     [showToasts, onConnectionStateChange]
   );
 
+  // Only auto-connect after the user is authenticated. On public pages (login)
+  // the SSE endpoint returns 401, which surfaces as an "updates disconnected"
+  // toast to anonymous visitors.
+  const { isAuthenticated } = useAuth();
   const sseOptions: UseSSEOptions = useMemo(
     () => ({
-      autoConnect,
+      autoConnect: autoConnect && isAuthenticated,
       onConnected: handleConnected,
       onPriceUpdate: handlePriceUpdate,
       onConnectionStateChange: handleConnectionStateChange,
     }),
-    [autoConnect, handleConnected, handlePriceUpdate, handleConnectionStateChange]
+    [autoConnect, isAuthenticated, handleConnected, handlePriceUpdate, handleConnectionStateChange]
   );
 
   const {

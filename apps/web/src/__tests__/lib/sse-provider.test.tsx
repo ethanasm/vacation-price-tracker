@@ -23,6 +23,11 @@ jest.mock("../../hooks/use-sse", () => ({
   useSSE: (options: unknown) => mockUseSSE(options),
 }));
 
+// Mock AuthContext — SSEProvider checks auth before auto-connecting
+jest.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({ isAuthenticated: true }),
+}));
+
 const mockToastSuccess = toast.success as jest.Mock;
 const mockToastError = toast.error as jest.Mock;
 
