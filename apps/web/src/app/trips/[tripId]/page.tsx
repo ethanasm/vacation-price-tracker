@@ -981,7 +981,7 @@ export default function TripDetailPage({
   const effectiveHotelPrice = selectedHotel ? parsePrice(selectedHotel.price) : hotelPriceValue;
   const effectiveFlightPrice = selectedFlight ? parsePrice(selectedFlight.price) : flightPriceValue;
   const selectedFlightLabel = selectedFlight
-    ? `${selectedFlight.airline_code}${selectedFlight.flight_number}`
+    ? selectedFlight.flight_number ?? selectedFlight.airline_code ?? undefined
     : undefined;
   const effectiveTotalPrice =
     effectiveFlightPrice != null && effectiveHotelPrice != null

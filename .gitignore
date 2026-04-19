@@ -35,4 +35,5 @@ apps/web/test-results/
 
 # Git worktrees
 /.worktrees
+/.claude/worktrees
 .playwright-mcp/

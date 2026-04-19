@@ -679,7 +679,9 @@ describe("TripDetailPage", () => {
       await waitFor(() => {
         expect(screen.getByText("Outbound")).toBeInTheDocument();
         expect(screen.getAllByText("Return").length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText("UA123")).toBeInTheDocument();
+        // UA123 may also appear in the chart legend (selected flight label),
+        // so match at least one occurrence inside the expanded itinerary.
+        expect(screen.getAllByText("UA123").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("UA456")).toBeInTheDocument();
       });
     });
