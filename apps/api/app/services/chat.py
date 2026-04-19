@@ -30,6 +30,7 @@ from app.clients.groq import (
     Message as GroqMessage,
 )
 from app.core.prompts import build_system_prompt
+from app.core.telemetry import langfuse_context, observe
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.chat import ChatChunk, ChatChunkType
@@ -456,6 +457,7 @@ async def _run_single_tool_round(
         yield None, False
 
 
+@observe(name="chat.process_with_tools")
 async def process_chat_with_tools(
     messages: list[GroqMessage],
     user_id: str,
@@ -463,6 +465,7 @@ async def process_chat_with_tools(
     *,
     client: GroqClient | None = None,
     router: MCPRouter | None = None,
+    conversation_id: str | None = None,
 ) -> AsyncGenerator[ChatChunk, None]:
     """Process chat messages with tool execution support.
 
@@ -491,6 +494,13 @@ async def process_chat_with_tools(
     client = client or groq_client
     router = router or get_mcp_router()
     tools = _convert_tools_to_groq_format()
+
+    langfuse_context.update_current_trace(
+        user_id=user_id,
+        session_id=conversation_id,
+        tags=["chat"],
+        input=[m.to_dict() for m in messages[-5:]],
+    )
 
     # Create retry tracker for this conversation turn
     retry_tracker = ToolRetryTracker(max_retries=MAX_TOOL_RETRIES)
@@ -646,6 +656,7 @@ class ChatService:
                 db=db,
                 client=self._groq_client,
                 router=self._mcp_router,
+                conversation_id=str(conversation.id),
             ):
                 # Include thread_id in first chunk
                 if first_chunk:
@@ -868,6 +879,7 @@ class ChatService:
                 db=db,
                 client=self._groq_client,
                 router=self._mcp_router,
+                conversation_id=str(conversation_id),
             ):
                 # Include thread_id in first chunk
                 if first_chunk:

@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, runtime_checkable
 
+from app.core.telemetry import langfuse_context, observe
 from app.schemas.mcp import ToolResult, get_tool_schema
 from app.services.audit_log import audit_logger
 from app.services.input_sanitizer import input_sanitizer
@@ -354,6 +355,7 @@ class MCPRouter:
                 error=result.error or "Unknown error",
             )
 
+    @observe(name="mcp_router.execute")
     async def execute(
         self,
         tool_name: str,
@@ -379,6 +381,10 @@ class MCPRouter:
         """
         user_display = user_id[:8] + "..." if len(user_id) > 8 else user_id
         logger.info("Executing tool: %s for user: %s", tool_name, user_display)
+        langfuse_context.update_current_observation(
+            input={"tool": tool_name, "arguments": arguments},
+            metadata={"tool_name": tool_name},
+        )
 
         handler = self._tools.get(tool_name)
         if handler is None:
@@ -386,7 +392,9 @@ class MCPRouter:
             audit_logger.log_tool_failure(
                 user_id=user_id, tool_name=tool_name, arguments=arguments, error="Tool not found"
             )
-            return ToolResult(success=False, error=f"Tool not found: {tool_name}")
+            result = ToolResult(success=False, error=f"Tool not found: {tool_name}")
+            langfuse_context.update_current_observation(output=result, level="WARNING")
+            return result
 
         sanitized_arguments = arguments
         if not skip_sanitization:
@@ -397,18 +405,21 @@ class MCPRouter:
         if not skip_validation:
             validation_error = self._validate_arguments(tool_name, sanitized_arguments, user_id)
             if validation_error:
+                langfuse_context.update_current_observation(output=validation_error, level="WARNING")
                 return validation_error
 
         try:
             result = await self._execute_handler(handler, sanitized_arguments, user_id, db)
             logger.info("Tool %s executed successfully: success=%s", tool_name, result.success)
             self._log_result(tool_name, result, user_id, sanitized_arguments)
+            langfuse_context.update_current_observation(output=result)
             return result
         except Exception as e:
             logger.exception("Tool %s execution failed", tool_name)
             audit_logger.log_tool_failure(
                 user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments, error=str(e)
             )
+            langfuse_context.update_current_observation(level="ERROR", status_message=str(e))
             return ToolResult(success=False, error=f"Tool execution failed: {e!s}")
 
     async def execute_from_json(

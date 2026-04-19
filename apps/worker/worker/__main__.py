@@ -4,6 +4,7 @@ import signal
 from datetime import timedelta
 
 from app.core.config import settings
+from app.core.telemetry import flush as flush_telemetry
 from temporalio.client import Client
 from temporalio.worker import Worker
 from temporalio.worker.workflow_sandbox import (
@@ -81,6 +82,7 @@ async def main() -> None:
         await asyncio.gather(stop_task, return_exceptions=True)
 
     await worker_task
+    flush_telemetry()
 
 
 if __name__ == "__main__":

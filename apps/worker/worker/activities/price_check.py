@@ -8,6 +8,7 @@ from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
 from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
 from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
+from app.core.telemetry import langfuse_context, observe
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
 from app.models.trip import Trip
@@ -72,9 +73,30 @@ async def load_trip_details(trip_id: str) -> TripDetails:
         }
 
 
+def _set_trip_trace_context(trip: TripDetails, activity_name: str) -> None:
+    """Tag the current Langfuse trace with workflow + trip context."""
+    try:
+        info = activity.info()
+        workflow_id = info.workflow_id
+    except Exception:
+        workflow_id = None
+    langfuse_context.update_current_trace(
+        tags=["worker", activity_name],
+        session_id=workflow_id,
+        metadata={
+            "trip_id": trip["trip_id"],
+            "origin": trip["origin_airport"],
+            "destination": trip["destination_code"],
+            "workflow_id": workflow_id,
+        },
+    )
+
+
 @activity.defn
+@observe(name="worker.fetch_flights")
 async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
     """Fetch flight offers from Skiplagged MCP or mock data."""
+    _set_trip_trace_context(trip, "fetch_flights")
     # Use mock data if configured
     if settings.mock_skiplagged_api:
         logger.info("Using mock Skiplagged flights for trip_id=%s", trip["trip_id"])
@@ -164,8 +186,10 @@ def _extract_skiplagged_flight_offers(response: dict[str, Any]) -> list[dict[str
 
 
 @activity.defn
+@observe(name="worker.fetch_hotels")
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     """Fetch hotel offers from Skiplagged MCP or mock data."""
+    _set_trip_trace_context(trip, "fetch_hotels")
     hotel_prefs = trip.get("hotel_prefs")
     if not hotel_prefs or not trip.get("return_date"):
         logger.info(

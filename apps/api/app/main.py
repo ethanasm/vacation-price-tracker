@@ -22,6 +22,7 @@ from app.core.errors import (
     unhandled_exception_response,
     validation_exception_response,
 )
+from app.core.telemetry import flush as flush_telemetry
 from app.db.deps import get_db
 from app.db.redis import redis_client
 from app.db.session import async_engine
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     close_temporal_client()
+    flush_telemetry()
 
 
 app = FastAPI(

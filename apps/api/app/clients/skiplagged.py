@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from app.clients.skiplagged_parser import parse_flight_segments
+from app.core.telemetry import langfuse_context, observe
 from app.schemas.flight_search import FlightSearchFlight, FlightSearchResult
 from app.schemas.hotel_search import HotelRoom, HotelSearchHotel, HotelSearchResult
 from app.schemas.skiplagged import SkiplaggedHotelDetail
@@ -104,6 +105,7 @@ class SkiplaggedClient:
         self._initialized = True
         logger.debug("Skiplagged MCP session initialized: session_id=%s", self._session_id)
 
+    @observe(name="skiplagged.mcp_call")
     async def _call_mcp(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """Call the MCP server with JSON-RPC format.
 
@@ -114,6 +116,10 @@ class SkiplaggedClient:
         Returns:
             Response data from the MCP server.
         """
+        langfuse_context.update_current_observation(
+            input={"tool": tool_name, "arguments": params},
+            metadata={"provider": "skiplagged", "mcp_url": self._mcp_url, "tool_name": tool_name},
+        )
         await self._ensure_initialized()
 
         payload = {
@@ -128,7 +134,9 @@ class SkiplaggedClient:
 
         response = await self._send_request(payload)
         data = self._parse_sse_json_rpc(response)
-        return self._extract_result(data)
+        result = self._extract_result(data)
+        langfuse_context.update_current_observation(output=result)
+        return result
 
     async def _send_request(
         self,

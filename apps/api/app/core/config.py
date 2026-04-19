@@ -73,6 +73,17 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     log_level: str = "INFO"
 
+    # Langfuse (LLM/MCP tracing) — leave keys blank to disable
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://us.cloud.langfuse.com"
+    langfuse_environment: str = ""  # overrides `environment` tag when set
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        """Whether Langfuse is configured with credentials."""
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
     # JWT
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
