@@ -1,18 +1,24 @@
 """Pytest fixtures for testing."""
 
 import os
-import tempfile
-import uuid
-from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-import pytest_asyncio
-from app.core.constants import CookieNames, HeaderNames
-from app.db.deps import get_db
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
-from sqlmodel import SQLModel
+# Disable Langfuse telemetry for tests — must happen BEFORE any `app.*` import
+# so the cached Settings singleton sees empty credentials and no traces ship.
+os.environ["LANGFUSE_PUBLIC_KEY"] = ""
+os.environ["LANGFUSE_SECRET_KEY"] = ""
+
+import tempfile  # noqa: E402
+import uuid  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from app.core.constants import CookieNames, HeaderNames  # noqa: E402
+from app.db.deps import get_db  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
+from sqlmodel import SQLModel  # noqa: E402
 
 
 @pytest.fixture(scope="session")
