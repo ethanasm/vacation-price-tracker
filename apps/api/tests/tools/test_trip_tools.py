@@ -70,7 +70,12 @@ async def create_test_trip(
 
 
 def valid_trip_args() -> dict:
-    """Return valid arguments for creating a trip."""
+    """Return valid arguments for creating a trip.
+
+    Note: these args contain no hotel keys, so CreateTripTool will infer
+    track_hotels=False and track_flights=True. Tests that need hotel tracking
+    must add hotel_city (and any hotel_rooms/room_types/views) explicitly.
+    """
     return {
         "name": "Hawaii Vacation",
         "origin_airport": "SFO",

@@ -1111,6 +1111,8 @@ async def test_create_trip_track_flags_default_to_true(
     monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
 
     payload = _build_trip_payload(name="Track default trip")
+    payload.pop("track_flights")
+    payload.pop("track_hotels")
     response = _create_trip(client_with_csrf, payload, "trip-track-default-1")
 
     assert response.status_code == 201
