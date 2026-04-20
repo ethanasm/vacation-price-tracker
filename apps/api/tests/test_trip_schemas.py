@@ -4,9 +4,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
 from app.schemas.trip import HotelPrefs, NotificationPrefs, TripCreate
+from pydantic import ValidationError
 
 
 def _base_payload(**overrides):
