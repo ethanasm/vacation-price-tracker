@@ -994,7 +994,8 @@ async def test_fetch_hotels_activity_uses_city_field(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch):
+@pytest.mark.parametrize("blank_city", [None, "", "   "])
+async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch, blank_city):
     trip: TripDetails = {
         "trip_id": "t-fallback",
         "origin_airport": "SFO",
@@ -1011,7 +1012,7 @@ async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch)
         "hotel_prefs": {
             "rooms": 1,
             "adults_per_room": 2,
-            "city": None,
+            "city": blank_city,
             "room_selection_mode": "cheapest",
             "preferred_room_types": [],
             "preferred_views": [],
