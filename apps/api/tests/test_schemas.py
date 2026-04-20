@@ -133,6 +133,9 @@ class TestTripCreate:
             "destination_code": "HNL",
             "depart_date": date.today() + timedelta(days=30),
             "return_date": date.today() + timedelta(days=37),
+            "track_flights": True,
+            "track_hotels": True,
+            "hotel_prefs": {"city": "Honolulu"},
             "notification_prefs": {"threshold_value": Decimal("2000.00")},
         }
 
@@ -291,11 +294,14 @@ class TestTripCreate:
         assert trip.flight_prefs.airlines == ["UA"]
 
     def test_optional_hotel_prefs(self, valid_trip_data):
-        """Test hotel_prefs is optional."""
+        """Test hotel_prefs is optional when track_hotels is False."""
+        valid_trip_data["track_hotels"] = False
+        valid_trip_data["hotel_prefs"] = None
         trip = TripCreate(**valid_trip_data)
         assert trip.hotel_prefs is None
 
-        valid_trip_data["hotel_prefs"] = {"rooms": 2}
+        valid_trip_data["track_hotels"] = True
+        valid_trip_data["hotel_prefs"] = {"rooms": 2, "city": "Honolulu"}
         trip = TripCreate(**valid_trip_data)
         assert trip.hotel_prefs is not None
         assert trip.hotel_prefs.rooms == 2

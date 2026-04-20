@@ -56,6 +56,9 @@ def _build_trip_payload(name: str = "Hawaii Vacation") -> dict:
         "destination_code": "HNL",
         "depart_date": (today + timedelta(days=30)).isoformat(),
         "return_date": (today + timedelta(days=37)).isoformat(),
+        "track_flights": True,
+        "track_hotels": True,
+        "hotel_prefs": {"city": "Honolulu"},
         "notification_prefs": {"threshold_value": "2000.00"},
     }
 
@@ -390,7 +393,7 @@ async def test_get_trip_details_includes_history(client_with_csrf, test_session,
 
     payload = _build_trip_payload(name="Detail Trip")
     payload["flight_prefs"] = {"airlines": ["UA"]}
-    payload["hotel_prefs"] = {"rooms": 2, "preferred_views": ["Ocean"]}
+    payload["hotel_prefs"] = {"rooms": 2, "city": "Honolulu", "preferred_views": ["Ocean"]}
 
     create_response = _create_trip(client_with_csrf, payload, "trip-detail-1")
     trip_id = create_response.json()["data"]["id"]
@@ -1096,3 +1099,86 @@ async def test_refresh_trip_direct_call(test_session, monkeypatch):
     assert refresh_response.data.refresh_group_id.startswith("refresh-trip-")
     # trigger was called twice: once for create, once for refresh
     assert trigger_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_trip_track_flags_default_to_true(
+    client_with_csrf, test_session, mock_redis, monkeypatch
+):
+    user = await _create_user(test_session, email="track-default@example.com")
+    _authorize_client(client_with_csrf, user)
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Track default trip")
+    response = _create_trip(client_with_csrf, payload, "trip-track-default-1")
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["track_flights"] is True
+    assert data["track_hotels"] is True
+    assert data["hotel_prefs"]["city"] == "Honolulu"
+
+
+@pytest.mark.asyncio
+async def test_create_trip_flights_only(
+    client_with_csrf, test_session, mock_redis, monkeypatch
+):
+    user = await _create_user(test_session, email="flights-only@example.com")
+    _authorize_client(client_with_csrf, user)
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Flights only trip")
+    payload["track_flights"] = True
+    payload["track_hotels"] = False
+    payload["hotel_prefs"] = None
+    response = _create_trip(client_with_csrf, payload, "trip-flights-only-1")
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["track_flights"] is True
+    assert data["track_hotels"] is False
+    assert data["hotel_prefs"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_trip_hotels_only_requires_city(
+    client_with_csrf, test_session, mock_redis, monkeypatch
+):
+    user = await _create_user(test_session, email="hotels-only@example.com")
+    _authorize_client(client_with_csrf, user)
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Hotels only trip")
+    payload["track_flights"] = False
+    payload["track_hotels"] = True
+    payload["hotel_prefs"] = None
+    response = _create_trip(client_with_csrf, payload, "trip-hotels-only-1")
+    assert response.status_code == 422
+
+    payload["hotel_prefs"] = {"city": "Waikiki"}
+    response = _create_trip(client_with_csrf, payload, "trip-hotels-only-2")
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["track_flights"] is False
+    assert data["track_hotels"] is True
+    assert data["hotel_prefs"]["city"] == "Waikiki"
+
+
+@pytest.mark.asyncio
+async def test_create_trip_neither_flag_rejected(
+    client_with_csrf, test_session, mock_redis, monkeypatch
+):
+    user = await _create_user(test_session, email="neither@example.com")
+    _authorize_client(client_with_csrf, user)
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="No tracking trip")
+    payload["track_flights"] = False
+    payload["track_hotels"] = False
+    response = _create_trip(client_with_csrf, payload, "trip-neither-1")
+
+    assert response.status_code == 422

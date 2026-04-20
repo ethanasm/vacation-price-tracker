@@ -199,6 +199,7 @@ async def test_create_trip_with_hotel_prefs(test_session):
 
     args = valid_trip_args()
     args["hotel_rooms"] = 2
+    args["hotel_city"] = "Honolulu"
     args["room_types"] = ["King", "Suite"]
     args["views"] = ["Ocean"]
 

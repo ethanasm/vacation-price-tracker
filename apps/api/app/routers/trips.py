@@ -79,6 +79,7 @@ def _hotel_prefs_to_schema(prefs: TripHotelPrefs | None) -> HotelPrefs | None:
     return HotelPrefs(
         rooms=prefs.rooms,
         adults_per_room=prefs.adults_per_room,
+        city=prefs.city,
         room_selection_mode=prefs.room_selection_mode,
         preferred_room_types=prefs.preferred_room_types,
         preferred_views=prefs.preferred_views,
@@ -106,6 +107,8 @@ def _build_trip_response(trip: Trip, snapshot: PriceSnapshot | None) -> TripResp
         depart_date=trip.depart_date,
         return_date=trip.return_date,
         status=trip.status,
+        track_flights=trip.track_flights,
+        track_hotels=trip.track_hotels,
         current_flight_price=snapshot.flight_price if snapshot else None,
         current_hotel_price=snapshot.hotel_price if snapshot else None,
         total_price=snapshot.total_price if snapshot else None,
@@ -453,17 +456,19 @@ async def create_trip(
         depart_date=payload.depart_date,
         return_date=payload.return_date,
         adults=payload.adults,
+        track_flights=payload.track_flights,
+        track_hotels=payload.track_hotels,
     )
     db.add(trip)
     await db.flush()
 
     flight_prefs = None
-    if payload.flight_prefs:
+    if payload.track_flights and payload.flight_prefs:
         flight_prefs = TripFlightPrefs(trip_id=trip.id, **payload.flight_prefs.model_dump())
         db.add(flight_prefs)
 
     hotel_prefs = None
-    if payload.hotel_prefs:
+    if payload.track_hotels and payload.hotel_prefs:
         hotel_prefs = TripHotelPrefs(trip_id=trip.id, **payload.hotel_prefs.model_dump())
         db.add(hotel_prefs)
 
