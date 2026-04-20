@@ -180,14 +180,9 @@ class TripCreate(BaseModel):
         """Enforce tracking flag rules: at least one on, hotel city required when tracking hotels."""
         if not self.track_flights and not self.track_hotels:
             raise ValueError("At least one of track_flights or track_hotels must be True")
-        if self.track_hotels and not self.track_flights:
-            # Hotels-only mode: hotel_prefs with a valid city is required
+        if self.track_hotels:
             if self.hotel_prefs is None:
                 raise ValueError("hotel_prefs is required when track_hotels is True")
-            if not self.hotel_prefs.city or not self.hotel_prefs.city.strip():
-                raise ValueError("hotel_prefs.city is required when track_hotels is True")
-        if self.hotel_prefs is not None:
-            # Whenever hotel_prefs is supplied, city must be non-blank
             if not self.hotel_prefs.city or not self.hotel_prefs.city.strip():
                 raise ValueError("hotel_prefs.city is required when track_hotels is True")
         return self

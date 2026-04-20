@@ -20,13 +20,14 @@ def _base_payload(**overrides):
         "notification_prefs": NotificationPrefs(threshold_value=Decimal("2000.00")),
         "track_flights": True,
         "track_hotels": True,
+        "hotel_prefs": HotelPrefs(city="Honolulu"),
     }
     base.update(overrides)
     return base
 
 
 def test_track_flights_only_requires_no_hotel_prefs():
-    trip = TripCreate(**_base_payload(track_hotels=False))
+    trip = TripCreate(**_base_payload(track_hotels=False, hotel_prefs=None))
     assert trip.track_flights is True
     assert trip.track_hotels is False
     assert trip.hotel_prefs is None
