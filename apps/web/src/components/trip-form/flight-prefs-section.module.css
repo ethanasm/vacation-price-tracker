@@ -28,3 +28,20 @@
   font-size: 0.75rem;
   color: var(--ink-muted);
 }
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.checkboxLabel {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.disabledSection {
+  opacity: 0.5;
+  pointer-events: none;
+}
