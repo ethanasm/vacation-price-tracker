@@ -14,6 +14,7 @@ export interface FlightPrefsData {
 export interface HotelPrefsData {
   rooms: string;
   adultsPerRoom: string;
+  city: string;
   roomSelectionMode: string;
   roomTypes: string[];
   views: string[];
@@ -36,6 +37,10 @@ export interface TripFormData {
   returnDate: Date | undefined;
   adults: string;
 
+  // Tracking
+  trackFlights: boolean;
+  trackHotels: boolean;
+
   // Flight preferences
   flightPrefs: FlightPrefsData;
 
@@ -57,6 +62,8 @@ export interface TripFormErrors {
   departDate?: string;
   returnDate?: string;
   thresholdValue?: string;
+  hotelCity?: string;
+  tracking?: string;
 }
 
 export type TripFormTouched = Partial<Record<keyof TripFormErrors, boolean>>;
@@ -69,11 +76,14 @@ export interface TripFormSetters {
   setDepartDate: (value: Date | undefined) => void;
   setReturnDate: (value: Date | undefined) => void;
   setAdults: (value: string) => void;
+  setTrackFlights: (value: boolean) => void;
+  setTrackHotels: (value: boolean) => void;
   setCabin: (value: string) => void;
   setStopsMode: (value: string) => void;
   setAirlines: (value: string[]) => void;
   setRooms: (value: string) => void;
   setAdultsPerRoom: (value: string) => void;
+  setCity: (value: string) => void;
   setRoomSelectionMode: (value: string) => void;
   setRoomTypes: (value: string[]) => void;
   setViews: (value: string[]) => void;
@@ -98,6 +108,8 @@ export interface TripPayload {
   depart_date: string;
   return_date: string | null;
   adults: number;
+  track_flights: boolean;
+  track_hotels: boolean;
   flight_prefs: {
     airlines: string[];
     stops_mode: StopsMode;
@@ -107,6 +119,7 @@ export interface TripPayload {
   hotel_prefs: {
     rooms: number;
     adults_per_room: number;
+    city: string;
     room_selection_mode: RoomSelectionMode;
     preferred_room_types: string[];
     preferred_views: string[];

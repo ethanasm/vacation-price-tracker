@@ -26,6 +26,8 @@ export const baseTripFormData: TripFormData = {
   departDate: getBaseDate(),
   returnDate: getReturnDate(),
   adults: "1",
+  trackFlights: true,
+  trackHotels: true,
   flightPrefs: {
     cabin: "economy",
     stopsMode: "any",
@@ -34,6 +36,7 @@ export const baseTripFormData: TripFormData = {
   hotelPrefs: {
     rooms: "1",
     adultsPerRoom: "2",
+    city: "",
     roomSelectionMode: "cheapest",
     roomTypes: [],
     views: [],
@@ -67,6 +70,8 @@ export const tripPayloadFixture: TripPayload = {
   depart_date: formatDate(getBaseDate()),
   return_date: formatDate(getReturnDate()),
   adults: 1,
+  track_flights: false,
+  track_hotels: false,
   flight_prefs: null,
   hotel_prefs: null,
   notification_prefs: {

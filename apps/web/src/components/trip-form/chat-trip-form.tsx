@@ -96,6 +96,7 @@ function prefilledToFormData(prefilled: ChatTripFormPrefilled): Partial<TripForm
     data.hotelPrefs = {
       rooms: String(prefilled.hotel_rooms || 1),
       adultsPerRoom: String(prefilled.adults_per_room || 2),
+      city: "",
       roomSelectionMode: prefilled.room_selection_mode || "cheapest",
       roomTypes: prefilled.room_types || [],
       views: prefilled.views || [],
