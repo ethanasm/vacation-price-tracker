@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable
 from datetime import timedelta
 
 from temporalio import workflow
@@ -24,7 +25,7 @@ class PriceCheckWorkflow:
             start_to_close_timeout=timedelta(seconds=10),
         )
 
-        tasks: list[tuple[str, object]] = []
+        tasks: list[tuple[str, Awaitable[FetchResult]]] = []
         if trip["track_flights"]:
             tasks.append(
                 (
@@ -53,7 +54,9 @@ class PriceCheckWorkflow:
         results = await asyncio.gather(
             *(coro for _, coro in tasks), return_exceptions=True
         )
-        by_label: dict[str, object] = dict(zip((label for label, _ in tasks), results))
+        by_label: dict[str, FetchResult | BaseException] = dict(
+            zip((label for label, _ in tasks), results, strict=True)
+        )
 
         normalized_flight = (
             _normalize_fetch_result(by_label["flights"], "flights")

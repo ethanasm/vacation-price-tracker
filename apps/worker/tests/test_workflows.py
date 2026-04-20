@@ -116,16 +116,16 @@ async def test_price_check_workflow_skips_flights_when_track_flights_false(monke
     }
     hotel_result = {"offers": [{"price": "200"}], "raw": {"ok": True}, "error": None}
     filtered = {"flights": [], "hotels": [{"price": "200"}], "raw_data": {"ok": True}}
-    called: dict = {"flights": 0, "hotels": 0}
+    hotels_called = 0
 
     async def fake_execute_activity(activity, *args, **_kwargs):
+        nonlocal hotels_called
         if activity is load_trip_details:
             return trip
         if activity is fetch_flights_activity:
-            called["flights"] += 1
             raise AssertionError("fetch_flights_activity should not be called when track_flights=False")
         if activity is fetch_hotels_activity:
-            called["hotels"] += 1
+            hotels_called += 1
             return hotel_result
         if activity is filter_results_activity:
             payload = args[0]
@@ -143,8 +143,7 @@ async def test_price_check_workflow_skips_flights_when_track_flights_false(monke
 
     assert result["success"] is True
     assert result["snapshot_id"] == "snapshot-no-flights"
-    assert called["flights"] == 0
-    assert called["hotels"] == 1
+    assert hotels_called == 1
     assert result["flight_error"] is None
 
 
@@ -161,16 +160,16 @@ async def test_price_check_workflow_skips_hotels_when_track_hotels_false(monkeyp
     }
     flight_result = {"offers": [{"price": "100"}], "raw": {"ok": True}, "error": None}
     filtered = {"flights": [{"price": "100"}], "hotels": [], "raw_data": {"ok": True}}
-    called: dict = {"flights": 0, "hotels": 0}
+    flights_called = 0
 
     async def fake_execute_activity(activity, *args, **_kwargs):
+        nonlocal flights_called
         if activity is load_trip_details:
             return trip
         if activity is fetch_flights_activity:
-            called["flights"] += 1
+            flights_called += 1
             return flight_result
         if activity is fetch_hotels_activity:
-            called["hotels"] += 1
             raise AssertionError("fetch_hotels_activity should not be called when track_hotels=False")
         if activity is filter_results_activity:
             payload = args[0]
@@ -187,6 +186,5 @@ async def test_price_check_workflow_skips_hotels_when_track_hotels_false(monkeyp
 
     assert result["success"] is True
     assert result["snapshot_id"] == "snapshot-no-hotels"
-    assert called["flights"] == 1
-    assert called["hotels"] == 0
+    assert flights_called == 1
     assert result["hotel_error"] is None
