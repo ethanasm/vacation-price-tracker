@@ -196,11 +196,15 @@
 
 @media (min-width: 900px) {
   .gridCompact {
-    grid-template-columns: 4fr 3fr 3fr;
+    grid-template-columns: 1fr 1fr;
   }
   .gridCompactFlightsOnly {
     grid-template-columns: minmax(360px, 2fr) minmax(480px, 3fr);
   }
+}
+
+.gridCompact > :first-child {
+  grid-column: 1 / -1;
 }
 
 /* Chart Card */
@@ -445,8 +449,6 @@
 
 .cardHeaderRowReturn {
   opacity: 0.6;
-  /* Indent under the airline column so return times align with outbound. */
-  padding-left: 32px;
 }
 
 .dateRange {

@@ -666,11 +666,15 @@ function FlightsList({
                 </span>
                 <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
               </div>
-              {/* Row 2: Return (if round trip) */}
+              {/* Row 2: Return (if round trip) — same grid as Row 1 */}
               {returnFirstSegment && (
-                <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowReturn}`}>
+                <div className={`${styles.cardHeaderRowMain} ${styles.cardHeaderRowReturn}`}>
+                  <span />
                   <span className={styles.headerReturnLabel}>Return</span>
                   <span className={styles.headerTimes}>{returnTimes}</span>
+                  <span />
+                  <span />
+                  <span />
                 </div>
               )}
             </button>
