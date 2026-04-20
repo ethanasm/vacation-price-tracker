@@ -116,7 +116,12 @@
           return [str(uid) for uid in result.scalars().all()]
   ```
 
-### 2.4 Deferred (not in this phase)
+### 2.4 Observability
+- [x] `@observe(name="worker.get_all_user_ids_with_active_trips")` on the fan-out activity; trace tagged `scheduled_refresh_all_users` with `workflow_id` as `session_id` so each tick is a distinct Langfuse trace.
+- [x] `@observe(name="worker.ensure_daily_refresh_schedule")` on the bootstrap; observation output records whether the schedule was `created` or `updated`.
+- Per-user `RefreshAllTripsWorkflow` child runs continue to emit `worker.fetch_flights` / `worker.fetch_hotels` spans nested under the scheduled trace.
+
+### 2.5 Deferred (not in this phase)
 These were in earlier drafts of the plan and are intentionally excluded — they can be layered on later without rework since the schedule is a single global knob:
 - User-level time/frequency config (`User.refresh_frequency`, `User.refresh_hour_utc`, `GET/PATCH /v1/users/me/schedule`, UI schedule picker).
 - Smart per-trip tiered frequency (daily ≤30d, every 3 days ≤90d, weekly otherwise; `Trip.last_refreshed_at`).

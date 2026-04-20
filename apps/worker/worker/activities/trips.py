@@ -3,6 +3,7 @@ import uuid
 
 from app.core.cache_keys import CacheKeys
 from app.core.constants import TripStatus
+from app.core.telemetry import langfuse_context, observe
 from app.db.redis import redis_client
 from app.db.session import AsyncSessionLocal
 from app.models.trip import Trip
@@ -28,14 +29,28 @@ async def get_active_trips(user_id: str) -> list[str]:
 
 
 @activity.defn
+@observe(name="worker.get_all_user_ids_with_active_trips")
 async def get_all_user_ids_with_active_trips() -> list[str]:
+    try:
+        workflow_id = activity.info().workflow_id
+    except Exception:
+        workflow_id = None
+    langfuse_context.update_current_trace(
+        name="scheduled_refresh_all_users",
+        tags=["worker", "scheduled_refresh"],
+        session_id=workflow_id,
+        metadata={"workflow_id": workflow_id},
+    )
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Trip.user_id).where(Trip.status != TripStatus.PAUSED).distinct()
         )
         user_ids = [str(user_id) for user_id in result.scalars().all()]
         logger.info("Found %d users with active trips for scheduled refresh", len(user_ids))
-        return user_ids
+    langfuse_context.update_current_observation(
+        output={"user_count": len(user_ids)},
+    )
+    return user_ids
 
 
 @activity.defn

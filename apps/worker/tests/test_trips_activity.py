@@ -56,3 +56,32 @@ async def test_get_all_user_ids_with_active_trips(monkeypatch):
     result = await trips_activity.get_all_user_ids_with_active_trips()
 
     assert result == [str(user_id) for user_id in user_ids]
+
+
+@pytest.mark.asyncio
+async def test_get_all_user_ids_tags_langfuse_trace(monkeypatch):
+    user_ids = [uuid.uuid4()]
+    session = DummySession(user_ids)
+    monkeypatch.setattr(trips_activity, "AsyncSessionLocal", lambda: DummySessionManager(session))
+
+    trace_updates: list[dict] = []
+    observation_updates: list[dict] = []
+    monkeypatch.setattr(
+        trips_activity.langfuse_context,
+        "update_current_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+    monkeypatch.setattr(
+        trips_activity.langfuse_context,
+        "update_current_observation",
+        lambda **kwargs: observation_updates.append(kwargs),
+    )
+
+    await trips_activity.get_all_user_ids_with_active_trips()
+
+    assert trace_updates, "expected update_current_trace to be called"
+    assert trace_updates[0]["name"] == "scheduled_refresh_all_users"
+    assert "worker" in trace_updates[0]["tags"]
+    assert "scheduled_refresh" in trace_updates[0]["tags"]
+    assert observation_updates, "expected update_current_observation to be called"
+    assert observation_updates[-1]["output"] == {"user_count": 1}

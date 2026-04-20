@@ -430,12 +430,17 @@ describe("TripDetailPage", () => {
     });
 
     it("displays hotels list", async () => {
+      const user = userEvent.setup();
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Hotels")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /Hotels/i }));
+
+      await waitFor(() => {
         expect(screen.getByText("City Hotel")).toBeInTheDocument();
         // $700 appears in both price summary and hotel list
         expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
@@ -448,6 +453,11 @@ describe("TripDetailPage", () => {
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /Hotels/i }));
 
       await waitFor(() => {
         expect(screen.getByText("City Hotel")).toBeInTheDocument();
@@ -948,9 +958,15 @@ describe("TripDetailPage", () => {
         },
       });
 
+      const user = userEvent.setup();
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /Hotels/i }));
 
       await waitFor(() => {
         expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
@@ -1680,13 +1696,20 @@ describe("TripDetailPage", () => {
         },
       });
 
+      const user = userEvent.setup();
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
+      // Default tab is Flights
+      await waitFor(() => {
+        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
+      });
+
+      // Switch to Hotels tab to see hotel empty state
+      await user.click(screen.getByRole("button", { name: /Hotels/i }));
       await waitFor(() => {
         expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
-        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
       });
     });
   });

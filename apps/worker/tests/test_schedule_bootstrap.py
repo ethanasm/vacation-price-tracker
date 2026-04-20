@@ -34,7 +34,19 @@ class FakeScheduleHandle:
 
 
 @pytest.mark.asyncio
-async def test_ensure_daily_refresh_schedule_creates_when_missing():
+async def test_ensure_daily_refresh_schedule_creates_when_missing(monkeypatch):
+    observations: list[dict] = []
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_trace",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_observation",
+        lambda **kwargs: observations.append(kwargs),
+    )
+
     client = FakeClient(already_exists=False)
 
     await schedule_bootstrap.ensure_daily_refresh_schedule(client)
@@ -48,10 +60,24 @@ async def test_ensure_daily_refresh_schedule_creates_when_missing():
     assert isinstance(schedule.spec, ScheduleSpec)
     assert schedule.spec.cron_expressions
     assert client.handle.update_called_with is None
+    assert observations[-1]["output"] == {"action": "created"}
 
 
 @pytest.mark.asyncio
-async def test_ensure_daily_refresh_schedule_updates_when_exists():
+async def test_ensure_daily_refresh_schedule_updates_when_exists(monkeypatch):
+    observations: list[dict] = []
+    trace_updates: list[dict] = []
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_observation",
+        lambda **kwargs: observations.append(kwargs),
+    )
+
     client = FakeClient(already_exists=True)
 
     await schedule_bootstrap.ensure_daily_refresh_schedule(client)
@@ -61,3 +87,6 @@ async def test_ensure_daily_refresh_schedule_updates_when_exists():
     updated_schedule = client.handle.update_called_with.schedule
     assert isinstance(updated_schedule, Schedule)
     assert updated_schedule.action.workflow == schedule_bootstrap.WORKFLOW_NAME
+    assert trace_updates[0]["name"] == "schedule_bootstrap"
+    assert "schedule_bootstrap" in trace_updates[0]["tags"]
+    assert observations[-1]["output"] == {"action": "updated"}
