@@ -144,51 +144,16 @@ async def test_load_trip_details_returns_track_flags_and_city(monkeypatch):
         rooms=1,
         adults_per_room=2,
         city="Downtown Orlando",
-        room_selection_mode=SimpleNamespace(value="cheapest"),
+        room_selection_mode=RoomSelectionMode.CHEAPEST,
         preferred_room_types=[],
         preferred_views=[],
     )
 
-    class FakeScalars:
-        def __init__(self, value):
-            self._value = value
-
-        def first(self):
-            return self._value
-
-    class FakeResult:
-        def __init__(self, value):
-            self._value = value
-
-        def scalars(self):
-            return FakeScalars(self._value)
-
-    class FakeSession:
-        def __init__(self):
-            self._calls = 0
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def get(self, model, key):
-            return trip
-
-        async def execute(self, stmt):
-            # First execute returns flight_prefs (None), second returns hotel_prefs
-            self._calls += 1
-            if self._calls == 1:
-                return FakeResult(None)
-            return FakeResult(hotel_prefs)
-
-    monkeypatch.setattr(
-        "worker.activities.price_check.AsyncSessionLocal",
-        lambda: FakeSession(),
-    )
+    session = DummySession(trip, [DummyResult(None), DummyResult(hotel_prefs)])
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))
 
     result = await pc.load_trip_details(str(trip_id))
+    assert result["trip_id"] == str(trip_id)
     assert result["track_flights"] is False
     assert result["track_hotels"] is True
     assert result["hotel_prefs"]["city"] == "Downtown Orlando"
