@@ -83,6 +83,7 @@ def _hotel_prefs_to_schema(prefs: TripHotelPrefs | None) -> HotelPrefs | None:
         room_selection_mode=prefs.room_selection_mode,
         preferred_room_types=prefs.preferred_room_types,
         preferred_views=prefs.preferred_views,
+        min_star_rating=prefs.min_star_rating,
     )
 
 

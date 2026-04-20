@@ -319,6 +319,7 @@ describe("useTripForm", () => {
             roomSelectionMode: "cheapest",
             roomTypes: [],
             views: [],
+            minStarRating: "any",
           },
           notificationPrefs: {
             thresholdType: "trip_total",

@@ -131,12 +131,14 @@ describe("HotelPrefsSection", () => {
         roomSelectionMode={baseTripFormData.hotelPrefs.roomSelectionMode}
         roomTypes={baseTripFormData.hotelPrefs.roomTypes}
         views={baseTripFormData.hotelPrefs.views}
+        minStarRating={baseTripFormData.hotelPrefs.minStarRating}
         onToggle={jest.fn()}
         onRoomsChange={jest.fn()}
         onAdultsPerRoomChange={jest.fn()}
         onRoomSelectionModeChange={jest.fn()}
         onRoomTypesChange={jest.fn()}
         onViewsChange={jest.fn()}
+        onMinStarRatingChange={jest.fn()}
       />
     );
 
@@ -166,6 +168,7 @@ function setup(trackEnabled = true, city = "Miami Beach") {
     roomSelectionMode: "cheapest",
     roomTypes: [] as string[],
     views: [] as string[],
+    minStarRating: "any",
     onToggle: jest.fn(),
     onTrackEnabledChange: jest.fn(),
     onRoomsChange: jest.fn(),
@@ -174,6 +177,7 @@ function setup(trackEnabled = true, city = "Miami Beach") {
     onRoomSelectionModeChange: jest.fn(),
     onRoomTypesChange: jest.fn(),
     onViewsChange: jest.fn(),
+    onMinStarRatingChange: jest.fn(),
   };
   render(<HotelPrefsSection {...props} />);
   return props;

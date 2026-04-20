@@ -33,6 +33,7 @@ function baseFormData(overrides: Partial<TripFormData> = {}): TripFormData {
       roomSelectionMode: "cheapest",
       roomTypes: [],
       views: [],
+      minStarRating: "any",
     },
     notificationPrefs: {
       thresholdType: "trip_total",
@@ -259,6 +260,7 @@ describe("validateTripForm — track flags and city", () => {
           roomSelectionMode: "cheapest",
           roomTypes: [],
           views: [],
+          minStarRating: "any",
         },
       })
     );
@@ -277,6 +279,7 @@ describe("validateTripForm — track flags and city", () => {
           roomSelectionMode: "cheapest",
           roomTypes: [],
           views: [],
+          minStarRating: "any",
         },
       })
     );

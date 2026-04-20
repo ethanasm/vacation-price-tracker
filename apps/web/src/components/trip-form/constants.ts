@@ -26,6 +26,16 @@ export const ROOM_TYPES = ["King", "Queen", "Double", "Suite", "Studio"];
 
 export const VIEW_TYPES = ["Ocean", "City", "Garden", "Pool", "Mountain"];
 
+export const MIN_STAR_RATING_ANY = "any";
+
+export const MIN_STAR_RATINGS = [
+  { value: MIN_STAR_RATING_ANY, label: "Any rating" },
+  { value: "2", label: "2★ or higher" },
+  { value: "3", label: "3★ or higher" },
+  { value: "4", label: "4★ or higher" },
+  { value: "5", label: "5★ only" },
+] as const;
+
 export const TRAVELER_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
 export const ROOM_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;

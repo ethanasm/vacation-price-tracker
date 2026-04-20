@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { TripDetailsSection } from "./trip-details-section";
 import { FlightPrefsSection } from "./flight-prefs-section";
 import { HotelPrefsSection } from "./hotel-prefs-section";
+import { MIN_STAR_RATING_ANY } from "./constants";
 import { useTripForm } from "../../lib/hooks/use-trip-form";
 import { api } from "../../lib/api";
 import type { TripFormData, TripPayload } from "./types";
@@ -33,6 +34,7 @@ export interface ChatTripFormPrefilled {
   room_selection_mode?: string;
   room_types?: string[];
   views?: string[];
+  min_star_rating?: number;
 }
 
 export interface ChatTripFormProps {
@@ -93,7 +95,8 @@ function prefilledToFormData(prefilled: ChatTripFormPrefilled): Partial<TripForm
     prefilled.adults_per_room ||
     prefilled.room_selection_mode ||
     prefilled.room_types?.length ||
-    prefilled.views?.length;
+    prefilled.views?.length ||
+    prefilled.min_star_rating;
   if (hasHotelPrefs) {
     data.hotelPrefs = {
       rooms: String(prefilled.hotel_rooms || 1),
@@ -102,6 +105,9 @@ function prefilledToFormData(prefilled: ChatTripFormPrefilled): Partial<TripForm
       roomSelectionMode: prefilled.room_selection_mode || "cheapest",
       roomTypes: prefilled.room_types || [],
       views: prefilled.views || [],
+      minStarRating: prefilled.min_star_rating
+        ? String(prefilled.min_star_rating)
+        : MIN_STAR_RATING_ANY,
     };
     data.hotelPrefsOpen = true;
   }
@@ -191,6 +197,7 @@ export function ChatTripForm({
         roomSelectionMode={formData.hotelPrefs.roomSelectionMode}
         roomTypes={formData.hotelPrefs.roomTypes}
         views={formData.hotelPrefs.views}
+        minStarRating={formData.hotelPrefs.minStarRating}
         onToggle={() => setters.setHotelPrefsOpen(!formData.hotelPrefsOpen)}
         onTrackEnabledChange={setters.setTrackHotels}
         onRoomsChange={setters.setRooms}
@@ -199,6 +206,7 @@ export function ChatTripForm({
         onRoomSelectionModeChange={setters.setRoomSelectionMode}
         onRoomTypesChange={setters.setRoomTypes}
         onViewsChange={setters.setViews}
+        onMinStarRatingChange={setters.setMinStarRating}
       />
 
       <div className="flex gap-3 pt-4 border-t">

@@ -18,6 +18,7 @@ export interface HotelPrefsData {
   roomSelectionMode: string;
   roomTypes: string[];
   views: string[];
+  minStarRating: string;
 }
 
 export interface NotificationPrefsData {
@@ -87,6 +88,7 @@ export interface TripFormSetters {
   setRoomSelectionMode: (value: string) => void;
   setRoomTypes: (value: string[]) => void;
   setViews: (value: string[]) => void;
+  setMinStarRating: (value: string) => void;
   setThresholdType: (value: string) => void;
   setThresholdValue: (value: string) => void;
   setEmailEnabled: (value: boolean) => void;
@@ -123,6 +125,7 @@ export interface TripPayload {
     room_selection_mode: RoomSelectionMode;
     preferred_room_types: string[];
     preferred_views: string[];
+    min_star_rating: number | null;
   } | null;
   notification_prefs: {
     threshold_type: ThresholdType;

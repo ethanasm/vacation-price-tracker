@@ -844,6 +844,11 @@ export interface components {
              * @description Preferred views (e.g., ['Ocean', 'City'])
              */
             preferred_views?: string[];
+            /**
+             * Min Star Rating
+             * @description Minimum hotel star rating (1-5). Hotels below this rating are filtered out.
+             */
+            min_star_rating?: number | null;
         };
         /**
          * NotificationPrefs

@@ -129,6 +129,7 @@ export default function CreateTripPage() {
           roomSelectionMode={formData.hotelPrefs.roomSelectionMode}
           roomTypes={formData.hotelPrefs.roomTypes}
           views={formData.hotelPrefs.views}
+          minStarRating={formData.hotelPrefs.minStarRating}
           onToggle={() => setters.setHotelPrefsOpen(!formData.hotelPrefsOpen)}
           onTrackEnabledChange={setters.setTrackHotels}
           onRoomsChange={setters.setRooms}
@@ -137,6 +138,7 @@ export default function CreateTripPage() {
           onRoomSelectionModeChange={setters.setRoomSelectionMode}
           onRoomTypesChange={setters.setRoomTypes}
           onViewsChange={setters.setViews}
+          onMinStarRatingChange={setters.setMinStarRating}
         />
 
         <NotificationSection

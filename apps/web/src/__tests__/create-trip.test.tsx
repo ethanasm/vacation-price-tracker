@@ -105,6 +105,7 @@ const createTripFormSetters = (): TripFormSetters => ({
   setRoomSelectionMode: jest.fn(),
   setRoomTypes: jest.fn(),
   setViews: jest.fn(),
+  setMinStarRating: jest.fn(),
   setThresholdType: jest.fn(),
   setThresholdValue: jest.fn(),
   setEmailEnabled: jest.fn(),

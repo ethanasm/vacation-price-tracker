@@ -46,6 +46,7 @@ class TripHotelPrefs(SQLModel, table=True):
     adults_per_room: int = Field(default=2, ge=1, le=4, nullable=False)
     city: str | None = Field(default=None, max_length=200, nullable=True)
     room_selection_mode: RoomSelectionMode = Field(default=RoomSelectionMode.CHEAPEST, nullable=False)
+    min_star_rating: int | None = Field(default=None, ge=1, le=5, nullable=True)
     # Store as JSON for SQLite/PostgreSQL compatibility (arrays stored as JSON)
     preferred_room_types: list[str] = Field(
         default_factory=list,

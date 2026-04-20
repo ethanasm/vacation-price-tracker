@@ -10,6 +10,7 @@ import type {
   TripPayload,
 } from "../../components/trip-form/types";
 import { validateTripForm, hasErrors } from "../../components/trip-form/validation";
+import { MIN_STAR_RATING_ANY } from "../../components/trip-form/constants";
 import type { TripDetail, CabinClass, StopsMode, RoomSelectionMode, ThresholdType } from "../api";
 
 interface UseTripFormReturn {
@@ -51,6 +52,7 @@ const getDefaultFormData = (): TripFormData => ({
     roomSelectionMode: "cheapest",
     roomTypes: [],
     views: [],
+    minStarRating: MIN_STAR_RATING_ANY,
   },
 
   // Notification preferences
@@ -99,6 +101,9 @@ export function tripDetailToFormData(trip: TripDetail): TripFormData {
       roomSelectionMode: trip.hotel_prefs?.room_selection_mode ?? "cheapest",
       roomTypes: trip.hotel_prefs?.preferred_room_types ?? [],
       views: trip.hotel_prefs?.preferred_views ?? [],
+      minStarRating: trip.hotel_prefs?.min_star_rating != null
+        ? String(trip.hotel_prefs.min_star_rating)
+        : MIN_STAR_RATING_ANY,
     },
 
     notificationPrefs: {
@@ -274,6 +279,14 @@ export function useTripForm(
       })),
     []
   );
+  const setMinStarRating = useCallback(
+    (value: string) =>
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, minStarRating: value },
+      })),
+    []
+  );
   const setThresholdType = useCallback(
     (value: string) =>
       setFormData((prev) => ({
@@ -343,6 +356,7 @@ export function useTripForm(
       setRoomSelectionMode,
       setRoomTypes,
       setViews,
+      setMinStarRating,
       setThresholdType,
       setThresholdValue,
       setEmailEnabled,
@@ -369,6 +383,7 @@ export function useTripForm(
       setRoomSelectionMode,
       setRoomTypes,
       setViews,
+      setMinStarRating,
       setThresholdType,
       setThresholdValue,
       setEmailEnabled,
@@ -456,6 +471,10 @@ export function useTripForm(
             room_selection_mode: hotelPrefs.roomSelectionMode as RoomSelectionMode,
             preferred_room_types: hotelPrefs.roomTypes,
             preferred_views: hotelPrefs.views,
+            min_star_rating:
+              hotelPrefs.minStarRating && hotelPrefs.minStarRating !== MIN_STAR_RATING_ANY
+                ? parseNumber(hotelPrefs.minStarRating, 0) || null
+                : null,
           }
         : null,
       notification_prefs: {

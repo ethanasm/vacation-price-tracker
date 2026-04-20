@@ -75,6 +75,10 @@ class HotelPrefs(BaseModel):
         default_factory=list,
         description="Preferred views (e.g., ['Ocean', 'City'])",
     )
+    min_star_rating: Annotated[int | None, Field(ge=1, le=5)] = Field(
+        default=None,
+        description="Minimum hotel star rating (1-5). Hotels below this rating are filtered out.",
+    )
 
 
 class NotificationPrefs(BaseModel):
