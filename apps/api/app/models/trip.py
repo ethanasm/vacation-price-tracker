@@ -22,6 +22,8 @@ class Trip(SQLModel, table=True):
     depart_date: date = Field(nullable=False)
     return_date: date | None = Field(default=None, nullable=True)
     adults: int = Field(default=1, ge=1, le=9, nullable=False)
+    track_flights: bool = Field(default=True, nullable=False)
+    track_hotels: bool = Field(default=True, nullable=False)
     status: TripStatus = Field(default=TripStatus.ACTIVE, nullable=False)
 
     created_at: datetime = Field(
