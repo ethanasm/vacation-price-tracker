@@ -831,6 +831,7 @@ export default function TripDetailPage({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedHotelKey, setSelectedHotelKey] = useState<string | null>(null);
   const [selectedFlightKey, setSelectedFlightKey] = useState<string | null>(null);
+  const [offersTab, setOffersTab] = useState<"flights" | "hotels">("flights");
 
   const fetchTripDetails = useCallback(async (showLoading = true) => {
     try {
@@ -1181,8 +1182,8 @@ export default function TripDetailPage({
           )}
       </div>
 
-      {/* Main Content Grid */}
-      <div className={hasHotelTracking ? styles.gridCompact : styles.gridCompactFlightsOnly}>
+      {/* Main Content Grid — chart left, offers right */}
+      <div className={styles.gridCompactFlightsOnly}>
         {/* Chart */}
         <Card className={styles.chartCard}>
           <CardContent className={styles.chartCardContent}>
@@ -1235,38 +1236,61 @@ export default function TripDetailPage({
           </CardContent>
         </Card>
 
-        {hasHotelTracking && (
-          /* Hotels List */
-          <Card className={styles.listCard}>
-            <CardContent className={styles.listCardContent}>
-              <div className={styles.listHeader}>
-                <Hotel className="h-4 w-4" />
-                <span>Hotels</span>
-              </div>
-              <HotelsList
-                hotels={latestOffers.hotels}
-                selectedHotelKey={selectedHotelKey}
-                onSelectHotel={setSelectedHotelKey}
-                nights={nights}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Flights List */}
+        {/* Offers panel — tabs when tracking both, plain list when flights-only */}
         <Card className={styles.listCard}>
           <CardContent className={styles.listCardContent}>
-            <div className={styles.listHeader}>
-              <Plane className="h-4 w-4" />
-              <span>Flights</span>
-            </div>
-            <FlightsList
-              flights={latestOffers.flights}
-              departDate={trip.depart_date}
-              returnDate={trip.return_date}
-              selectedFlightKey={selectedFlightKey}
-              onSelectFlight={setSelectedFlightKey}
-            />
+            {hasHotelTracking ? (
+              <>
+                <div className={styles.offersTabs}>
+                  <button
+                    type="button"
+                    className={`${styles.offersTab} ${offersTab === "flights" ? styles.offersTabActive : ""}`}
+                    onClick={() => setOffersTab("flights")}
+                  >
+                    <Plane className="h-4 w-4" />
+                    Flights
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.offersTab} ${offersTab === "hotels" ? styles.offersTabActive : ""}`}
+                    onClick={() => setOffersTab("hotels")}
+                  >
+                    <Hotel className="h-4 w-4" />
+                    Hotels
+                  </button>
+                </div>
+                {offersTab === "flights" ? (
+                  <FlightsList
+                    flights={latestOffers.flights}
+                    departDate={trip.depart_date}
+                    returnDate={trip.return_date}
+                    selectedFlightKey={selectedFlightKey}
+                    onSelectFlight={setSelectedFlightKey}
+                  />
+                ) : (
+                  <HotelsList
+                    hotels={latestOffers.hotels}
+                    selectedHotelKey={selectedHotelKey}
+                    onSelectHotel={setSelectedHotelKey}
+                    nights={nights}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <div className={styles.listHeader}>
+                  <Plane className="h-4 w-4" />
+                  <span>Flights</span>
+                </div>
+                <FlightsList
+                  flights={latestOffers.flights}
+                  departDate={trip.depart_date}
+                  returnDate={trip.return_date}
+                  selectedFlightKey={selectedFlightKey}
+                  onSelectFlight={setSelectedFlightKey}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
