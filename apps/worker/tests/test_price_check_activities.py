@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from app.core.constants import CabinClass, RoomSelectionMode, StopsMode
 from worker.activities import price_check as pc
+from worker.types import TripDetails
 
 
 @dataclass
@@ -942,3 +943,91 @@ def test_hotel_matches_views_via_description():
         "description": "Stunning ocean view from the balcony.",
     }
     assert pc._hotel_matches_views(hotel, ["ocean"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Task 6: fetch_hotels_activity uses hotel_prefs.city (with fallback)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_activity_uses_city_field(monkeypatch):
+    trip: TripDetails = {
+        "trip_id": "t-city",
+        "origin_airport": "SFO",
+        "destination_code": "MCO",
+        "is_round_trip": True,
+        "depart_date": "2026-06-01",
+        "return_date": "2026-06-08",
+        "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
+        "flight_prefs": {
+            "airlines": [], "stops_mode": "any", "max_stops": None, "cabin": "economy",
+        },
+        "hotel_prefs": {
+            "rooms": 1,
+            "adults_per_room": 2,
+            "city": "Downtown Orlando",
+            "room_selection_mode": "cheapest",
+            "preferred_room_types": [],
+            "preferred_views": [],
+        },
+    }
+
+    captured: dict = {}
+
+    class FakeClient:
+        async def search_hotels_all(self, *, city, checkin, checkout, adults, rooms, max_pages):
+            captured["city"] = city
+            return SimpleNamespace(hotels=[], total_results=0)
+
+        async def get_hotel_details(self, **kwargs):
+            raise AssertionError("Should not be called when no hotels are returned")
+
+    monkeypatch.setattr(pc, "SkiplaggedClient", lambda: FakeClient())
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    await pc.fetch_hotels_activity(trip)
+
+    assert captured["city"] == "Downtown Orlando"
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch):
+    trip: TripDetails = {
+        "trip_id": "t-fallback",
+        "origin_airport": "SFO",
+        "destination_code": "MCO",
+        "is_round_trip": True,
+        "depart_date": "2026-06-01",
+        "return_date": "2026-06-08",
+        "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
+        "flight_prefs": {
+            "airlines": [], "stops_mode": "any", "max_stops": None, "cabin": "economy",
+        },
+        "hotel_prefs": {
+            "rooms": 1,
+            "adults_per_room": 2,
+            "city": None,
+            "room_selection_mode": "cheapest",
+            "preferred_room_types": [],
+            "preferred_views": [],
+        },
+    }
+
+    captured: dict = {}
+
+    class FakeClient:
+        async def search_hotels_all(self, *, city, checkin, checkout, adults, rooms, max_pages):
+            captured["city"] = city
+            return SimpleNamespace(hotels=[], total_results=0)
+
+    monkeypatch.setattr(pc, "SkiplaggedClient", lambda: FakeClient())
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    await pc.fetch_hotels_activity(trip)
+
+    assert captured["city"] == "MCO"

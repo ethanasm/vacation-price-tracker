@@ -210,8 +210,9 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     if settings.mock_skiplagged_api:
         logger.info("Using mock Skiplagged hotels for trip_id=%s", trip["trip_id"])
         adults = hotel_prefs["rooms"] * hotel_prefs["adults_per_room"]
+        mock_city = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
         response = mock_hotel_search(
-            city=trip["destination_code"],
+            city=mock_city,
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
@@ -226,11 +227,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
 
     logger.info("Fetching hotels for trip_id=%s via Skiplagged MCP", trip["trip_id"])
     adults = hotel_prefs["adults_per_room"]
+    city_query = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
 
     try:
         client = SkiplaggedClient()
         hotel_result = await client.search_hotels_all(
-            city=trip["destination_code"],
+            city=city_query,
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
