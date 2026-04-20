@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from app.core.constants import CabinClass, RoomSelectionMode, StopsMode
 from worker.activities import price_check as pc
+from worker.types import TripDetails
 
 
 @dataclass
@@ -64,6 +65,8 @@ def _trip_details() -> dict:
         "depart_date": "2026-02-01",
         "return_date": "2026-02-08",
         "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
         "flight_prefs": {
             "airlines": ["UA"],
             "stops_mode": "any",
@@ -73,6 +76,7 @@ def _trip_details() -> dict:
         "hotel_prefs": {
             "rooms": 1,
             "adults_per_room": 2,
+            "city": None,
             "room_selection_mode": "cheapest",
             "preferred_room_types": [],
             "preferred_views": [],
@@ -91,6 +95,8 @@ async def test_load_trip_details(monkeypatch):
         depart_date=date(2026, 2, 1),
         return_date=date(2026, 2, 8),
         adults=2,
+        track_flights=True,
+        track_hotels=True,
     )
     flight_prefs = SimpleNamespace(
         airlines=["UA"],
@@ -101,6 +107,7 @@ async def test_load_trip_details(monkeypatch):
     hotel_prefs = SimpleNamespace(
         rooms=1,
         adults_per_room=2,
+        city=None,
         room_selection_mode=RoomSelectionMode.CHEAPEST,
         preferred_room_types=["King"],
         preferred_views=["Ocean"],
@@ -112,9 +119,45 @@ async def test_load_trip_details(monkeypatch):
     result = await pc.load_trip_details(str(trip_id))
 
     assert result["trip_id"] == str(trip_id)
+    assert result["track_flights"] is True
+    assert result["track_hotels"] is True
     assert result["flight_prefs"]["stops_mode"] == "any"
     assert result["hotel_prefs"]["room_selection_mode"] == "cheapest"
     assert result["hotel_prefs"]["preferred_views"] == ["Ocean"]
+    assert result["hotel_prefs"]["city"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_trip_details_returns_track_flags_and_city(monkeypatch):
+    trip_id = uuid.uuid4()
+    trip = SimpleNamespace(
+        id=trip_id,
+        origin_airport="SFO",
+        destination_code="MCO",
+        is_round_trip=True,
+        depart_date=date(2026, 5, 1),
+        return_date=date(2026, 5, 8),
+        adults=2,
+        track_flights=False,
+        track_hotels=True,
+    )
+    hotel_prefs = SimpleNamespace(
+        rooms=1,
+        adults_per_room=2,
+        city="Downtown Orlando",
+        room_selection_mode=RoomSelectionMode.CHEAPEST,
+        preferred_room_types=[],
+        preferred_views=[],
+    )
+
+    session = DummySession(trip, [DummyResult(None), DummyResult(hotel_prefs)])
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))
+
+    result = await pc.load_trip_details(str(trip_id))
+    assert result["trip_id"] == str(trip_id)
+    assert result["track_flights"] is False
+    assert result["track_hotels"] is True
+    assert result["hotel_prefs"]["city"] == "Downtown Orlando"
 
 
 @pytest.mark.asyncio
@@ -129,6 +172,8 @@ async def test_load_trip_details_one_way(monkeypatch):
         depart_date=date(2026, 2, 1),
         return_date=None,
         adults=1,
+        track_flights=True,
+        track_hotels=False,
     )
     flight_prefs = SimpleNamespace(
         airlines=[],
@@ -145,6 +190,8 @@ async def test_load_trip_details_one_way(monkeypatch):
     assert result["return_date"] is None
     assert result["is_round_trip"] is False
     assert result["hotel_prefs"] is None
+    assert result["track_flights"] is True
+    assert result["track_hotels"] is False
 
 
 @pytest.mark.asyncio
@@ -226,7 +273,7 @@ async def test_fetch_flights_activity_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_error(monkeypatch):
-    """Test error handling when Skiplagged client fails."""
+    """Skiplagged failures propagate so Temporal can retry / fail the workflow."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -236,10 +283,8 @@ async def test_fetch_flights_activity_error(monkeypatch):
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(_trip_details())
-
-    assert result["error"] == "API error"
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="API error"):
+            await pc.fetch_flights_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -305,7 +350,7 @@ async def test_fetch_hotels_activity_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_error(monkeypatch):
-    """Test error handling when Skiplagged hotel search fails."""
+    """Skiplagged hotel failures propagate to the workflow rather than being swallowed."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -315,10 +360,8 @@ async def test_fetch_hotels_activity_error(monkeypatch):
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_hotels_activity(_trip_details())
-
-    assert result["error"] == "API error"
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="API error"):
+            await pc.fetch_hotels_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -583,7 +626,7 @@ async def test_fetch_flights_uses_skiplagged(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_flights_skiplagged_error(monkeypatch):
-    """Verify fetch_flights_activity handles SkiplaggedClient errors gracefully."""
+    """SkiplaggedClient errors propagate so Temporal retries / fails the workflow."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -592,11 +635,8 @@ async def test_fetch_flights_skiplagged_error(monkeypatch):
     mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("connection refused"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(sample_trip_details)
-
-    assert result["error"] is not None
-    assert "connection refused" in result["error"]
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="connection refused"):
+            await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
@@ -795,8 +835,8 @@ def test_filter_hotels_no_prefs_returns_all():
 
 
 @pytest.mark.asyncio
-async def test_fetch_flights_generic_exception_fallback(monkeypatch):
-    """Non-SkiplaggedMCPError exceptions still degrade to an empty error result."""
+async def test_fetch_flights_generic_exception_propagates(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions propagate so Temporal fails the workflow."""
     from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
@@ -805,16 +845,13 @@ async def test_fetch_flights_generic_exception_fallback(monkeypatch):
     mock_client.search_flights_all = AsyncMock(side_effect=RuntimeError("boom"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(sample_trip_details)
-
-    assert result["offers"] == []
-    assert result["error"] == "boom"
-    assert result["raw"]["status"] == "error"
+        with pytest.raises(RuntimeError, match="boom"):
+            await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
-async def test_fetch_hotels_generic_exception_fallback(monkeypatch):
-    """Non-SkiplaggedMCPError exceptions in hotel search degrade gracefully."""
+async def test_fetch_hotels_generic_exception_propagates(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions in hotel search propagate to Temporal."""
     from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
@@ -823,11 +860,8 @@ async def test_fetch_hotels_generic_exception_fallback(monkeypatch):
     mock_client.search_hotels_all = AsyncMock(side_effect=RuntimeError("kaboom"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_hotels_activity(sample_trip_details)
-
-    assert result["offers"] == []
-    assert result["error"] == "kaboom"
-    assert result["raw"]["status"] == "error"
+        with pytest.raises(RuntimeError, match="kaboom"):
+            await pc.fetch_hotels_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
@@ -896,3 +930,92 @@ def test_hotel_matches_views_via_description():
         "description": "Stunning ocean view from the balcony.",
     }
     assert pc._hotel_matches_views(hotel, ["ocean"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Task 6: fetch_hotels_activity uses hotel_prefs.city (with fallback)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_activity_uses_city_field(monkeypatch):
+    trip: TripDetails = {
+        "trip_id": "t-city",
+        "origin_airport": "SFO",
+        "destination_code": "MCO",
+        "is_round_trip": True,
+        "depart_date": "2026-06-01",
+        "return_date": "2026-06-08",
+        "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
+        "flight_prefs": {
+            "airlines": [], "stops_mode": "any", "max_stops": None, "cabin": "economy",
+        },
+        "hotel_prefs": {
+            "rooms": 1,
+            "adults_per_room": 2,
+            "city": "Downtown Orlando",
+            "room_selection_mode": "cheapest",
+            "preferred_room_types": [],
+            "preferred_views": [],
+        },
+    }
+
+    captured: dict = {}
+
+    class FakeClient:
+        async def search_hotels_all(self, *, city, checkin, checkout, adults, rooms, max_pages):
+            captured["city"] = city
+            return SimpleNamespace(hotels=[], total_results=0)
+
+        async def get_hotel_details(self, **kwargs):
+            raise AssertionError("Should not be called when no hotels are returned")
+
+    monkeypatch.setattr(pc, "SkiplaggedClient", lambda: FakeClient())
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    await pc.fetch_hotels_activity(trip)
+
+    assert captured["city"] == "Downtown Orlando"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blank_city", [None, "", "   "])
+async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch, blank_city):
+    trip: TripDetails = {
+        "trip_id": "t-fallback",
+        "origin_airport": "SFO",
+        "destination_code": "MCO",
+        "is_round_trip": True,
+        "depart_date": "2026-06-01",
+        "return_date": "2026-06-08",
+        "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
+        "flight_prefs": {
+            "airlines": [], "stops_mode": "any", "max_stops": None, "cabin": "economy",
+        },
+        "hotel_prefs": {
+            "rooms": 1,
+            "adults_per_room": 2,
+            "city": blank_city,
+            "room_selection_mode": "cheapest",
+            "preferred_room_types": [],
+            "preferred_views": [],
+        },
+    }
+
+    captured: dict = {}
+
+    class FakeClient:
+        async def search_hotels_all(self, *, city, checkin, checkout, adults, rooms, max_pages):
+            captured["city"] = city
+            return SimpleNamespace(hotels=[], total_results=0)
+
+    monkeypatch.setattr(pc, "SkiplaggedClient", lambda: FakeClient())
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+
+    await pc.fetch_hotels_activity(trip)
+
+    assert captured["city"] == "MCO"

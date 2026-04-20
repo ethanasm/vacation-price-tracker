@@ -244,18 +244,18 @@ describe("useTripForm", () => {
     expect(payload?.hotel_prefs).not.toBeNull();
   });
 
-  it("omits flight prefs when not configured and section closed", () => {
+  it("omits flight prefs when trackFlights is false", () => {
     const hookRef: HookRef = { current: null };
-    render(<HookHarness hookRef={hookRef} />);
+    render(<HookHarness hookRef={hookRef} initialData={{ trackFlights: false }} />);
 
     const payload = hookRef.current?.getPayload();
 
     expect(payload?.flight_prefs).toBeNull();
   });
 
-  it("omits hotel prefs when not configured and section closed", () => {
+  it("omits hotel prefs when trackHotels is false", () => {
     const hookRef: HookRef = { current: null };
-    render(<HookHarness hookRef={hookRef} />);
+    render(<HookHarness hookRef={hookRef} initialData={{ trackHotels: false }} />);
 
     const payload = hookRef.current?.getPayload();
 
@@ -312,6 +312,14 @@ describe("useTripForm", () => {
           destinationCode: "LAX",
           departDate,
           returnDate,
+          hotelPrefs: {
+            rooms: "1",
+            adultsPerRoom: "2",
+            city: "Los Angeles",
+            roomSelectionMode: "cheapest",
+            roomTypes: [],
+            views: [],
+          },
           notificationPrefs: {
             thresholdType: "trip_total",
             thresholdValue: "100",
@@ -347,6 +355,64 @@ describe("useTripForm", () => {
       "Date is required but was not provided"
     );
   });
+
+  it("defaults trackFlights and trackHotels to true with empty city", () => {
+    const hookRef: HookRef = { current: null };
+    render(<HookHarness hookRef={hookRef} />);
+    expect(hookRef.current?.formData.trackFlights).toBe(true);
+    expect(hookRef.current?.formData.trackHotels).toBe(true);
+    expect(hookRef.current?.formData.hotelPrefs.city).toBe("");
+  });
+
+  it("emits track flags and hotel city in the payload", () => {
+    const hookRef: HookRef = { current: null };
+    render(<HookHarness hookRef={hookRef} />);
+
+    act(() => {
+      hookRef.current?.setters.setName("Miami Beach");
+      hookRef.current?.setters.setOriginAirport("SFO");
+      hookRef.current?.setters.setDestinationCode("MIA");
+      hookRef.current?.setters.setCity("South Beach");
+      hookRef.current?.setters.setTrackFlights(false);
+      hookRef.current?.setters.setTrackHotels(true);
+    });
+
+    const payload = hookRef.current?.getPayload();
+    expect(payload?.track_flights).toBe(false);
+    expect(payload?.track_hotels).toBe(true);
+    expect(payload?.flight_prefs).toBeNull();
+    expect(payload?.hotel_prefs?.city).toBe("South Beach");
+  });
+
+  it("omits hotel_prefs when trackHotels is false", () => {
+    const hookRef: HookRef = { current: null };
+    render(<HookHarness hookRef={hookRef} />);
+
+    act(() => {
+      hookRef.current?.setters.setTrackFlights(true);
+      hookRef.current?.setters.setTrackHotels(false);
+    });
+
+    const payload = hookRef.current?.getPayload();
+    expect(payload?.track_flights).toBe(true);
+    expect(payload?.track_hotels).toBe(false);
+    expect(payload?.hotel_prefs).toBeNull();
+  });
+
+  it("isValid is false when both tracking flags are off", () => {
+    const hookRef: HookRef = { current: null };
+    render(<HookHarness hookRef={hookRef} />);
+
+    act(() => {
+      hookRef.current?.setters.setName("Trip");
+      hookRef.current?.setters.setOriginAirport("SFO");
+      hookRef.current?.setters.setDestinationCode("MIA");
+      hookRef.current?.setters.setTrackFlights(false);
+      hookRef.current?.setters.setTrackHotels(false);
+    });
+
+    expect(hookRef.current?.isValid).toBe(false);
+  });
 });
 
 describe("tripDetailToFormData", () => {
@@ -359,6 +425,8 @@ describe("tripDetailToFormData", () => {
     return_date: "2025-06-22",
     is_round_trip: true,
     adults: 2,
+    track_flights: true,
+    track_hotels: true,
     status: "active",
     current_flight_price: "500.00",
     current_hotel_price: "700.00",

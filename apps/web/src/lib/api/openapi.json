@@ -1639,6 +1639,19 @@
             "description": "Number of adults per room",
             "default": 2
           },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City",
+            "description": "Free-text city name sent to the Skiplagged hotel search (overrides destination airport)"
+          },
           "room_selection_mode": {
             "$ref": "#/components/schemas/RoomSelectionMode",
             "description": "How to select rooms: cheapest or preferred",
@@ -1861,6 +1874,17 @@
           "in_progress": {
             "type": "integer",
             "title": "In Progress"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           }
         },
         "type": "object",
@@ -1958,6 +1982,18 @@
             "description": "Number of adult travelers",
             "default": 1
           },
+          "track_flights": {
+            "type": "boolean",
+            "title": "Track Flights",
+            "description": "Track flight prices for this trip",
+            "default": true
+          },
+          "track_hotels": {
+            "type": "boolean",
+            "title": "Track Hotels",
+            "description": "Track hotel prices for this trip",
+            "default": true
+          },
           "flight_prefs": {
             "anyOf": [
               {
@@ -1978,7 +2014,7 @@
                 "type": "null"
               }
             ],
-            "description": "Hotel preferences (optional)"
+            "description": "Hotel preferences (required when track_hotels is True)"
           },
           "notification_prefs": {
             "$ref": "#/components/schemas/NotificationPrefs-Input",
@@ -2034,6 +2070,16 @@
           },
           "status": {
             "$ref": "#/components/schemas/TripStatus"
+          },
+          "track_flights": {
+            "type": "boolean",
+            "title": "Track Flights",
+            "default": true
+          },
+          "track_hotels": {
+            "type": "boolean",
+            "title": "Track Hotels",
+            "default": true
           },
           "current_flight_price": {
             "anyOf": [
@@ -2207,6 +2253,16 @@
           },
           "status": {
             "$ref": "#/components/schemas/TripStatus"
+          },
+          "track_flights": {
+            "type": "boolean",
+            "title": "Track Flights",
+            "default": true
+          },
+          "track_hotels": {
+            "type": "boolean",
+            "title": "Track Hotels",
+            "default": true
           },
           "current_flight_price": {
             "anyOf": [

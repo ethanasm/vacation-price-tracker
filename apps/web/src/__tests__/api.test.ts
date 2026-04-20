@@ -855,6 +855,8 @@ describe("API Client", () => {
       depart_date: "2025-06-01",
       return_date: "2025-06-08",
       adults: 2,
+      track_flights: true,
+      track_hotels: true,
       flight_prefs: null,
       hotel_prefs: null,
       notification_prefs: {

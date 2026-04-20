@@ -32,6 +32,10 @@ const getDefaultFormData = (): TripFormData => ({
   returnDate: addDays(new Date(), 8),
   adults: "1",
 
+  // Tracking
+  trackFlights: true,
+  trackHotels: true,
+
   // Flight preferences
   flightPrefs: {
     cabin: "economy",
@@ -43,6 +47,7 @@ const getDefaultFormData = (): TripFormData => ({
   hotelPrefs: {
     rooms: "1",
     adultsPerRoom: "2",
+    city: "",
     roomSelectionMode: "cheapest",
     roomTypes: [],
     views: [],
@@ -66,11 +71,10 @@ const getDefaultFormData = (): TripFormData => ({
  * Used when editing an existing trip.
  */
 export function tripDetailToFormData(trip: TripDetail): TripFormData {
-  const hasFlightPrefs = trip.flight_prefs !== null;
-  const hasHotelPrefs = trip.hotel_prefs !== null;
+  const hasFlightPrefs = trip.flight_prefs !== null && trip.flight_prefs !== undefined;
+  const hasHotelPrefs = trip.hotel_prefs !== null && trip.hotel_prefs !== undefined;
 
   return {
-    // Basic info
     name: trip.name,
     originAirport: trip.origin_airport,
     destinationCode: trip.destination_code,
@@ -79,23 +83,24 @@ export function tripDetailToFormData(trip: TripDetail): TripFormData {
     returnDate: trip.return_date ? parseISO(trip.return_date) : undefined,
     adults: String(trip.adults),
 
-    // Flight preferences
+    trackFlights: trip.track_flights ?? hasFlightPrefs,
+    trackHotels: trip.track_hotels ?? hasHotelPrefs,
+
     flightPrefs: {
       cabin: trip.flight_prefs?.cabin ?? "economy",
       stopsMode: trip.flight_prefs?.stops_mode ?? "any",
       airlines: trip.flight_prefs?.airlines ?? [],
     },
 
-    // Hotel preferences
     hotelPrefs: {
       rooms: String(trip.hotel_prefs?.rooms ?? 1),
       adultsPerRoom: String(trip.hotel_prefs?.adults_per_room ?? 2),
+      city: trip.hotel_prefs?.city ?? "",
       roomSelectionMode: trip.hotel_prefs?.room_selection_mode ?? "cheapest",
       roomTypes: trip.hotel_prefs?.preferred_room_types ?? [],
       views: trip.hotel_prefs?.preferred_views ?? [],
     },
 
-    // Notification preferences
     notificationPrefs: {
       thresholdType: trip.notification_prefs?.threshold_type ?? "trip_total",
       thresholdValue: trip.notification_prefs?.threshold_value ?? "",
@@ -103,7 +108,6 @@ export function tripDetailToFormData(trip: TripDetail): TripFormData {
       smsEnabled: trip.notification_prefs?.sms_enabled ?? false,
     },
 
-    // Open sections if they have data
     flightPrefsOpen: hasFlightPrefs,
     hotelPrefsOpen: hasHotelPrefs,
   };
@@ -188,6 +192,14 @@ export function useTripForm(
     (value: string) => setFormData((prev) => ({ ...prev, adults: value })),
     []
   );
+  const setTrackFlights = useCallback(
+    (value: boolean) => setFormData((prev) => ({ ...prev, trackFlights: value })),
+    []
+  );
+  const setTrackHotels = useCallback(
+    (value: boolean) => setFormData((prev) => ({ ...prev, trackHotels: value })),
+    []
+  );
   const setCabin = useCallback(
     (value: string) =>
       setFormData((prev) => ({
@@ -227,6 +239,16 @@ export function useTripForm(
         hotelPrefs: { ...prev.hotelPrefs, adultsPerRoom: value },
       })),
     []
+  );
+  const setCity = useCallback(
+    (value: string) => {
+      touch("hotelCity");
+      setFormData((prev) => ({
+        ...prev,
+        hotelPrefs: { ...prev.hotelPrefs, city: value },
+      }));
+    },
+    [touch]
   );
   const setRoomSelectionMode = useCallback(
     (value: string) =>
@@ -310,11 +332,14 @@ export function useTripForm(
       setDepartDate,
       setReturnDate,
       setAdults,
+      setTrackFlights,
+      setTrackHotels,
       setCabin,
       setStopsMode,
       setAirlines,
       setRooms,
       setAdultsPerRoom,
+      setCity,
       setRoomSelectionMode,
       setRoomTypes,
       setViews,
@@ -333,11 +358,14 @@ export function useTripForm(
       setDepartDate,
       setReturnDate,
       setAdults,
+      setTrackFlights,
+      setTrackHotels,
       setCabin,
       setStopsMode,
       setAirlines,
       setRooms,
       setAdultsPerRoom,
+      setCity,
       setRoomSelectionMode,
       setRoomTypes,
       setViews,
@@ -368,7 +396,9 @@ export function useTripForm(
     }
   }, [allErrors, touched]);
 
-  const isValid = !hasErrors(allErrors);
+  // TODO(task-10): move into validateTripForm
+  const trackingError = !formData.trackFlights && !formData.trackHotels;
+  const isValid = !hasErrors(allErrors) && !trackingError;
 
   const validate = useCallback((): boolean => {
     allTouchedRef.current = true;
@@ -385,18 +415,18 @@ export function useTripForm(
   }, []);
 
   const getPayload = useCallback((): TripPayload => {
-    const { flightPrefs, hotelPrefs, notificationPrefs, flightPrefsOpen, hotelPrefsOpen } =
-      formData;
-    const notificationsEnabled = notificationPrefs.emailEnabled || notificationPrefs.smsEnabled;
+    const {
+      flightPrefs,
+      hotelPrefs,
+      notificationPrefs,
+      trackFlights,
+      trackHotels,
+    } = formData;
+    const notificationsEnabled =
+      notificationPrefs.emailEnabled || notificationPrefs.smsEnabled;
     const thresholdValue = notificationsEnabled
       ? Number.parseFloat(notificationPrefs.thresholdValue)
       : 0;
-
-    const hasFlightPrefs = flightPrefsOpen || flightPrefs.airlines.length > 0;
-    const hasHotelPrefs =
-      hotelPrefsOpen ||
-      hotelPrefs.roomTypes.length > 0 ||
-      hotelPrefs.views.length > 0;
 
     return {
       name: formData.name.trim(),
@@ -408,7 +438,9 @@ export function useTripForm(
         ? formatDateForApi(formData.returnDate)
         : null,
       adults: parseNumber(formData.adults, 1),
-      flight_prefs: hasFlightPrefs
+      track_flights: trackFlights,
+      track_hotels: trackHotels,
+      flight_prefs: trackFlights
         ? {
             airlines: flightPrefs.airlines,
             stops_mode: flightPrefs.stopsMode as StopsMode,
@@ -416,10 +448,11 @@ export function useTripForm(
             cabin: flightPrefs.cabin as CabinClass,
           }
         : null,
-      hotel_prefs: hasHotelPrefs
+      hotel_prefs: trackHotels
         ? {
             rooms: parseNumber(hotelPrefs.rooms, 1),
             adults_per_room: parseNumber(hotelPrefs.adultsPerRoom, 1),
+            city: hotelPrefs.city.trim(),
             room_selection_mode: hotelPrefs.roomSelectionMode as RoomSelectionMode,
             preferred_room_types: hotelPrefs.roomTypes,
             preferred_views: hotelPrefs.views,

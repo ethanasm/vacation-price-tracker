@@ -41,10 +41,12 @@ describe("FlightPrefsSection", () => {
     render(
       <FlightPrefsSection
         isOpen
+        trackEnabled={true}
         cabin="economy"
         stopsMode="any"
         airlines={[]}
         onToggle={jest.fn()}
+        onTrackEnabledChange={jest.fn()}
         onCabinChange={onCabinChange}
         onStopsModeChange={onStopsModeChange}
         onAirlinesChange={onAirlinesChange}

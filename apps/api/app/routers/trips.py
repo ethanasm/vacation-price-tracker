@@ -79,6 +79,7 @@ def _hotel_prefs_to_schema(prefs: TripHotelPrefs | None) -> HotelPrefs | None:
     return HotelPrefs(
         rooms=prefs.rooms,
         adults_per_room=prefs.adults_per_room,
+        city=prefs.city,
         room_selection_mode=prefs.room_selection_mode,
         preferred_room_types=prefs.preferred_room_types,
         preferred_views=prefs.preferred_views,
@@ -106,6 +107,8 @@ def _build_trip_response(trip: Trip, snapshot: PriceSnapshot | None) -> TripResp
         depart_date=trip.depart_date,
         return_date=trip.return_date,
         status=trip.status,
+        track_flights=trip.track_flights,
+        track_hotels=trip.track_hotels,
         current_flight_price=snapshot.flight_price if snapshot else None,
         current_hotel_price=snapshot.hotel_price if snapshot else None,
         total_price=snapshot.total_price if snapshot else None,
@@ -237,7 +240,16 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
 
     return_flight_payload = None
     if return_segs:
-        return_raw = item.get("return_flight") if isinstance(item.get("return_flight"), dict) else {}
+        return_raw = item.get("return_flight") or item.get("returnFlight") or {}
+        if not isinstance(return_raw, dict):
+            return_raw = {}
+        # Skiplagged nests times under departure/arrival sub-dicts
+        if "departure" in return_raw and isinstance(return_raw["departure"], dict):
+            return_raw.setdefault("departure_time", return_raw["departure"].get("dateTime"))
+            return_raw.setdefault("departure_airport", return_raw["departure"].get("airport"))
+        if "arrival" in return_raw and isinstance(return_raw["arrival"], dict):
+            return_raw.setdefault("arrival_time", return_raw["arrival"].get("dateTime"))
+            return_raw.setdefault("arrival_airport", return_raw["arrival"].get("airport"))
         return_code, return_num = return_segs[0]
         return_flight_payload = {
             "flight_number": f"{return_code}{return_num}",
@@ -453,17 +465,19 @@ async def create_trip(
         depart_date=payload.depart_date,
         return_date=payload.return_date,
         adults=payload.adults,
+        track_flights=payload.track_flights,
+        track_hotels=payload.track_hotels,
     )
     db.add(trip)
     await db.flush()
 
     flight_prefs = None
-    if payload.flight_prefs:
+    if payload.track_flights and payload.flight_prefs:
         flight_prefs = TripFlightPrefs(trip_id=trip.id, **payload.flight_prefs.model_dump())
         db.add(flight_prefs)
 
     hotel_prefs = None
-    if payload.hotel_prefs:
+    if payload.track_hotels and payload.hotel_prefs:
         hotel_prefs = TripHotelPrefs(trip_id=trip.id, **payload.hotel_prefs.model_dump())
         db.add(hotel_prefs)
 
@@ -669,7 +683,9 @@ async def refresh_trip(
     if not trip:
         raise TripNotFound()
 
-    refresh_group_id = f"refresh-trip-{trip_id}-{uuid.uuid4()}"
+    # Return the real workflow id so the UI can poll `/v1/trips/refresh-status`
+    # and see whether the run succeeded, is pending, or failed upstream.
+    refresh_group_id = f"price-check-{trip_id}"
 
     try:
         await trigger_price_check_workflow(trip_id)

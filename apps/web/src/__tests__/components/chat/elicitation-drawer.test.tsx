@@ -333,6 +333,7 @@ describe("ElicitationDrawer", () => {
               name: "Seattle Trip",
               origin_airport: "SFO",
               destination_code: "SEA",
+              hotel_city: "Seattle",
             },
           })}
           onComplete={mockOnComplete}
@@ -394,6 +395,7 @@ describe("ElicitationDrawer", () => {
               name: "Test Trip",
               origin_airport: "SFO",
               destination_code: "SEA",
+              hotel_city: "Seattle",
             },
           })}
           onComplete={mockOnComplete}
@@ -437,6 +439,7 @@ describe("ElicitationDrawer", () => {
               name: "Test Trip",
               origin_airport: "SFO",
               destination_code: "SEA",
+              hotel_city: "Seattle",
             },
           })}
           onComplete={mockOnComplete}
@@ -696,6 +699,7 @@ describe("ElicitationDrawer", () => {
               name: "Complete Trip",
               origin_airport: "SFO",
               destination_code: "SEA",
+              hotel_city: "Seattle",
             },
           })}
           onComplete={mockOnComplete}

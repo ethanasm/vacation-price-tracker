@@ -173,6 +173,7 @@ describe("EditTripPage", () => {
         hotel_prefs: {
           rooms: 2,
           adults_per_room: 2,
+          city: "Orlando",
           room_selection_mode: "preferred",
           preferred_room_types: ["King"],
           preferred_views: ["Ocean"],

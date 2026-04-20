@@ -12,6 +12,7 @@ import tiktoken
 from groq import APIError, AsyncGroq, RateLimitError
 
 from app.core.config import settings
+from app.core.telemetry import langfuse_context, observe
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -422,6 +423,7 @@ class GroqClient:
         logger.exception("Groq API error: %s", error)
         raise GroqRequestError(f"Groq API error: {error}") from error
 
+    @observe(name="groq.chat", as_type="generation")
     async def chat(
         self,
         messages: list[Message],
@@ -449,15 +451,19 @@ class GroqClient:
             GroqRateLimitError: If rate limited after all retries.
             GroqRequestError: If the request fails.
         """
+        self._record_generation_input(messages, tools, stream, temperature, max_tokens)
         client = self._get_client()
         kwargs = self._build_chat_kwargs(messages, tools, stream, temperature, max_tokens)
         attempt = 0
         max_attempts = self._max_retries + 1
+        accumulator: dict[str, Any] = {"content": [], "tool_calls": [], "usage": None}
 
         while attempt <= self._max_retries:
             try:
                 async for chunk in self._execute_chat(client, kwargs, stream):
+                    self._accumulate_for_trace(chunk, accumulator)
                     yield chunk
+                self._record_generation_output(accumulator)
                 return
             except RateLimitError as e:
                 delay, chunk = await self._handle_rate_limit_in_chat(e, attempt, max_attempts)
@@ -472,6 +478,59 @@ class GroqClient:
             except Exception as e:
                 logger.exception("Groq API request failed")
                 raise GroqRequestError(f"Groq request failed: {e}") from e
+
+    def _record_generation_input(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None,
+        stream: bool,
+        temperature: float,
+        max_tokens: int | None,
+    ) -> None:
+        """Record LLM input details on the current Langfuse observation."""
+        langfuse_context.update_current_observation(
+            model=self._model,
+            input=[m.to_dict() for m in messages],
+            model_parameters={
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": stream,
+                "n_tools": len(tools) if tools else 0,
+            },
+        )
+
+    @staticmethod
+    def _accumulate_for_trace(chunk: ChatChunk, accumulator: dict[str, Any]) -> None:
+        """Accumulate streaming chunks into a trace-friendly payload."""
+        if chunk.content:
+            accumulator["content"].append(chunk.content)
+        if chunk.tool_calls:
+            accumulator["tool_calls"] = [
+                {"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments}
+                for tc in chunk.tool_calls
+            ]
+        if chunk.usage:
+            accumulator["usage"] = chunk.usage
+
+    @staticmethod
+    def _record_generation_output(accumulator: dict[str, Any]) -> None:
+        """Record LLM output and usage on the current Langfuse observation."""
+        usage = accumulator["usage"]
+        langfuse_context.update_current_observation(
+            output={
+                "content": "".join(accumulator["content"]),
+                "tool_calls": accumulator["tool_calls"] or None,
+            },
+            usage=(
+                {
+                    "input": usage["prompt_tokens"],
+                    "output": usage["completion_tokens"],
+                    "total": usage["total_tokens"],
+                }
+                if usage
+                else None
+            ),
+        )
 
     async def _execute_chat(
         self, client: AsyncGroq, kwargs: dict[str, Any], stream: bool

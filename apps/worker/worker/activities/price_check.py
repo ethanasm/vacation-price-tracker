@@ -8,6 +8,7 @@ from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
 from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
 from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
+from app.core.telemetry import langfuse_context, observe
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
 from app.models.trip import Trip
@@ -56,6 +57,8 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "depart_date": trip.depart_date.isoformat(),
             "return_date": trip.return_date.isoformat() if trip.return_date else None,
             "adults": trip.adults,
+            "track_flights": trip.track_flights,
+            "track_hotels": trip.track_hotels,
             "flight_prefs": {
                 "airlines": flight_prefs.airlines if flight_prefs else [],
                 "stops_mode": (flight_prefs.stops_mode.value if flight_prefs else "any"),
@@ -65,6 +68,7 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "hotel_prefs": {
                 "rooms": hotel_prefs.rooms,
                 "adults_per_room": hotel_prefs.adults_per_room,
+                "city": hotel_prefs.city,
                 "room_selection_mode": hotel_prefs.room_selection_mode.value,
                 "preferred_room_types": hotel_prefs.preferred_room_types,
                 "preferred_views": hotel_prefs.preferred_views,
@@ -72,9 +76,30 @@ async def load_trip_details(trip_id: str) -> TripDetails:
         }
 
 
+def _set_trip_trace_context(trip: TripDetails, activity_name: str) -> None:
+    """Tag the current Langfuse trace with workflow + trip context."""
+    try:
+        info = activity.info()
+        workflow_id = info.workflow_id
+    except Exception:
+        workflow_id = None
+    langfuse_context.update_current_trace(
+        tags=["worker", activity_name],
+        session_id=workflow_id,
+        metadata={
+            "trip_id": trip["trip_id"],
+            "origin": trip["origin_airport"],
+            "destination": trip["destination_code"],
+            "workflow_id": workflow_id,
+        },
+    )
+
+
 @activity.defn
+@observe(name="worker.fetch_flights")
 async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
     """Fetch flight offers from Skiplagged MCP or mock data."""
+    _set_trip_trace_context(trip, "fetch_flights")
     # Use mock data if configured
     if settings.mock_skiplagged_api:
         logger.info("Using mock Skiplagged flights for trip_id=%s", trip["trip_id"])
@@ -113,18 +138,7 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
         )
     except SkiplaggedMCPError as exc:
         logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
-    except Exception as exc:
-        logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
+        raise
 
     # Normalize FlightSearchResult to list of offer dicts
     offers = [_flight_to_offer_dict(flight) for flight in result.flights]
@@ -164,8 +178,10 @@ def _extract_skiplagged_flight_offers(response: dict[str, Any]) -> list[dict[str
 
 
 @activity.defn
+@observe(name="worker.fetch_hotels")
 async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     """Fetch hotel offers from Skiplagged MCP or mock data."""
+    _set_trip_trace_context(trip, "fetch_hotels")
     hotel_prefs = trip.get("hotel_prefs")
     if not hotel_prefs or not trip.get("return_date"):
         logger.info(
@@ -183,8 +199,9 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
     if settings.mock_skiplagged_api:
         logger.info("Using mock Skiplagged hotels for trip_id=%s", trip["trip_id"])
         adults = hotel_prefs["rooms"] * hotel_prefs["adults_per_room"]
+        city_query = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
         response = mock_hotel_search(
-            city=trip["destination_code"],
+            city=city_query,
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
@@ -199,11 +216,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
 
     logger.info("Fetching hotels for trip_id=%s via Skiplagged MCP", trip["trip_id"])
     adults = hotel_prefs["adults_per_room"]
+    city_query = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
 
     try:
         client = SkiplaggedClient()
         hotel_result = await client.search_hotels_all(
-            city=trip["destination_code"],
+            city=city_query,
             checkin=trip["depart_date"],
             checkout=trip["return_date"],
             adults=adults,
@@ -212,18 +230,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         )
     except SkiplaggedMCPError as exc:
         logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
-    except Exception as exc:
-        logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
+        raise
 
     # Sort by price ascending and cap at MAX_HOTEL_DETAIL_CALLS
     sorted_hotels = sorted(hotel_result.hotels, key=lambda h: h.price_per_night)

@@ -59,6 +59,10 @@ class HotelPrefs(BaseModel):
         default=2,
         description="Number of adults per room",
     )
+    city: Annotated[str | None, Field(max_length=200)] = Field(
+        default=None,
+        description="Free-text city name sent to the Skiplagged hotel search (overrides destination airport)",
+    )
     room_selection_mode: RoomSelectionMode = Field(
         default=RoomSelectionMode.CHEAPEST,
         description="How to select rooms: cheapest or preferred",
@@ -128,13 +132,21 @@ class TripCreate(BaseModel):
         default=1,
         description="Number of adult travelers",
     )
+    track_flights: bool = Field(
+        default=True,
+        description="Track flight prices for this trip",
+    )
+    track_hotels: bool = Field(
+        default=True,
+        description="Track hotel prices for this trip",
+    )
     flight_prefs: FlightPrefs | None = Field(
         default=None,
         description="Flight preferences (optional)",
     )
     hotel_prefs: HotelPrefs | None = Field(
         default=None,
-        description="Hotel preferences (optional)",
+        description="Hotel preferences (required when track_hotels is True)",
     )
     notification_prefs: NotificationPrefs = Field(
         description="Notification settings (required)",
@@ -163,6 +175,18 @@ class TripCreate(BaseModel):
             raise ValueError("return_date must be after depart_date")
         return self
 
+    @model_validator(mode="after")
+    def validate_tracking_selection(self) -> "TripCreate":
+        """Enforce tracking flag rules: at least one on, hotel city required when tracking hotels."""
+        if not self.track_flights and not self.track_hotels:
+            raise ValueError("At least one of track_flights or track_hotels must be True")
+        if self.track_hotels:
+            if self.hotel_prefs is None:
+                raise ValueError("hotel_prefs is required when track_hotels is True")
+            if not self.hotel_prefs.city or not self.hotel_prefs.city.strip():
+                raise ValueError("hotel_prefs.city is required when track_hotels is True")
+        return self
+
 
 class TripResponse(BaseModel):
     """Schema for trip list response."""
@@ -174,6 +198,8 @@ class TripResponse(BaseModel):
     depart_date: date
     return_date: date | None = None
     status: TripStatus
+    track_flights: bool = True
+    track_hotels: bool = True
     current_flight_price: Decimal | None = None
     current_hotel_price: Decimal | None = None
     total_price: Decimal | None = None
@@ -278,6 +304,7 @@ class RefreshStatusResponse(BaseModel):
     completed: int
     failed: int
     in_progress: int
+    error: str | None = None
 
 
 class BulkDeleteResponse(BaseModel):

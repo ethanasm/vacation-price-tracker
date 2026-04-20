@@ -161,6 +161,20 @@ class CreateTripTool(BaseTool):
         except ValueError as e:
             return self.error(str(e))
 
+        hotel_prefs = self._build_hotel_prefs(args)
+        flight_prefs = self._build_flight_prefs(args)
+
+        # Infer track flags:
+        # - track_flights: explicit arg, else True
+        # - track_hotels: explicit arg, else True if any hotel-related arg supplied, else False
+        track_flights = args.get("track_flights")
+        if track_flights is None:
+            track_flights = True
+
+        track_hotels = args.get("track_hotels")
+        if track_hotels is None:
+            track_hotels = hotel_prefs is not None
+
         # Validate via Pydantic schema
         try:
             return TripCreate(
@@ -171,8 +185,10 @@ class CreateTripTool(BaseTool):
                 return_date=return_date,
                 adults=args.get("adults", 1),
                 is_round_trip=args.get("is_round_trip", True),
-                flight_prefs=self._build_flight_prefs(args),
-                hotel_prefs=self._build_hotel_prefs(args),
+                track_flights=track_flights,
+                track_hotels=track_hotels,
+                flight_prefs=flight_prefs,
+                hotel_prefs=hotel_prefs,
                 notification_prefs=self._build_notification_prefs(args),
             )
         except ValidationError as e:
@@ -195,14 +211,16 @@ class CreateTripTool(BaseTool):
             depart_date=trip_create.depart_date,
             return_date=trip_create.return_date,
             adults=trip_create.adults,
+            track_flights=trip_create.track_flights,
+            track_hotels=trip_create.track_hotels,
         )
         db.add(trip)
         await db.flush()
 
-        if trip_create.flight_prefs:
+        if trip_create.track_flights and trip_create.flight_prefs:
             db.add(TripFlightPrefs(trip_id=trip.id, **trip_create.flight_prefs.model_dump()))
 
-        if trip_create.hotel_prefs:
+        if trip_create.track_hotels and trip_create.hotel_prefs:
             db.add(TripHotelPrefs(trip_id=trip.id, **trip_create.hotel_prefs.model_dump()))
 
         db.add(NotificationRule(trip_id=trip.id, **trip_create.notification_prefs.model_dump()))
@@ -256,6 +274,9 @@ class CreateTripTool(BaseTool):
 
         if "hotel_rooms" in args and args["hotel_rooms"]:
             prefs["rooms"] = int(args["hotel_rooms"])
+
+        if "hotel_city" in args and args["hotel_city"]:
+            prefs["city"] = args["hotel_city"]
 
         if "room_types" in args and args["room_types"]:
             prefs["preferred_room_types"] = args["room_types"]

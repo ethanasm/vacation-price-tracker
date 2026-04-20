@@ -324,6 +324,7 @@ describe("Elicitation Flow Integration", () => {
           name: "Seattle Trip",
           origin_airport: "SFO",
           destination_code: "SEA",
+          hotel_city: "Seattle",
         },
       });
 
@@ -390,6 +391,7 @@ describe("Elicitation Flow Integration", () => {
           name: "Seattle Trip",
           origin_airport: "SFO",
           destination_code: "SEA",
+          hotel_city: "Seattle",
         },
       });
 
@@ -434,6 +436,7 @@ describe("Elicitation Flow Integration", () => {
           name: "Seattle Trip",
           origin_airport: "SFO",
           destination_code: "SEA",
+          hotel_city: "Seattle",
         },
       });
 
@@ -476,6 +479,7 @@ describe("Elicitation Flow Integration", () => {
           name: "Seattle Trip",
           origin_airport: "SFO",
           destination_code: "SEA",
+          hotel_city: "Seattle",
         },
       });
 
@@ -523,6 +527,7 @@ describe("Elicitation Flow Integration", () => {
           name: "Seattle Trip",
           origin_airport: "SFO",
           destination_code: "SEA",
+          hotel_city: "Seattle",
         },
       });
 

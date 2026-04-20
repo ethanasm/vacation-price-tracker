@@ -39,13 +39,16 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --extra dev
 
-      - name: Run Python tests with coverage
-        run: |
-          uv run pytest apps/api/tests/ --cov=app --cov-report=xml:apps/api/coverage.xml -v
+      - name: Run API tests with coverage
+        run: pnpm nx run api:test:coverage
+        continue-on-error: true
+
+      - name: Run Worker tests with coverage
+        run: pnpm nx run worker:test:coverage
         continue-on-error: true
 
       - name: Run web tests with coverage
-        run: pnpm --filter vacation-price-tracker-web test:coverage
+        run: pnpm nx run web:test:coverage
         continue-on-error: true
 
       - name: SonarCloud Scan

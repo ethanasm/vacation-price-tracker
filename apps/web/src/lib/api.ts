@@ -12,7 +12,6 @@ export type {
   UserResponse as User,
   TripStatus,
   TripCreate,
-  TripDetail,
   TripResponse,
   FlightPrefs,
   HotelPrefs,
@@ -40,7 +39,7 @@ export type {
 
 import type {
   UserResponse,
-  TripDetail,
+  TripDetail as GeneratedTripDetail,
   TripCreate,
   TripResponse,
   TripStatus,
@@ -54,6 +53,18 @@ import type {
   GetRefreshStatusResponse as GeneratedGetRefreshStatusResponse,
   ListTripsResponse as GeneratedListTripsResponse,
 } from "./api/index";
+
+/**
+ * Extended TripDetail with track_flights/track_hotels flags and hotel city field.
+ * The generated OpenAPI type does not yet include these fields (added in Task 9).
+ */
+export type TripDetail = Omit<GeneratedTripDetail, "hotel_prefs"> & {
+  track_flights?: boolean;
+  track_hotels?: boolean;
+  hotel_prefs?: (Omit<NonNullable<GeneratedTripDetail["hotel_prefs"]>, "city"> & {
+    city?: string | null;
+  }) | null;
+};
 
 import { airports, type Airport } from "../data/airports";
 
@@ -215,6 +226,8 @@ export interface UpdateTripRequest {
   depart_date?: string;
   return_date?: string | null;
   adults?: number;
+  track_flights?: boolean;
+  track_hotels?: boolean;
   flight_prefs?: {
     airlines: string[];
     stops_mode: string;
@@ -224,6 +237,7 @@ export interface UpdateTripRequest {
   hotel_prefs?: {
     rooms: number;
     adults_per_room: number;
+    city: string;
     room_selection_mode: string;
     preferred_room_types: string[];
     preferred_views: string[];

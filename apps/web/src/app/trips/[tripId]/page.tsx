@@ -666,11 +666,15 @@ function FlightsList({
                 </span>
                 <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
               </div>
-              {/* Row 2: Return (if round trip) */}
+              {/* Row 2: Return (if round trip) — same grid as Row 1 */}
               {returnFirstSegment && (
-                <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowReturn}`}>
+                <div className={`${styles.cardHeaderRowMain} ${styles.cardHeaderRowReturn}`}>
+                  <span />
                   <span className={styles.headerReturnLabel}>Return</span>
                   <span className={styles.headerTimes}>{returnTimes}</span>
+                  <span />
+                  <span />
+                  <span />
                 </div>
               )}
             </button>
@@ -827,6 +831,7 @@ export default function TripDetailPage({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedHotelKey, setSelectedHotelKey] = useState<string | null>(null);
   const [selectedFlightKey, setSelectedFlightKey] = useState<string | null>(null);
+  const [offersTab, setOffersTab] = useState<"flights" | "hotels">("flights");
 
   const fetchTripDetails = useCallback(async (showLoading = true) => {
     try {
@@ -919,13 +924,15 @@ export default function TripDetailPage({
     setIsRefreshing(true);
 
     try {
-      await api.trips.refresh(tripId);
+      const refreshResponse = await api.trips.refresh(tripId);
+      const refreshGroupId = refreshResponse.data.refresh_group_id;
       toast.success("Refresh started - prices will update automatically");
 
-      // Set a timeout to stop the spinner if SSE update takes too long
-      setTimeout(() => {
-        setIsRefreshing(false);
-      }, 30000);
+      // Poll refresh-status so we can surface upstream failures to the user.
+      // The workflow raises on Skiplagged errors (and does NOT save a snapshot),
+      // so we need this signal — there's no other channel that tells the UI
+      // "the fetch failed" vs. "the fetch found nothing".
+      void pollRefreshStatus(refreshGroupId);
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.detail || "Failed to refresh trip");
@@ -934,6 +941,44 @@ export default function TripDetailPage({
       }
       setIsRefreshing(false);
     }
+  };
+
+  const pollRefreshStatus = async (refreshGroupId: string) => {
+    const POLL_INTERVAL_MS = 2_000;
+    const INITIAL_DELAY_MS = 500;
+    const MAX_POLL_MS = 60_000;
+    const deadline = Date.now() + MAX_POLL_MS;
+    let first = true;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, first ? INITIAL_DELAY_MS : POLL_INTERVAL_MS)
+      );
+      first = false;
+      try {
+        const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
+        if (status.status === "completed") {
+          setIsRefreshing(false);
+          return;
+        }
+        if (status.status === "failed") {
+          toast.error(
+            status.error
+              ? `Price refresh failed: ${status.error}`
+              : "Price refresh failed. Please try again in a moment."
+          );
+          setIsRefreshing(false);
+          return;
+        }
+        // "running" / "pending" — keep polling.
+      } catch {
+        // Status endpoint may briefly 404 while Temporal registers the workflow;
+        // ignore transient failures and keep polling until the deadline.
+      }
+    }
+    // Timed out waiting for completion — stop the spinner and stay quiet.
+    // SSE will still deliver the snapshot if/when it lands.
+    setIsRefreshing(false);
   };
 
   const handleBack = useCallback(() => {
@@ -981,7 +1026,7 @@ export default function TripDetailPage({
   const effectiveHotelPrice = selectedHotel ? parsePrice(selectedHotel.price) : hotelPriceValue;
   const effectiveFlightPrice = selectedFlight ? parsePrice(selectedFlight.price) : flightPriceValue;
   const selectedFlightLabel = selectedFlight
-    ? `${selectedFlight.airline_code}${selectedFlight.flight_number}`
+    ? selectedFlight.flight_number ?? selectedFlight.airline_code ?? undefined
     : undefined;
   const effectiveTotalPrice =
     effectiveFlightPrice != null && effectiveHotelPrice != null
@@ -1137,8 +1182,8 @@ export default function TripDetailPage({
           )}
       </div>
 
-      {/* Main Content Grid */}
-      <div className={hasHotelTracking ? styles.gridCompact : styles.gridCompactFlightsOnly}>
+      {/* Main Content Grid — chart left, offers right */}
+      <div className={styles.gridCompactFlightsOnly}>
         {/* Chart */}
         <Card className={styles.chartCard}>
           <CardContent className={styles.chartCardContent}>
@@ -1191,38 +1236,61 @@ export default function TripDetailPage({
           </CardContent>
         </Card>
 
-        {hasHotelTracking && (
-          /* Hotels List */
-          <Card className={styles.listCard}>
-            <CardContent className={styles.listCardContent}>
-              <div className={styles.listHeader}>
-                <Hotel className="h-4 w-4" />
-                <span>Hotels</span>
-              </div>
-              <HotelsList
-                hotels={latestOffers.hotels}
-                selectedHotelKey={selectedHotelKey}
-                onSelectHotel={setSelectedHotelKey}
-                nights={nights}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Flights List */}
+        {/* Offers panel — tabs when tracking both, plain list when flights-only */}
         <Card className={styles.listCard}>
           <CardContent className={styles.listCardContent}>
-            <div className={styles.listHeader}>
-              <Plane className="h-4 w-4" />
-              <span>Flights</span>
-            </div>
-            <FlightsList
-              flights={latestOffers.flights}
-              departDate={trip.depart_date}
-              returnDate={trip.return_date}
-              selectedFlightKey={selectedFlightKey}
-              onSelectFlight={setSelectedFlightKey}
-            />
+            {hasHotelTracking ? (
+              <>
+                <div className={styles.offersTabs}>
+                  <button
+                    type="button"
+                    className={`${styles.offersTab} ${offersTab === "flights" ? styles.offersTabActive : ""}`}
+                    onClick={() => setOffersTab("flights")}
+                  >
+                    <Plane className="h-4 w-4" />
+                    Flights
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.offersTab} ${offersTab === "hotels" ? styles.offersTabActive : ""}`}
+                    onClick={() => setOffersTab("hotels")}
+                  >
+                    <Hotel className="h-4 w-4" />
+                    Hotels
+                  </button>
+                </div>
+                {offersTab === "flights" ? (
+                  <FlightsList
+                    flights={latestOffers.flights}
+                    departDate={trip.depart_date}
+                    returnDate={trip.return_date}
+                    selectedFlightKey={selectedFlightKey}
+                    onSelectFlight={setSelectedFlightKey}
+                  />
+                ) : (
+                  <HotelsList
+                    hotels={latestOffers.hotels}
+                    selectedHotelKey={selectedHotelKey}
+                    onSelectHotel={setSelectedHotelKey}
+                    nights={nights}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <div className={styles.listHeader}>
+                  <Plane className="h-4 w-4" />
+                  <span>Flights</span>
+                </div>
+                <FlightsList
+                  flights={latestOffers.flights}
+                  departDate={trip.depart_date}
+                  returnDate={trip.return_date}
+                  selectedFlightKey={selectedFlightKey}
+                  onSelectFlight={setSelectedFlightKey}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

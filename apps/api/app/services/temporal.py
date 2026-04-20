@@ -43,10 +43,18 @@ async def start_refresh_all_workflow(user_id: uuid.UUID, refresh_group_id: str) 
 
 
 async def get_refresh_progress(refresh_group_id: str) -> dict:
-    """Query refresh progress for a refresh group."""
+    """Query refresh progress for a workflow by id.
+
+    Handles both `RefreshAllTripsWorkflow` (exposes a `refresh_progress` query)
+    and `PriceCheckWorkflow` (no query — status is inferred from Temporal's
+    execution state). On failure, extracts the workflow error message so the
+    API can surface it to the UI.
+    """
     client = get_temporal_client()
     handle = client.get_workflow_handle(refresh_group_id)
 
+    # First try the batch-style progress query. This only works for
+    # RefreshAllTripsWorkflow — for others it rejects and we fall through.
     try:
         progress = await handle.query(
             "refresh_progress",
@@ -58,27 +66,78 @@ async def get_refresh_progress(refresh_group_id: str) -> dict:
             "completed": progress["completed"],
             "failed": progress["failed"],
             "in_progress": progress["in_progress"],
+            "error": None,
         }
     except temporal_client.WorkflowQueryRejectedError as exc:
-        status = exc.status
-        if status == temporal_client.WorkflowExecutionStatus.COMPLETED:
+        if exc.status is None:
+            raise
+        return await _status_from_execution(handle, exc.status)
+    except temporal_client.RPCError as exc:
+        # PriceCheckWorkflow rejects unknown queries with a generic RPC error
+        # rather than WorkflowQueryRejectedError; fall back to describe().
+        if exc.status != temporal_client.RPCStatusCode.INVALID_ARGUMENT:
+            raise
+        description = await handle.describe()
+        return await _status_from_execution(handle, description.status)
+
+
+async def _status_from_execution(
+    handle: temporal_client.WorkflowHandle,
+    status: temporal_client.WorkflowExecutionStatus | None,
+) -> dict:
+    """Translate a Temporal execution status into our progress dict shape."""
+    if status == temporal_client.WorkflowExecutionStatus.COMPLETED:
+        try:
             result = await handle.result(rpc_timeout=timedelta(seconds=2))
-            total = result.get("total", 0)
+        except Exception:
+            result = {}
+        if isinstance(result, dict):
+            total = result.get("total", 1)
             failed = result.get("failed", 0)
-            successful = result.get("successful", 0)
-            return {
-                "status": "completed",
-                "total": total,
-                "completed": successful + failed,
-                "failed": failed,
-                "in_progress": 0,
-            }
-        if status:
-            return {
-                "status": status.name.lower(),
-                "total": 0,
-                "completed": 0,
-                "failed": 0,
-                "in_progress": 0,
-            }
-        raise
+            successful = result.get("successful", 1 if not failed else 0)
+        else:
+            # PriceCheckWorkflow returns a PriceCheckResult dict too, but guard anyway.
+            total, failed, successful = 1, 0, 1
+        return {
+            "status": "completed",
+            "total": total,
+            "completed": successful + failed,
+            "failed": failed,
+            "in_progress": 0,
+            "error": None,
+        }
+
+    if status == temporal_client.WorkflowExecutionStatus.FAILED:
+        error_message = await _extract_failure_message(handle)
+        return {
+            "status": "failed",
+            "total": 1,
+            "completed": 1,
+            "failed": 1,
+            "in_progress": 0,
+            "error": error_message,
+        }
+
+    if status:
+        return {
+            "status": status.name.lower(),
+            "total": 0,
+            "completed": 0,
+            "failed": 0,
+            "in_progress": 0,
+            "error": None,
+        }
+
+    raise RuntimeError("Workflow status unavailable")
+
+
+async def _extract_failure_message(handle: temporal_client.WorkflowHandle) -> str:
+    """Pull the human-readable error from a failed workflow."""
+    try:
+        await handle.result(rpc_timeout=timedelta(seconds=2))
+    except temporal_client.WorkflowFailureError as exc:
+        cause = exc.cause if exc.cause is not None else exc
+        return str(cause) or cause.__class__.__name__
+    except Exception as exc:
+        return str(exc) or exc.__class__.__name__
+    return "Workflow failed without a message"

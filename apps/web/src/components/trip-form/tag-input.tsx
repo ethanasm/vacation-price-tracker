@@ -10,6 +10,7 @@ export interface TagInputProps {
   placeholder: string;
   suggestions?: string[];
   id?: string;
+  disabled?: boolean;
 }
 
 export function TagInput({
@@ -18,10 +19,12 @@ export function TagInput({
   placeholder,
   suggestions,
   id,
+  disabled = false,
 }: TagInputProps) {
   const [inputValue, setInputValue] = useState("");
 
   const addTag = (tag: string) => {
+    if (disabled) return;
     const trimmed = tag.trim();
     if (trimmed && !tags.includes(trimmed)) {
       onTagsChange([...tags, trimmed]);
@@ -30,10 +33,12 @@ export function TagInput({
   };
 
   const removeTag = (tagToRemove: string) => {
+    if (disabled) return;
     onTagsChange(tags.filter((t) => t !== tagToRemove));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       addTag(inputValue);
@@ -54,6 +59,7 @@ export function TagInput({
             className={styles.tagRemove}
             onClick={() => removeTag(tag)}
             aria-label={`Remove ${tag}`}
+            disabled={disabled}
           >
             <X size={12} />
           </button>
@@ -69,6 +75,7 @@ export function TagInput({
         onBlur={() => inputValue && addTag(inputValue)}
         placeholder={tags.length === 0 ? placeholder : ""}
         list={suggestions ? datalistId : undefined}
+        disabled={disabled}
       />
       {suggestions && (
         <datalist id={datalistId}>
