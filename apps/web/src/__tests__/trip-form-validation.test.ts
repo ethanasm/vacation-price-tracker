@@ -8,6 +8,43 @@ import {
   validateTripForm,
 } from "../components/trip-form/validation";
 import { baseTripFormData } from "@/lib/fixtures/trip-form";
+import type { TripFormData } from "../components/trip-form/types";
+
+function baseFormData(overrides: Partial<TripFormData> = {}): TripFormData {
+  const depart = new Date();
+  depart.setDate(depart.getDate() + 10);
+  const ret = new Date();
+  ret.setDate(ret.getDate() + 17);
+  return {
+    name: "Test",
+    originAirport: "SFO",
+    destinationCode: "MIA",
+    isRoundTrip: true,
+    departDate: depart,
+    returnDate: ret,
+    adults: "1",
+    trackFlights: true,
+    trackHotels: true,
+    flightPrefs: { cabin: "economy", stopsMode: "any", airlines: [] },
+    hotelPrefs: {
+      rooms: "1",
+      adultsPerRoom: "2",
+      city: "Miami Beach",
+      roomSelectionMode: "cheapest",
+      roomTypes: [],
+      views: [],
+    },
+    notificationPrefs: {
+      thresholdType: "trip_total",
+      thresholdValue: "",
+      emailEnabled: false,
+      smsEnabled: false,
+    },
+    flightPrefsOpen: false,
+    hotelPrefsOpen: false,
+    ...overrides,
+  };
+}
 
 describe("validateTripForm", () => {
   it("does not require a return date for one-way trips", () => {
@@ -208,5 +245,56 @@ describe("validateTripForm and hasErrors", () => {
     });
 
     expect(errors.thresholdValue).toBeDefined();
+  });
+});
+
+describe("validateTripForm — track flags and city", () => {
+  it("requires city when trackHotels is true", () => {
+    const errors = validateTripForm(
+      baseFormData({
+        hotelPrefs: {
+          rooms: "1",
+          adultsPerRoom: "2",
+          city: "   ",
+          roomSelectionMode: "cheapest",
+          roomTypes: [],
+          views: [],
+        },
+      })
+    );
+    expect(errors.hotelCity).toBeDefined();
+  });
+
+  it("does not require city when trackHotels is false", () => {
+    const errors = validateTripForm(
+      baseFormData({
+        trackFlights: true,
+        trackHotels: false,
+        hotelPrefs: {
+          rooms: "1",
+          adultsPerRoom: "2",
+          city: "",
+          roomSelectionMode: "cheapest",
+          roomTypes: [],
+          views: [],
+        },
+      })
+    );
+    expect(errors.hotelCity).toBeUndefined();
+  });
+
+  it("rejects when both track flags are off", () => {
+    const errors = validateTripForm(
+      baseFormData({ trackFlights: false, trackHotels: false })
+    );
+    expect(errors.tracking).toBeDefined();
+  });
+
+  it("accepts flights-only selection", () => {
+    const errors = validateTripForm(
+      baseFormData({ trackFlights: true, trackHotels: false })
+    );
+    expect(errors.tracking).toBeUndefined();
+    expect(errors.hotelCity).toBeUndefined();
   });
 });

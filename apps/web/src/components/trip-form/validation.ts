@@ -71,6 +71,16 @@ export function validateThresholdValue(value: string): string | undefined {
   return undefined;
 }
 
+export function validateHotelCity(city: string): string | undefined {
+  if (!city.trim()) {
+    return "City is required when tracking hotel prices";
+  }
+  if (city.length > 200) {
+    return "City must be 200 characters or less";
+  }
+  return undefined;
+}
+
 export function validateTripForm(data: TripFormData): TripFormErrors {
   const errors: TripFormErrors = {};
 
@@ -89,6 +99,15 @@ export function validateTripForm(data: TripFormData): TripFormErrors {
   if (data.isRoundTrip) {
     const returnError = validateReturnDate(data.returnDate, data.departDate);
     if (returnError) errors.returnDate = returnError;
+  }
+
+  if (!data.trackFlights && !data.trackHotels) {
+    errors.tracking = "Select at least one of flight or hotel tracking";
+  }
+
+  if (data.trackHotels) {
+    const cityError = validateHotelCity(data.hotelPrefs.city);
+    if (cityError) errors.hotelCity = cityError;
   }
 
   if (data.notificationPrefs.emailEnabled || data.notificationPrefs.smsEnabled) {
