@@ -64,6 +64,8 @@ def _trip_details() -> dict:
         "depart_date": "2026-02-01",
         "return_date": "2026-02-08",
         "adults": 2,
+        "track_flights": True,
+        "track_hotels": True,
         "flight_prefs": {
             "airlines": ["UA"],
             "stops_mode": "any",
@@ -73,6 +75,7 @@ def _trip_details() -> dict:
         "hotel_prefs": {
             "rooms": 1,
             "adults_per_room": 2,
+            "city": None,
             "room_selection_mode": "cheapest",
             "preferred_room_types": [],
             "preferred_views": [],
@@ -91,6 +94,8 @@ async def test_load_trip_details(monkeypatch):
         depart_date=date(2026, 2, 1),
         return_date=date(2026, 2, 8),
         adults=2,
+        track_flights=True,
+        track_hotels=True,
     )
     flight_prefs = SimpleNamespace(
         airlines=["UA"],
@@ -101,6 +106,7 @@ async def test_load_trip_details(monkeypatch):
     hotel_prefs = SimpleNamespace(
         rooms=1,
         adults_per_room=2,
+        city=None,
         room_selection_mode=RoomSelectionMode.CHEAPEST,
         preferred_room_types=["King"],
         preferred_views=["Ocean"],
@@ -112,9 +118,80 @@ async def test_load_trip_details(monkeypatch):
     result = await pc.load_trip_details(str(trip_id))
 
     assert result["trip_id"] == str(trip_id)
+    assert result["track_flights"] is True
+    assert result["track_hotels"] is True
     assert result["flight_prefs"]["stops_mode"] == "any"
     assert result["hotel_prefs"]["room_selection_mode"] == "cheapest"
     assert result["hotel_prefs"]["preferred_views"] == ["Ocean"]
+    assert result["hotel_prefs"]["city"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_trip_details_returns_track_flags_and_city(monkeypatch):
+    trip_id = uuid.uuid4()
+    trip = SimpleNamespace(
+        id=trip_id,
+        origin_airport="SFO",
+        destination_code="MCO",
+        is_round_trip=True,
+        depart_date=date(2026, 5, 1),
+        return_date=date(2026, 5, 8),
+        adults=2,
+        track_flights=False,
+        track_hotels=True,
+    )
+    hotel_prefs = SimpleNamespace(
+        rooms=1,
+        adults_per_room=2,
+        city="Downtown Orlando",
+        room_selection_mode=SimpleNamespace(value="cheapest"),
+        preferred_room_types=[],
+        preferred_views=[],
+    )
+
+    class FakeScalars:
+        def __init__(self, value):
+            self._value = value
+
+        def first(self):
+            return self._value
+
+    class FakeResult:
+        def __init__(self, value):
+            self._value = value
+
+        def scalars(self):
+            return FakeScalars(self._value)
+
+    class FakeSession:
+        def __init__(self):
+            self._calls = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, model, key):
+            return trip
+
+        async def execute(self, stmt):
+            # First execute returns flight_prefs (None), second returns hotel_prefs
+            self._calls += 1
+            if self._calls == 1:
+                return FakeResult(None)
+            return FakeResult(hotel_prefs)
+
+    monkeypatch.setattr(
+        "worker.activities.price_check.AsyncSessionLocal",
+        lambda: FakeSession(),
+    )
+
+    result = await pc.load_trip_details(str(trip_id))
+    assert result["track_flights"] is False
+    assert result["track_hotels"] is True
+    assert result["hotel_prefs"]["city"] == "Downtown Orlando"
 
 
 @pytest.mark.asyncio
@@ -129,6 +206,8 @@ async def test_load_trip_details_one_way(monkeypatch):
         depart_date=date(2026, 2, 1),
         return_date=None,
         adults=1,
+        track_flights=True,
+        track_hotels=False,
     )
     flight_prefs = SimpleNamespace(
         airlines=[],
@@ -145,6 +224,8 @@ async def test_load_trip_details_one_way(monkeypatch):
     assert result["return_date"] is None
     assert result["is_round_trip"] is False
     assert result["hotel_prefs"] is None
+    assert result["track_flights"] is True
+    assert result["track_hotels"] is False
 
 
 @pytest.mark.asyncio

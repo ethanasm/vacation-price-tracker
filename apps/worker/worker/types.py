@@ -11,6 +11,7 @@ class FlightPrefsData(TypedDict):
 class HotelPrefsData(TypedDict):
     rooms: int
     adults_per_room: int
+    city: str | None
     room_selection_mode: str
     preferred_room_types: list[str]
     preferred_views: list[str]
@@ -24,6 +25,8 @@ class TripDetails(TypedDict):
     depart_date: str
     return_date: str | None
     adults: int
+    track_flights: bool
+    track_hotels: bool
     flight_prefs: FlightPrefsData
     hotel_prefs: HotelPrefsData | None
 

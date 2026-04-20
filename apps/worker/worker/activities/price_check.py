@@ -57,6 +57,8 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "depart_date": trip.depart_date.isoformat(),
             "return_date": trip.return_date.isoformat() if trip.return_date else None,
             "adults": trip.adults,
+            "track_flights": trip.track_flights,
+            "track_hotels": trip.track_hotels,
             "flight_prefs": {
                 "airlines": flight_prefs.airlines if flight_prefs else [],
                 "stops_mode": (flight_prefs.stops_mode.value if flight_prefs else "any"),
@@ -66,6 +68,7 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             "hotel_prefs": {
                 "rooms": hotel_prefs.rooms,
                 "adults_per_room": hotel_prefs.adults_per_room,
+                "city": hotel_prefs.city,
                 "room_selection_mode": hotel_prefs.room_selection_mode.value,
                 "preferred_room_types": hotel_prefs.preferred_room_types,
                 "preferred_views": hotel_prefs.preferred_views,
