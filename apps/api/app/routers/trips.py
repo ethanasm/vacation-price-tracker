@@ -240,7 +240,16 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
 
     return_flight_payload = None
     if return_segs:
-        return_raw = item.get("return_flight") if isinstance(item.get("return_flight"), dict) else {}
+        return_raw = item.get("return_flight") or item.get("returnFlight") or {}
+        if not isinstance(return_raw, dict):
+            return_raw = {}
+        # Skiplagged nests times under departure/arrival sub-dicts
+        if "departure" in return_raw and isinstance(return_raw["departure"], dict):
+            return_raw.setdefault("departure_time", return_raw["departure"].get("dateTime"))
+            return_raw.setdefault("departure_airport", return_raw["departure"].get("airport"))
+        if "arrival" in return_raw and isinstance(return_raw["arrival"], dict):
+            return_raw.setdefault("arrival_time", return_raw["arrival"].get("dateTime"))
+            return_raw.setdefault("arrival_airport", return_raw["arrival"].get("airport"))
         return_code, return_num = return_segs[0]
         return_flight_payload = {
             "flight_number": f"{return_code}{return_num}",
