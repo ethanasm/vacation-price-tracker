@@ -312,6 +312,14 @@ describe("useTripForm", () => {
           destinationCode: "LAX",
           departDate,
           returnDate,
+          hotelPrefs: {
+            rooms: "1",
+            adultsPerRoom: "2",
+            city: "Los Angeles",
+            roomSelectionMode: "cheapest",
+            roomTypes: [],
+            views: [],
+          },
           notificationPrefs: {
             thresholdType: "trip_total",
             thresholdValue: "100",
