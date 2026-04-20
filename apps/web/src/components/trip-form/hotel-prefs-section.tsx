@@ -81,7 +81,7 @@ export function HotelPrefsSection({
         </Label>
       </div>
       <div
-        className={disabled ? styles.disabledSection : undefined}
+        className={styles.fieldStack}
         aria-disabled={disabled}
       >
         <div className={styles.field}>

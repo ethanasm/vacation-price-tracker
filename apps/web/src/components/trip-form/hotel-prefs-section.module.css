@@ -36,7 +36,12 @@
   font-weight: 500;
 }
 
-.disabledSection {
+.fieldStack {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.fieldStack[aria-disabled="true"] {
   opacity: 0.5;
   pointer-events: none;
 }

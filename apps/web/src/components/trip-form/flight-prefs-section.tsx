@@ -60,7 +60,7 @@ export function FlightPrefsSection({
         </Label>
       </div>
       <div
-        className={disabled ? styles.disabledSection : undefined}
+        className={styles.fieldStack}
         aria-disabled={disabled}
       >
         <div className={styles.gridTwo}>
