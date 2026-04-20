@@ -425,6 +425,8 @@ describe("tripDetailToFormData", () => {
     return_date: "2025-06-22",
     is_round_trip: true,
     adults: 2,
+    track_flights: true,
+    track_hotels: true,
     status: "active",
     current_flight_price: "500.00",
     current_hotel_price: "700.00",

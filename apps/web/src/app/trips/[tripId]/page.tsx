@@ -919,13 +919,15 @@ export default function TripDetailPage({
     setIsRefreshing(true);
 
     try {
-      await api.trips.refresh(tripId);
+      const refreshResponse = await api.trips.refresh(tripId);
+      const refreshGroupId = refreshResponse.data.refresh_group_id;
       toast.success("Refresh started - prices will update automatically");
 
-      // Set a timeout to stop the spinner if SSE update takes too long
-      setTimeout(() => {
-        setIsRefreshing(false);
-      }, 30000);
+      // Poll refresh-status so we can surface upstream failures to the user.
+      // The workflow raises on Skiplagged errors (and does NOT save a snapshot),
+      // so we need this signal — there's no other channel that tells the UI
+      // "the fetch failed" vs. "the fetch found nothing".
+      void pollRefreshStatus(refreshGroupId);
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.detail || "Failed to refresh trip");
@@ -934,6 +936,44 @@ export default function TripDetailPage({
       }
       setIsRefreshing(false);
     }
+  };
+
+  const pollRefreshStatus = async (refreshGroupId: string) => {
+    const POLL_INTERVAL_MS = 2_000;
+    const INITIAL_DELAY_MS = 500;
+    const MAX_POLL_MS = 60_000;
+    const deadline = Date.now() + MAX_POLL_MS;
+    let first = true;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, first ? INITIAL_DELAY_MS : POLL_INTERVAL_MS)
+      );
+      first = false;
+      try {
+        const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
+        if (status.status === "completed") {
+          setIsRefreshing(false);
+          return;
+        }
+        if (status.status === "failed") {
+          toast.error(
+            status.error
+              ? `Price refresh failed: ${status.error}`
+              : "Price refresh failed. Please try again in a moment."
+          );
+          setIsRefreshing(false);
+          return;
+        }
+        // "running" / "pending" — keep polling.
+      } catch {
+        // Status endpoint may briefly 404 while Temporal registers the workflow;
+        // ignore transient failures and keep polling until the deadline.
+      }
+    }
+    // Timed out waiting for completion — stop the spinner and stay quiet.
+    // SSE will still deliver the snapshot if/when it lands.
+    setIsRefreshing(false);
   };
 
   const handleBack = useCallback(() => {

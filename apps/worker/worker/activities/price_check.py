@@ -138,18 +138,7 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
         )
     except SkiplaggedMCPError as exc:
         logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
-    except Exception as exc:
-        logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
+        raise
 
     # Normalize FlightSearchResult to list of offer dicts
     offers = [_flight_to_offer_dict(flight) for flight in result.flights]
@@ -241,18 +230,7 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         )
     except SkiplaggedMCPError as exc:
         logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
-    except Exception as exc:
-        logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
-        return {
-            "offers": [],
-            "raw": {"status": "error", "provider": "skiplagged"},
-            "error": str(exc),
-        }
+        raise
 
     # Sort by price ascending and cap at MAX_HOTEL_DETAIL_CALLS
     sorted_hotels = sorted(hotel_result.hotels, key=lambda h: h.price_per_night)

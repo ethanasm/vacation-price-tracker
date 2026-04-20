@@ -273,7 +273,7 @@ async def test_fetch_flights_activity_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_error(monkeypatch):
-    """Test error handling when Skiplagged client fails."""
+    """Skiplagged failures propagate so Temporal can retry / fail the workflow."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -283,10 +283,8 @@ async def test_fetch_flights_activity_error(monkeypatch):
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(_trip_details())
-
-    assert result["error"] == "API error"
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="API error"):
+            await pc.fetch_flights_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -352,7 +350,7 @@ async def test_fetch_hotels_activity_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_hotels_activity_error(monkeypatch):
-    """Test error handling when Skiplagged hotel search fails."""
+    """Skiplagged hotel failures propagate to the workflow rather than being swallowed."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -362,10 +360,8 @@ async def test_fetch_hotels_activity_error(monkeypatch):
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_hotels_activity(_trip_details())
-
-    assert result["error"] == "API error"
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="API error"):
+            await pc.fetch_hotels_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -630,7 +626,7 @@ async def test_fetch_flights_uses_skiplagged(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_flights_skiplagged_error(monkeypatch):
-    """Verify fetch_flights_activity handles SkiplaggedClient errors gracefully."""
+    """SkiplaggedClient errors propagate so Temporal retries / fails the workflow."""
     from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
@@ -639,11 +635,8 @@ async def test_fetch_flights_skiplagged_error(monkeypatch):
     mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("connection refused"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(sample_trip_details)
-
-    assert result["error"] is not None
-    assert "connection refused" in result["error"]
-    assert result["offers"] == []
+        with pytest.raises(SkiplaggedConnectionError, match="connection refused"):
+            await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
@@ -842,8 +835,8 @@ def test_filter_hotels_no_prefs_returns_all():
 
 
 @pytest.mark.asyncio
-async def test_fetch_flights_generic_exception_fallback(monkeypatch):
-    """Non-SkiplaggedMCPError exceptions still degrade to an empty error result."""
+async def test_fetch_flights_generic_exception_propagates(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions propagate so Temporal fails the workflow."""
     from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
@@ -852,16 +845,13 @@ async def test_fetch_flights_generic_exception_fallback(monkeypatch):
     mock_client.search_flights_all = AsyncMock(side_effect=RuntimeError("boom"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_flights_activity(sample_trip_details)
-
-    assert result["offers"] == []
-    assert result["error"] == "boom"
-    assert result["raw"]["status"] == "error"
+        with pytest.raises(RuntimeError, match="boom"):
+            await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
-async def test_fetch_hotels_generic_exception_fallback(monkeypatch):
-    """Non-SkiplaggedMCPError exceptions in hotel search degrade gracefully."""
+async def test_fetch_hotels_generic_exception_propagates(monkeypatch):
+    """Non-SkiplaggedMCPError exceptions in hotel search propagate to Temporal."""
     from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
@@ -870,11 +860,8 @@ async def test_fetch_hotels_generic_exception_fallback(monkeypatch):
     mock_client.search_hotels_all = AsyncMock(side_effect=RuntimeError("kaboom"))
 
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        result = await pc.fetch_hotels_activity(sample_trip_details)
-
-    assert result["offers"] == []
-    assert result["error"] == "kaboom"
-    assert result["raw"]["status"] == "error"
+        with pytest.raises(RuntimeError, match="kaboom"):
+            await pc.fetch_hotels_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio

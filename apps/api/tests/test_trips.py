@@ -1028,8 +1028,9 @@ async def test_refresh_trip_starts_workflow(client_with_csrf, test_session, mock
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert "refresh_group_id" in data
-    assert data["refresh_group_id"].startswith("refresh-trip-")
+    # The refresh_group_id mirrors the Temporal workflow id so the UI can poll
+    # /v1/trips/refresh-status and see whether the run succeeded or failed.
+    assert data["refresh_group_id"] == f"price-check-{trip_id}"
     trigger_mock.assert_called()
     called_trip_id = trigger_mock.call_args.args[0]
     assert str(called_trip_id) == trip_id
@@ -1096,7 +1097,7 @@ async def test_refresh_trip_direct_call(test_session, monkeypatch):
         current_user=user_response,
     )
 
-    assert refresh_response.data.refresh_group_id.startswith("refresh-trip-")
+    assert refresh_response.data.refresh_group_id == f"price-check-{trip_id}"
     # trigger was called twice: once for create, once for refresh
     assert trigger_mock.call_count == 2
 

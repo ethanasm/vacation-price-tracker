@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ApplicationError
 
 from worker.activities.price_check import (
     fetch_flights_activity,
@@ -34,7 +35,7 @@ class PriceCheckWorkflow:
                         fetch_flights_activity,
                         trip,
                         start_to_close_timeout=timedelta(seconds=60),
-                        retry_policy=RetryPolicy(maximum_attempts=3),
+                        retry_policy=RetryPolicy(maximum_attempts=2),
                     ),
                 )
             )
@@ -46,11 +47,14 @@ class PriceCheckWorkflow:
                         fetch_hotels_activity,
                         trip,
                         start_to_close_timeout=timedelta(seconds=60),
-                        retry_policy=RetryPolicy(maximum_attempts=3),
+                        retry_policy=RetryPolicy(maximum_attempts=2),
                     ),
                 )
             )
 
+        # `return_exceptions=True` lets us observe which side failed so we can
+        # build a descriptive ApplicationError below. If any tracked fetch fails
+        # after retries, fail the workflow and do NOT persist a snapshot.
         results = await asyncio.gather(
             *(coro for _, coro in tasks), return_exceptions=True
         )
@@ -58,13 +62,25 @@ class PriceCheckWorkflow:
             zip((label for label, _ in tasks), results, strict=True)
         )
 
-        normalized_flight = (
-            _normalize_fetch_result(by_label["flights"], "flights")
+        failures: list[str] = [
+            f"{label}: {result}"
+            for label, result in by_label.items()
+            if isinstance(result, BaseException)
+        ]
+        if failures:
+            raise ApplicationError(
+                "Upstream fetch failed: " + "; ".join(failures),
+                type="UpstreamFetchFailed",
+                non_retryable=True,
+            )
+
+        normalized_flight: FetchResult = (
+            by_label["flights"]  # type: ignore[assignment]
             if "flights" in by_label
             else _skipped_fetch_result("flights")
         )
-        normalized_hotel = (
-            _normalize_fetch_result(by_label["hotels"], "hotels")
+        normalized_hotel: FetchResult = (
+            by_label["hotels"]  # type: ignore[assignment]
             if "hotels" in by_label
             else _skipped_fetch_result("hotels")
         )
@@ -98,16 +114,6 @@ class PriceCheckWorkflow:
             "flight_error": normalized_flight["error"],
             "hotel_error": normalized_hotel["error"],
         }
-
-
-def _normalize_fetch_result(result: object, label: str) -> FetchResult:
-    if isinstance(result, Exception):
-        return {
-            "offers": [],
-            "raw": {"status": "error", "label": label},
-            "error": str(result),
-        }
-    return result  # type: ignore[return-value]
 
 
 def _skipped_fetch_result(label: str) -> FetchResult:

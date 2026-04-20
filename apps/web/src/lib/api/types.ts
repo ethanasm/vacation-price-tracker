@@ -825,6 +825,11 @@ export interface components {
              */
             adults_per_room: number;
             /**
+             * City
+             * @description Free-text city name sent to the Skiplagged hotel search (overrides destination airport)
+             */
+            city?: string | null;
+            /**
              * @description How to select rooms: cheapest or preferred
              * @default cheapest
              */
@@ -959,6 +964,8 @@ export interface components {
             failed: number;
             /** In Progress */
             in_progress: number;
+            /** Error */
+            error?: string | null;
         };
         /**
          * RoomSelectionMode
@@ -1021,9 +1028,21 @@ export interface components {
              * @default 1
              */
             adults: number;
+            /**
+             * Track Flights
+             * @description Track flight prices for this trip
+             * @default true
+             */
+            track_flights: boolean;
+            /**
+             * Track Hotels
+             * @description Track hotel prices for this trip
+             * @default true
+             */
+            track_hotels: boolean;
             /** @description Flight preferences (optional) */
             flight_prefs?: components["schemas"]["FlightPrefs"] | null;
-            /** @description Hotel preferences (optional) */
+            /** @description Hotel preferences (required when track_hotels is True) */
             hotel_prefs?: components["schemas"]["HotelPrefs"] | null;
             /** @description Notification settings (required) */
             notification_prefs: components["schemas"]["NotificationPrefs-Input"];
@@ -1052,6 +1071,16 @@ export interface components {
             /** Return Date */
             return_date?: string | null;
             status: components["schemas"]["TripStatus"];
+            /**
+             * Track Flights
+             * @default true
+             */
+            track_flights: boolean;
+            /**
+             * Track Hotels
+             * @default true
+             */
+            track_hotels: boolean;
             /** Current Flight Price */
             current_flight_price?: string | null;
             /** Current Hotel Price */
@@ -1111,6 +1140,16 @@ export interface components {
             /** Return Date */
             return_date?: string | null;
             status: components["schemas"]["TripStatus"];
+            /**
+             * Track Flights
+             * @default true
+             */
+            track_flights: boolean;
+            /**
+             * Track Hotels
+             * @default true
+             */
+            track_hotels: boolean;
             /** Current Flight Price */
             current_flight_price?: string | null;
             /** Current Hotel Price */

@@ -304,6 +304,7 @@ class RefreshStatusResponse(BaseModel):
     completed: int
     failed: int
     in_progress: int
+    error: str | None = None
 
 
 class BulkDeleteResponse(BaseModel):

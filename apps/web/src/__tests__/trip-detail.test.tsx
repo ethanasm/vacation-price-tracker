@@ -129,6 +129,7 @@ const mockGetDetails = jest.fn();
 const mockUpdateStatus = jest.fn();
 const mockDelete = jest.fn();
 const mockRefresh = jest.fn();
+const mockGetRefreshStatus = jest.fn();
 
 jest.mock("@/lib/api", () => ({
   api: {
@@ -137,6 +138,7 @@ jest.mock("@/lib/api", () => ({
       updateStatus: (...args: unknown[]) => mockUpdateStatus(...args),
       delete: (...args: unknown[]) => mockDelete(...args),
       refresh: (...args: unknown[]) => mockRefresh(...args),
+      getRefreshStatus: (...args: unknown[]) => mockGetRefreshStatus(...args),
     },
   },
   ApiError: class ApiError extends Error {
@@ -272,6 +274,20 @@ describe("TripDetailPage", () => {
     mockUpdateStatus.mockReset();
     mockDelete.mockReset();
     mockRefresh.mockReset();
+    mockGetRefreshStatus.mockReset();
+    // Default: refresh-status polling reports completion so tests that don't
+    // care about polling don't hang waiting for the 60s deadline.
+    mockGetRefreshStatus.mockResolvedValue({
+      data: {
+        refresh_group_id: "refresh-123",
+        status: "completed",
+        total: 1,
+        completed: 1,
+        failed: 0,
+        in_progress: 0,
+        error: null,
+      },
+    });
   });
 
   describe("loading state", () => {
@@ -1823,17 +1839,49 @@ describe("TripDetailPage", () => {
         expect(refreshButton).toBeDisabled();
       });
 
-      // Advance timers to trigger timeout (30 seconds)
+      // Poll deadline is 60s — advancing past it should re-enable the button.
       await act(async () => {
-        jest.advanceTimersByTime(30000);
+        jest.advanceTimersByTime(65000);
       });
 
-      // Button should be enabled again after timeout
+      // Button should be enabled again after polling settles.
       await waitFor(() => {
         expect(refreshButton).not.toBeDisabled();
       });
 
       jest.useRealTimers();
+    });
+
+    it("shows error toast when refresh workflow reports a failure", async () => {
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-fail" } });
+      mockGetRefreshStatus.mockResolvedValueOnce({
+        data: {
+          refresh_group_id: "refresh-fail",
+          status: "failed",
+          total: 1,
+          completed: 1,
+          failed: 1,
+          in_progress: 0,
+          error: "Upstream fetch failed: hotels: MCP request failed with status 502",
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTitle("Refresh prices"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          expect.stringContaining("MCP request failed with status 502"),
+        );
+      });
     });
   });
 

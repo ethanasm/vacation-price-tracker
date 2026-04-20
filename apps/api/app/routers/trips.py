@@ -674,7 +674,9 @@ async def refresh_trip(
     if not trip:
         raise TripNotFound()
 
-    refresh_group_id = f"refresh-trip-{trip_id}-{uuid.uuid4()}"
+    # Return the real workflow id so the UI can poll `/v1/trips/refresh-status`
+    # and see whether the run succeeded, is pending, or failed upstream.
+    refresh_group_id = f"price-check-{trip_id}"
 
     try:
         await trigger_price_check_workflow(trip_id)

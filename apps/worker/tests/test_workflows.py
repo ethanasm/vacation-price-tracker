@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from temporalio.exceptions import ApplicationError
 from worker.activities.price_check import (
     fetch_flights_activity,
     fetch_hotels_activity,
@@ -15,7 +16,8 @@ from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
 
 
 @pytest.mark.asyncio
-async def test_price_check_workflow_handles_fetch_errors(monkeypatch):
+async def test_price_check_workflow_fails_and_skips_snapshot_on_fetch_error(monkeypatch):
+    """Upstream fetch errors must fail the workflow and prevent a snapshot."""
     import worker.workflows.price_check as price_check_module
 
     trip = {
@@ -26,9 +28,10 @@ async def test_price_check_workflow_handles_fetch_errors(monkeypatch):
         "hotel_prefs": {"preferred_room_types": [], "preferred_views": []},
     }
     flight_result = {"offers": [{"price": "100"}], "raw": {"ok": True}, "error": None}
-    filtered = {"flights": [{"price": "100"}], "hotels": [], "raw_data": {"ok": True}}
+    save_called = False
 
-    async def fake_execute_activity(activity, *args, **_kwargs):
+    async def fake_execute_activity(activity, *_args, **_kwargs):
+        nonlocal save_called
         if activity is load_trip_details:
             return trip
         if activity is fetch_flights_activity:
@@ -36,22 +39,18 @@ async def test_price_check_workflow_handles_fetch_errors(monkeypatch):
         if activity is fetch_hotels_activity:
             raise ValueError("boom")
         if activity is filter_results_activity:
-            payload = args[0]
-            assert payload["flight_result"] == flight_result
-            assert payload["hotel_result"]["error"] == "boom"
-            return filtered
+            raise AssertionError("filter_results_activity must not run when a fetch failed")
         if activity is save_snapshot_activity:
-            return "snapshot-1"
+            save_called = True
+            raise AssertionError("save_snapshot_activity must not run when a fetch failed")
         raise AssertionError("Unexpected activity")
 
     monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)
 
-    result = await PriceCheckWorkflow().run("trip-123")
+    with pytest.raises(ApplicationError, match="hotels: boom"):
+        await PriceCheckWorkflow().run("trip-123")
 
-    assert result["success"] is True
-    assert result["snapshot_id"] == "snapshot-1"
-    assert result["hotel_error"] == "boom"
-    assert result["flight_error"] is None
+    assert save_called is False
 
 
 @pytest.mark.asyncio
