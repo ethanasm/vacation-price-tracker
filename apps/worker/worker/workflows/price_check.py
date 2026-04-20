@@ -24,24 +24,47 @@ class PriceCheckWorkflow:
             start_to_close_timeout=timedelta(seconds=10),
         )
 
-        flight_task = workflow.execute_activity(
-            fetch_flights_activity,
-            trip,
-            start_to_close_timeout=timedelta(seconds=60),
-            retry_policy=RetryPolicy(maximum_attempts=3),
-        )
-        hotel_task = workflow.execute_activity(
-            fetch_hotels_activity,
-            trip,
-            start_to_close_timeout=timedelta(seconds=60),
-            retry_policy=RetryPolicy(maximum_attempts=3),
-        )
+        tasks: list[tuple[str, object]] = []
+        if trip["track_flights"]:
+            tasks.append(
+                (
+                    "flights",
+                    workflow.execute_activity(
+                        fetch_flights_activity,
+                        trip,
+                        start_to_close_timeout=timedelta(seconds=60),
+                        retry_policy=RetryPolicy(maximum_attempts=3),
+                    ),
+                )
+            )
+        if trip["track_hotels"]:
+            tasks.append(
+                (
+                    "hotels",
+                    workflow.execute_activity(
+                        fetch_hotels_activity,
+                        trip,
+                        start_to_close_timeout=timedelta(seconds=60),
+                        retry_policy=RetryPolicy(maximum_attempts=3),
+                    ),
+                )
+            )
 
-        flight_result, hotel_result = await asyncio.gather(
-            flight_task, hotel_task, return_exceptions=True
+        results = await asyncio.gather(
+            *(coro for _, coro in tasks), return_exceptions=True
         )
-        normalized_flight = _normalize_fetch_result(flight_result, "flights")
-        normalized_hotel = _normalize_fetch_result(hotel_result, "hotels")
+        by_label: dict[str, object] = dict(zip((label for label, _ in tasks), results))
+
+        normalized_flight = (
+            _normalize_fetch_result(by_label["flights"], "flights")
+            if "flights" in by_label
+            else _skipped_fetch_result("flights")
+        )
+        normalized_hotel = (
+            _normalize_fetch_result(by_label["hotels"], "hotels")
+            if "hotels" in by_label
+            else _skipped_fetch_result("hotels")
+        )
 
         filtered = await workflow.execute_activity(
             filter_results_activity,
@@ -82,3 +105,11 @@ def _normalize_fetch_result(result: object, label: str) -> FetchResult:
             "error": str(result),
         }
     return result  # type: ignore[return-value]
+
+
+def _skipped_fetch_result(label: str) -> FetchResult:
+    return {
+        "offers": [],
+        "raw": {"status": "skipped", "label": label},
+        "error": None,
+    }
