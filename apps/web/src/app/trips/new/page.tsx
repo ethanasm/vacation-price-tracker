@@ -108,10 +108,12 @@ export default function CreateTripPage() {
 
         <FlightPrefsSection
           isOpen={formData.flightPrefsOpen}
+          trackEnabled={formData.trackFlights}
           cabin={formData.flightPrefs.cabin}
           stopsMode={formData.flightPrefs.stopsMode}
           airlines={formData.flightPrefs.airlines}
           onToggle={() => setters.setFlightPrefsOpen(!formData.flightPrefsOpen)}
+          onTrackEnabledChange={setters.setTrackFlights}
           onCabinChange={setters.setCabin}
           onStopsModeChange={setters.setStopsMode}
           onAirlinesChange={setters.setAirlines}
@@ -119,14 +121,19 @@ export default function CreateTripPage() {
 
         <HotelPrefsSection
           isOpen={formData.hotelPrefsOpen}
+          trackEnabled={formData.trackHotels}
           rooms={formData.hotelPrefs.rooms}
           adultsPerRoom={formData.hotelPrefs.adultsPerRoom}
+          city={formData.hotelPrefs.city}
+          cityError={errors.hotelCity}
           roomSelectionMode={formData.hotelPrefs.roomSelectionMode}
           roomTypes={formData.hotelPrefs.roomTypes}
           views={formData.hotelPrefs.views}
           onToggle={() => setters.setHotelPrefsOpen(!formData.hotelPrefsOpen)}
+          onTrackEnabledChange={setters.setTrackHotels}
           onRoomsChange={setters.setRooms}
           onAdultsPerRoomChange={setters.setAdultsPerRoom}
+          onCityChange={setters.setCity}
           onRoomSelectionModeChange={setters.setRoomSelectionMode}
           onRoomTypesChange={setters.setRoomTypes}
           onViewsChange={setters.setViews}

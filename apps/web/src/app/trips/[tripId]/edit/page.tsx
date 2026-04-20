@@ -58,11 +58,14 @@ export default function EditTripPage({
         setters.setDepartDate(formInitialData.departDate);
         setters.setReturnDate(formInitialData.returnDate);
         setters.setAdults(formInitialData.adults);
+        setters.setTrackFlights(formInitialData.trackFlights);
+        setters.setTrackHotels(formInitialData.trackHotels);
         setters.setCabin(formInitialData.flightPrefs.cabin);
         setters.setStopsMode(formInitialData.flightPrefs.stopsMode);
         setters.setAirlines(formInitialData.flightPrefs.airlines);
         setters.setRooms(formInitialData.hotelPrefs.rooms);
         setters.setAdultsPerRoom(formInitialData.hotelPrefs.adultsPerRoom);
+        setters.setCity(formInitialData.hotelPrefs.city);
         setters.setRoomSelectionMode(formInitialData.hotelPrefs.roomSelectionMode);
         setters.setRoomTypes(formInitialData.hotelPrefs.roomTypes);
         setters.setViews(formInitialData.hotelPrefs.views);
@@ -198,10 +201,12 @@ export default function EditTripPage({
 
         <FlightPrefsSection
           isOpen={formData.flightPrefsOpen}
+          trackEnabled={formData.trackFlights}
           cabin={formData.flightPrefs.cabin}
           stopsMode={formData.flightPrefs.stopsMode}
           airlines={formData.flightPrefs.airlines}
           onToggle={() => setters.setFlightPrefsOpen(!formData.flightPrefsOpen)}
+          onTrackEnabledChange={setters.setTrackFlights}
           onCabinChange={setters.setCabin}
           onStopsModeChange={setters.setStopsMode}
           onAirlinesChange={setters.setAirlines}
@@ -209,14 +214,19 @@ export default function EditTripPage({
 
         <HotelPrefsSection
           isOpen={formData.hotelPrefsOpen}
+          trackEnabled={formData.trackHotels}
           rooms={formData.hotelPrefs.rooms}
           adultsPerRoom={formData.hotelPrefs.adultsPerRoom}
+          city={formData.hotelPrefs.city}
+          cityError={errors.hotelCity}
           roomSelectionMode={formData.hotelPrefs.roomSelectionMode}
           roomTypes={formData.hotelPrefs.roomTypes}
           views={formData.hotelPrefs.views}
           onToggle={() => setters.setHotelPrefsOpen(!formData.hotelPrefsOpen)}
+          onTrackEnabledChange={setters.setTrackHotels}
           onRoomsChange={setters.setRooms}
           onAdultsPerRoomChange={setters.setAdultsPerRoom}
+          onCityChange={setters.setCity}
           onRoomSelectionModeChange={setters.setRoomSelectionMode}
           onRoomTypesChange={setters.setRoomTypes}
           onViewsChange={setters.setViews}
