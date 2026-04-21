@@ -117,6 +117,7 @@ class SkiplaggedClient:
             Response data from the MCP server.
         """
         langfuse_context.update_current_observation(
+            name=f"skiplagged.mcp.{tool_name}",
             input={"tool": tool_name, "arguments": params},
             metadata={"provider": "skiplagged", "mcp_url": self._mcp_url, "tool_name": tool_name},
         )
