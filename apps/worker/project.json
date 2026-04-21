@@ -44,6 +44,15 @@
         "forwardAllArgs": false
       }
     },
+    "test:integration": {
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "uv run pytest apps/worker/tests -m integration -v",
+        "cwd": "{workspaceRoot}",
+        "forwardAllArgs": false
+      }
+    },
     "dev": {
       "executor": "nx:run-commands",
       "options": {

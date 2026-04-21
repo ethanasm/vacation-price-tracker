@@ -38,6 +38,7 @@ dev = [
     "ruff",
     "pip-audit",
     "pydevd-pycharm~=253.29346.308",
+    "croniter>=2.0.0",
 ]
 
 [build-system]
@@ -81,6 +82,10 @@ packages = ["apps/api/app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["apps/api/tests", "apps/worker/tests"]
+markers = [
+    "integration: tests that require an external service (e.g., Temporal dev server). Excluded from the default run; enable with `-m integration`.",
+]
+addopts = "-m 'not integration'"
 
 [tool.coverage.run]
 source = ["apps/api/app"]

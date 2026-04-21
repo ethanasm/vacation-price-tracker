@@ -81,6 +81,9 @@ jobs:
       - name: Test Worker
         run: pnpm nx run worker:test:coverage
 
+      - name: Integration Tests (Temporal dev server)
+        run: pnpm nx run worker:test:integration
+
   audit:
     runs-on: ubuntu-latest
     steps:
