@@ -192,6 +192,34 @@ class TripCreate(BaseModel):
         return self
 
 
+class TripUpdate(BaseModel):
+    """Schema for updating an existing trip. All fields optional."""
+
+    name: Annotated[str | None, Field(min_length=1, max_length=100)] = None
+    origin_airport: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    destination_code: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    is_round_trip: bool | None = None
+    depart_date: date | None = None
+    return_date: date | None = None
+    adults: Annotated[int | None, Field(ge=1, le=9)] = None
+    track_flights: bool | None = None
+    track_hotels: bool | None = None
+    flight_prefs: FlightPrefs | None = None
+    hotel_prefs: HotelPrefs | None = None
+    notification_prefs: NotificationPrefs | None = None
+
+    @field_validator("depart_date", "return_date")
+    @classmethod
+    def validate_date_within_range(cls, v: date | None) -> date | None:
+        if v is not None:
+            max_date = date.today() + timedelta(days=359)
+            if v > max_date:
+                raise ValueError(f"Date cannot be more than 359 days out. Maximum: {max_date}")
+            if v < date.today():
+                raise ValueError("Date cannot be in the past")
+        return v
+
+
 class TripResponse(BaseModel):
     """Schema for trip list response."""
 

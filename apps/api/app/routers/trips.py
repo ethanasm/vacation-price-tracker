@@ -48,6 +48,7 @@ from app.schemas.trip import (
     TripDetailResponse,
     TripResponse,
     TripStatusUpdate,
+    TripUpdate,
 )
 from app.services.temporal import (
     get_refresh_progress,
@@ -500,6 +501,74 @@ async def create_trip(
         raise
 
     detail = _build_trip_detail(trip, None, flight_prefs, hotel_prefs, notification_rule)
+    return APIResponse(data=detail)
+
+
+async def _upsert_prefs(db: AsyncSession, model_cls, trip_id: uuid.UUID, payload_prefs):
+    """Load existing prefs row and upsert with new data, or create if missing."""
+    row = (
+        await db.execute(select(model_cls).where(model_cls.trip_id == trip_id))
+    ).scalars().first()
+    if payload_prefs is None:
+        return row
+    prefs_data = payload_prefs.model_dump()
+    if row:
+        for k, v in prefs_data.items():
+            setattr(row, k, v)
+    else:
+        row = model_cls(trip_id=trip_id, **prefs_data)
+        db.add(row)
+    return row
+
+
+_TRIP_UPDATE_FIELDS = {
+    "name", "origin_airport", "destination_code", "is_round_trip",
+    "depart_date", "return_date", "adults", "track_flights", "track_hotels",
+}
+
+
+@router.patch("/v1/trips/{trip_id}", response_model=APIResponse[TripDetail])
+async def update_trip(
+    trip_id: uuid.UUID,
+    payload: TripUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Update an existing trip's details, preferences, and notifications."""
+    user_id = uuid.UUID(current_user.id)
+    result = await db.execute(select(Trip).where(Trip.id == trip_id, Trip.user_id == user_id))
+    trip = result.scalars().first()
+    if not trip:
+        raise TripNotFound()
+
+    if payload.name is not None and payload.name != trip.name:
+        existing = await db.execute(
+            select(Trip.id).where(Trip.user_id == user_id, Trip.name == payload.name)
+        )
+        if existing.first():
+            raise DuplicateTripName()
+
+    for field in _TRIP_UPDATE_FIELDS:
+        value = getattr(payload, field, None)
+        if value is not None:
+            setattr(trip, field, value)
+    if payload.is_round_trip is False:
+        trip.return_date = None
+
+    flight_prefs_row = await _upsert_prefs(db, TripFlightPrefs, trip.id, payload.flight_prefs)
+    hotel_prefs_row = await _upsert_prefs(db, TripHotelPrefs, trip.id, payload.hotel_prefs)
+    notification_row = await _upsert_prefs(db, NotificationRule, trip.id, payload.notification_prefs)
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError("Trip could not be updated.") from exc
+
+    await db.refresh(trip)
+
+    snapshot = await _get_latest_snapshot(db, trip.id)
+    detail = _build_trip_detail(trip, snapshot, flight_prefs_row, hotel_prefs_row, notification_row)
     return APIResponse(data=detail)
 
 
