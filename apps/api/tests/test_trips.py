@@ -17,6 +17,7 @@ from app.models.user import User
 from app.routers import trips as trips_module
 from app.schemas.trip import TripCreate, TripStatusUpdate, TripUpdate
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from temporalio import client as temporal_client
 from temporalio import exceptions as temporal_exceptions
@@ -766,6 +767,41 @@ async def test_update_trip_other_user_cannot_access(client_with_csrf, test_sessi
 
 
 @pytest.mark.asyncio
+async def test_update_trip_integrity_error(test_session, monkeypatch):
+    """IntegrityError during commit returns 409."""
+    user = await _create_user(test_session, email="update-integrity@example.com")
+    user_response = trips_module.UserResponse(id=str(user.id), email=user.email)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    from app.schemas.trip import TripUpdate
+
+    payload = TripCreate(**_build_trip_payload(name="Integrity Trip"))
+    create_response = await trips_module.create_trip(
+        payload, db=test_session, current_user=user_response,
+    )
+    trip_id = create_response.data.id
+
+    original_commit = test_session.commit
+
+    async def exploding_commit():
+        await test_session.rollback()
+        raise IntegrityError("duplicate", {}, Exception())
+
+    test_session.commit = exploding_commit
+
+    from app.core.errors import ConflictError
+    with pytest.raises(ConflictError):
+        await trips_module.update_trip(
+            trip_id=trip_id,
+            payload=TripUpdate(name="Boom"),
+            db=test_session,
+            current_user=user_response,
+        )
+
+    test_session.commit = original_commit
+
+
+@pytest.mark.asyncio
 async def test_delete_trip(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="delete@example.com")
     _authorize_client(client_with_csrf, user)
@@ -1056,6 +1092,74 @@ def test_snapshot_to_response_handles_empty_raw_data():
 
     assert len(response.flight_offers) == 0
     assert len(response.hotel_offers) == 0
+
+
+def test_parse_flight_offer_non_dict_returns_none():
+    assert trips_module._parse_flight_offer("not a dict", 0, {}) is None
+
+
+def test_parse_flight_offer_no_price_returns_none():
+    assert trips_module._parse_flight_offer({"id": "test", "name": "no-price"}, 0, {}) is None
+
+
+def test_parse_hotel_offer_non_dict_returns_none():
+    assert trips_module._parse_hotel_offer("not a dict", 0) is None
+
+
+def test_parse_hotel_offer_no_price_returns_none():
+    assert trips_module._parse_hotel_offer({"id": "test", "name": "no-price"}, 0) is None
+
+
+def test_parse_flight_offer_return_flight_non_dict():
+    """return_flight that is not a dict should be replaced with empty dict."""
+    item = {
+        "id": "SFO-CDG-2026-06-15-2026-06-22-trip=AF81,AF82",
+        "price": "500.00",
+        "departure_airport": "SFO",
+        "arrival_airport": "CDG",
+        "departure_time": "2026-06-15T10:00:00",
+        "arrival_time": "2026-06-15T20:00:00",
+        "return_flight": "invalid",
+    }
+    offer = trips_module._parse_flight_offer(item, 0, {})
+    assert offer is not None
+    assert offer.return_flight["flight_number"] == "AF82"
+
+
+def test_snapshot_to_response_with_return_nested_datetime():
+    """Return flight with departure/arrival sub-dicts extracts dateTime correctly."""
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=Decimal("300.00"),
+        hotel_price=None,
+        total_price=Decimal("300.00"),
+        created_at=datetime.now(UTC),
+        raw_data={
+            "flights": {
+                "data": [
+                    {
+                        "id": "SFO-CDG-2026-06-15-2026-06-22-trip=AF81,AF82",
+                        "price": "300.00",
+                        "departure_airport": "SFO",
+                        "arrival_airport": "CDG",
+                        "departure_time": "2026-06-15T10:00:00",
+                        "arrival_time": "2026-06-15T20:00:00",
+                        "returnFlight": {
+                            "departure": {"airport": "CDG", "dateTime": "2026-06-22T08:00:00"},
+                            "arrival": {"airport": "SFO", "dateTime": "2026-06-22T18:00:00"},
+                            "duration_minutes": 600,
+                        },
+                    }
+                ]
+            },
+            "hotels": {"data": []},
+        },
+    )
+    response = trips_module._snapshot_to_response(snapshot)
+    flight = response.flight_offers[0]
+    assert flight.return_flight["departure_time"] == "2026-06-22T08:00:00"
+    assert flight.return_flight["arrival_time"] == "2026-06-22T18:00:00"
 
 
 @pytest.mark.asyncio

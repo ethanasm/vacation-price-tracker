@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from app.schemas.trip import HotelPrefs, NotificationPrefs, TripCreate
+from app.schemas.trip import HotelPrefs, NotificationPrefs, TripCreate, TripUpdate
 from pydantic import ValidationError
 
 
@@ -80,3 +80,24 @@ def test_defaults_both_flags_true():
     trip = TripCreate(**payload)
     assert trip.track_flights is True
     assert trip.track_hotels is True
+
+
+def test_trip_update_date_in_past_rejected():
+    with pytest.raises(ValidationError):
+        TripUpdate(depart_date=date.today() - timedelta(days=1))
+
+
+def test_trip_update_date_too_far_rejected():
+    with pytest.raises(ValidationError):
+        TripUpdate(depart_date=date.today() + timedelta(days=400))
+
+
+def test_trip_update_valid_date_accepted():
+    update = TripUpdate(depart_date=date.today() + timedelta(days=30))
+    assert update.depart_date is not None
+
+
+def test_trip_update_none_fields_ok():
+    update = TripUpdate()
+    assert update.name is None
+    assert update.flight_prefs is None
