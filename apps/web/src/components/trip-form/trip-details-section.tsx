@@ -30,6 +30,8 @@ export interface TripDetailsSectionProps {
   onNameChange: (value: string) => void;
   onOriginAirportChange: (value: string) => void;
   onDestinationCodeChange: (value: string) => void;
+  onOriginAirportBlur?: () => void;
+  onDestinationCodeBlur?: () => void;
   onIsRoundTripChange: (value: boolean) => void;
   onDepartDateChange: (value: Date | undefined) => void;
   onReturnDateChange: (value: Date | undefined) => void;
@@ -49,6 +51,8 @@ export function TripDetailsSection({
   onNameChange,
   onOriginAirportChange,
   onDestinationCodeChange,
+  onOriginAirportBlur,
+  onDestinationCodeBlur,
   onIsRoundTripChange,
   onDepartDateChange,
   onReturnDateChange,
@@ -94,13 +98,14 @@ export function TripDetailsSection({
               id="origin"
               value={originAirport}
               onChange={onOriginAirportChange}
+              onBlur={onOriginAirportBlur}
               placeholder="Search airports..."
               icon="departure"
               searchLocations={searchLocations}
             />
-            {errors.originAirport && (
-              <span className={styles.fieldError}>{errors.originAirport}</span>
-            )}
+            <span className={styles.fieldError}>
+              {errors.originAirport ?? " "}
+            </span>
           </div>
           <div className={styles.field}>
             <Label className={styles.fieldLabel} htmlFor="destination">
@@ -110,13 +115,14 @@ export function TripDetailsSection({
               id="destination"
               value={destinationCode}
               onChange={onDestinationCodeChange}
+              onBlur={onDestinationCodeBlur}
               placeholder="Search airports..."
               icon="arrival"
               searchLocations={searchLocations}
             />
-            {errors.destinationCode && (
-              <span className={styles.fieldError}>{errors.destinationCode}</span>
-            )}
+            <span className={styles.fieldError}>
+              {errors.destinationCode ?? " "}
+            </span>
           </div>
         </div>
 

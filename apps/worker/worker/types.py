@@ -15,6 +15,7 @@ class HotelPrefsData(TypedDict):
     room_selection_mode: str
     preferred_room_types: list[str]
     preferred_views: list[str]
+    min_star_rating: int | None
 
 
 class TripDetails(TypedDict):

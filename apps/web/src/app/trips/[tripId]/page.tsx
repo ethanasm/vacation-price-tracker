@@ -89,6 +89,29 @@ const hotelStableKey = (hotel: ApiHotelOffer): string => {
   return (hotel.name ?? "").toLowerCase().trim().replace(/\s+/g, " ");
 };
 
+/**
+ * Display label for a flight: all flight numbers across both itineraries.
+ * For a typical round trip with no connections this looks like "UA1809 / UA1810".
+ * Itineraries are separated by " / "; segments within an itinerary by "+".
+ *
+ * Note: segment.flight_number already includes the carrier prefix (e.g. "UA1809"),
+ * so we use it directly rather than concatenating carrier_code + flight_number.
+ */
+const flightDisplayLabel = (flight: ApiFlightOffer): string | undefined => {
+  const itineraries = flight.itineraries ?? [];
+  const itinLabels = itineraries
+    .map((it) => {
+      const segs = it.segments ?? [];
+      return segs
+        .map((s) => s.flight_number ?? s.carrier_code ?? "")
+        .filter(Boolean)
+        .join("+");
+    })
+    .filter(Boolean);
+  if (itinLabels.length > 0) return itinLabels.join(" / ");
+  return flight.flight_number ?? flight.airline_code ?? undefined;
+};
+
 const parsePrice = (value: string | null | undefined): number | null => {
   if (value === null || value === undefined) return null;
   const parsed = Number.parseFloat(value);
@@ -113,12 +136,14 @@ function getStatusVariant(
 function PriceHistoryChart({
   priceHistory,
   selectedHotelKey,
+  selectedHotelLabel,
   selectedFlightKey,
   selectedFlightLabel,
   showHotel = true,
 }: {
   priceHistory: PriceSnapshot[];
   selectedHotelKey: string | null;
+  selectedHotelLabel?: string;
   selectedFlightKey: string | null;
   selectedFlightLabel?: string;
   showHotel?: boolean;
@@ -136,26 +161,27 @@ function PriceHistoryChart({
   // When a selected item isn't found in a snapshot, use its last known price
   const reversedHistory = [...priceHistory].reverse();
   let lastKnownSelectedFlight: number | null = null;
-  let lastKnownHotelPrice: number | null = null;
+  let lastKnownSelectedHotel: number | null = null;
 
   const chartData = reversedHistory.map((snapshot) => {
     const minFlight = parsePrice(snapshot.flight_price) ?? 0;
-    const defaultHotel = parsePrice(snapshot.hotel_price) ?? 0;
+    const minHotel = parsePrice(snapshot.hotel_price) ?? 0;
 
-    // Look up selected hotel price in this snapshot by stable key
-    let hotel: number;
+    // Selected hotel is an optional separate line (only when a hotel is selected)
+    let selectedHotel: number | undefined;
     if (selectedHotelKey && snapshot.hotel_offers) {
       const match = (snapshot.hotel_offers as ApiHotelOffer[]).find(
         (h) => hotelStableKey(h) === selectedHotelKey
       );
       if (match) {
-        hotel = parsePrice(match.price) ?? defaultHotel;
-        lastKnownHotelPrice = hotel;
-      } else {
-        hotel = lastKnownHotelPrice ?? defaultHotel;
+        const price = parsePrice(match.price);
+        if (price != null) {
+          selectedHotel = price;
+          lastKnownSelectedHotel = price;
+        }
+      } else if (lastKnownSelectedHotel != null) {
+        selectedHotel = lastKnownSelectedHotel;
       }
-    } else {
-      hotel = defaultHotel;
     }
 
     // Selected flight is an optional separate line (only when a flight is selected)
@@ -177,20 +203,24 @@ function PriceHistoryChart({
 
     return {
       date: formatDateTime(snapshot.created_at),
-      total: minFlight + hotel,
+      total: minFlight + minHotel,
       minFlight,
       selectedFlight,
-      hotel,
+      minHotel,
+      selectedHotel,
     };
   });
 
-  const selectedLineLabel = selectedFlightLabel ?? "Selected Flight";
+  const selectedFlightLineLabel = selectedFlightLabel ?? "Selected Flight";
+  const selectedHotelLineLabel = selectedHotelLabel ?? "Selected Hotel";
 
+  // Paired lines share a color; line style differentiates min vs. selected.
   const chartConfig = {
     total: { label: "Total", color: "hsl(var(--chart-1))" },
     minFlight: { label: "Flight (min)", color: "hsl(var(--chart-2))" },
-    selectedFlight: { label: selectedLineLabel, color: "hsl(var(--chart-4))" },
-    hotel: { label: "Hotel", color: "hsl(var(--chart-3))" },
+    selectedFlight: { label: selectedFlightLineLabel, color: "hsl(var(--chart-2))" },
+    minHotel: { label: "Hotel (min)", color: "hsl(var(--chart-3))" },
+    selectedHotel: { label: selectedHotelLineLabel, color: "hsl(var(--chart-3))" },
   } satisfies ChartConfig;
 
   return (
@@ -229,40 +259,54 @@ function PriceHistoryChart({
             />
           }
         />
+        {/* Total — bold solid line, stands out from the pairs */}
         {showHotel && (
           <Line
             dataKey="total"
             type="monotone"
             stroke="var(--color-total)"
-            strokeWidth={2}
+            strokeWidth={2.5}
             dot={{ r: 3 }}
           />
         )}
+        {/* Mins (flight + hotel) — thin dashed lines, no dots */}
         <Line
           dataKey="minFlight"
           type="monotone"
           stroke="var(--color-minFlight)"
-          strokeWidth={2}
-          dot={{ r: 3 }}
+          strokeWidth={1.5}
+          strokeDasharray="4 4"
+          dot={false}
         />
+        {showHotel && (
+          <Line
+            dataKey="minHotel"
+            type="monotone"
+            stroke="var(--color-minHotel)"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+            dot={false}
+          />
+        )}
+        {/* Selected (flight + hotel) — same color as min, but solid + dots */}
         {selectedFlightKey && (
           <Line
             dataKey="selectedFlight"
             type="monotone"
             stroke="var(--color-selectedFlight)"
-            strokeWidth={2}
-            dot={{ r: 3 }}
+            strokeWidth={1.5}
+            dot={{ r: 2.5 }}
             connectNulls
           />
         )}
-        {showHotel && (
+        {showHotel && selectedHotelKey && (
           <Line
-            dataKey="hotel"
+            dataKey="selectedHotel"
             type="monotone"
-            stroke="var(--color-hotel)"
+            stroke="var(--color-selectedHotel)"
             strokeWidth={1.5}
-            dot={false}
-            strokeDasharray="4 4"
+            dot={{ r: 2.5 }}
+            connectNulls
           />
         )}
       </LineChart>
@@ -1025,9 +1069,8 @@ export default function TripDetailPage({
 
   const effectiveHotelPrice = selectedHotel ? parsePrice(selectedHotel.price) : hotelPriceValue;
   const effectiveFlightPrice = selectedFlight ? parsePrice(selectedFlight.price) : flightPriceValue;
-  const selectedFlightLabel = selectedFlight
-    ? selectedFlight.flight_number ?? selectedFlight.airline_code ?? undefined
-    : undefined;
+  const selectedFlightLabel = selectedFlight ? flightDisplayLabel(selectedFlight) : undefined;
+  const selectedHotelLabel = selectedHotel ? selectedHotel.name ?? undefined : undefined;
   const effectiveTotalPrice =
     effectiveFlightPrice != null && effectiveHotelPrice != null
       ? effectiveFlightPrice + effectiveHotelPrice
@@ -1193,24 +1236,24 @@ export default function TripDetailPage({
                 {hasHotelTracking && (
                   <span>
                     <span
-                      className={styles.legendDot}
-                      style={{ background: "hsl(var(--chart-1))" }}
+                      className={`${styles.legendLine} ${styles.legendLineThick}`}
+                      style={{ borderTopColor: "hsl(var(--chart-1))" }}
                     />{" "}
                     Total
                   </span>
                 )}
                 <span>
                   <span
-                    className={styles.legendDot}
-                    style={{ background: "hsl(var(--chart-2))" }}
+                    className={`${styles.legendLine} ${styles.legendLineDashed}`}
+                    style={{ borderTopColor: "hsl(var(--chart-2))" }}
                   />{" "}
                   Flight (min)
                 </span>
                 {selectedFlightKey && (
                   <span>
                     <span
-                      className={styles.legendDot}
-                      style={{ background: "hsl(var(--chart-4))" }}
+                      className={styles.legendLine}
+                      style={{ borderTopColor: "hsl(var(--chart-2))" }}
                     />{" "}
                     {selectedFlightLabel ?? "Selected Flight"}
                   </span>
@@ -1218,10 +1261,19 @@ export default function TripDetailPage({
                 {hasHotelTracking && (
                   <span>
                     <span
-                      className={styles.legendDot}
-                      style={{ background: "hsl(var(--chart-3))" }}
+                      className={`${styles.legendLine} ${styles.legendLineDashed}`}
+                      style={{ borderTopColor: "hsl(var(--chart-3))" }}
                     />{" "}
-                    Hotel
+                    Hotel (min)
+                  </span>
+                )}
+                {hasHotelTracking && selectedHotelKey && (
+                  <span>
+                    <span
+                      className={styles.legendLine}
+                      style={{ borderTopColor: "hsl(var(--chart-3))" }}
+                    />{" "}
+                    {selectedHotelLabel ?? "Selected Hotel"}
                   </span>
                 )}
               </div>
@@ -1229,6 +1281,7 @@ export default function TripDetailPage({
             <PriceHistoryChart
               priceHistory={priceHistory}
               selectedHotelKey={selectedHotelKey}
+              selectedHotelLabel={selectedHotelLabel}
               selectedFlightKey={selectedFlightKey}
               selectedFlightLabel={selectedFlightLabel}
               showHotel={hasHotelTracking}

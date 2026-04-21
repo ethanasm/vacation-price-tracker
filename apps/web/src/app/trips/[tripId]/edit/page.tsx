@@ -192,6 +192,8 @@ export default function EditTripPage({
           onNameChange={setters.setName}
           onOriginAirportChange={setters.setOriginAirport}
           onDestinationCodeChange={setters.setDestinationCode}
+          onOriginAirportBlur={setters.blurOriginAirport}
+          onDestinationCodeBlur={setters.blurDestinationCode}
           onIsRoundTripChange={setters.setIsRoundTrip}
           onDepartDateChange={setters.setDepartDate}
           onReturnDateChange={setters.setReturnDate}
@@ -222,6 +224,7 @@ export default function EditTripPage({
           roomSelectionMode={formData.hotelPrefs.roomSelectionMode}
           roomTypes={formData.hotelPrefs.roomTypes}
           views={formData.hotelPrefs.views}
+          minStarRating={formData.hotelPrefs.minStarRating}
           onToggle={() => setters.setHotelPrefsOpen(!formData.hotelPrefsOpen)}
           onTrackEnabledChange={setters.setTrackHotels}
           onRoomsChange={setters.setRooms}
@@ -230,6 +233,7 @@ export default function EditTripPage({
           onRoomSelectionModeChange={setters.setRoomSelectionMode}
           onRoomTypesChange={setters.setRoomTypes}
           onViewsChange={setters.setViews}
+          onMinStarRatingChange={setters.setMinStarRating}
         />
 
         <NotificationSection

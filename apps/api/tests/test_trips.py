@@ -15,8 +15,9 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.trip import Trip
 from app.models.user import User
 from app.routers import trips as trips_module
-from app.schemas.trip import TripCreate, TripStatusUpdate
+from app.schemas.trip import TripCreate, TripStatusUpdate, TripUpdate
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from temporalio import client as temporal_client
 from temporalio import exceptions as temporal_exceptions
@@ -481,6 +482,326 @@ async def test_update_trip_status_not_found(client_with_csrf, test_session, mock
 
 
 @pytest.mark.asyncio
+async def test_update_trip_success(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Original Name")
+    create_response = _create_trip(client_with_csrf, payload, "trip-update-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"name": "Updated Name", "adults": 3},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["name"] == "Updated Name"
+    assert data["adults"] == 3
+    assert data["origin_airport"] == "SFO"
+
+
+@pytest.mark.asyncio
+async def test_update_trip_not_found(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-missing@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{uuid.uuid4()}",
+        json={"name": "Ghost"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Trip not found."
+
+
+@pytest.mark.asyncio
+async def test_update_trip_duplicate_name(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-dup@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    _create_trip(client_with_csrf, _build_trip_payload(name="Trip A"), "trip-dup-a")
+    create_b = _create_trip(client_with_csrf, _build_trip_payload(name="Trip B"), "trip-dup-b")
+    trip_b_id = create_b.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_b_id}",
+        json={"name": "Trip A"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Trip name already exists."
+
+
+@pytest.mark.asyncio
+async def test_update_trip_same_name_allowed(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-same@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    create_response = _create_trip(client_with_csrf, _build_trip_payload(name="Keep Name"), "trip-same-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"name": "Keep Name", "adults": 2},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["name"] == "Keep Name"
+
+
+@pytest.mark.asyncio
+async def test_update_trip_flight_prefs(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-fprefs@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Flight Prefs Trip")
+    payload["flight_prefs"] = {"airlines": ["UA"]}
+    create_response = _create_trip(client_with_csrf, payload, "trip-fprefs-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"flight_prefs": {"airlines": ["AA", "DL"], "cabin": "business"}},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["flight_prefs"]["airlines"] == ["AA", "DL"]
+    assert data["flight_prefs"]["cabin"] == "business"
+
+
+@pytest.mark.asyncio
+async def test_update_trip_hotel_prefs(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-hprefs@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Hotel Prefs Trip")
+    create_response = _create_trip(client_with_csrf, payload, "trip-hprefs-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={
+            "hotel_prefs": {
+                "rooms": 2,
+                "city": "Waikiki",
+                "min_star_rating": 4,
+                "preferred_views": ["Ocean"],
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["hotel_prefs"]["rooms"] == 2
+    assert data["hotel_prefs"]["city"] == "Waikiki"
+    assert data["hotel_prefs"]["min_star_rating"] == 4
+    assert data["hotel_prefs"]["preferred_views"] == ["Ocean"]
+
+
+@pytest.mark.asyncio
+async def test_update_trip_notification_prefs(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-nprefs@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Notification Prefs Trip")
+    create_response = _create_trip(client_with_csrf, payload, "trip-nprefs-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={
+            "notification_prefs": {
+                "threshold_type": "flight_total",
+                "threshold_value": "500.00",
+                "notify_without_threshold": True,
+                "email_enabled": False,
+                "sms_enabled": True,
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["notification_prefs"]["threshold_type"] == "flight_total"
+    assert data["notification_prefs"]["threshold_value"] == "500.00"
+    assert data["notification_prefs"]["notify_without_threshold"] is True
+    assert data["notification_prefs"]["email_enabled"] is False
+    assert data["notification_prefs"]["sms_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_trip_creates_prefs_when_missing(client_with_csrf, test_session, mock_redis, monkeypatch):
+    """Updating flight_prefs on a flights-only trip that had no flight_prefs creates them."""
+    user = await _create_user(test_session, email="update-create-prefs@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="No Prefs Trip")
+    payload["flight_prefs"] = None
+    create_response = _create_trip(client_with_csrf, payload, "trip-no-prefs-1")
+    trip_id = create_response.json()["data"]["id"]
+    assert create_response.json()["data"]["flight_prefs"] is None
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"flight_prefs": {"airlines": ["NH"]}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["flight_prefs"]["airlines"] == ["NH"]
+
+
+@pytest.mark.asyncio
+async def test_update_trip_to_one_way_clears_return_date(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user = await _create_user(test_session, email="update-oneway@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="Round to One-way")
+    create_response = _create_trip(client_with_csrf, payload, "trip-oneway-update-1")
+    trip_id = create_response.json()["data"]["id"]
+    assert create_response.json()["data"]["return_date"] is not None
+
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"is_round_trip": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["is_round_trip"] is False
+    assert data["return_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_trip_direct_call(test_session, monkeypatch):
+    user = await _create_user(test_session, email="update-direct@example.com")
+    user_response = trips_module.UserResponse(id=str(user.id), email=user.email)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = TripCreate(**_build_trip_payload(name="Direct Update Trip"))
+    create_response = await trips_module.create_trip(
+        payload,
+        db=test_session,
+        current_user=user_response,
+    )
+    trip_id = create_response.data.id
+
+    update_payload = TripUpdate(name="Updated Direct Trip", adults=4)
+    update_response = await trips_module.update_trip(
+        trip_id=trip_id,
+        payload=update_payload,
+        db=test_session,
+        current_user=user_response,
+    )
+
+    assert update_response.data.name == "Updated Direct Trip"
+    assert update_response.data.adults == 4
+
+
+@pytest.mark.asyncio
+async def test_update_trip_empty_payload(client_with_csrf, test_session, mock_redis, monkeypatch):
+    """PATCH with empty body should succeed and return unchanged trip."""
+    user = await _create_user(test_session, email="update-empty@example.com")
+    _authorize_client(client_with_csrf, user)
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    payload = _build_trip_payload(name="No Change Trip")
+    create_response = _create_trip(client_with_csrf, payload, "trip-empty-update-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    response = client_with_csrf.patch(f"/v1/trips/{trip_id}", json={})
+
+    assert response.status_code == 200
+    assert response.json()["data"]["name"] == "No Change Trip"
+
+
+@pytest.mark.asyncio
+async def test_update_trip_other_user_cannot_access(client_with_csrf, test_session, mock_redis, monkeypatch):
+    user_a = await _create_user(test_session, email="update-owner@example.com")
+    user_b = await _create_user(test_session, email="update-intruder@example.com")
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    _authorize_client(client_with_csrf, user_a)
+    create_response = _create_trip(client_with_csrf, _build_trip_payload(name="Private Trip"), "trip-priv-1")
+    trip_id = create_response.json()["data"]["id"]
+
+    _authorize_client(client_with_csrf, user_b)
+    response = client_with_csrf.patch(
+        f"/v1/trips/{trip_id}",
+        json={"name": "Hijacked"},
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_trip_integrity_error(test_session, monkeypatch):
+    """IntegrityError during commit returns 409."""
+    user = await _create_user(test_session, email="update-integrity@example.com")
+    user_response = trips_module.UserResponse(id=str(user.id), email=user.email)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    from app.schemas.trip import TripUpdate
+
+    payload = TripCreate(**_build_trip_payload(name="Integrity Trip"))
+    create_response = await trips_module.create_trip(
+        payload, db=test_session, current_user=user_response,
+    )
+    trip_id = create_response.data.id
+
+    original_commit = test_session.commit
+
+    async def exploding_commit():
+        await test_session.rollback()
+        raise IntegrityError("duplicate", {}, Exception())
+
+    test_session.commit = exploding_commit
+
+    from app.core.errors import ConflictError
+    with pytest.raises(ConflictError):
+        await trips_module.update_trip(
+            trip_id=trip_id,
+            payload=TripUpdate(name="Boom"),
+            db=test_session,
+            current_user=user_response,
+        )
+
+    test_session.commit = original_commit
+
+
+@pytest.mark.asyncio
 async def test_delete_trip(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="delete@example.com")
     _authorize_client(client_with_csrf, user)
@@ -771,6 +1092,74 @@ def test_snapshot_to_response_handles_empty_raw_data():
 
     assert len(response.flight_offers) == 0
     assert len(response.hotel_offers) == 0
+
+
+def test_parse_flight_offer_non_dict_returns_none():
+    assert trips_module._parse_flight_offer("not a dict", 0, {}) is None
+
+
+def test_parse_flight_offer_no_price_returns_none():
+    assert trips_module._parse_flight_offer({"id": "test", "name": "no-price"}, 0, {}) is None
+
+
+def test_parse_hotel_offer_non_dict_returns_none():
+    assert trips_module._parse_hotel_offer("not a dict", 0) is None
+
+
+def test_parse_hotel_offer_no_price_returns_none():
+    assert trips_module._parse_hotel_offer({"id": "test", "name": "no-price"}, 0) is None
+
+
+def test_parse_flight_offer_return_flight_non_dict():
+    """return_flight that is not a dict should be replaced with empty dict."""
+    item = {
+        "id": "SFO-CDG-2026-06-15-2026-06-22-trip=AF81,AF82",
+        "price": "500.00",
+        "departure_airport": "SFO",
+        "arrival_airport": "CDG",
+        "departure_time": "2026-06-15T10:00:00",
+        "arrival_time": "2026-06-15T20:00:00",
+        "return_flight": "invalid",
+    }
+    offer = trips_module._parse_flight_offer(item, 0, {})
+    assert offer is not None
+    assert offer.return_flight["flight_number"] == "AF82"
+
+
+def test_snapshot_to_response_with_return_nested_datetime():
+    """Return flight with departure/arrival sub-dicts extracts dateTime correctly."""
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=Decimal("300.00"),
+        hotel_price=None,
+        total_price=Decimal("300.00"),
+        created_at=datetime.now(UTC),
+        raw_data={
+            "flights": {
+                "data": [
+                    {
+                        "id": "SFO-CDG-2026-06-15-2026-06-22-trip=AF81,AF82",
+                        "price": "300.00",
+                        "departure_airport": "SFO",
+                        "arrival_airport": "CDG",
+                        "departure_time": "2026-06-15T10:00:00",
+                        "arrival_time": "2026-06-15T20:00:00",
+                        "returnFlight": {
+                            "departure": {"airport": "CDG", "dateTime": "2026-06-22T08:00:00"},
+                            "arrival": {"airport": "SFO", "dateTime": "2026-06-22T18:00:00"},
+                            "duration_minutes": 600,
+                        },
+                    }
+                ]
+            },
+            "hotels": {"data": []},
+        },
+    )
+    response = trips_module._snapshot_to_response(snapshot)
+    flight = response.flight_offers[0]
+    assert flight.return_flight["departure_time"] == "2026-06-22T08:00:00"
+    assert flight.return_flight["arrival_time"] == "2026-06-22T18:00:00"
 
 
 @pytest.mark.asyncio

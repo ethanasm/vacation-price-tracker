@@ -111,6 +111,7 @@ async def test_load_trip_details(monkeypatch):
         room_selection_mode=RoomSelectionMode.CHEAPEST,
         preferred_room_types=["King"],
         preferred_views=["Ocean"],
+        min_star_rating=None,
     )
 
     session = DummySession(trip, [DummyResult(flight_prefs), DummyResult(hotel_prefs)])
@@ -148,6 +149,7 @@ async def test_load_trip_details_returns_track_flags_and_city(monkeypatch):
         room_selection_mode=RoomSelectionMode.CHEAPEST,
         preferred_room_types=[],
         preferred_views=[],
+        min_star_rating=None,
     )
 
     session = DummySession(trip, [DummyResult(None), DummyResult(hotel_prefs)])
@@ -821,6 +823,30 @@ def test_filter_hotels_no_prefs_returns_all():
         {"rooms": [{"title": "Suite"}]},
     ]
     prefs = {"preferred_room_types": [], "preferred_views": []}
+    result = pc._filter_hotels(hotels, prefs)
+    assert len(result) == 2
+
+
+def test_filter_hotels_by_min_star_rating():
+    """Hotels below min_star_rating are dropped; missing ratings are dropped."""
+    hotels = [
+        {"name": "Budget Inn", "star_rating": 2},
+        {"name": "Comfort Hotel", "star_rating": 3},
+        {"name": "Grand Resort", "star_rating": 5},
+        {"name": "Unrated Lodge"},
+    ]
+    prefs = {"preferred_room_types": [], "preferred_views": [], "min_star_rating": 4}
+    result = pc._filter_hotels(hotels, prefs)
+    assert [h["name"] for h in result] == ["Grand Resort"]
+
+
+def test_filter_hotels_min_star_rating_none_skipped():
+    """min_star_rating=None applies no threshold filter."""
+    hotels = [
+        {"name": "Budget Inn", "star_rating": 2},
+        {"name": "Unrated Lodge"},
+    ]
+    prefs = {"preferred_room_types": [], "preferred_views": [], "min_star_rating": None}
     result = pc._filter_hotels(hotels, prefs)
     assert len(result) == 2
 

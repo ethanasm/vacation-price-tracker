@@ -72,6 +72,7 @@ async def load_trip_details(trip_id: str) -> TripDetails:
                 "room_selection_mode": hotel_prefs.room_selection_mode.value,
                 "preferred_room_types": hotel_prefs.preferred_room_types,
                 "preferred_views": hotel_prefs.preferred_views,
+                "min_star_rating": hotel_prefs.min_star_rating,
             } if hotel_prefs else None,
         }
 
@@ -476,11 +477,12 @@ def _filter_flights(flights: list[dict[str, Any]], prefs: dict[str, Any]) -> lis
 
 
 def _filter_hotels(hotels: list[dict[str, Any]], prefs: dict[str, Any]) -> list[dict[str, Any]]:
-    """Filter hotels by preferred room types and views.
+    """Filter hotels by preferred room types, views, and minimum star rating.
 
     Matches against:
     - room 'title' field in hotel['rooms'] list for room types
     - room 'title' field and hotel 'amenities' for views
+    - hotel 'star_rating' field for minimum star threshold
     """
     filtered = hotels
 
@@ -498,7 +500,22 @@ def _filter_hotels(hotels: list[dict[str, Any]], prefs: dict[str, Any]) -> list[
             if _hotel_matches_views(hotel, preferred_views)
         ]
 
+    min_star_rating = prefs.get("min_star_rating")
+    if isinstance(min_star_rating, int) and min_star_rating > 0:
+        filtered = [
+            hotel for hotel in filtered
+            if _hotel_meets_min_stars(hotel, min_star_rating)
+        ]
+
     return filtered
+
+
+def _hotel_meets_min_stars(hotel: dict[str, Any], min_stars: int) -> bool:
+    """Check if a hotel's star rating is at least min_stars. Hotels without a rating are dropped."""
+    stars = hotel.get("star_rating")
+    if not isinstance(stars, (int, float)):
+        return False
+    return stars >= min_stars
 
 
 def _hotel_matches_room_types(hotel: dict[str, Any], preferred_types: list[str]) -> bool:

@@ -436,12 +436,14 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Hotels/ })).toBeInTheDocument();
       });
-      await user.click(screen.getByRole("button", { name: /Hotels/i }));
+      await user.click(screen.getByRole("button", { name: /Hotels/ }));
 
       await waitFor(() => {
-        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+        // "City Hotel" now appears in both the hotel list and the chart legend
+        // (preselected cheapest hotel surfaces as the "Selected Hotel" line label)
+        expect(screen.getAllByText("City Hotel").length).toBeGreaterThanOrEqual(1);
         // $700 appears in both price summary and hotel list
         expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
       });
@@ -455,12 +457,12 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /^Hotels$/ })).toBeInTheDocument();
       });
-      await user.click(screen.getByRole("button", { name: /Hotels/i }));
+      await user.click(screen.getByRole("button", { name: /^Hotels$/ }));
 
       await waitFor(() => {
-        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+        expect(screen.getAllByText("City Hotel").length).toBeGreaterThanOrEqual(1);
       });
 
       // Click on a hotel to select it - this covers the onSelectHotel callback
@@ -945,6 +947,7 @@ describe("TripDetailPage", () => {
     });
 
     it("shows empty state when no hotel offers", async () => {
+      const user = userEvent.setup();
       mockGetDetails.mockResolvedValue({
         data: {
           trip: baseTripData,
@@ -958,15 +961,14 @@ describe("TripDetailPage", () => {
         },
       });
 
-      const user = userEvent.setup();
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /Hotels/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /^Hotels$/ })).toBeInTheDocument();
       });
-      await user.click(screen.getByRole("button", { name: /Hotels/i }));
+      await user.click(screen.getByRole("button", { name: /^Hotels$/ }));
 
       await waitFor(() => {
         expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
@@ -1689,6 +1691,7 @@ describe("TripDetailPage", () => {
     });
 
     it("handles empty price history", async () => {
+      const user = userEvent.setup();
       mockGetDetails.mockResolvedValue({
         data: {
           trip: baseTripData,
@@ -1696,18 +1699,15 @@ describe("TripDetailPage", () => {
         },
       });
 
-      const user = userEvent.setup();
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
-      // Default tab is Flights
       await waitFor(() => {
         expect(screen.getByText("No flight offers available")).toBeInTheDocument();
       });
 
-      // Switch to Hotels tab to see hotel empty state
-      await user.click(screen.getByRole("button", { name: /Hotels/i }));
+      await user.click(screen.getByRole("button", { name: /^Hotels$/ }));
       await waitFor(() => {
         expect(screen.getByText("No hotel offers available")).toBeInTheDocument();
       });

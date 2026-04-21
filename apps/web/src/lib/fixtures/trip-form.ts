@@ -40,6 +40,7 @@ export const baseTripFormData: TripFormData = {
     roomSelectionMode: "cheapest",
     roomTypes: [],
     views: [],
+    minStarRating: "any",
   },
   notificationPrefs: {
     thresholdType: "trip_total",
@@ -85,6 +86,7 @@ export const tripPayloadFixture: TripPayload = {
     room_selection_mode: "cheapest",
     preferred_room_types: [],
     preferred_views: [],
+    min_star_rating: null,
   },
   notification_prefs: {
     threshold_type: "trip_total",

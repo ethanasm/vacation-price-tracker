@@ -1672,6 +1672,20 @@
             "type": "array",
             "title": "Preferred Views",
             "description": "Preferred views (e.g., ['Ocean', 'City'])"
+          },
+          "min_star_rating": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Star Rating",
+            "description": "Minimum hotel star rating (1-5). Hotels below this rating are filtered out."
           }
         },
         "type": "object",

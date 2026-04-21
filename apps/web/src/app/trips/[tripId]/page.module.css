@@ -278,6 +278,24 @@
   display: inline-block;
 }
 
+/* Line-style legend marker — width matches the chart line style */
+.legendLine {
+  width: 18px;
+  height: 0;
+  display: inline-block;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.legendLineThick {
+  border-top-width: 2.5px;
+}
+
+.legendLineDashed {
+  border-top-style: dashed;
+  border-top-width: 1.5px;
+}
+
 .chartContainer {
   flex: 1;
   min-height: 0;

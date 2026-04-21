@@ -19,6 +19,7 @@ import {
   VIEW_TYPES,
   ROOM_COUNTS,
   ADULTS_PER_ROOM_COUNTS,
+  MIN_STAR_RATINGS,
 } from "./constants";
 import styles from "./hotel-prefs-section.module.css";
 
@@ -32,6 +33,7 @@ export interface HotelPrefsSectionProps {
   roomSelectionMode: string;
   roomTypes: string[];
   views: string[];
+  minStarRating: string;
   onToggle: () => void;
   onTrackEnabledChange?: (value: boolean) => void;
   onRoomsChange: (value: string) => void;
@@ -40,6 +42,7 @@ export interface HotelPrefsSectionProps {
   onRoomSelectionModeChange: (value: string) => void;
   onRoomTypesChange: (value: string[]) => void;
   onViewsChange: (value: string[]) => void;
+  onMinStarRatingChange: (value: string) => void;
 }
 
 export function HotelPrefsSection({
@@ -52,6 +55,7 @@ export function HotelPrefsSection({
   roomSelectionMode,
   roomTypes,
   views,
+  minStarRating,
   onToggle,
   onTrackEnabledChange = () => {},
   onRoomsChange,
@@ -60,6 +64,7 @@ export function HotelPrefsSection({
   onRoomSelectionModeChange,
   onRoomTypesChange,
   onViewsChange,
+  onMinStarRatingChange,
 }: HotelPrefsSectionProps) {
   const disabled = !trackEnabled;
   return (
@@ -177,6 +182,30 @@ export function HotelPrefsSection({
             id="views"
             disabled={disabled}
           />
+        </div>
+        <div className={styles.field}>
+          <Label htmlFor="min-star-rating" className={styles.fieldLabel}>
+            Minimum Star Rating
+          </Label>
+          <Select
+            value={minStarRating}
+            onValueChange={onMinStarRatingChange}
+            disabled={disabled}
+          >
+            <SelectTrigger id="min-star-rating">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MIN_STAR_RATINGS.map((option) => (
+                <SelectItem key={option.value || "any"} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className={styles.fieldHint}>
+            Hotels below this star rating are excluded from tracking.
+          </span>
         </div>
       </div>
     </CollapsibleSection>

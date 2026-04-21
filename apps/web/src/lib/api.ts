@@ -241,6 +241,7 @@ export interface UpdateTripRequest {
     room_selection_mode: string;
     preferred_room_types: string[];
     preferred_views: string[];
+    min_star_rating: number | null;
   } | null;
   notification_prefs?: {
     threshold_type: string;

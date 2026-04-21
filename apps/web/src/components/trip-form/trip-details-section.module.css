@@ -4,7 +4,8 @@
   border: 1px solid var(--glass-border);
   border-radius: 1rem;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  position: relative;
+  z-index: 2;
   width: 100%;
 }
 
@@ -72,7 +73,10 @@
 }
 
 .fieldError {
+  display: block;
   font-size: 0.75rem;
+  line-height: 1.1rem;
+  min-height: 1.1rem;
   color: hsl(var(--destructive));
 }
 
