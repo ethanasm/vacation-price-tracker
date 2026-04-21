@@ -441,7 +441,9 @@ describe("TripDetailPage", () => {
       await user.click(screen.getByRole("button", { name: /Hotels/ }));
 
       await waitFor(() => {
-        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+        // "City Hotel" now appears in both the hotel list and the chart legend
+        // (preselected cheapest hotel surfaces as the "Selected Hotel" line label)
+        expect(screen.getAllByText("City Hotel").length).toBeGreaterThanOrEqual(1);
         // $700 appears in both price summary and hotel list
         expect(screen.getAllByText("$700").length).toBeGreaterThanOrEqual(1);
       });
@@ -460,7 +462,7 @@ describe("TripDetailPage", () => {
       await user.click(screen.getByRole("button", { name: /^Hotels$/ }));
 
       await waitFor(() => {
-        expect(screen.getByText("City Hotel")).toBeInTheDocument();
+        expect(screen.getAllByText("City Hotel").length).toBeGreaterThanOrEqual(1);
       });
 
       // Click on a hotel to select it - this covers the onSelectHotel callback
