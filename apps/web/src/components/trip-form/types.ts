@@ -73,6 +73,8 @@ export interface TripFormSetters {
   setName: (value: string) => void;
   setOriginAirport: (value: string) => void;
   setDestinationCode: (value: string) => void;
+  blurOriginAirport: () => void;
+  blurDestinationCode: () => void;
   setIsRoundTrip: (value: boolean) => void;
   setDepartDate: (value: Date | undefined) => void;
   setReturnDate: (value: Date | undefined) => void;

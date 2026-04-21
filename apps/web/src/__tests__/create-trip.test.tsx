@@ -90,6 +90,8 @@ const createTripFormSetters = (): TripFormSetters => ({
   setName: jest.fn(),
   setOriginAirport: jest.fn(),
   setDestinationCode: jest.fn(),
+  blurOriginAirport: jest.fn(),
+  blurDestinationCode: jest.fn(),
   setIsRoundTrip: jest.fn(),
   setDepartDate: jest.fn(),
   setReturnDate: jest.fn(),

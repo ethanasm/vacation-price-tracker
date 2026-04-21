@@ -14,6 +14,7 @@ export interface AirportAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (location: Location) => void;
+  onBlur?: () => void;
   placeholder?: string;
   icon?: "departure" | "arrival";
   searchLocations: (query: string) => Location[];
@@ -25,6 +26,7 @@ export function AirportAutocomplete({
   value,
   onChange,
   onSelect,
+  onBlur,
   placeholder = "Search airports...",
   icon = "departure",
   searchLocations,
@@ -122,6 +124,7 @@ export function AirportAutocomplete({
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={() => value.length >= 2 && results.length > 0 && setIsOpen(true)}
+          onBlur={onBlur}
           placeholder={placeholder}
           disabled={disabled}
           className={styles.input}

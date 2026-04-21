@@ -99,6 +99,8 @@ export default function CreateTripPage() {
           onNameChange={setters.setName}
           onOriginAirportChange={setters.setOriginAirport}
           onDestinationCodeChange={setters.setDestinationCode}
+          onOriginAirportBlur={setters.blurOriginAirport}
+          onDestinationCodeBlur={setters.blurDestinationCode}
           onIsRoundTripChange={setters.setIsRoundTrip}
           onDepartDateChange={setters.setDepartDate}
           onReturnDateChange={setters.setReturnDate}

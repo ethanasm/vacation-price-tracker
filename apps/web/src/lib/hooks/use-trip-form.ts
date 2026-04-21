@@ -157,17 +157,18 @@ export function useTripForm(
     [touch]
   );
   const setOriginAirport = useCallback(
-    (value: string) => {
-      touch("originAirport");
-      setFormData((prev) => ({ ...prev, originAirport: value }));
-    },
-    [touch]
+    (value: string) =>
+      setFormData((prev) => ({ ...prev, originAirport: value })),
+    []
   );
   const setDestinationCode = useCallback(
-    (value: string) => {
-      touch("destinationCode");
-      setFormData((prev) => ({ ...prev, destinationCode: value }));
-    },
+    (value: string) =>
+      setFormData((prev) => ({ ...prev, destinationCode: value })),
+    []
+  );
+  const blurOriginAirport = useCallback(() => touch("originAirport"), [touch]);
+  const blurDestinationCode = useCallback(
+    () => touch("destinationCode"),
     [touch]
   );
   const setIsRoundTrip = useCallback(
@@ -341,6 +342,8 @@ export function useTripForm(
       setName,
       setOriginAirport,
       setDestinationCode,
+      blurOriginAirport,
+      blurDestinationCode,
       setIsRoundTrip,
       setDepartDate,
       setReturnDate,
@@ -368,6 +371,8 @@ export function useTripForm(
       setName,
       setOriginAirport,
       setDestinationCode,
+      blurOriginAirport,
+      blurDestinationCode,
       setIsRoundTrip,
       setDepartDate,
       setReturnDate,
