@@ -46,7 +46,7 @@ class PriceCheckWorkflow:
                     workflow.execute_activity(
                         fetch_hotels_activity,
                         trip,
-                        start_to_close_timeout=timedelta(seconds=60),
+                        start_to_close_timeout=timedelta(seconds=120),
                         retry_policy=RetryPolicy(maximum_attempts=2),
                     ),
                 )

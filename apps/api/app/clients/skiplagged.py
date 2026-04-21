@@ -627,7 +627,7 @@ class SkiplaggedClient:
 
     async def get_hotel_details(
         self,
-        hotel_id: int,
+        hotel_id: int | str,
         checkin: str,
         checkout: str,
         adults: int = 2,
@@ -645,8 +645,9 @@ class SkiplaggedClient:
         Returns:
             SkiplaggedHotelDetail with full room data.
         """
+        numeric_id = int(str(hotel_id).removeprefix("hotel_"))
         params: dict[str, Any] = {
-            "hotelId": hotel_id,
+            "hotelId": numeric_id,
             "checkin": checkin,
             "checkout": checkout,
             "numAdults": adults,

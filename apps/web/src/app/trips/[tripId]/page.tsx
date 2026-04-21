@@ -508,12 +508,14 @@ function extractFlightDisplayData(flight: ApiFlightOffer) {
     airlineName: firstSegment?.carrier_code
       ? getAirlineName(firstSegment.carrier_code)
       : (flight.airline_name ?? "Unknown"),
-    outboundDepTime: firstSegment?.departure_time
-      ? formatFlightTime(firstSegment.departure_time)
-      : null,
-    outboundArrTime: outboundLastSegment?.arrival_time
-      ? formatFlightTime(outboundLastSegment.arrival_time)
-      : null,
+    outboundDepTime: (() => {
+      const t = firstSegment?.departure_time ?? flight.departure_time;
+      return t ? formatFlightTime(t) : null;
+    })(),
+    outboundArrTime: (() => {
+      const t = outboundLastSegment?.arrival_time ?? flight.arrival_time;
+      return t ? formatFlightTime(t) : null;
+    })(),
     returnDepTime: returnFirstSegment?.departure_time
       ? formatFlightTime(returnFirstSegment.departure_time)
       : null,

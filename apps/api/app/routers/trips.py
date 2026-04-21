@@ -1,4 +1,3 @@
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -9,6 +8,7 @@ from sqlalchemy.orm import aliased
 from temporalio import client as temporal_client
 from temporalio import exceptions as temporal_exceptions
 
+from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import TripStatus
@@ -165,41 +165,17 @@ def _extract_price(item: dict) -> str | None:
     return None
 
 
-def _parse_skiplagged_segment_id(segment_raw: str) -> tuple[str | None, str | None]:
-    """Parse a segment string like 'AF81' or 'AC744~' into (carrier_code, flight_number)."""
-    cleaned = segment_raw.strip().rstrip("~")
-    if not cleaned:
-        return None, None
-    match = re.match(r"^([A-Z]{2,3})(\d+)$", cleaned)
-    if not match:
-        return None, None
-    return match.group(1), match.group(2)
-
-
 def _parse_skiplagged_trip_segments(flight_id: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    """Parse a Skiplagged flight ID into outbound and return segment lists.
+    """Parse a Skiplagged flight ID into outbound and return segment tuples.
 
-    Format: "...trip={outbound joined by -},{return joined by -}"
-    Returns tuples of (carrier_code, flight_number) for each segment.
+    Delegates to the canonical parser in skiplagged_parser.py and converts
+    SkiplaggedFlightSegment objects to (carrier_code, flight_number) tuples.
     """
-    if "trip=" not in flight_id:
-        return [], []
-    trip_part = flight_id.split("trip=", 1)[1]
-
-    if "," in trip_part:
-        outbound_str, return_str = trip_part.split(",", 1)
-    else:
-        outbound_str, return_str = trip_part, ""
-
-    def parse_leg(leg: str) -> list[tuple[str, str]]:
-        segments = []
-        for raw in leg.split("-"):
-            code, num = _parse_skiplagged_segment_id(raw)
-            if code and num:
-                segments.append((code, num))
-        return segments
-
-    return parse_leg(outbound_str), parse_leg(return_str)
+    outbound, ret = parse_flight_segments(flight_id)
+    return (
+        [(s.carrier_code, s.flight_number) for s in outbound],
+        [(s.carrier_code, s.flight_number) for s in ret],
+    )
 
 
 def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOffer | None:

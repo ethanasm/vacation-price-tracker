@@ -911,20 +911,30 @@ async def test_trip_helpers_handle_missing_data(test_session):
 
 
 def test_skiplagged_segment_id_parsing():
-    """Test parsing of individual segment IDs from Skiplagged format."""
-    # Standard format
-    assert trips_module._parse_skiplagged_segment_id("AF81") == ("AF", "81")
-    assert trips_module._parse_skiplagged_segment_id("AC744") == ("AC", "744")
+    """Test parsing via canonical parse_flight_segments (was inline, now delegated)."""
+    from app.clients.skiplagged_parser import parse_flight_segments
+
+    # Standard 2-letter carrier codes
+    out, _ = parse_flight_segments("X-Y-2026-01-01-trip=AF81")
+    assert [(s.carrier_code, s.flight_number) for s in out] == [("AF", "81")]
+
+    out, _ = parse_flight_segments("X-Y-2026-01-01-trip=AC744")
+    assert [(s.carrier_code, s.flight_number) for s in out] == [("AC", "744")]
 
     # Hidden-city marker stripped
-    assert trips_module._parse_skiplagged_segment_id("AF81~") == ("AF", "81")
+    out, _ = parse_flight_segments("X-Y-2026-01-01-trip=AF81~")
+    assert [(s.carrier_code, s.flight_number) for s in out] == [("AF", "81")]
 
-    # 3-letter carrier code
-    assert trips_module._parse_skiplagged_segment_id("9W123") == (None, None)  # starts with digit
+    # Alphanumeric carrier codes (e.g., F9 Frontier, 7C Jeju Air)
+    out, _ = parse_flight_segments("X-Y-2026-01-01-trip=F91094")
+    assert [(s.carrier_code, s.flight_number) for s in out] == [("F9", "1094")]
+
+    out, _ = parse_flight_segments("X-Y-2026-01-01-trip=7C123")
+    assert [(s.carrier_code, s.flight_number) for s in out] == [("7C", "123")]
 
     # Invalid formats
-    assert trips_module._parse_skiplagged_segment_id("") == (None, None)
-    assert trips_module._parse_skiplagged_segment_id("invalid") == (None, None)
+    out, _ = parse_flight_segments("no-trip-marker")
+    assert out == []
 
 
 def test_skiplagged_trip_segments_parsing():

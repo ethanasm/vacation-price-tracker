@@ -16,8 +16,8 @@ import re
 
 from app.schemas.skiplagged import SkiplaggedFlightSegment
 
-# Matches carrier code (2-3 uppercase letters) followed by flight number (digits)
-_SEGMENT_PATTERN = re.compile(r"^([A-Z]{2,3})(\d+)$")
+# IATA carrier codes are exactly 2 characters (alphanumeric, at least one letter), followed by flight number (1-4 digits)
+_SEGMENT_PATTERN = re.compile(r"^([A-Z0-9]{2})(\d{1,4})$")
 
 
 def _parse_segment(raw: str) -> SkiplaggedFlightSegment | None:

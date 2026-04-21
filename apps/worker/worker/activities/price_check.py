@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -244,9 +245,8 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         trip["trip_id"],
     )
 
-    # Fetch details for each hotel
-    offers: list[dict[str, Any]] = []
-    for hotel in top_hotels:
+    # Fetch details concurrently (with fallback to search-level data on failure)
+    async def _fetch_one(hotel):
         try:
             detail = await client.get_hotel_details(
                 hotel_id=hotel.id,
@@ -255,11 +255,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
                 adults=adults,
                 rooms=hotel_prefs["rooms"],
             )
-            offers.append(_normalize_hotel_detail(detail, hotel))
+            return _normalize_hotel_detail(detail, hotel)
         except Exception as exc:
             logger.warning("Failed to get details for hotel_id=%s: %s", hotel.id, exc)
-            # Fall back to search-level data
-            offers.append(_hotel_to_offer_dict(hotel))
+            return _hotel_to_offer_dict(hotel)
+
+    offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
 
     logger.info("Fetched %d hotel offers for trip_id=%s", len(offers), trip["trip_id"])
     return {
@@ -283,7 +284,6 @@ def _normalize_hotel_detail(detail: Any, hotel: Any) -> dict[str, Any]:
             "refundable": room.refundable,
             "free_cancellation": room.freeCancellation,
             "bed_types": room.bedTypes,
-            "booking_link": room.bookingLink,
         }
         for room in (detail.rooms or [])
     ]
@@ -300,7 +300,6 @@ def _normalize_hotel_detail(detail: Any, hotel: Any) -> dict[str, Any]:
         "amenities": detail.amenityNames,
         "address": detail.address,
         "city": detail.cityName,
-        "description": detail.description,
         "rooms": rooms,
         "provider": "skiplagged",
     }
