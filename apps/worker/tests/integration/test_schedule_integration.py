@@ -70,7 +70,14 @@ async def test_ensure_daily_refresh_schedule_creates_correct_spec(monkeypatch):
 
         assert desc.schedule.action.workflow == WORKFLOW_NAME
         assert desc.schedule.action.task_queue == _TEST_TASK_QUEUE
-        assert desc.schedule.spec.cron_expressions  # non-empty
+        # Temporal normalizes cron_expressions → ScheduleCalendarSpec on the
+        # server side, so describe() always returns calendars=[] + cron_expressions=[].
+        # Assert the calendar spec is present and fires at 06:00 UTC.
+        assert desc.schedule.spec.calendars, "expected at least one calendar spec"
+        hour_ranges = desc.schedule.spec.calendars[0].hour
+        assert any(r.start == 6 for r in hour_ranges), (
+            f"expected schedule to fire at hour 6, got hour ranges: {hour_ranges}"
+        )
         # Overlap policy SKIP prevents stacking slow runs.
         from temporalio.client import ScheduleOverlapPolicy
 
