@@ -177,6 +177,49 @@ class TestSkiplaggedFlightSearch:
         assert result.total_results == 0
 
     @pytest.mark.anyio
+    async def test_search_flights_always_excludes_hidden_city(self):
+        """includeHiddenCity must be False on every flight search call."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "flights": [],
+                "pagination": {
+                    "totalAvailable": 0,
+                    "currentlyShowing": 0,
+                    "offset": 0,
+                    "limit": 75,
+                    "hasMoreResults": False,
+                },
+            }
+            await client.search_flights("SFO", "ORD", "2026-06-20")
+        _tool, params = mock_call.call_args.args
+        assert params.get("includeHiddenCity") is False
+
+    @pytest.mark.anyio
+    async def test_search_flights_all_always_excludes_hidden_city(self):
+        """includeHiddenCity must be False on every paginated call too."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "flights": [],
+                "pagination": {
+                    "totalAvailable": 0,
+                    "currentlyShowing": 0,
+                    "offset": 0,
+                    "limit": 75,
+                    "hasMoreResults": False,
+                },
+            }
+            await client.search_flights_all("SFO", "ORD", "2026-06-20")
+        for call in mock_call.call_args_list:
+            _tool, params = call.args
+            assert params.get("includeHiddenCity") is False
+
+    @pytest.mark.anyio
     async def test_search_flights_unexpected_exception_returns_error_result(self):
         """Non-MCP exceptions in _search_flights_page produce a failed result."""
         client = SkiplaggedClient()

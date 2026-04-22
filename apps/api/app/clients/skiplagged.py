@@ -354,6 +354,7 @@ class SkiplaggedClient:
             "sort": sort,
             "limit": limit,
             "offset": offset,
+            "includeHiddenCity": False,
         }
         if return_date:
             params["returnDate"] = return_date
