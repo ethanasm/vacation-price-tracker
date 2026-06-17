@@ -52,9 +52,11 @@ class PriceCheckWorkflow:
                 )
             )
 
-        # `return_exceptions=True` lets us observe which side failed so we can
-        # build a descriptive ApplicationError below. If any tracked fetch fails
-        # after retries, fail the workflow and do NOT persist a snapshot.
+        # `return_exceptions=True` lets us observe which side failed. A partial
+        # failure (e.g. flights throttled with 429 while hotels succeed) should
+        # still persist a snapshot from the side that worked, with the failure
+        # recorded. Only when EVERY tracked fetch fails do we abort without a
+        # snapshot so the run can be retried later.
         results = await asyncio.gather(
             *(coro for _, coro in tasks), return_exceptions=True
         )
@@ -62,17 +64,26 @@ class PriceCheckWorkflow:
             zip((label for label, _ in tasks), results, strict=True)
         )
 
-        failures: list[str] = [
-            f"{label}: {result}"
-            for label, result in by_label.items()
-            if isinstance(result, BaseException)
+        failed_labels = [
+            label for label, result in by_label.items() if isinstance(result, BaseException)
         ]
-        if failures:
+        succeeded_labels = [
+            label for label, result in by_label.items() if not isinstance(result, BaseException)
+        ]
+
+        if failed_labels and not succeeded_labels:
+            failures = [f"{label}: {by_label[label]}" for label in failed_labels]
             raise ApplicationError(
-                "Upstream fetch failed: " + "; ".join(failures),
+                "All upstream fetches failed: " + "; ".join(failures),
                 type="UpstreamFetchFailed",
                 non_retryable=True,
             )
+
+        # Degrade each failed side to an empty result that carries its error
+        # message, so downstream filter/save still run and the error is persisted
+        # alongside whatever data the successful side returned.
+        for label in failed_labels:
+            by_label[label] = _failed_fetch_result(label, str(by_label[label]))
 
         normalized_flight: FetchResult = (
             by_label["flights"]  # type: ignore[assignment]
@@ -121,4 +132,12 @@ def _skipped_fetch_result(label: str) -> FetchResult:
         "offers": [],
         "raw": {"status": "skipped", "label": label},
         "error": None,
+    }
+
+
+def _failed_fetch_result(label: str, error: str) -> FetchResult:
+    return {
+        "offers": [],
+        "raw": {"status": "error", "label": label, "provider": "skiplagged"},
+        "error": error,
     }
