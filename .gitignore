@@ -32,6 +32,7 @@ __pycache__/
 apps/web/playwright/
 apps/web/playwright-report/
 apps/web/test-results/
+apps/web/e2e/screenshots/
 
 # Git worktrees
 /.worktrees
