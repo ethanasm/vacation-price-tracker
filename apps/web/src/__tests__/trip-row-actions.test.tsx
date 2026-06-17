@@ -118,6 +118,25 @@ describe("TripRowKebab", () => {
     });
   });
 
+  it("hides Refresh and Pause/Resume for an expired trip", async () => {
+    jest.useRealTimers();
+    const user = userEvent.setup();
+    render(
+      <table><tbody><tr>
+        <TripRowKebab {...defaultProps} tripStatus="EXPIRED" />
+      </tr></tbody></table>
+    );
+    await user.click(screen.getByLabelText("Trip actions"));
+    await waitFor(() => {
+      // Edit/Delete remain available, but tracking actions are gone.
+      expect(screen.getByText("Edit")).toBeInTheDocument();
+      expect(screen.getByText("Delete")).toBeInTheDocument();
+      expect(screen.queryByText("Refresh")).not.toBeInTheDocument();
+      expect(screen.queryByText("Pause")).not.toBeInTheDocument();
+      expect(screen.queryByText("Resume")).not.toBeInTheDocument();
+    });
+  });
+
   it("calls refresh and polls for completion", async () => {
     jest.useRealTimers();
     const user = userEvent.setup();

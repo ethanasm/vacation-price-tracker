@@ -4,10 +4,14 @@ from datetime import timedelta
 from typing import TypedDict
 
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 from temporalio.workflow import ParentClosePolicy
 
 with workflow.unsafe.imports_passed_through():
-    from worker.activities.trips import get_all_user_ids_with_active_trips
+    from worker.activities.trips import (
+        expire_past_trips,
+        get_all_user_ids_with_active_trips,
+    )
 
 REFRESH_ALL_TRIPS_WORKFLOW_NAME = "RefreshAllTripsWorkflow"
 MAX_PARALLEL_USERS = 3
@@ -24,6 +28,14 @@ class ScheduledRefreshResult(TypedDict):
 class ScheduledRefreshAllUsersWorkflow:
     @workflow.run
     async def run(self) -> ScheduledRefreshResult:
+        # Stop tracking trips whose travel dates have passed before fanning out,
+        # so expired trips are both marked and excluded from this run.
+        await workflow.execute_activity(
+            expire_past_trips,
+            start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
         user_ids = await workflow.execute_activity(
             get_all_user_ids_with_active_trips,
             start_to_close_timeout=timedelta(seconds=30),

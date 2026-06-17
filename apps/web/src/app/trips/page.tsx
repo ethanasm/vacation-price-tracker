@@ -47,7 +47,7 @@ interface PendingRefresh {
   tripId: string;
 }
 
-type DisplayStatus = "ACTIVE" | "PAUSED" | "ERROR";
+type DisplayStatus = "ACTIVE" | "PAUSED" | "ERROR" | "EXPIRED";
 
 /**
  * Convert API trip data to display format.
@@ -95,6 +95,7 @@ function getStatusVariant(
     case "ACTIVE":
       return "default";
     case "PAUSED":
+    case "EXPIRED":
       return "secondary";
     case "ERROR":
       return "outline";
