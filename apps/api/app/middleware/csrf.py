@@ -13,6 +13,10 @@ from app.core.security import get_csrf_cookie_params
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
+# Bearer-token machine endpoints don't use cookie auth, so the double-submit
+# cookie defense doesn't apply (and can't — there's no browser session).
+CSRF_EXEMPT_PREFIXES = ("/v1/admin/",)
+
 
 class CsrfTokenInvalid(ForbiddenError):
     type = "https://vacation-price-tracker.dev/problems/csrf-invalid"
@@ -21,6 +25,10 @@ class CsrfTokenInvalid(ForbiddenError):
 
 def _needs_csrf_validation(method: str) -> bool:
     return method.upper() not in SAFE_METHODS
+
+
+def _is_csrf_exempt(path: str) -> bool:
+    return path.startswith(CSRF_EXEMPT_PREFIXES)
 
 
 def _ensure_csrf_cookie(response: Response, existing_token: str | None) -> None:
@@ -36,7 +44,7 @@ def _ensure_csrf_cookie(response: Response, existing_token: str | None) -> None:
 
 async def csrf_middleware(request: Request, call_next):
     """Validate CSRF token for unsafe methods and set cookie on safe methods."""
-    if _needs_csrf_validation(request.method):
+    if _needs_csrf_validation(request.method) and not _is_csrf_exempt(request.url.path):
         csrf_cookie = request.cookies.get(CookieNames.CSRF_TOKEN)
         csrf_header = request.headers.get(HeaderNames.CSRF_TOKEN)
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
