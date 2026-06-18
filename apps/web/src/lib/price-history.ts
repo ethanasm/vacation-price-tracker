@@ -121,7 +121,9 @@ export function aggregateDailyPriceHistory(
     }
   }
 
-  const days = [...cheapestByDay.keys()].sort();
+  // ISO YYYY-MM-DD keys sort chronologically; use localeCompare for a stable,
+  // explicit string comparison.
+  const days = [...cheapestByDay.keys()].sort((a, b) => a.localeCompare(b));
 
   let lastKnownSelectedFlight: number | null = null;
   let lastKnownSelectedHotel: number | null = null;
