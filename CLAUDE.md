@@ -19,7 +19,7 @@ Vacation Price Tracker is a full-stack web application that tracks flight and ho
 - **Backend:** FastAPI (Python 3.12), SQLModel/PostgreSQL
 - **Orchestration:** Temporal SDK for Python (distributed workflows)
 - **Auth:** Google OAuth 2.0 only (no local passwords)
-- **LLM:** Groq (Llama 3.3) with MCP tool integration
+- **LLM:** Groq (GPT OSS 120B) with MCP tool integration
 
 ## Web File Naming
 

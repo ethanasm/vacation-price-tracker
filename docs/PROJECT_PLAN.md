@@ -58,7 +58,7 @@ All flight and hotel data is provided by the **Skiplagged MCP** at `https://mcp.
 **Goal:** Conversational control using Groq.
 
 ### LLM Setup
-- [x] Groq API client configuration (Llama 3.3 70B)
+- [x] Groq API client configuration (GPT OSS 120B)
 - [x] System prompts for travel assistant persona
 - [x] Tool-calling configuration for MCP integration
 

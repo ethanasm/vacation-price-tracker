@@ -182,12 +182,12 @@ def test_token_counter_count_tool_tokens():
 def test_groq_client_init_defaults(monkeypatch):
     """Test GroqClient initialization with defaults."""
     monkeypatch.setattr(config_module.settings, "groq_api_key", "test-key")
-    monkeypatch.setattr(config_module.settings, "groq_model", "llama-3.3-70b-versatile")
+    monkeypatch.setattr(config_module.settings, "groq_model", "openai/gpt-oss-120b")
 
     client = GroqClient()
 
     assert client._api_key == "test-key"
-    assert client._model == "llama-3.3-70b-versatile"
+    assert client._model == "openai/gpt-oss-120b"
     assert client._max_retries == 3
     assert client._client is None
 
@@ -674,7 +674,7 @@ def test_is_daily_token_limit_detects_tpd():
     mock_error = MagicMock()
     mock_error.body = {
         "error": {
-            "message": "Rate limit reached for model `llama-3.3-70b-versatile` on tokens per day (TPD): Limit 100000"
+            "message": "Rate limit reached for model `openai/gpt-oss-120b` on tokens per day (TPD): Limit 100000"
         }
     }
     assert client._is_daily_token_limit(mock_error) is True

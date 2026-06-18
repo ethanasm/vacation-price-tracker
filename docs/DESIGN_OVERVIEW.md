@@ -29,7 +29,7 @@ The application is a monorepo composed of containerized services orchestrated vi
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        LLM (Groq/Llama 3.3)                     │
+│                      LLM (Groq/GPT OSS 120B)                    │
 └─────────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────┴─────────┐
