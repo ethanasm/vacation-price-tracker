@@ -1,6 +1,6 @@
 # Phase 2: Chat & LLM Integration
 
-**Goal:** Conversational trip management using Groq (Llama 3.3) with MCP tool integration.
+**Goal:** Conversational trip management using Groq (GPT OSS 120B) with MCP tool integration.
 
 **Prerequisites:** Phase 1 complete (OAuth, Trip CRUD, Dashboard, Temporal workflows)
 
@@ -22,7 +22,7 @@
   class GroqClient:
       def __init__(self):
           self.client = Groq(api_key=settings.GROQ_API_KEY)
-          self.model = settings.GROQ_MODEL  # llama-3.3-70b-versatile
+          self.model = settings.GROQ_MODEL  # openai/gpt-oss-120b
 
       async def chat(
           self,

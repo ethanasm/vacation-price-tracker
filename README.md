@@ -5,7 +5,7 @@ Vacation Price Tracker is a full-stack web application designed for travelers to
 
 ## Key Features
 - **Flexible Tracking**: Track flights only, hotels only (up to 3 per trip), or both combined.
-- **AI-Powered Chat**: Natural language interface using Groq (Llama 3.3) and MCP for conversational trip management.
+- **AI-Powered Chat**: Natural language interface using Groq (GPT OSS 120B) and MCP for conversational trip management.
 - **Distributed Reliability**: Orchestrated workflows via **Temporal** for reliable price fetching.
 - **Smart Notifications**: Automated alerts via Email (MVP) and optional SMS (Future).
 - **Flexible Date Optimizer** (Phase 4): Survey date ranges to find cheaper travel windows.

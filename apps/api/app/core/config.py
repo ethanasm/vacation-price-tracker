@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # LLM (Groq)
     groq_api_key: str
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Skiplagged MCP (no auth required)
     skiplagged_mcp_url: str = "https://mcp.skiplagged.com/mcp"

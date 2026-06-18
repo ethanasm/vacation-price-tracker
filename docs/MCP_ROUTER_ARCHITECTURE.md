@@ -7,7 +7,7 @@ The MCP router dispatches tool calls from the LLM to the appropriate MCP servers
 ## Overview
 
 The MCP Router:
-1. Receives tool call requests from Groq (Llama 3.3) LLM
+1. Receives tool call requests from Groq (GPT OSS 120B) LLM
 2. Routes requests to the correct MCP server based on tool name
 3. Handles authentication, rate limiting, and error handling
 4. Returns results back to the LLM for response generation
@@ -31,7 +31,7 @@ The MCP Router:
 │                         ▼                               │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │              Groq LLM Client                     │   │
-│  │        (Llama 3.3 with tool calling)             │   │
+│  │      (GPT OSS 120B with tool calling)            │   │
 │  └──────────────────────┬───────────────────────────┘   │
 │                         │                               │
 │                         ▼                               │
@@ -325,7 +325,7 @@ async def chat_with_tools(message: str, user_id: str, mcp_router: MCPRouter) -> 
     ]
 
     response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": message}],
         tools=tool_definitions,
         tool_choice="auto",
