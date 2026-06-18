@@ -43,6 +43,12 @@ async def _fake_get_all_user_ids() -> list[str]:
     return []
 
 
+@activity.defn(name="expire_past_trips")
+async def _fake_expire_past_trips() -> int:
+    """Stub activity — the scheduled workflow expires past trips before fan-out."""
+    return 0
+
+
 async def _wait_for_recent_actions(handle, timeout_seconds: float = 20.0):
     """Poll the schedule until it records a triggered action, or time out."""
     deadline = asyncio.get_event_loop().time() + timeout_seconds
@@ -98,7 +104,7 @@ async def test_schedule_trigger_runs_configured_workflow(monkeypatch):
             env.client,
             task_queue=_TEST_TASK_QUEUE,
             workflows=[ScheduledRefreshAllUsersWorkflow],
-            activities=[_fake_get_all_user_ids],
+            activities=[_fake_get_all_user_ids, _fake_expire_past_trips],
         ):
             await ensure_daily_refresh_schedule(env.client)
 
