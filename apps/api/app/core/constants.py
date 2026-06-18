@@ -55,6 +55,7 @@ class TripStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     ERROR = "error"
+    EXPIRED = "expired"  # Travel dates have passed; tracking stopped (system-set)
 
 
 class RefreshFrequency(StrEnum):

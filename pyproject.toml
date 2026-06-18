@@ -9,7 +9,7 @@ dependencies = [
     "asyncpg",
     "alembic",
     "temporalio",
-    "authlib>=1.6.11",
+    "authlib>=1.6.12",
     "httpx",
     "python-jose[cryptography]",
     "uvicorn",
@@ -19,10 +19,14 @@ dependencies = [
     "itsdangerous",
     "pyasn1>=0.6.3",
     # Pinned for known CVEs (transitive); see `pnpm verify` audit step
-    "cryptography>=46.0.7",
+    "cryptography>=48.0.1",
     "ecdsa>=0.19.2",
     "pygments>=2.20.0",
     "requests>=2.33.0",
+    "starlette>=1.3.1",
+    "urllib3>=2.7.0",
+    "idna>=3.15",
+    "mako>=1.3.12",
     "fast-flights>=0.5.0",
     "groq>=0.11.0",
     "tiktoken>=0.7.0",
@@ -37,6 +41,8 @@ dev = [
     "aiosqlite",
     "ruff",
     "pip-audit",
+    # Pinned for known CVEs flagged by the pip-audit step
+    "pip>=26.1.2",
     "pydevd-pycharm~=253.29346.308",
     "croniter>=2.0.0",
 ]

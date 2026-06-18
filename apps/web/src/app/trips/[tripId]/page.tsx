@@ -45,49 +45,16 @@ import {
 } from "@/components/ui/chart";
 import type { TripDetail, PriceSnapshot, ApiFlightOffer, ApiHotelOffer } from "@/lib/api";
 import { api, ApiError } from "@/lib/api";
-import { formatPrice, formatShortDate, formatDateTime, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
+import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderStars, formatDateRange, getAirlineName } from "@/lib/format";
 import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
 import { useSSEContextOptional } from "@/lib/sse-provider";
+import {
+  aggregateDailyPriceHistory,
+  flightStableKey,
+  hotelStableKey,
+  parsePrice,
+} from "@/lib/price-history";
 import styles from "./page.module.css";
-
-/**
- * Build a stable flight key from carrier, flight number, route, and date.
- * Format: "UA-100|SFO-LAX|2024-03-15" for each segment, joined by "+"
- * This key remains stable across API responses for the "same" flight.
- */
-const flightStableKey = (flight: ApiFlightOffer): string => {
-  const segments = (flight.itineraries ?? []).flatMap((it) => it.segments ?? []);
-  if (segments.length === 0) {
-    // Fallback for flat structure - use airline code, flight number, and departure date
-    const code = flight.airline_code ?? "";
-    const num = flight.flight_number ?? "";
-    const date = flight.departure_time?.slice(0, 10) ?? "";
-    if (code && num && date) {
-      return `${code}-${num}|${date}`;
-    }
-    // Last resort: use ID (not stable across API calls, but better than nothing)
-    return flight.id;
-  }
-  return segments
-    .map((s) => {
-      const code = s.carrier_code ?? "";
-      const num = s.flight_number ?? "";
-      const dep = s.departure_airport ?? "";
-      const arr = s.arrival_airport ?? "";
-      const date = s.departure_time?.slice(0, 10) ?? "";
-      return `${code}-${num}|${dep}-${arr}|${date}`;
-    })
-    .join("+");
-};
-
-/**
- * Build a stable hotel key from the hotel name (normalized).
- * This key remains stable across API responses for the "same" hotel.
- */
-const hotelStableKey = (hotel: ApiHotelOffer): string => {
-  // Normalize: lowercase, trim, remove extra whitespace
-  return (hotel.name ?? "").toLowerCase().trim().replace(/\s+/g, " ");
-};
 
 /**
  * Display label for a flight: all flight numbers across both itineraries.
@@ -112,12 +79,6 @@ const flightDisplayLabel = (flight: ApiFlightOffer): string | undefined => {
   return flight.flight_number ?? flight.airline_code ?? undefined;
 };
 
-const parsePrice = (value: string | null | undefined): number | null => {
-  if (value === null || value === undefined) return null;
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
 function getStatusVariant(
   status: string
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -125,6 +86,7 @@ function getStatusVariant(
     case "active":
       return "default";
     case "paused":
+    case "expired":
       return "secondary";
     case "error":
       return "destructive";
@@ -157,58 +119,12 @@ function PriceHistoryChart({
     );
   }
 
-  // Build chart data with carry-forward for missing prices
-  // When a selected item isn't found in a snapshot, use its last known price
-  const reversedHistory = [...priceHistory].reverse();
-  let lastKnownSelectedFlight: number | null = null;
-  let lastKnownSelectedHotel: number | null = null;
-
-  const chartData = reversedHistory.map((snapshot) => {
-    const minFlight = parsePrice(snapshot.flight_price) ?? 0;
-    const minHotel = parsePrice(snapshot.hotel_price) ?? 0;
-
-    // Selected hotel is an optional separate line (only when a hotel is selected)
-    let selectedHotel: number | undefined;
-    if (selectedHotelKey && snapshot.hotel_offers) {
-      const match = (snapshot.hotel_offers as ApiHotelOffer[]).find(
-        (h) => hotelStableKey(h) === selectedHotelKey
-      );
-      if (match) {
-        const price = parsePrice(match.price);
-        if (price != null) {
-          selectedHotel = price;
-          lastKnownSelectedHotel = price;
-        }
-      } else if (lastKnownSelectedHotel != null) {
-        selectedHotel = lastKnownSelectedHotel;
-      }
-    }
-
-    // Selected flight is an optional separate line (only when a flight is selected)
-    let selectedFlight: number | undefined;
-    if (selectedFlightKey && snapshot.flight_offers) {
-      const match = (snapshot.flight_offers as ApiFlightOffer[]).find(
-        (f) => flightStableKey(f) === selectedFlightKey
-      );
-      if (match) {
-        const price = parsePrice(match.price);
-        if (price != null) {
-          selectedFlight = price;
-          lastKnownSelectedFlight = price;
-        }
-      } else if (lastKnownSelectedFlight != null) {
-        selectedFlight = lastKnownSelectedFlight;
-      }
-    }
-
-    return {
-      date: formatDateTime(snapshot.created_at),
-      total: minFlight + minHotel,
-      minFlight,
-      selectedFlight,
-      minHotel,
-      selectedHotel,
-    };
+  // Collapse to one point per calendar day (cheapest total that day) so long
+  // tracking windows stay readable. Carry-forward for selected offers is handled
+  // inside aggregateDailyPriceHistory.
+  const chartData = aggregateDailyPriceHistory(priceHistory, {
+    selectedFlightKey,
+    selectedHotelKey,
   });
 
   const selectedFlightLineLabel = selectedFlightLabel ?? "Selected Flight";
@@ -232,11 +148,13 @@ function PriceHistoryChart({
       >
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis
-          dataKey="date"
+          dataKey="label"
           tickLine={false}
           axisLine={false}
           tickMargin={8}
           fontSize={11}
+          interval="preserveStartEnd"
+          minTickGap={32}
         />
         <YAxis
           tickLine={false}

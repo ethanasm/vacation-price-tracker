@@ -8,6 +8,7 @@ Uses JSON-RPC 2.0 over Streamable HTTP transport.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -29,6 +30,18 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 # MCP protocol version for Streamable HTTP transport
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
+# Transient-failure retry tuning. The hosted Skiplagged MCP server proxies our
+# calls to skiplagged.com's fare backend; when that backend throttles the shared
+# MCP server we see 429s — surfaced either as an HTTP status or as an in-payload
+# error message ("Failed to fetch from search: Request failed with status code
+# 429"). Retry a bounded number of times with short backoff so brief throttles
+# self-heal without blowing the Temporal activity timeout. Sustained blocks are
+# left to the caller (Temporal retry policy) to reschedule.
+RETRYABLE_HTTP_STATUS = frozenset({429, 502, 503, 504})
+MAX_TRANSIENT_RETRIES = 2
+BASE_BACKOFF_SECONDS = 0.5
+MAX_BACKOFF_SECONDS = 4.0
+
 
 class SkiplaggedMCPError(Exception):
     """Base error for Skiplagged MCP client failures."""
@@ -40,6 +53,29 @@ class SkiplaggedConnectionError(SkiplaggedMCPError):
 
 class SkiplaggedRequestError(SkiplaggedMCPError):
     """Raised when an MCP request fails."""
+
+
+class SkiplaggedTransientError(SkiplaggedRequestError):
+    """Raised for transient upstream failures (5xx) that are worth retrying."""
+
+
+class SkiplaggedRateLimitError(SkiplaggedTransientError):
+    """Raised when Skiplagged (or its upstream fare backend) returns HTTP 429.
+
+    ``retry_after`` carries the server-advised backoff in seconds when present.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _is_rate_limit_message(message: str | None) -> bool:
+    """Detect a rate-limit signal embedded in an MCP error/tool message."""
+    if not message:
+        return False
+    lowered = message.lower()
+    return "429" in lowered or "too many requests" in lowered or "rate limit" in lowered
 
 
 class SkiplaggedClient:
@@ -133,11 +169,31 @@ class SkiplaggedClient:
             },
         }
 
-        response = await self._send_request(payload)
-        data = self._parse_sse_json_rpc(response)
-        result = self._extract_result(data)
-        langfuse_context.update_current_observation(output=result)
-        return result
+        for attempt in range(MAX_TRANSIENT_RETRIES + 1):
+            try:
+                response = await self._send_request(payload)
+                data = self._parse_sse_json_rpc(response)
+                self._raise_for_tool_error(data)
+                result = self._extract_result(data)
+            except SkiplaggedTransientError as exc:
+                delay = self._backoff_delay(exc, attempt)
+                if delay is None or attempt >= MAX_TRANSIENT_RETRIES:
+                    raise
+                logger.warning(
+                    "Skiplagged MCP transient error on %s (%s); backing off %.1fs (attempt %d/%d)",
+                    tool_name,
+                    exc,
+                    delay,
+                    attempt + 1,
+                    MAX_TRANSIENT_RETRIES,
+                )
+                await asyncio.sleep(delay)
+                continue
+            langfuse_context.update_current_observation(output=result)
+            return result
+
+        # The loop always returns or raises above; this satisfies type checkers.
+        raise SkiplaggedRequestError(f"MCP request for {tool_name} failed after retries")
 
     async def _send_request(
         self,
@@ -192,6 +248,15 @@ class SkiplaggedClient:
                 response.status_code,
                 response.text[:500],
             )
+            if response.status_code == 429:
+                raise SkiplaggedRateLimitError(
+                    "MCP request failed with status 429",
+                    retry_after=self._parse_retry_after(response),
+                )
+            if response.status_code in RETRYABLE_HTTP_STATUS:
+                raise SkiplaggedTransientError(
+                    f"MCP request failed with status {response.status_code}"
+                )
             raise SkiplaggedRequestError(f"MCP request failed with status {response.status_code}")
 
         # Update session ID if server sends a new one
@@ -227,6 +292,8 @@ class SkiplaggedClient:
         if "error" in data:
             error_msg = data["error"].get("message", "Unknown error")
             logger.warning("Skiplagged MCP returned error: %s", error_msg)
+            if _is_rate_limit_message(error_msg):
+                raise SkiplaggedRateLimitError(f"MCP error: {error_msg}")
             raise SkiplaggedRequestError(f"MCP error: {error_msg}")
 
         return data
@@ -287,6 +354,57 @@ class SkiplaggedClient:
                     continue
 
         return result
+
+    @staticmethod
+    def _raise_for_tool_error(data: dict[str, Any]) -> None:
+        """Raise if a tools/call result is flagged as an error (isError=true).
+
+        MCP tool failures (including upstream 429s) can be returned as a normal
+        JSON-RPC result with ``isError`` set rather than a top-level ``error``,
+        so this path must be classified too.
+        """
+        result = data.get("result")
+        if not isinstance(result, dict) or not result.get("isError"):
+            return
+
+        text_parts: list[str] = []
+        content = result.get("content")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_parts.append(str(item.get("text", "")))
+        message = " ".join(text_parts).strip() or "Unknown tool error"
+
+        logger.warning("Skiplagged MCP tool error: %s", message)
+        if _is_rate_limit_message(message):
+            raise SkiplaggedRateLimitError(f"MCP tool error: {message}")
+        raise SkiplaggedRequestError(f"MCP tool error: {message}")
+
+    @staticmethod
+    def _parse_retry_after(response: httpx.Response) -> float | None:
+        """Parse a numeric ``Retry-After`` header (seconds); ignore HTTP-date form."""
+        raw = response.headers.get("retry-after")
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _backoff_delay(exc: SkiplaggedTransientError, attempt: int) -> float | None:
+        """Compute the backoff before the next retry, or None to stop retrying.
+
+        Honors a server-advised ``Retry-After`` when present, but if that exceeds
+        the local cap we return None so the caller (Temporal) reschedules instead
+        of blocking the activity for a long throttle window.
+        """
+        retry_after = getattr(exc, "retry_after", None)
+        if retry_after is not None:
+            if retry_after > MAX_BACKOFF_SECONDS:
+                return None
+            return retry_after
+        return min(BASE_BACKOFF_SECONDS * (2**attempt), MAX_BACKOFF_SECONDS)
 
     # -------------------------------------------------------------------------
     # Public search methods

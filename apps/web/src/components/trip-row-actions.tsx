@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TableCell } from "@/components/ui/table";
 
-type TripStatus = "ACTIVE" | "PAUSED" | "ERROR";
+type TripStatus = "ACTIVE" | "PAUSED" | "ERROR" | "EXPIRED";
 
 interface TripActionsProps {
   tripId: string;
@@ -138,12 +138,16 @@ function useTripActions({ tripId, tripName, tripStatus, onRefresh, onDeleted, on
   }, [tripId, tripStatus, onStatusChange]);
 
   const isPaused = tripStatus === "PAUSED";
+  // Past trips can no longer be priced (Skiplagged rejects past dates), so
+  // refresh and pause/resume are hidden for them.
+  const isExpired = tripStatus === "EXPIRED";
 
   return {
     isRefreshing,
     isDeleting,
     isTogglingStatus,
     isPaused,
+    isExpired,
     showDeleteDialog,
     setShowDeleteDialog,
     handleRefresh,
@@ -208,14 +212,18 @@ export function TripRowContextMenu({
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </ContextMenuItem>
-          <ContextMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
-            {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
-            {actions.isPaused ? "Resume" : "Pause"}
-          </ContextMenuItem>
+          {!actions.isExpired && (
+            <>
+              <ContextMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </ContextMenuItem>
+              <ContextMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
+                {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+                {actions.isPaused ? "Resume" : "Pause"}
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuItem onClick={actions.handleEdit}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit
@@ -272,14 +280,18 @@ export function TripRowKebab({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
-            {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
-            {actions.isPaused ? "Resume" : "Pause"}
-          </DropdownMenuItem>
+          {!actions.isExpired && (
+            <>
+              <DropdownMenuItem onClick={actions.handleRefresh} disabled={actions.isRefreshing}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={actions.handleToggleStatus} disabled={actions.isTogglingStatus}>
+                {actions.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+                {actions.isPaused ? "Resume" : "Pause"}
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuItem onClick={actions.handleEdit}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit

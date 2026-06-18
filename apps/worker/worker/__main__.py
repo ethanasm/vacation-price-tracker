@@ -21,6 +21,7 @@ from worker.activities.price_check import (
 )
 from worker.activities.trips import (
     clear_refresh_lock,
+    expire_past_trips,
     get_active_trips,
     get_all_user_ids_with_active_trips,
 )
@@ -56,6 +57,7 @@ async def main() -> None:
         activities=[
             get_active_trips,
             get_all_user_ids_with_active_trips,
+            expire_past_trips,
             clear_refresh_lock,
             load_trip_details,
             fetch_flights_activity,
