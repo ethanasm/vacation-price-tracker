@@ -26,6 +26,16 @@ jest.mock("sonner", () => ({
 const mockToastSuccess = toast.success as jest.Mock;
 const mockToastError = toast.error as jest.Mock;
 
+// Fixture trip dates are computed relative to "today" so the form's date
+// validation (no past dates, within MAX_DATE_DAYS_OUT) keeps passing over time.
+// Hardcoded dates rot: once they slip into the past the Save button stays
+// disabled (isValid=false) and every submission test fails.
+const futureDateStr = (daysOut: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOut);
+  return d.toISOString().split("T")[0];
+};
+
 // Mock CSS modules
 jest.mock("../app/trips/[tripId]/edit/page.module.css", () =>
   new Proxy(
@@ -156,8 +166,8 @@ describe("EditTripPage", () => {
         name: "Test Vacation",
         origin_airport: "SFO",
         destination_code: "LAX",
-        depart_date: "2026-06-15",
-        return_date: "2026-06-22",
+        depart_date: futureDateStr(30),
+        return_date: futureDateStr(37),
         is_round_trip: true,
         adults: 2,
         status: "active",
@@ -197,8 +207,8 @@ describe("EditTripPage", () => {
               name: "Basic Trip",
               origin_airport: "JFK",
               destination_code: "MIA",
-              depart_date: "2026-07-01",
-              return_date: "2026-07-08",
+              depart_date: futureDateStr(45),
+              return_date: futureDateStr(52),
               adults: 1,
               current_flight_price: null,
               current_hotel_price: null,
