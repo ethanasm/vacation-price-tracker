@@ -1,55 +1,50 @@
 name: SonarQube
 
+# Coverage is computed once by the Next.js and Python workflows, which upload
+# lcov.info / coverage.xml as artifacts. This workflow no longer re-runs any
+# tests — it waits for those workflows, downloads their coverage, and runs only
+# the scan. Triggering on both means it re-scans when the slower one finishes;
+# the concurrency group cancels the earlier, less-complete scan.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_run:
+    workflows: ["Next.js", "Python"]
+    types: [completed]
+
+concurrency:
+  group: sonar-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   scan:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones disabled for better analysis
+          fetch-depth: 0 # Shallow clones disabled for better analysis
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      # Coverage artifacts may come from a different workflow run for the same
+      # commit, so fetch by commit SHA. `warn` (not fail) handles the case where
+      # one language's workflow was path-filtered out for this change.
+      - name: Download web coverage
+        uses: dawidd6/action-download-artifact@v6
         with:
-          node-version: '22'
+          name: web-coverage
+          workflow: nextjs.yml
+          commit: ${{ github.event.workflow_run.head_sha }}
+          path: apps/web/coverage
+          if_no_artifact_found: warn
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Download Python coverage
+        uses: dawidd6/action-download-artifact@v6
         with:
-          version: 9.12.1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Install Node.js dependencies
-        run: pnpm install
-
-      - name: Install Python dependencies
-        run: uv sync --extra dev
-
-      - name: Run API tests with coverage
-        run: pnpm nx run api:test:coverage
-        continue-on-error: true
-
-      - name: Run Worker tests with coverage
-        run: pnpm nx run worker:test:coverage
-        continue-on-error: true
-
-      - name: Run web tests with coverage
-        run: pnpm nx run web:test:coverage
-        continue-on-error: true
+          name: python-coverage
+          workflow: python.yml
+          commit: ${{ github.event.workflow_run.head_sha }}
+          path: apps
+          if_no_artifact_found: warn
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v7

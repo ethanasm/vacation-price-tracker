@@ -1,0 +1,73 @@
+name: Deploy
+
+# Roll the self-hosted prod host forward to a commit whose images are already in
+# GHCR. Runs after Build Prod Images succeeds on main, or on demand for a SHA.
+on:
+  workflow_run:
+    workflows: ["Build Prod Images"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to deploy (must have images in GHCR)"
+        required: true
+
+# One deploy at a time; never cancel an in-progress rollout.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Auto-deploy only for successful main builds; manual dispatch is always allowed.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: [self-hosted, vpt-prod]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      PROD_DIR: ${{ vars.PROD_DIR }}
+    steps:
+      - name: Resolve target SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "sha=${{ github.event.inputs.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify prod directory + env
+        run: |
+          if [ -z "$PROD_DIR" ]; then echo "PROD_DIR repo variable is not set"; exit 1; fi
+          test -d "$PROD_DIR" || { echo "PROD_DIR ($PROD_DIR) does not exist"; exit 1; }
+          test -f "$PROD_DIR/.env.prod" || { echo ".env.prod missing in $PROD_DIR"; exit 1; }
+
+      - name: Fetch and reset to target SHA
+        working-directory: ${{ env.PROD_DIR }}
+        run: |
+          git fetch --all --prune
+          git reset --hard "${{ steps.sha.outputs.sha }}"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull images and bring stack up
+        working-directory: ${{ env.PROD_DIR }}
+        env:
+          IMAGE_TAG: ${{ steps.sha.outputs.sha }}
+        run: |
+          pnpm prod:pull
+          pnpm prod:up
+
+      - name: Run database migrations
+        working-directory: ${{ env.PROD_DIR }}
+        env:
+          IMAGE_TAG: ${{ steps.sha.outputs.sha }}
+        run: pnpm prod:db:migrate
+
+      - name: Prune dangling images
+        run: docker image prune -f

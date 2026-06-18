@@ -3,8 +3,32 @@ name: Python
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - ".github/workflows/python.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - ".github/workflows/python.yml"
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -16,44 +40,39 @@ jobs:
       GOOGLE_CLIENT_SECRET: test-google-client-secret
       DATABASE_URL: sqlite+aiosqlite:///tmp/test_vacation_tracker.db
       GROQ_API_KEY: test-groq-key
-      AMADEUS_API_KEY: test-amadeus-key
-      AMADEUS_API_SECRET: test-amadeus-secret
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for nx affected
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+          fetch-depth: 0 # Required for nx affected
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9.12.1
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install uv
-        run: pip install uv
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
+      # setup-uv replaces `pip install uv` + uncached `uv sync`; it caches the
+      # uv download and the resolved environment keyed on uv.lock.
+      - uses: astral-sh/setup-uv@v6
         with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Cache Nx
         uses: actions/cache@v4
         with:
           path: .nx/cache
-          key: ${{ runner.os }}-nx-python-${{ hashFiles('**/uv.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ runner.os }}-nx-python-${{ hashFiles('uv.lock', 'pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-nx-python-${{ hashFiles('**/uv.lock', '**/pnpm-lock.yaml') }}-
             ${{ runner.os }}-nx-python-
+            ${{ runner.os }}-nx-
 
       - name: Install Node dependencies (for Nx)
         run: pnpm install --frozen-lockfile
@@ -69,12 +88,11 @@ jobs:
             echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
           fi
 
-      - name: Lint (api)
-        run: pnpm nx run api:lint
+      - name: Lint (affected)
+        run: pnpm nx affected -t lint --base=${{ env.NX_BASE }}
 
-      - name: Lint (worker)
-        run: pnpm nx run worker:lint
-
+      # Run coverage directly for both apps so coverage.xml is always produced
+      # for the SonarQube workflow (independent of nx affected).
       - name: Test API
         run: pnpm nx run api:test:coverage
 
@@ -84,6 +102,16 @@ jobs:
       - name: Integration Tests (Temporal dev server)
         run: pnpm nx run worker:test:integration
 
+      - name: Upload Python coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: |
+            apps/api/coverage.xml
+            apps/worker/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
+
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -91,10 +119,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Install uv
-        run: pip install uv
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: uv sync --extra dev
