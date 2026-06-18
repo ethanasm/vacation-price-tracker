@@ -16,8 +16,8 @@ from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
 
 
 @pytest.mark.asyncio
-async def test_price_check_workflow_fails_and_skips_snapshot_on_fetch_error(monkeypatch):
-    """Upstream fetch errors must fail the workflow and prevent a snapshot."""
+async def test_price_check_workflow_persists_partial_snapshot_when_one_side_fails(monkeypatch):
+    """A partial fetch failure still saves a snapshot from the side that succeeded."""
     import worker.workflows.price_check as price_check_module
 
     trip = {
@@ -28,10 +28,9 @@ async def test_price_check_workflow_fails_and_skips_snapshot_on_fetch_error(monk
         "hotel_prefs": {"preferred_room_types": [], "preferred_views": []},
     }
     flight_result = {"offers": [{"price": "100"}], "raw": {"ok": True}, "error": None}
-    save_called = False
+    captured = {}
 
-    async def fake_execute_activity(activity, *_args, **_kwargs):
-        nonlocal save_called
+    async def fake_execute_activity(activity, *args, **_kwargs):
         if activity is load_trip_details:
             return trip
         if activity is fetch_flights_activity:
@@ -39,15 +38,59 @@ async def test_price_check_workflow_fails_and_skips_snapshot_on_fetch_error(monk
         if activity is fetch_hotels_activity:
             raise ValueError("boom")
         if activity is filter_results_activity:
-            raise AssertionError("filter_results_activity must not run when a fetch failed")
+            captured["filter"] = args[0]
+            return {"flights": [{"price": "100"}], "hotels": [], "raw_data": {"ok": True}}
         if activity is save_snapshot_activity:
-            save_called = True
-            raise AssertionError("save_snapshot_activity must not run when a fetch failed")
+            captured["save"] = args[0]
+            return "snapshot-partial"
         raise AssertionError("Unexpected activity")
 
     monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)
 
-    with pytest.raises(ApplicationError, match="hotels: boom"):
+    result = await PriceCheckWorkflow().run("trip-123")
+
+    assert result["success"] is True
+    assert result["snapshot_id"] == "snapshot-partial"
+    # Flights succeeded; hotels degraded to an empty result carrying the error.
+    assert captured["filter"]["flight_result"] == flight_result
+    assert captured["filter"]["hotel_result"]["offers"] == []
+    assert "boom" in captured["filter"]["hotel_result"]["error"]
+    assert result["flight_error"] is None
+    assert result["hotel_error"] is not None and "boom" in result["hotel_error"]
+
+
+@pytest.mark.asyncio
+async def test_price_check_workflow_fails_and_skips_snapshot_when_all_fetches_fail(monkeypatch):
+    """When every tracked fetch fails, the workflow fails and saves no snapshot."""
+    import worker.workflows.price_check as price_check_module
+
+    trip = {
+        "trip_id": "trip-123",
+        "track_flights": True,
+        "track_hotels": True,
+        "flight_prefs": {"airlines": []},
+        "hotel_prefs": {"preferred_room_types": [], "preferred_views": []},
+    }
+    save_called = False
+
+    async def fake_execute_activity(activity, *_args, **_kwargs):
+        nonlocal save_called
+        if activity is load_trip_details:
+            return trip
+        if activity is fetch_flights_activity:
+            raise ValueError("flights-boom")
+        if activity is fetch_hotels_activity:
+            raise ValueError("hotels-boom")
+        if activity is filter_results_activity:
+            raise AssertionError("filter_results_activity must not run when all fetches failed")
+        if activity is save_snapshot_activity:
+            save_called = True
+            raise AssertionError("save_snapshot_activity must not run when all fetches failed")
+        raise AssertionError("Unexpected activity")
+
+    monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)
+
+    with pytest.raises(ApplicationError, match="All upstream fetches failed"):
         await PriceCheckWorkflow().run("trip-123")
 
     assert save_called is False

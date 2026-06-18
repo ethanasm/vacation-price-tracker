@@ -11,6 +11,7 @@ import pytest
 from app.clients.skiplagged import (
     SkiplaggedClient,
     SkiplaggedConnectionError,
+    SkiplaggedRateLimitError,
     SkiplaggedRequestError,
 )
 
@@ -337,6 +338,134 @@ class TestSkiplaggedErrorHandling:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             with pytest.raises(SkiplaggedConnectionError):
                 await client.search_flights("SFO", "CDG", "2026-06-15")
+
+
+def _http_429(retry_after: str | None = None) -> httpx.Response:
+    """Create an HTTP 429 response, optionally with a Retry-After header."""
+    headers = {"content-type": "text/plain"}
+    if retry_after is not None:
+        headers["retry-after"] = retry_after
+    return httpx.Response(status_code=429, text="Too Many Requests", headers=headers)
+
+
+def _payload_rate_limit_error() -> httpx.Response:
+    """A 200 response whose JSON-RPC error message encodes an upstream 429.
+
+    This mirrors how the hosted Skiplagged MCP surfaces a throttled fare backend:
+    "Failed to fetch from search: Request failed with status code 429".
+    """
+    return _make_sse_response({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+            "code": -32603,
+            "message": "Failed to fetch from search: Request failed with status code 429",
+        },
+    })
+
+
+def _tool_rate_limit_error() -> httpx.Response:
+    """A 200 tools/call result flagged isError with a 429 message in its content."""
+    return _make_sse_response({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+            "isError": True,
+            "content": [
+                {"type": "text", "text": "Failed to fetch from search: Request failed with status code 429"},
+            ],
+        },
+    })
+
+
+class TestSkiplaggedRateLimit:
+    @pytest.mark.anyio
+    async def test_http_429_raises_rate_limit_after_retries(self):
+        """A persistent HTTP 429 retries the bounded number of times, then raises."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_http_429())
+        with (
+            patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient,
+            patch("app.clients.skiplagged.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRateLimitError):
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+        # 1 initial attempt + MAX_TRANSIENT_RETRIES (2) = 3 posts, 2 backoff sleeps.
+        assert mock_post.await_count == 3
+        assert mock_sleep.await_count == 2
+
+    @pytest.mark.anyio
+    async def test_in_payload_429_message_classified_as_rate_limit(self):
+        """An upstream 429 surfaced inside the JSON-RPC error message is a rate limit."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_payload_rate_limit_error())
+        with (
+            patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient,
+            patch("app.clients.skiplagged.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRateLimitError):
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+
+    @pytest.mark.anyio
+    async def test_tool_iserror_429_classified_as_rate_limit(self):
+        """An upstream 429 surfaced as an isError tool result is a rate limit."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_tool_rate_limit_error())
+        with (
+            patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient,
+            patch("app.clients.skiplagged.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRateLimitError):
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+
+    @pytest.mark.anyio
+    async def test_recovers_after_transient_429(self):
+        """A 429 followed by a good response should retry and succeed."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(side_effect=[_http_429(), _flights_response(2)])
+        with (
+            patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient,
+            patch("app.clients.skiplagged.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_flights("SFO", "CDG", "2026-06-15")
+        assert result.success is True
+        assert len(result.flights) == 2
+        assert mock_post.await_count == 2
+
+    @pytest.mark.anyio
+    async def test_long_retry_after_fails_fast_without_retrying(self):
+        """A Retry-After longer than the local cap should not block; fail immediately."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_http_429(retry_after="60"))
+        with (
+            patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient,
+            patch("app.clients.skiplagged.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(SkiplaggedRateLimitError) as exc_info:
+                await client.search_flights("SFO", "CDG", "2026-06-15")
+        assert exc_info.value.retry_after == 60.0
+        assert mock_post.await_count == 1  # no retry
+        assert mock_sleep.await_count == 0
 
 
 def _hotel_details_response() -> httpx.Response:
