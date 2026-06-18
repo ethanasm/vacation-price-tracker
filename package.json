@@ -40,7 +40,14 @@
     "db:migrate:status": "DATABASE_URL='postgresql+asyncpg://postgres:postgres@localhost:5432/vacation_tracker' uv run alembic current",
     "db:migrate:new": "DATABASE_URL='postgresql+asyncpg://postgres:postgres@localhost:5432/vacation_tracker' uv run alembic revision --autogenerate -m",
     "graph": "nx graph",
-    "reset": "nx reset"
+    "reset": "nx reset",
+    "prod:up": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml up -d",
+    "prod:down": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml down",
+    "prod:pull": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml pull",
+    "prod:ps": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml ps",
+    "prod:logs": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml logs -f --tail=100",
+    "prod:db:migrate": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'",
+    "prod:query": "node scripts/prod-query.mjs"
   },
   "devDependencies": {
     "@nx/next": "^22.1.1",

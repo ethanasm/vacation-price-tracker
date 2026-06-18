@@ -1,5 +1,7 @@
 /.idea
 .env
+.env.prod
+.env.*.local
 /node_modules
 .coverage
 /apps/*/coverage*
