@@ -42,8 +42,6 @@ jobs:
       GROQ_API_KEY: test-groq-key
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Required for nx affected
 
       - uses: pnpm/action-setup@v4
         with:
@@ -80,19 +78,13 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --extra dev
 
-      - name: Set NX_BASE for affected commands
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
-          fi
-
-      - name: Lint (affected)
-        run: pnpm nx affected -t lint --base=${{ env.NX_BASE }}
+      # Scope to the Python projects only — this workflow provisions the Python
+      # toolchain; the workflow-level paths filter skips it on non-Python PRs.
+      - name: Lint (api + worker)
+        run: pnpm nx run-many -t lint --projects=api,worker
 
       # Run coverage directly for both apps so coverage.xml is always produced
-      # for the SonarQube workflow (independent of nx affected).
+      # for the SonarQube workflow.
       - name: Test API
         run: pnpm nx run api:test:coverage
 
