@@ -95,6 +95,9 @@ addopts = "-m 'not integration'"
 
 [tool.coverage.run]
 source = ["apps/api/app"]
+# SQLAlchemy async runs DB work in a greenlet; without this, lines that resume
+# after an `await session.execute(...)` are not traced and show as uncovered.
+concurrency = ["greenlet", "thread"]
 omit = [
     "apps/api/app/models/*",      # Models tested via integration tests
     "apps/api/migrations/*",       # Migration files don't need coverage
