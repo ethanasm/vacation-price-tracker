@@ -17,7 +17,6 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "greenlet",
     "itsdangerous",
-    "pyasn1>=0.6.3",
     # Pinned for known CVEs (transitive); see `pnpm verify` audit step
     "cryptography>=48.0.1",
     "msgpack>=1.2.1",

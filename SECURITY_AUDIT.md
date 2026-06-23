@@ -1,5 +1,5 @@
 # Security Audit Report
-**Date:** April 15, 2026
+**Date:** June 23, 2026
 **Project:** Vacation Price Tracker
 **Audit Type:** Dependency Security Analysis
 
@@ -16,12 +16,25 @@ All previously accepted-risk advisories have been resolved by upstream patches a
 
 > **Note on pnpm audit:** The legacy npm audit endpoint that pnpm uses returns HTTP 410 (npm retired it in favour of the bulk advisory endpoint). Until pnpm migrates, CI runs `pnpm audit --prod --ignore-registry-errors` so the registry error itself doesn't fail the build. Real advisories, when the endpoint is reachable, are still surfaced.
 
-### Resolved since the previous audit (Jan 13, 2026)
-- **CVE-2024-23342 (ecdsa, Minerva timing attack):** ecdsa 0.19.1 → 0.19.2. Was previously risk-accepted (we don't perform ECDSA signing); now patched upstream.
+### Resolved in the latest pass (June 23, 2026)
+- **ecdsa Minerva timing attack (CVE-2024-23342):** the upstream maintainers do
+  **not** plan a fix, so this cannot be cleared by a version bump — an earlier
+  note here that 0.19.2 "patched it upstream" was incorrect. `ecdsa` was only
+  present transitively via `python-jose`, which this project used solely for
+  **HS256** (HMAC) JWTs, so ECDSA was never exercised. JWT signing/verification
+  was migrated to **PyJWT** and both `python-jose[cryptography]` and the direct
+  `ecdsa` pin were removed; `ecdsa`/`rsa` are now absent from `uv.lock`.
+- **89 npm dev/tooling advisories:** cleared by bumping direct build tooling
+  (nx 22→23, shadcn 3→4, @nxlv/python 20→22, jest, openapi-typescript, etc.) plus
+  major-scoped `pnpm.overrides` that force patched transitive versions (axios,
+  hono, minimatch, vite, vitest, rollup, fast-uri, qs, ws, …). None reached the
+  production runtime — `pnpm audit --prod` was already clean.
+
+### Resolved in the April 15, 2026 audit (since Jan 13, 2026)
 - **CVE-2026-0994 (protobuf):** protobuf 6.33.4 → 6.33.6 via the temporalio 1.21.1 → 1.26.0 upgrade.
 - **CVE-2026-1703 (pip):** pip 25.3 → 26.0.1 in the uv-managed venv.
 - **CVE-2025-61920 (authlib JOSE DoS):** authlib 1.6.6 → 1.6.10.
-- Plus minor patch bumps to cryptography, pygments, pyasn1, requests, pytest.
+- Plus minor patch bumps to cryptography, pygments, requests, pytest.
 
 ---
 
@@ -35,12 +48,14 @@ All previously accepted-risk advisories have been resolved by upstream patches a
 - **Status:** ✅ Secure
 - **Notes:** Major version bump from 0.50.0; no known advisories
 
-### 3. ✅ python-jose 3.5.0 (with ecdsa 0.19.2)
+### 3. ✅ PyJWT 2.13.0 (replaced python-jose)
 - **Status:** ✅ Secure
-- **python-jose CVEs (Fixed in 3.3.1+):**
-  - CVE-2024-33664 (JWT Bomb DoS)
-  - CVE-2024-33663 (Algorithm Confusion)
-- **ecdsa CVE-2024-23342:** Resolved upstream in 0.19.2 (was previously risk-accepted because this project uses HS256, not ECDSA, and only verifies tokens)
+- **Notes:** JWT encode/decode migrated from `python-jose` to **PyJWT** (HS256
+  only). This drops the transitive `ecdsa` dependency, whose Minerva P-256 timing
+  attack (CVE-2024-23342) has **no upstream fix**. PyJWT relies on the
+  `cryptography` backend and does not pull in `ecdsa`/`rsa`.
+- **Algorithm confusion:** mitigated — every `jwt.decode` passes an explicit
+  `algorithms=[...]` allowlist, and signing uses a symmetric secret.
 
 ### 4. ✅ cryptography 46.0.7
 - **Status:** ✅ Secure (patched)
