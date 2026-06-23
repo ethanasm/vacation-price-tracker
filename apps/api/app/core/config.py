@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     log_level: str = "INFO"
 
+    # Admin SQL debug endpoint (POST /v1/admin/sql) — disabled unless the token
+    # is set and >= 32 chars. Prefer a dedicated read-only DB role via
+    # admin_query_database_url; falls back to database_url when blank.
+    admin_query_token: str = ""
+    admin_query_database_url: str = ""
+
     # Langfuse (LLM/MCP tracing) — leave keys blank to disable
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

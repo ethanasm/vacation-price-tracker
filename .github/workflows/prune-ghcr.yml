@@ -1,0 +1,31 @@
+name: Prune GHCR
+
+# Reap old/untagged image versions so the GHCR packages don't grow without
+# bound. Keeps the most recent versions and only removes untagged ones, so
+# :latest and any SHA-tagged images that prod might roll back to are preserved.
+on:
+  schedule:
+    - cron: "0 4 * * 0" # Weekly, Sunday 04:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: prune-ghcr
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [vpt-web, vpt-api, vpt-worker]
+    steps:
+      - name: Delete old untagged versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: true

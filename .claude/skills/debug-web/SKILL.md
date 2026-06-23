@@ -98,6 +98,14 @@ against the suspect route and read the terminal.
 **Compare light vs dark** — run both `--project=light` and `--project=dark` for
 the same `DEBUG_ROUTE`; the two PNGs are suffixed by project name.
 
+## Debugging prod instead?
+
+This skill is for the **local** UI (you have the dev stack and a browser). For a
+**production** issue — live 5xx, wrong/stale tracked prices, a stuck price-check
+workflow, missing notifications — use the **debugging-prod** skill
+(`.claude/skills/debugging-prod/SKILL.md`), which reads prod's logs, database
+(`pnpm prod:query`), Temporal UI, Langfuse, and `/ready` probe instead.
+
 ## Notes
 
 - The spec waits for `networkidle` before screenshotting, so client-side data

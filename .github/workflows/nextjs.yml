@@ -3,108 +3,99 @@ name: Next.js
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/web/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+      - ".github/workflows/nextjs.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "apps/web/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+      - ".github/workflows/nextjs.yml"
+
+# Cancel superseded runs on a PR; let main builds finish.
+concurrency:
+  group: nextjs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for nx affected
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9.12.1
 
-      - name: Cache pnpm store
-        uses: actions/cache@v4
+      - uses: actions/setup-node@v4
         with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
+          node-version: "20"
+          cache: pnpm
 
+      # Drop github.sha from the key so it isn't busted every commit; rely on
+      # restore-keys to warm from the most recent cache.
       - name: Cache Nx
         uses: actions/cache@v4
         with:
           path: .nx/cache
-          key: ${{ runner.os }}-nx-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ runner.os }}-nx-web-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-nx-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nx-web-
             ${{ runner.os }}-nx-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Set NX_BASE for affected commands
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
-          fi
+      # Scope to the web project only — this workflow provisions Node, not the
+      # Python toolchain, so it must not run api/worker targets (which call uv).
+      # The workflow-level paths filter is what skips this job on non-web PRs.
+      # test:coverage runs here too, so the lcov report is always produced for
+      # the SonarQube workflow to consume.
+      - name: Build / lint / typecheck / test (web)
+        run: pnpm nx run-many -t build lint typecheck test:coverage --projects=web
 
-      - name: Build (affected)
-        run: pnpm nx affected -t build --base=${{ env.NX_BASE }}
-
-      - name: Lint (web)
-        run: pnpm nx run web:lint
-
-      - name: Typecheck (web)
-        run: pnpm nx run web:typecheck
-
-      - name: Test (web)
-        run: pnpm nx run web:test
+      - name: Upload web coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: apps/web/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
 
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for web changes
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            web:
-              - 'apps/web/**'
-              - 'pnpm-lock.yaml'
-
-      - uses: actions/setup-node@v4
-        if: steps.filter.outputs.web == 'true'
-        with:
-          node-version: '20'
-
       - uses: pnpm/action-setup@v4
-        if: steps.filter.outputs.web == 'true'
         with:
           version: 9.12.1
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
       - name: Install dependencies
-        if: steps.filter.outputs.web == 'true'
         run: pnpm install --frozen-lockfile
 
-      # `--ignore-registry-errors` exits 0 when the audit endpoint itself
-      # errors. The legacy npm audit endpoint that pnpm uses returns 410 since
-      # npm retired it in favour of the bulk advisory endpoint; until pnpm
-      # migrates we tolerate registry errors so CI is not permanently red.
+      # `--ignore-registry-errors` exits 0 when the audit endpoint itself errors.
+      # The legacy npm audit endpoint pnpm uses returns 410 since npm retired it
+      # in favour of the bulk advisory endpoint; until pnpm migrates we tolerate
+      # registry errors so CI is not permanently red.
       - name: Run pnpm audit
-        if: steps.filter.outputs.web == 'true'
         working-directory: apps/web
         run: pnpm audit --audit-level=moderate --ignore-registry-errors
         continue-on-error: true
 
       - name: Run pnpm audit (production only)
-        if: steps.filter.outputs.web == 'true'
         working-directory: apps/web
         run: pnpm audit --prod --ignore-registry-errors
-
-      - name: Skip message
-        if: steps.filter.outputs.web != 'true'
-        run: echo "No web changes detected, skipping pnpm audit"

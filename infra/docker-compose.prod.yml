@@ -1,0 +1,140 @@
+# Self-hosted production stack for Vacation Price Tracker.
+#
+# Runs alongside the dev stack on the same host without colliding: distinct
+# project name (vpt-prod), distinct ports, distinct named volumes. Images are
+# pulled from GHCR (built + pushed by CI on merge to main) rather than built
+# locally. All published ports bind to loopback only — a reverse proxy
+# (Cloudflare Tunnel / nginx) is expected to terminate TLS and front ingress.
+#
+# Usage (from repo root):
+#   cp .env.prod.example .env.prod   # then fill in secrets
+#   pnpm prod:up                     # docker compose ... up -d
+#   pnpm prod:db:migrate             # alembic upgrade head inside the api image
+#
+# Image tag is selected by IMAGE_TAG (defaults to latest); deploy.yml pins it
+# to the deployed commit SHA.
+
+name: vpt-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: vacation_tracker
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - vpt_prod_postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vacation_tracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - vpt_prod_redis_data:/data
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: db
+    ports:
+      - "127.0.0.1:7235:7233"
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  api:
+    image: ghcr.io/ethanasm/vpt-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: ../.env.prod
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: default
+      ENVIRONMENT: production
+    ports:
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/ethanasm/vpt-worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: ../.env.prod
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-vacation-price-tracker-tasks}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    logging: *default-logging
+
+  web:
+    image: ghcr.io/ethanasm/vpt-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${BACKEND_URL}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+    ports:
+      - "127.0.0.1:3005:3000"
+    depends_on:
+      - api
+    logging: *default-logging
+
+volumes:
+  vpt_prod_postgres_data:
+  vpt_prod_redis_data:
