@@ -262,7 +262,10 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         trip["trip_id"],
     )
 
-    # Fetch details concurrently (with fallback to search-level data on failure)
+    # Fetch details concurrently (with fallback to search-level data on failure).
+    # A tripped global budget must NOT be swallowed by the fallback — let it
+    # propagate so the remaining detail calls are abandoned (no further
+    # increments) and the activity fails non-retriably.
     async def _fetch_one(hotel):
         try:
             detail = await client.get_hotel_details(
@@ -273,11 +276,16 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
                 rooms=hotel_prefs["rooms"],
             )
             return _normalize_hotel_detail(detail, hotel)
+        except GlobalBudgetExceeded:
+            raise
         except Exception as exc:
             logger.warning("Failed to get details for hotel_id=%s: %s", hotel.id, exc)
             return _hotel_to_offer_dict(hotel)
 
-    offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
+    try:
+        offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
+    except GlobalBudgetExceeded as exc:
+        raise _budget_application_error(exc) from exc
 
     logger.info("Fetched %d hotel offers for trip_id=%s", len(offers), trip["trip_id"])
     return {

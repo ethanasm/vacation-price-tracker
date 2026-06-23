@@ -1099,3 +1099,49 @@ def test_budget_application_error_is_non_retryable():
     assert isinstance(err, ApplicationError)
     assert err.non_retryable is True
     assert err.type == "GlobalBudgetExceeded"
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_budget_trip_during_details_is_non_retryable(monkeypatch):
+    """A budget trip mid get_hotel_details must surface, not be swallowed by the
+    per-hotel fallback."""
+    from decimal import Decimal
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.errors import GlobalBudgetExceeded
+    from app.schemas.hotel_search import HotelSearchHotel, HotelSearchResult
+    from temporalio.exceptions import ApplicationError
+
+    hotels = [
+        HotelSearchHotel(
+            id=f"hotel_{i}",
+            name=f"Hotel {i}",
+            price_per_night=Decimal(str(50 + i * 10)),
+            price_currency="USD",
+            provider="skiplagged",
+        )
+        for i in range(3)
+    ]
+    mock_hotel_result = HotelSearchResult(
+        hotels=hotels,
+        city="PAR",
+        checkin="2026-06-15",
+        checkout="2026-06-22",
+        total_results=3,
+        success=True,
+    )
+
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(return_value=mock_hotel_result)
+    # search_hotels_all passed the gate; the breaker trips during details.
+    mock_client.get_hotel_details = AsyncMock(
+        side_effect=GlobalBudgetExceeded("daily ceiling reached")
+    )
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        with pytest.raises(ApplicationError) as exc_info:
+            await pc.fetch_hotels_activity(sample_trip_details)
+
+    assert exc_info.value.non_retryable is True
+    assert exc_info.value.type == "GlobalBudgetExceeded"
