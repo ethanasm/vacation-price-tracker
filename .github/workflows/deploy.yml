@@ -28,10 +28,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-    env:
-      # Override via repo Variables (Settings → Variables → Actions) only if the
-      # prod tree lives somewhere other than the default. Not a required step.
-      PROD_DIR: ${{ vars.PROD_DIR || '/opt/vacation-price-tracker' }}
     steps:
       - name: Resolve target SHA
         id: sha
@@ -47,11 +43,11 @@ jobs:
         # .env.prod. The compose file itself is tracked and produced by the reset.
         run: |
           set -euo pipefail
-          test -d "$PROD_DIR/.git"      || { echo "PROD_DIR is not a git checkout: $PROD_DIR"; exit 1; }
-          test -f "$PROD_DIR/.env.prod" || { echo ".env.prod missing in $PROD_DIR"; exit 1; }
+          test -d /opt/vacation-price-tracker/.git      || { echo "prod tree is not a git checkout"; exit 1; }
+          test -f /opt/vacation-price-tracker/.env.prod || { echo ".env.prod missing in /opt/vacation-price-tracker"; exit 1; }
 
       - name: Fetch and reset to target SHA
-        working-directory: ${{ env.PROD_DIR }}
+        working-directory: /opt/vacation-price-tracker
         run: |
           set -euo pipefail
           git fetch --all --prune
@@ -63,7 +59,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Pull images and bring stack up
-        working-directory: ${{ env.PROD_DIR }}
+        working-directory: /opt/vacation-price-tracker
         env:
           IMAGE_TAG: ${{ steps.sha.outputs.sha }}
         run: |
@@ -71,7 +67,7 @@ jobs:
           pnpm prod:up
 
       - name: Run database migrations
-        working-directory: ${{ env.PROD_DIR }}
+        working-directory: /opt/vacation-price-tracker
         env:
           IMAGE_TAG: ${{ steps.sha.outputs.sha }}
         run: pnpm prod:db:migrate
