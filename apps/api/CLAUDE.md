@@ -106,7 +106,13 @@ hidden-city marker, split carrier letters from flight-number digits). Schema mod
   `set_notification`, `pause_trip`/`resume_trip`, `trigger_refresh`. Chat search
   tools: `search_flights`, `search_hotels`.
 - LLM/MCP traces go to **Langfuse** when `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` are set
-  (no-op otherwise). There is no Axiom — app logging is stdlib only.
+  (no-op otherwise). App logs ship to **Axiom** via `app/core/observability.py`
+  when `AXIOM_TOKEN`/`AXIOM_DATASET` are set — `service=vpt-api`. Log with
+  structured fields: `logger.info("msg", extra={"event": "<dotted.name>", ...})`;
+  errors with `exc_info=exc`. The `POST /v1/telemetry/client` router relays browser
+  events into the same pipeline (`component=web.telemetry`). Non-core `extra` keys
+  fold into the Axiom `fields` map field — see the root `CLAUDE.md` Observability
+  section and `docs/specs/operations/axiom-map-fields.md`.
 
 ## `POST /v1/admin/sql` — read-only SQL debug endpoint
 

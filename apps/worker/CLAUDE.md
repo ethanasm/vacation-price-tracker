@@ -78,7 +78,10 @@ fetching:
 
 Workflow/activity failures are visible in the **Temporal Web UI** (dev:
 `http://localhost:8080`). LLM/MCP traces (if the worker calls them) go to Langfuse.
-No Axiom. See `.claude/skills/debugging-prod/SKILL.md`.
+App logs ship to **Axiom** via `app/core/observability.py` (`init_observability("vpt-worker")`
+in `worker/__main__.py`) when `AXIOM_TOKEN`/`AXIOM_DATASET` are set; `service=vpt-worker`.
+Log with structured fields: `logger.info("msg", extra={"event": "activity.<name>.ok", "trip_id": tid})`.
+See the root `CLAUDE.md` Observability section. See `.claude/skills/debugging-prod/SKILL.md`.
 
 ## Commit scope
 

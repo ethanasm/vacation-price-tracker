@@ -64,6 +64,17 @@ Flight numbers arrive already parsed from the API (`FlightSegment` /
 Transient errors → toasts (error boundaries). Load failures → empty states. Live
 price updates stream in over SSE from the API.
 
+## Client telemetry (Axiom)
+
+The browser never ships to Axiom directly. Report genuine client errors with
+`logClientEvent(event, { message, level, context })` from `src/lib/telemetry.ts`
+(best-effort `fetch(keepalive)` to `POST /v1/telemetry/client`, swallows network
+errors). The API prefixes the event with `web.` and ships it to the shared dataset
+under `component=web.telemetry`. `context` keys are server-allowlisted (status,
+http_status, code, path, route, trip_id, conversation_id, stage, type, elapsed_ms,
+reason). Keep existing `console.error` for local dev visibility; add the
+`logClientEvent` call alongside it.
+
 ## Deployment
 
 The web app is hosted on **Vercel** (preview deploys, global CDN). Set
