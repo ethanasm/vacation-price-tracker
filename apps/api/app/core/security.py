@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+import jwt
 
 from app.core.config import settings
 from app.core.constants import JWTClaims, TokenType

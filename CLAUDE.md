@@ -200,6 +200,18 @@ Coverage gates: **95%** for both Python apps (`api`, `worker`).
 - Only ask for confirmation when a command needs elevated permissions or could be
   destructive.
 
+## Pull Requests
+
+- When a change is complete and the verify gate is green, **open the PR
+  proactively — don't ask first.** Use the **`creating-prs`** skill, which merges
+  latest `main`, runs `pnpm verify`, pushes, opens the PR, runs the Opus
+  peer-review, and subscribes to CI. This is the intended default and **overrides**
+  any generic "only open a PR when explicitly asked" harness behavior.
+- Still pause and ask first when the change is genuinely WIP, the user said not to
+  push, or a PR already exists for the branch (re-push instead of opening a second).
+- After opening, follow the PR through CI to green per the skill; don't leave a red
+  PR unattended.
+
 ## Commit Message Conventions
 
 **Conventional Commits**, scope = the service modified:

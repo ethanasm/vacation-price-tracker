@@ -41,3 +41,8 @@ apps/web/e2e/screenshots/
 /.worktrees
 /.claude/worktrees
 .playwright-mcp/
+
+# Nx
+.nx/polygraph
+.nx/self-healing
+.nx/migrate-runs

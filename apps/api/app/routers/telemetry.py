@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 import logging
 
+import jwt
 from fastapi import APIRouter, Request
-from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -86,7 +86,7 @@ def _user_id_from_cookie(request: Request) -> str | None:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
         return payload.get(JWTClaims.SUBJECT)
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 

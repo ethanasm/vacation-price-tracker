@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from app.core.config import settings
 from app.core.constants import JWTClaims, TokenType
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
-from jose import jwt
 
 
 class TestTokenCreation:
