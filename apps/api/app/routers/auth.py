@@ -1,10 +1,10 @@
 import logging
 import uuid
 
+import jwt
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
-from jose import ExpiredSignatureError, JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,7 +150,7 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
             algorithms=[settings.jwt_algorithm],
         )
         user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
-    except (JWTError, ValueError) as exc:
+    except (jwt.PyJWTError, ValueError) as exc:
         raise AuthenticationRequired("Invalid refresh token.") from exc
 
     # Verify refresh token is still valid in Redis
@@ -192,7 +192,7 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             user = result.scalars().first()
             if user:
                 logger.info("User logged out: id=%s email=%s", user.id, user.email)
-        except (JWTError, ValueError):
+        except (jwt.PyJWTError, ValueError):
             # If token is invalid, we can't do much but clear cookies anyway
             pass
 
@@ -273,9 +273,9 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
 
         user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
 
-    except ExpiredSignatureError:
+    except jwt.ExpiredSignatureError:
         raise AuthenticationRequired("Token has expired") from None
-    except (JWTError, ValueError):
+    except (jwt.PyJWTError, ValueError):
         raise AuthenticationRequired("Invalid token") from None
 
     # Fetch user from database

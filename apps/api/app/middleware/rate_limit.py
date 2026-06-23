@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import time
 
+import jwt
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
-from jose import JWTError, jwt
 
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
@@ -57,7 +57,7 @@ def _extract_user_id_from_token(request: Request) -> str | None:
             algorithms=[settings.jwt_algorithm],
         )
         return payload.get(JWTClaims.SUBJECT)
-    except JWTError:
+    except jwt.PyJWTError:
         # Invalid or expired token - fall back to IP-based rate limiting
         return None
 
