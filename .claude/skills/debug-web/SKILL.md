@@ -98,6 +98,39 @@ against the suspect route and read the terminal.
 **Compare light vs dark** — run both `--project=light` and `--project=dark` for
 the same `DEBUG_ROUTE`; the two PNGs are suffixed by project name.
 
+## Capturing review-quality screenshots for a PR
+
+When the capture is **review material for a PR** (the `creating-prs` hand-off),
+the frame is a quality gate, not decoration. Get the *preferred, fully-rendered*
+state — these are the ways it goes wrong:
+
+- **Capture the rendered state, not a loading skeleton (the #1 failure).** The
+  debug spec waits for `networkidle`, but VPT routes fetch client-side (trips load
+  via the api client, `/trips/<id>` price history, `/chat` SSE) — a slow query can
+  still freeze a skeleton. For those, block on the actual content before the shot,
+  e.g. `await expect(page.locator('[data-trip-card]').first()).toBeVisible({ timeout: 30_000 })`
+  then a short settle, rather than trusting `networkidle` alone.
+- **Seed the data the surface needs.** A render-wait still captures an *empty
+  state* if the fixture user has no rows. The `e2e` auth state is a logged-in
+  user — make sure that user actually has trips / price snapshots / the section
+  your change touches. If you can't seed a section, say so in the PR body instead
+  of shipping a partial capture.
+- **Save each capture the instant it's taken.** Playwright wipes its output
+  (`apps/web/e2e/screenshots/`, `test-results/`) at the start of every run, so copy
+  the "after" PNG to a scratch dir (the session scratchpad) *before* you run the
+  "before" pass — otherwise the before-run silently deletes your after and a later
+  step recovers a stale/wrong PNG.
+- **Before/after whenever the change is visual** (spacing, sizing, color, copy,
+  layout). Screenshot HEAD, copy it aside, then `git checkout HEAD^ -- <changed
+  files>`, re-shoot, and restore — never `git stash` on a clean tree (it no-ops
+  and yields two "after" shots).
+- **Actually open every PNG before posting.** A green Playwright run only proves
+  the spec passed — it does **not** prove the frame is the one you want. `Read`
+  each capture and confirm it shows the rendered preferred state (right route,
+  real data, not a skeleton / spinner / empty state / error / blank page). If it
+  doesn't, fix the wait/seed/selector and re-capture before posting. Posting a
+  capture you never opened is the most common way this ships misleading material.
+
 ## Debugging prod instead?
 
 This skill is for the **local** UI (you have the dev stack and a browser). For a
