@@ -110,6 +110,20 @@ class TestGoogleOAuthCallback:
         redirect_uri = authorize_redirect.call_args[0][1]
         assert str(redirect_uri).endswith("/v1/auth/google/callback")
 
+    def test_google_start_uses_public_origin_in_production(self, client, monkeypatch):
+        """In production the redirect_uri is built from the public BACKEND_URL,
+        not the proxied request (avoids redirect_uri_mismatch behind the tunnel)."""
+        authorize_redirect = AsyncMock(return_value=Response(status_code=307))
+        monkeypatch.setattr(auth_module.oauth.google, "authorize_redirect", authorize_redirect)
+        monkeypatch.setattr(settings, "environment", "production")
+        monkeypatch.setattr(settings, "backend_url", "https://vacation-price-tracker.ethanasm.me")
+
+        response = client.get("/v1/auth/google/start", follow_redirects=False)
+
+        assert response.status_code == 307
+        redirect_uri = authorize_redirect.call_args[0][1]
+        assert redirect_uri == "https://vacation-price-tracker.ethanasm.me/v1/auth/google/callback"
+
     def test_callback_returns_400_without_userinfo(self, client, monkeypatch):
         """Test callback returns 400 when userinfo missing."""
         monkeypatch.setattr(
