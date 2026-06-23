@@ -30,7 +30,7 @@ from app.db.temporal import close_temporal_client, get_temporal_client, init_tem
 from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
-from app.routers import admin, auth, chat, sse, trips
+from app.routers import admin, auth, chat, notifications, sse, trips
 
 
 def _configure_logging() -> None:
@@ -112,6 +112,7 @@ app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, tags=["chat"])
 app.include_router(sse.router, tags=["sse"])
 app.include_router(trips.router, tags=["trips"])
+app.include_router(notifications.router)
 app.include_router(admin.router)
 
 

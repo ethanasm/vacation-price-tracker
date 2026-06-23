@@ -38,6 +38,7 @@ async def test_engine():
     from app.models import (
         Conversation,
         Message,
+        NotificationOutbox,
         NotificationRule,
         PriceSnapshot,
         Trip,
@@ -47,7 +48,17 @@ async def test_engine():
     )
 
     # Reference models to avoid unused import warnings
-    _ = (User, Trip, TripFlightPrefs, TripHotelPrefs, PriceSnapshot, NotificationRule, Conversation, Message)
+    _ = (
+        User,
+        Trip,
+        TripFlightPrefs,
+        TripHotelPrefs,
+        PriceSnapshot,
+        NotificationRule,
+        NotificationOutbox,
+        Conversation,
+        Message,
+    )
 
     # Use unique file per test to avoid race conditions in parallel execution
     test_db_file = os.path.join(tempfile.gettempdir(), f"test_vacation_tracker_{uuid.uuid4().hex}.db")

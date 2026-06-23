@@ -79,6 +79,14 @@ class ThresholdType(StrEnum):
     HOTEL_TOTAL = "hotel_total"
 
 
+class NotificationStatus(StrEnum):
+    """Delivery status for a queued notification (outbox) row."""
+
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
 # =============================================================================
 # FLIGHT PREFERENCES CONSTANTS (Phase 1)
 # =============================================================================

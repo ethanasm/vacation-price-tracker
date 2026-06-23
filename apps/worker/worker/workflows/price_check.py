@@ -15,6 +15,11 @@ from worker.activities.price_check import (
 )
 from worker.types import FetchResult, PriceCheckResult
 
+with workflow.unsafe.imports_passed_through():
+    # Pulls in the email render/client stack (jinja2/httpx); keep it passed
+    # through so the workflow sandbox doesn't re-import those modules.
+    from worker.activities.notifications import evaluate_notifications_activity
+
 
 @workflow.defn
 class PriceCheckWorkflow:
@@ -118,6 +123,16 @@ class PriceCheckWorkflow:
             start_to_close_timeout=timedelta(seconds=10),
             retry_policy=RetryPolicy(maximum_attempts=1),  # Prevent duplicate snapshots
         )
+
+        # Evaluate notification rules against the new snapshot. Idempotent on
+        # snapshot_id, so this activity is safe to retry (unlike save_snapshot).
+        if snapshot_id:
+            await workflow.execute_activity(
+                evaluate_notifications_activity,
+                snapshot_id,
+                start_to_close_timeout=timedelta(seconds=15),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
 
         return {
             "success": True,

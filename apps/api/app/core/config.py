@@ -58,10 +58,17 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
     email_from: str = "notifications@yourdomain.com"
 
+    # Email delivery (Resend) — leave resend_api_key blank to run in dry-run mode
+    # (the digest job logs what it would send and skips delivery).
+    resend_api_key: str = ""
+    email_physical_address: str = ""  # CAN-SPAM footer; required for real sends
+    app_base_url: str = ""  # Public app URL for digest + unsubscribe links
+
     # SMS Notifications
     notification_api_key: str = ""
 
     # Feature Flags
+    enable_email_notifications: bool = False
     enable_sms_notifications: bool = False
     enable_beta_optimizer: bool = False
     max_trips_per_user: int = 10

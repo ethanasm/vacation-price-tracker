@@ -12,6 +12,11 @@ from temporalio.worker.workflow_sandbox import (
     SandboxRestrictions,
 )
 
+from worker.activities.notifications import (
+    evaluate_notifications_activity,
+    get_pending_digest_user_ids,
+    send_user_digest_activity,
+)
 from worker.activities.price_check import (
     fetch_flights_activity,
     fetch_hotels_activity,
@@ -29,6 +34,7 @@ from worker.schedule_bootstrap import ensure_daily_refresh_schedule
 from worker.workflows.price_check import PriceCheckWorkflow
 from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
 from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
+from worker.workflows.send_daily_digests import SendDailyDigestsWorkflow
 
 
 async def main() -> None:
@@ -53,6 +59,7 @@ async def main() -> None:
             RefreshAllTripsWorkflow,
             PriceCheckWorkflow,
             ScheduledRefreshAllUsersWorkflow,
+            SendDailyDigestsWorkflow,
         ],
         activities=[
             get_active_trips,
@@ -64,6 +71,9 @@ async def main() -> None:
             fetch_hotels_activity,
             filter_results_activity,
             save_snapshot_activity,
+            evaluate_notifications_activity,
+            get_pending_digest_user_ids,
+            send_user_digest_activity,
         ],
         graceful_shutdown_timeout=timedelta(seconds=30),
         workflow_runner=sandbox_runner,
