@@ -2,6 +2,7 @@
 .env
 .env.prod
 .env.*.local
+/backups
 /node_modules
 .coverage
 /apps/*/coverage*

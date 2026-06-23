@@ -25,6 +25,7 @@ x-logging: &default-logging
 services:
   db:
     image: postgres:15-alpine
+    container_name: vpt-prod-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -43,6 +44,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: vpt-prod-redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:6381:6379"
@@ -57,6 +59,7 @@ services:
 
   temporal:
     image: temporalio/auto-setup:latest
+    container_name: vpt-prod-temporal
     restart: unless-stopped
     environment:
       DB: postgres12
@@ -79,6 +82,7 @@ services:
 
   api:
     image: ghcr.io/ethanasm/vpt-api:${IMAGE_TAG:-latest}
+    container_name: vpt-prod-api
     restart: unless-stopped
     env_file: ../.env.prod
     environment:
@@ -106,6 +110,7 @@ services:
 
   worker:
     image: ghcr.io/ethanasm/vpt-worker:${IMAGE_TAG:-latest}
+    container_name: vpt-prod-worker
     restart: unless-stopped
     env_file: ../.env.prod
     environment:
@@ -125,7 +130,9 @@ services:
 
   web:
     image: ghcr.io/ethanasm/vpt-web:${IMAGE_TAG:-latest}
+    container_name: vpt-prod-web
     restart: unless-stopped
+    stop_grace_period: 30s
     environment:
       NEXT_PUBLIC_API_URL: ${BACKEND_URL}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
