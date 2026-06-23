@@ -36,11 +36,19 @@ MAX_HOTEL_DETAIL_CALLS = 20
 
 @activity.defn
 async def load_trip_details(trip_id: str) -> TripDetails:
-    logger.info("Loading trip details for trip_id=%s", trip_id)
+    logger.info(
+        "Loading trip details for trip_id=%s",
+        trip_id,
+        extra={"event": "activity.load_trip.start", "trip_id": trip_id},
+    )
     async with AsyncSessionLocal() as session:
         trip = await session.get(Trip, uuid.UUID(trip_id))
         if not trip:
-            logger.info("Trip not found for trip_id=%s", trip_id)
+            logger.info(
+                "Trip not found for trip_id=%s",
+                trip_id,
+                extra={"event": "activity.load_trip.not_found", "trip_id": trip_id},
+            )
             raise ValueError(f"Trip not found for id={trip_id}")
 
         flight_prefs = (
@@ -104,7 +112,11 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
     _set_trip_trace_context(trip, "fetch_flights")
     # Use mock data if configured
     if settings.mock_skiplagged_api:
-        logger.info("Using mock Skiplagged flights for trip_id=%s", trip["trip_id"])
+        logger.info(
+            "Using mock Skiplagged flights for trip_id=%s",
+            trip["trip_id"],
+            extra={"event": "activity.fetch_flights.start", "trip_id": trip["trip_id"], "mock": True},
+        )
         non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
         max_stops = "none" if non_stop else None
         response = mock_flight_search(
@@ -123,7 +135,11 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
-    logger.info("Fetching flights for trip_id=%s via Skiplagged MCP", trip["trip_id"])
+    logger.info(
+        "Fetching flights for trip_id=%s via Skiplagged MCP",
+        trip["trip_id"],
+        extra={"event": "activity.fetch_flights.start", "trip_id": trip["trip_id"], "mock": False},
+    )
     non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
     max_stops = "none" if non_stop else None
 
@@ -139,12 +155,22 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             max_pages=4,
         )
     except SkiplaggedMCPError as exc:
-        logger.warning("Flight fetch failed for trip_id=%s", trip["trip_id"], exc_info=exc)
+        logger.warning(
+            "Flight fetch failed for trip_id=%s",
+            trip["trip_id"],
+            exc_info=exc,
+            extra={"event": "activity.fetch_flights.failed", "trip_id": trip["trip_id"]},
+        )
         raise
 
     # Normalize FlightSearchResult to list of offer dicts
     offers = [_flight_to_offer_dict(flight) for flight in result.flights]
-    logger.info("Fetched %d flight offers for trip_id=%s via Skiplagged", len(offers), trip["trip_id"])
+    logger.info(
+        "Fetched %d flight offers for trip_id=%s via Skiplagged",
+        len(offers),
+        trip["trip_id"],
+        extra={"event": "activity.fetch_flights.ok", "trip_id": trip["trip_id"], "count": len(offers)},
+    )
     return {
         "offers": offers,
         "raw": {"provider": "skiplagged", "total_results": result.total_results},
@@ -191,6 +217,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             trip["trip_id"],
             bool(hotel_prefs),
             trip.get("return_date"),
+            extra={
+                "event": "activity.fetch_hotels.skipped",
+                "trip_id": trip["trip_id"],
+                "has_hotel_prefs": bool(hotel_prefs),
+                "return_date": str(trip.get("return_date")),
+            },
         )
         return {
             "offers": [],
@@ -199,7 +231,11 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         }
 
     if settings.mock_skiplagged_api:
-        logger.info("Using mock Skiplagged hotels for trip_id=%s", trip["trip_id"])
+        logger.info(
+            "Using mock Skiplagged hotels for trip_id=%s",
+            trip["trip_id"],
+            extra={"event": "activity.fetch_hotels.start", "trip_id": trip["trip_id"], "mock": True},
+        )
         adults = hotel_prefs["rooms"] * hotel_prefs["adults_per_room"]
         city_query = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
         response = mock_hotel_search(
@@ -216,7 +252,11 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
-    logger.info("Fetching hotels for trip_id=%s via Skiplagged MCP", trip["trip_id"])
+    logger.info(
+        "Fetching hotels for trip_id=%s via Skiplagged MCP",
+        trip["trip_id"],
+        extra={"event": "activity.fetch_hotels.start", "trip_id": trip["trip_id"], "mock": False},
+    )
     adults = hotel_prefs["adults_per_room"]
     city_query = (hotel_prefs.get("city") or "").strip() or trip["destination_code"]
 
@@ -231,7 +271,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             max_pages=4,
         )
     except SkiplaggedMCPError as exc:
-        logger.warning("Hotel search failed for trip_id=%s", trip["trip_id"], exc_info=exc)
+        logger.warning(
+            "Hotel search failed for trip_id=%s",
+            trip["trip_id"],
+            exc_info=exc,
+            extra={"event": "activity.fetch_hotels.failed", "trip_id": trip["trip_id"]},
+        )
         raise
 
     # Sort by price ascending and cap at MAX_HOTEL_DETAIL_CALLS
@@ -243,6 +288,12 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         len(top_hotels),
         len(hotel_result.hotels),
         trip["trip_id"],
+        extra={
+            "event": "activity.fetch_hotels.details",
+            "trip_id": trip["trip_id"],
+            "detail_count": len(top_hotels),
+            "total_count": len(hotel_result.hotels),
+        },
     )
 
     # Fetch details concurrently (with fallback to search-level data on failure)
@@ -257,12 +308,23 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             )
             return _normalize_hotel_detail(detail, hotel)
         except Exception as exc:
-            logger.warning("Failed to get details for hotel_id=%s: %s", hotel.id, exc)
+            logger.warning(
+                "Failed to get details for hotel_id=%s: %s",
+                hotel.id,
+                exc,
+                exc_info=exc,
+                extra={"event": "activity.fetch_hotels.detail_failed", "hotel_id": str(hotel.id)},
+            )
             return _hotel_to_offer_dict(hotel)
 
     offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
 
-    logger.info("Fetched %d hotel offers for trip_id=%s", len(offers), trip["trip_id"])
+    logger.info(
+        "Fetched %d hotel offers for trip_id=%s",
+        len(offers),
+        trip["trip_id"],
+        extra={"event": "activity.fetch_hotels.ok", "trip_id": trip["trip_id"], "count": len(offers)},
+    )
     return {
         "offers": offers,
         "raw": {"provider": "skiplagged", "total_results": hotel_result.total_results},
@@ -328,12 +390,26 @@ def _extract_skiplagged_hotel_offers(response: dict[str, Any]) -> list[dict[str,
 async def filter_results_activity(payload: FilterInput) -> FilterOutput:
     flights = _filter_flights(payload["flight_result"]["offers"], payload["flight_prefs"])
     hotels = _filter_hotels(payload["hotel_result"]["offers"], payload.get("hotel_prefs") or {})
-    logger.info("Filtered results flights=%d hotels=%d", len(flights), len(hotels))
+    logger.info(
+        "Filtered results flights=%d hotels=%d",
+        len(flights),
+        len(hotels),
+        extra={
+            "event": "activity.filter_results.ok",
+            "flight_count": len(flights),
+            "hotel_count": len(hotels),
+        },
+    )
     if payload["flight_result"]["error"] or payload["hotel_result"]["error"]:
         logger.debug(
             "Filter input errors flight_error=%s hotel_error=%s",
             payload["flight_result"]["error"],
             payload["hotel_result"]["error"],
+            extra={
+                "event": "activity.filter_results.input_errors",
+                "flight_error": str(payload["flight_result"]["error"]),
+                "hotel_error": str(payload["hotel_result"]["error"]),
+            },
         )
     raw_data = {
         "flights": payload["flight_result"]["raw"],
@@ -353,7 +429,11 @@ SNAPSHOT_DEDUP_WINDOW_SECONDS = 60
 
 @activity.defn
 async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
-    logger.info("Saving price snapshot for trip_id=%s", payload["trip_id"])
+    logger.info(
+        "Saving price snapshot for trip_id=%s",
+        payload["trip_id"],
+        extra={"event": "activity.save_snapshot.start", "trip_id": payload["trip_id"]},
+    )
     trip_uuid = uuid.UUID(payload["trip_id"])
 
     async with AsyncSessionLocal() as session:
@@ -380,6 +460,11 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
                     "Recent snapshot %s had errors; allowing new snapshot for trip_id=%s",
                     recent_snapshot.id,
                     payload["trip_id"],
+                    extra={
+                        "event": "activity.save_snapshot.retry_after_errors",
+                        "trip_id": payload["trip_id"],
+                        "snapshot_id": str(recent_snapshot.id),
+                    },
                 )
             else:
                 # Recent snapshot was successful - skip duplicate
@@ -388,6 +473,12 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
                     payload["trip_id"],
                     recent_snapshot.id,
                     seconds_ago,
+                    extra={
+                        "event": "activity.save_snapshot.duplicate_skipped",
+                        "trip_id": payload["trip_id"],
+                        "snapshot_id": str(recent_snapshot.id),
+                        "seconds_ago": seconds_ago,
+                    },
                 )
                 return str(recent_snapshot.id)
 
@@ -404,6 +495,13 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
             flight_price,
             hotel_price,
             total_price,
+            extra={
+                "event": "activity.save_snapshot.prices",
+                "trip_id": payload["trip_id"],
+                "flight_price": str(flight_price),
+                "hotel_price": str(hotel_price),
+                "total_price": str(total_price),
+            },
         )
 
         raw_data = dict(payload["raw_data"] or {})
@@ -428,6 +526,11 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
             "Saved price snapshot for trip_id=%s snapshot_id=%s",
             payload["trip_id"],
             snapshot.id,
+            extra={
+                "event": "activity.save_snapshot.ok",
+                "trip_id": payload["trip_id"],
+                "snapshot_id": str(snapshot.id),
+            },
         )
         return str(snapshot.id)
 

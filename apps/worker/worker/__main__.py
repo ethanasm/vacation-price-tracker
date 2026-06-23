@@ -4,6 +4,8 @@ import signal
 from datetime import timedelta
 
 from app.core.config import settings
+from app.core.observability import flush as flush_observability
+from app.core.observability import init_observability
 from app.core.telemetry import flush as flush_telemetry
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -32,7 +34,7 @@ from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
 
 
 async def main() -> None:
-    logging.basicConfig(level=settings.log_level)
+    init_observability("vpt-worker")
     client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
 
     await ensure_daily_refresh_schedule(client)
@@ -98,6 +100,7 @@ async def main() -> None:
 
     await worker_task
     flush_telemetry()
+    flush_observability()
 
 
 if __name__ == "__main__":
