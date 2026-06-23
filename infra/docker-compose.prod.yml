@@ -130,7 +130,7 @@ services:
       NEXT_PUBLIC_API_URL: ${BACKEND_URL}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
     ports:
-      - "127.0.0.1:3001:3000"
+      - "127.0.0.1:3005:3000"
     depends_on:
       - api
     logging: *default-logging
