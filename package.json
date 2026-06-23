@@ -14,6 +14,8 @@
     "affected:lint": "nx affected -t lint",
     "affected:test": "nx affected -t test",
     "sonar": "sonar-scanner",
+    "sonar:verify": "./scripts/sonar-local.sh",
+    "sonar:check": "node scripts/sonar-coverage-check.mjs",
     "web:dev": "nx dev web",
     "web:dev:http": "nx run web:dev --configuration=development",
     "web:build": "nx build web",
