@@ -31,7 +31,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: vacation_tracker
     ports:
-      - "127.0.0.1:5434:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - vpt_prod_postgres_data:/var/lib/postgresql/data
     logging: *default-logging
