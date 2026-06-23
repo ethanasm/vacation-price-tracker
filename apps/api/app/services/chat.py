@@ -157,11 +157,26 @@ def _get_error_chunk(error: GroqClientError) -> ChatChunk:
 def _log_groq_error(error: GroqClientError) -> None:
     """Log Groq error with appropriate level."""
     if isinstance(error, GroqRateLimitError):
-        logger.warning("Rate limit exceeded: %s (daily_limit=%s)", error, error.is_daily_limit)
+        logger.warning(
+            "Rate limit exceeded: %s (daily_limit=%s)",
+            error,
+            error.is_daily_limit,
+            extra={
+                "event": "chat.llm.rate_limited",
+                "is_daily_limit": bool(error.is_daily_limit),
+            },
+        )
     elif isinstance(error, GroqToolCallError):
-        logger.warning("Tool call generation failed: %s", error)
+        logger.warning(
+            "Tool call generation failed: %s",
+            error,
+            extra={"event": "chat.llm.tool_call_failed"},
+        )
     else:
-        logger.exception("Groq client error during chat processing")
+        logger.exception(
+            "Groq client error during chat processing",
+            extra={"event": "chat.llm.error"},
+        )
 
 
 def _convert_tools_to_groq_format() -> list[Tool]:
@@ -290,6 +305,10 @@ async def _execute_tool_call(
             "Tool %s requesting elicitation, missing_fields=%s",
             tool_name,
             result.data.get("missing_fields", []),
+            extra={
+                "event": "chat.tool.elicitation_request",
+                "tool_name": tool_name,
+            },
         )
         yield ChatChunk.elicitation_request(
             tool_call_id=tool_call.id,
@@ -299,7 +318,16 @@ async def _execute_tool_call(
             missing_fields=result.data.get("missing_fields", []),
         ), result
     else:
-        logger.info("Tool %s executed, success=%s, yielding tool_result chunk", tool_name, result.success)
+        logger.info(
+            "Tool %s executed, success=%s, yielding tool_result chunk",
+            tool_name,
+            result.success,
+            extra={
+                "event": "chat.tool.executed",
+                "tool_name": tool_name,
+                "success": bool(result.success),
+            },
+        )
         yield ChatChunk.tool_executed(
             tool_call_id=tool_call.id,
             name=tool_name,
@@ -331,7 +359,15 @@ def _create_assistant_message(content: str, tool_calls: list[ToolCall]) -> GroqM
 def _log_tool_call_start(user_id: str, tool_count: int) -> None:
     """Log the start of tool call processing."""
     user_display = user_id[:8] + "..." if len(user_id) > 8 else user_id
-    logger.info("Processing %d tool calls for user %s", tool_count, user_display)
+    logger.info(
+        "Processing %d tool calls for user %s",
+        tool_count,
+        user_display,
+        extra={
+            "event": "chat.tool.dispatch",
+            "count": tool_count,
+        },
+    )
 
 
 async def _process_tool_calls(
@@ -366,6 +402,11 @@ async def _process_tool_calls(
                     "Tool %s exceeded retry limit (%d calls), skipping",
                     tool_name,
                     retry_tracker.get_count(tool_name),
+                    extra={
+                        "event": "chat.tool.retry_exceeded",
+                        "tool_name": tool_name,
+                        "count": retry_tracker.get_count(tool_name),
+                    },
                 )
                 # Yield error chunk indicating tool was skipped
                 yield ChatChunk.error_chunk(
@@ -392,7 +433,10 @@ async def _process_tool_calls(
         # If elicitation was requested, stop processing further tool calls
         # The frontend will collect user input and submit to continue
         if elicitation_requested:
-            logger.info("Elicitation requested, stopping tool call processing")
+            logger.info(
+                "Elicitation requested, stopping tool call processing",
+                extra={"event": "chat.tool.elicitation_stop"},
+            )
             return
 
         if result is not None:
@@ -432,7 +476,10 @@ async def _run_single_tool_round(
             yield chunk, True
 
     if not accumulated_tool_calls:
-        logger.debug("No tool calls, conversation complete")
+        logger.debug(
+            "No tool calls, conversation complete",
+            extra={"event": "chat.tool.none"},
+        )
         yield None, False
         return
 
@@ -506,7 +553,15 @@ async def process_chat_with_tools(
     retry_tracker = ToolRetryTracker(max_retries=MAX_TOOL_RETRIES)
 
     for round_count in range(1, MAX_TOOL_ROUNDS + 1):
-        logger.debug("Tool round %d/%d", round_count, MAX_TOOL_ROUNDS)
+        logger.debug(
+            "Tool round %d/%d",
+            round_count,
+            MAX_TOOL_ROUNDS,
+            extra={
+                "event": "chat.tool.round",
+                "count": round_count,
+            },
+        )
 
         try:
             should_continue = True
@@ -521,7 +576,14 @@ async def process_chat_with_tools(
                 # Log if any tools hit their retry limit
                 exceeded = retry_tracker.get_exceeded_tools()
                 if exceeded:
-                    logger.warning("Tools that hit retry limit: %s", exceeded)
+                    logger.warning(
+                        "Tools that hit retry limit: %s",
+                        exceeded,
+                        extra={
+                            "event": "chat.tool.retry_limit_hit",
+                            "count": len(exceeded),
+                        },
+                    )
                 return
 
         except GroqClientError as e:
@@ -529,7 +591,14 @@ async def process_chat_with_tools(
             yield _get_error_chunk(e)
             return
 
-    logger.warning("Tool loop exceeded %d rounds, terminating", MAX_TOOL_ROUNDS)
+    logger.warning(
+        "Tool loop exceeded %d rounds, terminating",
+        MAX_TOOL_ROUNDS,
+        extra={
+            "event": "chat.tool.loop_exceeded",
+            "count": MAX_TOOL_ROUNDS,
+        },
+    )
     yield ChatChunk.error_chunk(
         f"Tool execution exceeded maximum rounds ({MAX_TOOL_ROUNDS}). Please try a simpler request."
     )
@@ -601,6 +670,10 @@ class ChatService:
                 "Query rejected - not travel-related: %s (reason: %s)",
                 message[:50],
                 validation.reason,
+                extra={
+                    "event": "chat.query.rejected",
+                    "reason": str(validation.reason),
+                },
             )
             yield ChatChunk.text(
                 "I'm a travel assistant focused on helping you track vacation prices. "
@@ -621,6 +694,10 @@ class ChatService:
             str(user.id)[:8],
             str(conversation.id)[:8],
             thread_id,
+            extra={
+                "event": "chat.message.start",
+                "conversation_id": str(conversation.id),
+            },
         )
 
         # 3. Save user message
@@ -711,7 +788,14 @@ class ChatService:
             yield ChatChunk.done_chunk(thread_id=conversation.id)
 
         except Exception as e:
-            logger.exception("Error during chat processing")
+            logger.exception(
+                "Error during chat processing",
+                exc_info=e,
+                extra={
+                    "event": "chat.message.error",
+                    "conversation_id": str(conversation.id),
+                },
+            )
             await db.rollback()
             yield ChatChunk.error_chunk(f"Chat processing error: {e}")
             yield ChatChunk.done_chunk(thread_id=conversation.id)
@@ -779,7 +863,11 @@ class ChatService:
 
             if not user_message or not assistant_response:
                 logger.debug(
-                    "Skipping title generation: missing user or assistant message"
+                    "Skipping title generation: missing user or assistant message",
+                    extra={
+                        "event": "chat.title.skipped",
+                        "conversation_id": str(conversation_id),
+                    },
                 )
                 return
 
@@ -789,6 +877,10 @@ class ChatService:
                 "Generated title for conversation %s: %s",
                 str(conversation_id)[:8],
                 title[:50],
+                extra={
+                    "event": "chat.title.generated",
+                    "conversation_id": str(conversation_id),
+                },
             )
         except Exception as e:
             # Don't fail the chat if title generation fails
@@ -796,6 +888,10 @@ class ChatService:
                 "Failed to generate title for conversation %s: %s",
                 conversation_id,
                 e,
+                extra={
+                    "event": "chat.title.failed",
+                    "conversation_id": str(conversation_id),
+                },
             )
 
     async def get_conversation_history(
@@ -852,6 +948,10 @@ class ChatService:
             "Continuing conversation after elicitation: user=%s conversation=%s",
             str(user.id)[:8],
             str(conversation_id)[:8],
+            extra={
+                "event": "chat.elicitation.continue",
+                "conversation_id": str(conversation_id),
+            },
         )
 
         # 1. Build system prompt with user context
@@ -931,7 +1031,14 @@ class ChatService:
             yield ChatChunk.done_chunk(thread_id=conversation_id)
 
         except Exception as e:
-            logger.exception("Error during elicitation continuation")
+            logger.exception(
+                "Error during elicitation continuation",
+                exc_info=e,
+                extra={
+                    "event": "chat.elicitation.error",
+                    "conversation_id": str(conversation_id),
+                },
+            )
             await db.rollback()
             yield ChatChunk.error_chunk(f"Chat processing error: {e}")
             yield ChatChunk.done_chunk(thread_id=conversation_id)

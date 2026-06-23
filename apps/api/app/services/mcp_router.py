@@ -244,7 +244,11 @@ class MCPRouter:
             handler: Tool handler (class instance or async function).
         """
         self._tools[tool_name] = handler
-        logger.debug("Registered tool: %s", tool_name)
+        logger.debug(
+            "Registered tool: %s",
+            tool_name,
+            extra={"event": "mcp.tool.registered", "tool_name": tool_name},
+        )
 
     def unregister(self, tool_name: str) -> bool:
         """Unregister a tool handler.
@@ -257,7 +261,11 @@ class MCPRouter:
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
-            logger.debug("Unregistered tool: %s", tool_name)
+            logger.debug(
+                "Unregistered tool: %s",
+                tool_name,
+                extra={"event": "mcp.tool.unregistered", "tool_name": tool_name},
+            )
             return True
         return False
 
@@ -308,10 +316,19 @@ class MCPRouter:
             validate_tool_args(tool_name, arguments)
             return None
         except ToolNotFoundError:
-            logger.warning("Tool %s is registered but has no schema definition", tool_name)
+            logger.warning(
+                "Tool %s is registered but has no schema definition",
+                tool_name,
+                extra={"event": "mcp.tool_call.no_schema", "tool_name": tool_name},
+            )
             return None
         except ToolValidationError as e:
-            logger.warning("Validation failed for tool %s: %s", tool_name, e.details)
+            logger.warning(
+                "Validation failed for tool %s: %s",
+                tool_name,
+                e.details,
+                extra={"event": "mcp.tool_call.invalid_args", "tool_name": tool_name},
+            )
             audit_logger.log_tool_failure(
                 user_id=user_id,
                 tool_name=tool_name,
@@ -380,7 +397,12 @@ class MCPRouter:
             ToolResult with success status and data/error.
         """
         user_display = user_id[:8] + "..." if len(user_id) > 8 else user_id
-        logger.info("Executing tool: %s for user: %s", tool_name, user_display)
+        logger.info(
+            "Executing tool: %s for user: %s",
+            tool_name,
+            user_display,
+            extra={"event": "mcp.tool_call.start", "tool_name": tool_name},
+        )
         langfuse_context.update_current_observation(
             input={"tool": tool_name, "arguments": arguments},
             metadata={"tool_name": tool_name},
@@ -388,7 +410,11 @@ class MCPRouter:
 
         handler = self._tools.get(tool_name)
         if handler is None:
-            logger.warning("Tool not found: %s", tool_name)
+            logger.warning(
+                "Tool not found: %s",
+                tool_name,
+                extra={"event": "mcp.tool_call.unknown", "tool_name": tool_name},
+            )
             audit_logger.log_tool_failure(
                 user_id=user_id, tool_name=tool_name, arguments=arguments, error="Tool not found"
             )
@@ -410,12 +436,26 @@ class MCPRouter:
 
         try:
             result = await self._execute_handler(handler, sanitized_arguments, user_id, db)
-            logger.info("Tool %s executed successfully: success=%s", tool_name, result.success)
+            logger.info(
+                "Tool %s executed successfully: success=%s",
+                tool_name,
+                result.success,
+                extra={
+                    "event": "mcp.tool_call.ok",
+                    "tool_name": tool_name,
+                    "success": bool(result.success),
+                },
+            )
             self._log_result(tool_name, result, user_id, sanitized_arguments)
             langfuse_context.update_current_observation(output=result)
             return result
         except Exception as e:
-            logger.exception("Tool %s execution failed", tool_name)
+            logger.exception(
+                "Tool %s execution failed",
+                tool_name,
+                exc_info=e,
+                extra={"event": "mcp.tool_call.failed", "tool_name": tool_name},
+            )
             audit_logger.log_tool_failure(
                 user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments, error=str(e)
             )
@@ -446,7 +486,11 @@ class MCPRouter:
         try:
             arguments = json.loads(arguments_json)
         except json.JSONDecodeError as e:
-            logger.warning("Failed to parse tool arguments JSON: %s", e)
+            logger.warning(
+                "Failed to parse tool arguments JSON: %s",
+                e,
+                extra={"event": "mcp.tool_call.bad_json", "tool_name": tool_name},
+            )
             return ToolResult(
                 success=False,
                 error=f"Invalid JSON in tool arguments: {e!s}",
@@ -498,7 +542,14 @@ def _register_tools(router: MCPRouter) -> None:
     router.register("search_flights", SearchFlightsSkiplaggedTool())
     router.register("search_hotels", SearchHotelsSkiplaggedTool())
 
-    logger.info("Registered %d MCP tools", len(router.get_registered_tools()))
+    logger.info(
+        "Registered %d MCP tools",
+        len(router.get_registered_tools()),
+        extra={
+            "event": "mcp.tools.registered_all",
+            "count": len(router.get_registered_tools()),
+        },
+    )
 
 
 def get_mcp_router() -> MCPRouter:

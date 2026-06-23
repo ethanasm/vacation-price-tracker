@@ -222,6 +222,10 @@ class InputSanitizer:
                     "Sanitized field %s: detected patterns %s",
                     path,
                     patterns,
+                    extra={
+                        "event": "input_sanitizer.field_sanitized",
+                        "count": len(patterns),
+                    },
                 )
             return sanitized
 

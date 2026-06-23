@@ -139,7 +139,11 @@ class SkiplaggedClient:
         # Parse SSE response to verify initialization succeeded
         self._parse_sse_json_rpc(response)
         self._initialized = True
-        logger.debug("Skiplagged MCP session initialized: session_id=%s", self._session_id)
+        logger.debug(
+            "Skiplagged MCP session initialized: session_id=%s",
+            self._session_id,
+            extra={"event": "skiplagged.session.init", "session_id": str(self._session_id)},
+        )
 
     @observe(name="skiplagged.mcp_call")
     async def _call_mcp(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -186,6 +190,12 @@ class SkiplaggedClient:
                     delay,
                     attempt + 1,
                     MAX_TRANSIENT_RETRIES,
+                    extra={
+                        "event": "skiplagged.request.retry",
+                        "tool_name": tool_name,
+                        "delay_ms": int(delay * 1000),
+                        "attempt": attempt + 1,
+                    },
                 )
                 await asyncio.sleep(delay)
                 continue
@@ -229,13 +239,28 @@ class SkiplaggedClient:
                     headers=headers,
                 )
         except httpx.ConnectError as e:
-            logger.error("Failed to connect to Skiplagged MCP: %s", e)
+            logger.warning(
+                "Failed to connect to Skiplagged MCP: %s",
+                e,
+                extra={"event": "skiplagged.connect.failed", "error": str(e)},
+                exc_info=e,
+            )
             raise SkiplaggedConnectionError(f"Failed to connect to MCP server: {e}") from e
         except httpx.TimeoutException as e:
-            logger.error("Timeout connecting to Skiplagged MCP: %s", e)
+            logger.warning(
+                "Timeout connecting to Skiplagged MCP: %s",
+                e,
+                extra={"event": "skiplagged.timeout", "error": str(e)},
+                exc_info=e,
+            )
             raise SkiplaggedConnectionError(f"Timeout connecting to MCP server: {e}") from e
         except httpx.HTTPError as e:
-            logger.error("HTTP error calling Skiplagged MCP: %s", e)
+            logger.warning(
+                "HTTP error calling Skiplagged MCP: %s",
+                e,
+                extra={"event": "skiplagged.http_error", "error": str(e)},
+                exc_info=e,
+            )
             raise SkiplaggedConnectionError(f"HTTP error: {e}") from e
 
         if response.status_code >= 400:
@@ -247,6 +272,7 @@ class SkiplaggedClient:
                 "Skiplagged MCP request failed: status=%s body=%s",
                 response.status_code,
                 response.text[:500],
+                extra={"event": "skiplagged.request.failed", "status": response.status_code},
             )
             if response.status_code == 429:
                 raise SkiplaggedRateLimitError(
@@ -286,12 +312,21 @@ class SkiplaggedClient:
             try:
                 data = response.json()
             except ValueError as e:
-                logger.error("Invalid JSON response from Skiplagged MCP: %s", response.text[:500])
+                logger.error(
+                    "Invalid JSON response from Skiplagged MCP: %s",
+                    response.text[:500],
+                    extra={"event": "skiplagged.response.invalid_json"},
+                    exc_info=e,
+                )
                 raise SkiplaggedRequestError("Invalid JSON response from MCP server") from e
 
         if "error" in data:
             error_msg = data["error"].get("message", "Unknown error")
-            logger.warning("Skiplagged MCP returned error: %s", error_msg)
+            logger.warning(
+                "Skiplagged MCP returned error: %s",
+                error_msg,
+                extra={"event": "skiplagged.response.error", "error": str(error_msg)},
+            )
             if _is_rate_limit_message(error_msg):
                 raise SkiplaggedRateLimitError(f"MCP error: {error_msg}")
             raise SkiplaggedRequestError(f"MCP error: {error_msg}")
@@ -322,7 +357,11 @@ class SkiplaggedClient:
                     continue
 
         if last_data is None:
-            logger.error("No valid JSON data in SSE response: %s", text[:500])
+            logger.error(
+                "No valid JSON data in SSE response: %s",
+                text[:500],
+                extra={"event": "skiplagged.response.no_sse_data"},
+            )
             raise SkiplaggedRequestError("No valid data in SSE response from MCP server")
 
         return last_data
@@ -375,7 +414,11 @@ class SkiplaggedClient:
                     text_parts.append(str(item.get("text", "")))
         message = " ".join(text_parts).strip() or "Unknown tool error"
 
-        logger.warning("Skiplagged MCP tool error: %s", message)
+        logger.warning(
+            "Skiplagged MCP tool error: %s",
+            message,
+            extra={"event": "skiplagged.tool.error", "error": str(message)},
+        )
         if _is_rate_limit_message(message):
             raise SkiplaggedRateLimitError(f"MCP tool error: {message}")
         raise SkiplaggedRequestError(f"MCP tool error: {message}")
@@ -484,7 +527,10 @@ class SkiplaggedClient:
         except SkiplaggedMCPError:
             raise
         except Exception as e:
-            logger.exception("Unexpected error calling Skiplagged flights")
+            logger.exception(
+                "Unexpected error calling Skiplagged flights",
+                extra={"event": "skiplagged.flights.unexpected_error", "error": str(e)},
+            )
             error_result = FlightSearchResult(
                 flights=[],
                 origin=origin.upper(),
@@ -655,7 +701,10 @@ class SkiplaggedClient:
         except SkiplaggedMCPError:
             raise
         except Exception as e:
-            logger.exception("Unexpected error calling Skiplagged hotels")
+            logger.exception(
+                "Unexpected error calling Skiplagged hotels",
+                extra={"event": "skiplagged.hotels.unexpected_error", "error": str(e)},
+            )
             error_result = HotelSearchResult(
                 hotels=[],
                 city=city,
@@ -800,7 +849,12 @@ class SkiplaggedClient:
                 if parsed:
                     flights.append(parsed)
             except Exception as e:
-                logger.warning("Failed to parse Skiplagged flight: %s - %s", flight_data, e)
+                logger.warning(
+                    "Failed to parse Skiplagged flight: %s - %s",
+                    flight_data,
+                    e,
+                    extra={"event": "skiplagged.flight.parse_failed", "error": str(e)},
+                )
 
         result = FlightSearchResult(
             flights=flights,
@@ -886,7 +940,12 @@ class SkiplaggedClient:
                 if parsed:
                     hotels.append(parsed)
             except Exception as e:
-                logger.warning("Failed to parse Skiplagged hotel: %s - %s", hotel_data, e)
+                logger.warning(
+                    "Failed to parse Skiplagged hotel: %s - %s",
+                    hotel_data,
+                    e,
+                    extra={"event": "skiplagged.hotel.parse_failed", "error": str(e)},
+                )
 
         result = HotelSearchResult(
             hotels=hotels,

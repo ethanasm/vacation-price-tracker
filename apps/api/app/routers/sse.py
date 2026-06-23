@@ -108,7 +108,12 @@ async def event_generator(
             yield _format_sse_event("price_update", update)
         last_snapshot_time = _get_max_timestamp(initial_updates, last_snapshot_time)
     except Exception as e:
-        logger.error("Error fetching initial updates: %s", e)
+        logger.error(
+            "Error fetching initial updates: %s",
+            e,
+            exc_info=e,
+            extra={"event": "sse.error", "user_id": str(user_id), "phase": "initial"},
+        )
         yield _format_sse_event("error", {"error": "Failed to fetch initial data"})
 
     # Main event loop
@@ -130,10 +135,19 @@ async def event_generator(
             await asyncio.sleep(poll_interval)
 
         except asyncio.CancelledError:
-            logger.info("SSE connection cancelled for user %s", user_id)
+            logger.info(
+                "SSE connection cancelled for user %s",
+                user_id,
+                extra={"event": "sse.disconnect", "user_id": str(user_id)},
+            )
             raise  # Re-raise to properly propagate cancellation
         except Exception as e:
-            logger.error("Error in SSE event loop: %s", e)
+            logger.error(
+                "Error in SSE event loop: %s",
+                e,
+                exc_info=e,
+                extra={"event": "sse.error", "user_id": str(user_id), "phase": "loop"},
+            )
             yield f"event: error\ndata: {json.dumps({'error': 'Internal error'})}\n\n"
             break
 

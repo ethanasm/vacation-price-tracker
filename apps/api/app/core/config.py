@@ -96,6 +96,19 @@ class Settings(BaseSettings):
         """Whether Langfuse is configured with credentials."""
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
+    # Axiom (structured app-log shipping) — leave token/dataset blank to disable
+    # (stdout-only). One shared dataset for api + worker + web, distinguished by
+    # the `service` field. The `fields` map field bounds the column schema.
+    axiom_token: str = ""  # ingest-only API token
+    axiom_dataset: str = ""  # e.g. vpt-prod
+    axiom_org_id: str = ""  # optional; required for PAT-style tokens
+    axiom_url: str = "https://api.axiom.co"
+
+    @property
+    def axiom_enabled(self) -> bool:
+        """Whether Axiom log shipping is configured."""
+        return bool(self.axiom_token and self.axiom_dataset)
+
     # JWT
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15

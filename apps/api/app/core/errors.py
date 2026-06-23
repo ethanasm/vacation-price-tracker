@@ -228,7 +228,15 @@ def http_exception_response(exc: HTTPException, request: Request) -> JSONRespons
 def validation_exception_response(exc: RequestValidationError, request: Request) -> JSONResponse:
     errors = jsonable_encoder(exc.errors())
     logger.warning(
-        "Validation error at %s %s: %s", request.method, request.url.path, errors
+        "Validation error at %s %s: %s",
+        request.method,
+        request.url.path,
+        errors,
+        extra={
+            "event": "exception.validation_error",
+            "method": request.method,
+            "route": request.url.path,
+        },
     )
     payload = {
         "type": problem_type("validation-error"),
