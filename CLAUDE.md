@@ -195,8 +195,8 @@ commits.
   `.env.prod.example` → `.env.prod`. CI builds & pushes
   `ghcr.io/ethanasm/vpt-{web,api,worker}` on merge to `main`; `deploy.yml` rolls the
   self-hosted host forward. Helper scripts: `pnpm prod:up`, `pnpm prod:db:migrate`,
-  `pnpm prod:query` (admin SQL). Full operator runbook: `docs/DEPLOYMENT.md`. Prod
-  debugging: `.claude/skills/debugging-prod/SKILL.md`.
+  `pnpm prod:query` (admin SQL). Prod debugging:
+  `.claude/skills/debugging-prod/SKILL.md`.
 - **OAuth ingress:** the home server has no port forwarding — a Cloudflare Tunnel
   fronts ingress; the Google callback is `https://<domain>/v1/auth/google/callback`
   (see `apps/api/CLAUDE.md`).
