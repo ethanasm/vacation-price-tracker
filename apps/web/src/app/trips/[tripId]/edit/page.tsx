@@ -15,6 +15,7 @@ import { useTripForm, tripDetailToFormData } from "../../../../lib/hooks/use-tri
 import { api, ApiError } from "../../../../lib/api";
 import type { TripDetail } from "../../../../lib/api";
 import type { Location } from "../../../../components/trip-form";
+import { logClientEvent, errorMessage } from "../../../../lib/telemetry";
 import styles from "./page.module.css";
 
 export default function EditTripPage({
@@ -77,6 +78,11 @@ export default function EditTripPage({
         setters.setHotelPrefsOpen(formInitialData.hotelPrefsOpen);
       } catch (error) {
         console.error("Failed to load trip:", error);
+        logClientEvent("trip.load.failed", {
+          message: errorMessage(error),
+          level: "error",
+          context: { trip_id: tripId, status: error instanceof ApiError ? error.status : undefined },
+        });
         if (error instanceof ApiError) {
           if (error.status === 404) {
             setLoadError("Trip not found");
@@ -117,6 +123,11 @@ export default function EditTripPage({
       router.push(`/trips/${tripId}`);
     } catch (error) {
       console.error("Failed to update trip:", error);
+      logClientEvent("trip.update.failed", {
+        message: errorMessage(error),
+        level: "error",
+        context: { trip_id: tripId, status: error instanceof ApiError ? error.status : undefined },
+      });
       if (error instanceof ApiError) {
         if (error.status === 409) {
           toast.error("A trip with this name already exists.");

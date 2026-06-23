@@ -14,6 +14,7 @@ import {
 import { useTripForm } from "../../../lib/hooks/use-trip-form";
 import { api, ApiError } from "../../../lib/api";
 import type { Location } from "../../../components/trip-form";
+import { logClientEvent, errorMessage } from "../../../lib/telemetry";
 import styles from "./page.module.css";
 
 /**
@@ -53,6 +54,11 @@ export default function CreateTripPage() {
       router.push("/trips");
     } catch (error) {
       console.error("Failed to create trip:", error);
+      logClientEvent("trip.create.failed", {
+        message: errorMessage(error),
+        level: "error",
+        context: { status: error instanceof ApiError ? error.status : undefined },
+      });
       if (error instanceof ApiError) {
         if (error.status === 409) {
           toast.error(error.detail || "A trip with this name already exists. Please choose a different name.");

@@ -3,6 +3,7 @@
 import { Component, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
+import { logClientEvent } from "../lib/telemetry";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -28,8 +29,13 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    // Log to console in development, could send to error tracking service
+    // Log to console in development, and relay to Axiom via the API.
     console.error("ErrorBoundary caught an error:", error, errorInfo);
+    logClientEvent("error_boundary.caught", {
+      message: error.message,
+      level: "error",
+      context: { type: error.name },
+    });
   }
 
   handleReset = (): void => {
