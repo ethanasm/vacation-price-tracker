@@ -28,6 +28,8 @@ import logging
 import socket
 import sys
 import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from datetime import UTC, datetime
 from threading import Timer
 from typing import Any
@@ -254,29 +256,66 @@ if _HAS_AXIOM:
     class VptAxiomHandler(AxiomHandler):
         """``axiom_py.logging.AxiomHandler`` + showbook's reshape Transform.
 
-        Reuses the SDK handler's buffer + interval/size flush + shutdown hook.
-        Overrides ``emit`` so each buffered record is our reshaped event dict
-        (CORE_FIELDS kept, everything else folded into ``fields``) instead of the
-        raw ``record.__dict__`` (which would leak LogRecord internals as columns —
-        the exact cap problem the map field prevents).
+        Reuses the SDK handler's buffer + interval/size flush trigger, but ships
+        the batch on a background thread so the synchronous SDK ``ingest_events``
+        (``requests.post`` with retry/backoff) never blocks the asyncio event
+        loop — most call-sites log from inside async request/activity handlers.
+        ``emit`` also reshapes each record (CORE_FIELDS kept, everything else
+        folded into ``fields``) before buffering, instead of the raw
+        ``record.__dict__`` that would leak LogRecord internals as columns.
         """
 
         def __init__(self, client: Any, dataset: str, service: str, *, interval: int = 1) -> None:
             super().__init__(client, dataset, interval=interval)
             self._service = service
+            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="axiom-ship")
+            self._pending: set[Future] = set()
 
         def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
             try:
                 event = reshape_for_axiom(_record_to_event(record, self._service))
             except Exception:  # never let logging raise
                 return
-            self.buffer.append(event)
-            if len(self.buffer) >= 1000 or _monotonic() - self.last_flush > self.interval:
+            with self.lock:
+                self.buffer.append(event)
+                should_flush = len(self.buffer) >= 1000 or _monotonic() - self.last_flush > self.interval
+            if should_flush:
                 self.flush()
             # Re-arm the periodic flush (mirrors the SDK's emit tail).
             self.timer.cancel()
             self.timer = Timer(self.interval, self.flush)
             self.timer.start()
+
+        def flush(self) -> None:
+            """Swap the buffer and ship it on the background thread (non-blocking)."""
+            with self.lock:
+                self.last_flush = _monotonic()
+                if not self.buffer:
+                    return
+                local_buffer, self.buffer = self.buffer, []
+            future = self._executor.submit(self._ship, local_buffer)
+            self._pending.add(future)
+            future.add_done_callback(self._pending.discard)
+
+        def _ship(self, events: list) -> None:
+            try:
+                self.client.ingest_events(self.dataset, events)
+            except Exception:  # pragma: no cover - best-effort; never crash the ship thread
+                pass
+
+        def drain(self, timeout: float = 5.0) -> None:
+            """Flush and wait for in-flight ships (used on shutdown)."""
+            self.flush()
+            pending = list(self._pending)
+            if pending:
+                futures_wait(pending, timeout=timeout)
+
+        def close(self) -> None:
+            try:
+                self.timer.cancel()
+            finally:
+                self._executor.shutdown(wait=False)
+                super().close()
 
 
 def _monotonic() -> float:
@@ -310,6 +349,12 @@ def init_observability(service: str = _DEFAULT_SERVICE) -> None:
     """Configure root logging: stdout always, Axiom when configured. Idempotent."""
     global _axiom_handler
 
+    # Close the previous Axiom handler (cancel its Timer, stop its ship thread)
+    # so re-init doesn't leak background threads.
+    if _axiom_handler is not None:
+        _axiom_handler.close()
+        _axiom_handler = None
+
     root = logging.getLogger()
     for handler in list(root.handlers):
         root.removeHandler(handler)
@@ -329,10 +374,10 @@ def init_observability(service: str = _DEFAULT_SERVICE) -> None:
 
 
 def flush() -> None:
-    """Drain the Axiom handler buffer (call on shutdown). Safe no-op otherwise."""
+    """Drain the Axiom handler buffer and wait for in-flight ships (shutdown)."""
     if _axiom_handler is not None:
         try:
-            _axiom_handler.flush()
+            _axiom_handler.drain()
         except Exception:  # pragma: no cover - best-effort drain
             pass
 

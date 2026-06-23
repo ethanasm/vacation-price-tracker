@@ -165,7 +165,7 @@ class _FakeClient:
         self.ingested.append((dataset, events))
 
 
-def test_axiom_handler_emit_buffers_reshaped_then_flushes():
+def test_axiom_handler_emit_buffers_reshaped_then_ships():
     client = _FakeClient()
     handler = obs.VptAxiomHandler(client, "vpt-test", "vpt-api", interval=999)
     try:
@@ -176,13 +176,47 @@ def test_axiom_handler_emit_buffers_reshaped_then_flushes():
         assert buffered["event"] == "test.event"
         assert buffered["trip_id"] == "t1"
         assert buffered["fields"]["foo"] == "bar"
-        handler.flush()
+        # flush() ships on a background thread; drain() waits for it.
+        handler.drain()
         assert client.ingested
         dataset, events = client.ingested[0]
         assert dataset == "vpt-test"
         assert events[0]["event"] == "test.event"
     finally:
-        handler.timer.cancel()
+        handler.close()
+
+
+def test_axiom_handler_drain_noop_when_empty():
+    client = _FakeClient()
+    handler = obs.VptAxiomHandler(client, "vpt-test", "vpt-api", interval=999)
+    try:
+        handler.drain()  # nothing buffered -> no ship, must not raise
+        assert not client.ingested
+    finally:
+        handler.close()
+
+
+def test_axiom_handler_drain_waits_on_pending_ship():
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class _SlowClient(_FakeClient):
+        def ingest_events(self, dataset, events):
+            started.set()
+            release.wait(2.0)
+            super().ingest_events(dataset, events)
+
+    handler = obs.VptAxiomHandler(_SlowClient(), "vpt-test", "vpt-api", interval=999)
+    try:
+        handler.emit(_make_record(event="test.event"))
+        handler.flush()  # submit the (blocked) ship
+        assert started.wait(1.0)  # ship thread running -> future still pending
+        handler.drain(timeout=0.2)  # exercises the futures_wait path
+    finally:
+        release.set()
+        handler.close()
 
 
 def test_axiom_handler_emit_flushes_inline_when_interval_elapsed():
@@ -191,12 +225,13 @@ def test_axiom_handler_emit_flushes_inline_when_interval_elapsed():
     client = _FakeClient()
     handler = obs.VptAxiomHandler(client, "vpt-test", "vpt-api", interval=1)
     try:
-        # Force the "interval elapsed" branch so emit flushes inline.
+        # Force the "interval elapsed" branch so emit flushes inline (off-thread).
         handler.last_flush = time.monotonic() - 100
         handler.emit(_make_record(event="test.event"))
-        assert client.ingested  # flushed during emit
+        handler.drain()  # wait for the background ship
+        assert client.ingested
     finally:
-        handler.timer.cancel()
+        handler.close()
 
 
 def test_axiom_handler_emit_swallows_bad_record():
@@ -207,7 +242,7 @@ def test_axiom_handler_emit_swallows_bad_record():
         record = logging.LogRecord("app.test", logging.INFO, "f.py", 1, "%d", ("notanint",), None)
         handler.emit(record)  # should not raise
     finally:
-        handler.timer.cancel()
+        handler.close()
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +285,25 @@ def test_init_enabled_attaches_axiom_handler(monkeypatch, _restore_root_logging)
     root = logging.getLogger()
     assert any(isinstance(h, obs.VptAxiomHandler) for h in root.handlers)
     assert created["token"] == "xaat-test"
-    # flush() delegates to the handler.
+    # flush() drains the handler.
     obs.flush()
     if obs._axiom_handler is not None:
-        obs._axiom_handler.timer.cancel()
+        obs._axiom_handler.close()
+
+
+def test_init_closes_previous_axiom_handler(monkeypatch, _restore_root_logging):
+    monkeypatch.setattr(settings, "axiom_token", "xaat-test")
+    monkeypatch.setattr(settings, "axiom_dataset", "vpt-test")
+    monkeypatch.setattr(obs.axiom_py, "Client", lambda token, org_id, url: _FakeClient())
+
+    obs.init_observability("vpt-api")
+    first = obs._axiom_handler
+    assert first is not None
+    # Re-init must close the prior handler (cancel timer + shut ship thread).
+    obs.init_observability("vpt-api")
+    assert first._executor._shutdown is True
+    if obs._axiom_handler is not None:
+        obs._axiom_handler.close()
 
 
 def test_init_production_uses_json_formatter(monkeypatch, _restore_root_logging):
