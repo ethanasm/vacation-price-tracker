@@ -28,12 +28,17 @@ jobs:
           - app: web
             context: apps/web
             dockerfile: apps/web/Dockerfile
+            # NEXT_PUBLIC_* must be baked at build time (inlined into the client
+            # bundle); a runtime env var can't reach the browser.
+            build_args: NEXT_PUBLIC_API_URL=https://vacation-price-tracker.ethanasm.me
           - app: api
             context: .
             dockerfile: apps/api/Dockerfile
+            build_args: ""
           - app: worker
             context: .
             dockerfile: apps/worker/Dockerfile
+            build_args: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -62,6 +67,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           target: production
           push: true
+          build-args: ${{ matrix.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.app }}
