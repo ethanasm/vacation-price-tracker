@@ -72,7 +72,14 @@ async def _store_refresh_token(user_id: uuid.UUID, refresh_token: str) -> None:
 @router.get("/v1/auth/google/start")
 async def start_google_auth(request: Request):
     """Redirects the user to Google for authentication."""
-    redirect_uri = request.url_for("google_auth_callback")
+    # Behind the prod reverse proxy (Cloudflare Tunnel), the request reaching
+    # uvicorn is plain http on loopback, so request.url_for() would build an
+    # http/internal callback that fails Google's redirect_uri_mismatch. Use the
+    # configured public origin in production; keep request-derived in dev.
+    if settings.is_production:
+        redirect_uri = f"{settings.backend_url.rstrip('/')}/v1/auth/google/callback"
+    else:
+        redirect_uri = request.url_for("google_auth_callback")
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
