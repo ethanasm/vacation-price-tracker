@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
@@ -89,6 +90,16 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
 
     if not google_sub or not email:
         raise BadRequestError("Missing required user info from Google.")
+
+    # Gate sign-in against the configured allowlist (open sign-up if unset).
+    if not should_allow_sign_in(
+        email=email,
+        email_verified=user_info.get("email_verified"),
+        emails=parse_allowlist(settings.auth_allowed_emails),
+        domains=parse_allowlist(settings.auth_allowed_domains),
+    ):
+        logger.warning("Sign-in denied by allowlist: email=%s", email)
+        return RedirectResponse(url=f"{settings.frontend_url}/access-denied")
 
     # Find existing user or create a new one
     result = await db.execute(select(User).where(User.google_sub == google_sub))

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
 
+    # Sign-in allowlist (comma-separated). Both blank → open sign-up; if either
+    # is set, the OAuth callback denies anyone not on the list.
+    auth_allowed_emails: str = ""
+    auth_allowed_domains: str = ""
+
     # Database
     database_url: str
 
