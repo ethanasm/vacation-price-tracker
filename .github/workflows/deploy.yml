@@ -31,7 +31,7 @@ jobs:
     env:
       # Override via repo Variables (Settings → Variables → Actions) only if the
       # prod tree lives somewhere other than the default. Not a required step.
-      PROD_DIR: ${{ vars.PROD_DIR || '/opt/vpt-prod' }}
+      PROD_DIR: ${{ vars.PROD_DIR || '/opt/vacation-price-tracker' }}
     steps:
       - name: Resolve target SHA
         id: sha
