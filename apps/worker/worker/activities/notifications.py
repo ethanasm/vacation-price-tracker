@@ -87,14 +87,6 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
         if price is None:
             return False
 
-        # Re-arm: once the price climbs back above the threshold, clear the
-        # dedup marker so a later drop alerts again.
-        if rule.last_notified_price is not None and price > rule.threshold_value:
-            rule.last_notified_price = None
-            session.add(rule)
-            await session.commit()
-            return False
-
         previous = (
             await session.execute(
                 select(PriceSnapshot)
@@ -107,18 +99,27 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
             )
         ).scalar_one_or_none()
         previous_price = _price_for(previous, rule.threshold_type) if previous else None
-
-        crossed = price <= rule.threshold_value
         dropped = previous_price is not None and price < previous_price
-        should_notify = crossed or (rule.notify_without_threshold and dropped)
 
-        # Suppress repeats unless the price has dropped below the last alert.
-        if (
-            should_notify
-            and rule.last_notified_price is not None
-            and price >= rule.last_notified_price
-        ):
-            should_notify = False
+        if rule.notify_without_threshold:
+            # "Notify on any drop" — alert whenever the price falls vs the
+            # previous snapshot, independent of the threshold. The daily digest
+            # bounds this to at most one alert per trip per scheduled run.
+            should_notify = dropped
+        else:
+            # Threshold mode. Re-arm first: once the price climbs back above the
+            # threshold, clear the dedup marker so a later drop alerts again.
+            if rule.last_notified_price is not None and price > rule.threshold_value:
+                rule.last_notified_price = None
+                rule.last_notified_at = None
+                session.add(rule)
+                await session.commit()
+                return False
+            # Alert at/below the threshold, deduped so we only re-alert when the
+            # price drops further than the last alert.
+            should_notify = price <= rule.threshold_value and (
+                rule.last_notified_price is None or price < rule.last_notified_price
+            )
 
         if not should_notify:
             return False
@@ -220,6 +221,13 @@ async def send_user_digest_activity(user_id: str) -> dict:
         token = make_unsubscribe_token(user_id)
         unsubscribe_url = f"{base}/v1/notifications/unsubscribe?token={token}"
 
+        # Collapse to one line per trip (a manual refresh can enqueue more than
+        # one pending row for the same trip in a day). Rows are ordered by
+        # created_at, so the last write wins → the most recent price is shown.
+        latest_by_trip: dict[uuid.UUID, NotificationOutbox] = {}
+        for row in rows:
+            latest_by_trip[row.trip_id] = row
+
         digest_trips: list[DigestTrip] = [
             {
                 "name": trip_names.get(row.trip_id, "Your trip"),
@@ -229,7 +237,7 @@ async def send_user_digest_activity(user_id: str) -> dict:
                 "threshold_label": _THRESHOLD_LABELS.get(row.threshold_type, "Trip total"),
                 "trip_url": f"{base}/trips/{row.trip_id}",
             }
-            for row in rows
+            for row in latest_by_trip.values()
         ]
 
         subject, html = render_daily_digest(
@@ -264,5 +272,6 @@ async def send_user_digest_activity(user_id: str) -> dict:
             row.sent_at = now
             session.add(row)
         await session.commit()
-        logger.info("Sent digest to user_id=%s covering %d trips", user_id, len(rows))
-        return {"sent": True, "count": len(rows)}
+        trip_count = len(digest_trips)
+        logger.info("Sent digest to user_id=%s covering %d trips", user_id, trip_count)
+        return {"sent": True, "count": trip_count}

@@ -185,6 +185,40 @@ async def test_evaluate_notify_without_threshold_on_drop(session_factory):
 
 
 @pytest.mark.asyncio
+async def test_notify_without_threshold_alerts_on_every_drop(session_factory):
+    # Regression: the re-arm logic must not swallow consecutive drops for
+    # "notify on any drop" rules (threshold is just a low floor).
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(session_factory, trip_id, total=3000, created_at=BASE_TIME)
+    s2 = await _add_snapshot(
+        session_factory, trip_id, total=2800, created_at=BASE_TIME + timedelta(hours=1)
+    )
+    s3 = await _add_snapshot(
+        session_factory, trip_id, total=2600, created_at=BASE_TIME + timedelta(hours=2)
+    )
+
+    assert await wn.evaluate_notifications_activity(str(s2)) is True
+    assert await wn.evaluate_notifications_activity(str(s3)) is True
+    assert len(await _outbox_rows(session_factory, trip_id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_notify_without_threshold_skips_when_not_dropped(session_factory):
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(session_factory, trip_id, total=2600, created_at=BASE_TIME)
+    # Price rises → no drop → no alert.
+    s2 = await _add_snapshot(
+        session_factory, trip_id, total=2700, created_at=BASE_TIME + timedelta(hours=1)
+    )
+    assert await wn.evaluate_notifications_activity(str(s2)) is False
+    assert await _outbox_rows(session_factory, trip_id) == []
+
+
+@pytest.mark.asyncio
 async def test_evaluate_idempotent_on_snapshot(session_factory):
     _, trip_id = await _seed_trip(session_factory, threshold=Decimal("2000"))
     snap_id = await _add_snapshot(session_factory, trip_id, total=1900, created_at=BASE_TIME)
@@ -318,6 +352,36 @@ async def test_send_user_digest_sends_and_marks_sent(session_factory, monkeypatc
     rows = await _outbox_rows(session_factory, trip_id)
     assert rows[0].status == NotificationStatus.SENT
     assert rows[0].sent_at is not None
+
+
+@pytest.mark.asyncio
+async def test_send_user_digest_dedups_rows_per_trip(session_factory, monkeypatch):
+    fake = _FakeResend()
+    monkeypatch.setattr(wn, "ResendClient", lambda: fake)
+
+    # Two drops on the same trip in one day → two outbox rows, one digest line.
+    user_id, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(session_factory, trip_id, total=3000, created_at=BASE_TIME)
+    s2 = await _add_snapshot(
+        session_factory, trip_id, total=2800, created_at=BASE_TIME + timedelta(hours=1)
+    )
+    s3 = await _add_snapshot(
+        session_factory, trip_id, total=2600, created_at=BASE_TIME + timedelta(hours=2)
+    )
+    await wn.evaluate_notifications_activity(str(s2))
+    await wn.evaluate_notifications_activity(str(s3))
+    assert len(await _outbox_rows(session_factory, trip_id)) == 2
+
+    result = await wn.send_user_digest_activity(str(user_id))
+
+    assert result == {"sent": True, "count": 1}  # one trip, not two rows
+    html = fake.calls[0]["html"]
+    assert html.count("Maui Getaway") == 1  # collapsed to a single line
+    # Both rows are still drained.
+    rows = await _outbox_rows(session_factory, trip_id)
+    assert all(r.status == NotificationStatus.SENT for r in rows)
 
 
 @pytest.mark.asyncio
