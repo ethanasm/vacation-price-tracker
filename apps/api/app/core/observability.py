@@ -331,11 +331,7 @@ def _build_axiom_handler(service: str) -> Any:
     if not (_HAS_AXIOM and settings.axiom_enabled):
         return None
     try:
-        client = axiom_py.Client(
-            token=settings.axiom_token,
-            org_id=settings.axiom_org_id or None,
-            url=settings.axiom_url or None,
-        )
+        client = axiom_py.Client(token=settings.axiom_token)
         handler = VptAxiomHandler(client, settings.axiom_dataset, service)
         # Ship INFO+ to Axiom; DEBUG stays stdout-only (volume/cost).
         handler.setLevel(logging.INFO)

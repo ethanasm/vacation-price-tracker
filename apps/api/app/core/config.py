@@ -101,8 +101,6 @@ class Settings(BaseSettings):
     # the `service` field. The `fields` map field bounds the column schema.
     axiom_token: str = ""  # ingest-only API token
     axiom_dataset: str = ""  # e.g. vpt-prod
-    axiom_org_id: str = ""  # optional; required for PAT-style tokens
-    axiom_url: str = "https://api.axiom.co"
 
     @property
     def axiom_enabled(self) -> bool:

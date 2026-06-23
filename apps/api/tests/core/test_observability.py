@@ -276,7 +276,7 @@ def test_init_enabled_attaches_axiom_handler(monkeypatch, _restore_root_logging)
 
     created = {}
 
-    def _fake_client(token, org_id, url):
+    def _fake_client(token):
         created["token"] = token
         return _FakeClient()
 
@@ -294,7 +294,7 @@ def test_init_enabled_attaches_axiom_handler(monkeypatch, _restore_root_logging)
 def test_init_closes_previous_axiom_handler(monkeypatch, _restore_root_logging):
     monkeypatch.setattr(settings, "axiom_token", "xaat-test")
     monkeypatch.setattr(settings, "axiom_dataset", "vpt-test")
-    monkeypatch.setattr(obs.axiom_py, "Client", lambda token, org_id, url: _FakeClient())
+    monkeypatch.setattr(obs.axiom_py, "Client", lambda token: _FakeClient())
 
     obs.init_observability("vpt-api")
     first = obs._axiom_handler
