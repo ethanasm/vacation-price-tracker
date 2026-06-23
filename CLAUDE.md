@@ -4,12 +4,9 @@ This file provides guidance to AI coding assistants when working with code in th
 repository. It covers **repo-wide conventions only** — app-specific detail lives in
 per-app guides (see below).
 
-**Supported AI Assistants** (all via symlinks to this single source of truth):
+**Supported AI Assistants** (via a symlink to this single source of truth):
 - Claude Code — `CLAUDE.md`
 - OpenAI/agentic tools — `AGENTS.md` → `CLAUDE.md`
-- GitHub Copilot — `.github/copilot-instructions.md` → `../CLAUDE.md`
-- JetBrains AI Assistant — `.cursorrules` → `CLAUDE.md`
-- Gemini Code Assist — `.gemini-instructions.md` → `CLAUDE.md`
 
 ## Per-App Guides
 
