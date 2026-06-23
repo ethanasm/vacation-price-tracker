@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 100
     chat_rate_limit_per_minute: int = 10
 
+    # Cost / abuse ceilings (daily quotas + global daily spend circuit-breaker).
+    # All counters live in Redis and auto-reset at UTC midnight. Every field is
+    # env-overridable; only ENABLE_COST_CEILINGS is surfaced in .env.example —
+    # the numeric ceilings are documented in apps/api/CLAUDE.md.
+    enable_cost_ceilings: bool = True  # master kill-switch for the whole feature
+    chat_daily_quota_per_user: int = 200  # message-producing chat requests/user/day
+    daily_quota_per_user: int = 2000  # overall API requests/user/day
+    global_daily_groq_token_budget: int = 50_000_000  # Groq tokens/day across all users
+    global_daily_skiplagged_call_budget: int = 50_000  # Skiplagged MCP calls/day, all users
+
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     log_level: str = "INFO"

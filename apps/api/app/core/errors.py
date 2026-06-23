@@ -196,9 +196,39 @@ class RateLimitExceeded(AppError):
         return payload
 
 
+class GlobalBudgetExceeded(ServiceUnavailableError):
+    """Raised when the global daily spend ceiling (circuit breaker) has tripped.
+
+    Distinct from RateLimitExceeded (a per-user quota): this means the service as
+    a whole has hit its aggregate daily cost ceiling and is shedding load until
+    the counter resets at UTC midnight.
+    """
+
+    type = problem_type("global-budget-exceeded")
+    detail = "Service temporarily unavailable due to daily cost ceiling. Try again later."
+
+    def __init__(
+        self,
+        detail: str | None = None,
+        *,
+        retry_after: int | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(detail, extra=extra)
+        self.retry_after = retry_after
+
+    def to_problem_detail(self, instance: str | None = None) -> dict[str, Any]:
+        payload = super().to_problem_detail(instance)
+        if self.retry_after is not None:
+            payload["retry_after"] = self.retry_after
+        return payload
+
+
 def problem_details_response(exc: AppError, request: Request) -> JSONResponse:
     headers = {}
     if isinstance(exc, RateLimitExceeded):
+        headers["Retry-After"] = str(exc.retry_after)
+    elif isinstance(exc, GlobalBudgetExceeded) and exc.retry_after is not None:
         headers["Retry-After"] = str(exc.retry_after)
     return JSONResponse(
         status_code=exc.status_code,

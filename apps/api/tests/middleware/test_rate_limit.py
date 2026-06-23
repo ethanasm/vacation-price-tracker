@@ -8,16 +8,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.core.cache_keys import CacheKeys
+from app.core.config import settings
 from app.core.constants import CookieNames
 from app.core.security import create_access_token
 from app.middleware import rate_limit as rate_limit_module
 from app.middleware.rate_limit import (
     EXEMPT_PATHS,
+    _check_daily_ceilings,
     _check_rate_limit,
     _extract_user_id_from_token,
     _get_client_ip,
     _get_rate_limit_identifier,
+    _is_chat_message_path,
     _is_chat_path,
+    _is_refresh_trigger,
     _rate_limit_response,
     rate_limit_middleware,
 )
@@ -594,3 +598,182 @@ def test_rate_limit_integration_blocked(monkeypatch):
     assert response.headers.get("Retry-After") == "45"
     body = response.json()
     assert body["type"] == "https://vacation-price-tracker.dev/problems/rate-limit-exceeded"
+
+
+# =============================================================================
+# Cost / abuse ceilings: path matchers
+# =============================================================================
+
+
+def test_is_chat_message_path():
+    assert _is_chat_message_path("/v1/chat/messages") is True
+    assert _is_chat_message_path("/v1/chat/elicitation") is True
+    # Non-message chat endpoints are NOT message-producing.
+    assert _is_chat_message_path("/v1/chat/conversations") is False
+    assert _is_chat_message_path("/v1/chat") is False
+
+
+def test_is_refresh_trigger_matches_refresh_all():
+    request = _make_request(method="POST", path="/v1/trips/refresh-all")
+    assert _is_refresh_trigger(request) is True
+
+
+def test_is_refresh_trigger_matches_per_trip_refresh():
+    request = _make_request(method="POST", path="/v1/trips/abc-123/refresh")
+    assert _is_refresh_trigger(request) is True
+
+
+def test_is_refresh_trigger_ignores_refresh_status():
+    # GET refresh-status must not be gated behind the Skiplagged breaker.
+    request = _make_request(method="GET", path="/v1/trips/refresh-status")
+    assert _is_refresh_trigger(request) is False
+
+
+def test_is_refresh_trigger_ignores_non_post():
+    request = _make_request(method="GET", path="/v1/trips/abc-123/refresh")
+    assert _is_refresh_trigger(request) is False
+
+
+# =============================================================================
+# Cost / abuse ceilings: _check_daily_ceilings
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_ceilings_disabled_skips_all_checks(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", False)
+
+    called = False
+
+    async def mock_quota(*args, **kwargs):
+        nonlocal called
+        called = True
+        return True, 1, 0
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+    assert result is None
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_daily_api_quota_exceeded_returns_429(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
+
+    async def mock_quota(identifier, resource, limit, **kwargs):
+        return False, 0, 3600
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
+
+    request = _make_request(path="/v1/trips")
+    result = await _check_daily_ceilings(request, "user:abc")
+    assert result is not None
+    assert result.status_code == 429
+    assert result.headers.get("Retry-After") == "3600"
+
+
+@pytest.mark.asyncio
+async def test_daily_chat_quota_exceeded_returns_429(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
+
+    async def mock_quota(identifier, resource, limit, **kwargs):
+        # api cap fine, chat cap exceeded.
+        if resource == "chat":
+            return False, 0, 1800
+        return True, 5, 0
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+    assert result is not None
+    assert result.status_code == 429
+    assert result.headers.get("Retry-After") == "1800"
+
+
+@pytest.mark.asyncio
+async def test_global_groq_budget_tripped_returns_503(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
+
+    async def allow_quota(*args, **kwargs):
+        return True, 1, 0
+
+    async def tripped(metric, limit, **kwargs):
+        return metric == "groq_tokens"
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", allow_quota)
+    monkeypatch.setattr(rate_limit_module, "is_global_budget_tripped", tripped)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+    assert result is not None
+    assert result.status_code == 503
+    body = json.loads(bytes(result.body))
+    assert body["type"] == "https://vacation-price-tracker.dev/problems/global-budget-exceeded"
+
+
+@pytest.mark.asyncio
+async def test_global_skiplagged_budget_tripped_returns_503(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
+
+    async def allow_quota(*args, **kwargs):
+        return True, 1, 0
+
+    async def tripped(metric, limit, **kwargs):
+        return metric == "skiplagged_calls"
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", allow_quota)
+    monkeypatch.setattr(rate_limit_module, "is_global_budget_tripped", tripped)
+
+    request = _make_request(method="POST", path="/v1/trips/refresh-all")
+    result = await _check_daily_ceilings(request, "user:abc")
+    assert result is not None
+    assert result.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_ceilings_allow_when_under_all_limits(monkeypatch):
+    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
+
+    async def allow_quota(*args, **kwargs):
+        return True, 1, 0
+
+    async def not_tripped(metric, limit, **kwargs):
+        return False
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", allow_quota)
+    monkeypatch.setattr(rate_limit_module, "is_global_budget_tripped", not_tripped)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    assert await _check_daily_ceilings(request, "user:abc") is None
+
+
+@pytest.mark.asyncio
+async def test_middleware_blocks_on_daily_ceiling(monkeypatch):
+    """Full middleware: per-minute OK but daily ceiling trips -> rejection."""
+
+    async def mock_check(identifier, *, is_chat=False):
+        return True, 50, 0
+
+    monkeypatch.setattr(rate_limit_module, "_check_rate_limit", mock_check)
+
+    from fastapi.responses import Response as FastResponse
+
+    async def mock_ceiling(request, identifier):
+        return FastResponse(content="blocked", status_code=429)
+
+    monkeypatch.setattr(rate_limit_module, "_check_daily_ceilings", mock_ceiling)
+
+    call_next_called = False
+
+    async def call_next(request):
+        nonlocal call_next_called
+        call_next_called = True
+        return FastResponse(content="OK", status_code=200)
+
+    request = _make_request(path="/v1/trips")
+    response = await rate_limit_middleware(request, call_next)
+    assert response.status_code == 429
+    assert call_next_called is False

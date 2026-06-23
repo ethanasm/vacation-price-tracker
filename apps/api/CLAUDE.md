@@ -76,6 +76,42 @@ the SQLite test DB.
 - Per-user token-bucket throttling so no single user can hammer Skiplagged MCP.
 - `rate_limit_per_minute` (default 100) and `chat_rate_limit_per_minute` (default 10).
 
+### Cost / abuse ceilings (`app/core/quota.py`)
+
+On top of the per-minute limiter, two Redis-backed daily defenses guard against
+unbounded spend (a user parked at the per-minute cap for hours, or a leaked
+session). All counters carry a `:{YYYYMMDD}` (UTC) suffix and a
+seconds-to-midnight TTL, so they **auto-reset at UTC midnight — no cron**. Every
+helper **fails open** on a Redis error. Master switch: `ENABLE_COST_CEILINGS`.
+
+- **Per-user daily quota** — day-bucketed counters enforced in
+  `rate_limit_middleware`: an overall API cap (`DAILY_QUOTA_PER_USER`, default
+  2000) and a stricter cap on message-producing chat (`/v1/chat/messages`,
+  `/v1/chat/elicitation`) via `CHAT_DAILY_QUOTA_PER_USER` (default 200). Over
+  limit → 429 with `Retry-After` = seconds to midnight. Keys:
+  `daily_quota:{identifier}:{resource}:{day}`.
+- **Global daily budget guard / circuit breaker** — a per-UTC-day counter per
+  metric, incremented at the two shared provider chokepoints so the worker's
+  scheduled refreshes are covered too:
+  - `groq.chat()` adds `total_tokens` after each completion
+    (`GLOBAL_DAILY_GROQ_TOKEN_BUDGET`, default 50,000,000). Requires
+    `stream_options={"include_usage": True}` on streaming calls.
+  - `skiplagged._call_mcp()` adds 1 per MCP call
+    (`GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET`, default 50,000).
+  When a metric's day total crosses its ceiling the breaker trips: the chat
+  middleware / manual-refresh trigger reject new work (503 `GlobalBudgetExceeded`)
+  and the provider clients raise `GlobalBudgetExceeded` so in-flight chat (SSE
+  error chunk) and worker activities (non-retriable Temporal error) fail
+  gracefully. Keys: `global_budget:{metric}:{day}`. The trip is logged at WARNING
+  (stdout — there is no Axiom).
+- **Residual risk:** all three limiters are Redis-backed and fail open, so a
+  Redis outage disables the per-minute limiter, the per-user daily quota, and the
+  global breaker simultaneously. Defense-in-depth (process-local fallback, or a
+  hard provider-side spend cap) is intentionally out of scope.
+
+The four numeric ceilings are plain env-overridable `Settings` fields; only
+`ENABLE_COST_CEILINGS` is surfaced in `.env.example`.
+
 ## Skiplagged MCP client
 
 `app/clients/skiplagged.py` speaks JSON-RPC 2.0 over Streamable HTTP to

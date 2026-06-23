@@ -1045,3 +1045,57 @@ async def test_fetch_hotels_activity_falls_back_to_destination_code(monkeypatch,
     await pc.fetch_hotels_activity(trip)
 
     assert captured["city"] == "MCO"
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_budget_exceeded_is_non_retryable(monkeypatch):
+    """A tripped global budget surfaces as a non-retryable Temporal error."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.errors import GlobalBudgetExceeded
+    from temporalio.exceptions import ApplicationError
+
+    mock_client = AsyncMock()
+    mock_client.search_flights_all = AsyncMock(
+        side_effect=GlobalBudgetExceeded("daily ceiling reached")
+    )
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        with pytest.raises(ApplicationError) as exc_info:
+            await pc.fetch_flights_activity(_trip_details())
+
+    assert exc_info.value.non_retryable is True
+    assert exc_info.value.type == "GlobalBudgetExceeded"
+
+
+@pytest.mark.asyncio
+async def test_fetch_hotels_budget_exceeded_is_non_retryable(monkeypatch):
+    """Hotel fetch also marks a tripped budget non-retryable."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.errors import GlobalBudgetExceeded
+    from temporalio.exceptions import ApplicationError
+
+    mock_client = AsyncMock()
+    mock_client.search_hotels_all = AsyncMock(
+        side_effect=GlobalBudgetExceeded("daily ceiling reached")
+    )
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
+        with pytest.raises(ApplicationError) as exc_info:
+            await pc.fetch_hotels_activity(_trip_details())
+
+    assert exc_info.value.non_retryable is True
+    assert exc_info.value.type == "GlobalBudgetExceeded"
+
+
+def test_budget_application_error_is_non_retryable():
+    from app.core.errors import GlobalBudgetExceeded
+    from temporalio.exceptions import ApplicationError
+
+    err = pc._budget_application_error(GlobalBudgetExceeded("ceiling"))
+    assert isinstance(err, ApplicationError)
+    assert err.non_retryable is True
+    assert err.type == "GlobalBudgetExceeded"

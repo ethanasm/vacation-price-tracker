@@ -811,3 +811,137 @@ async def test_chat_tool_call_error_succeeds_on_retry():
     assert call_count == 2
     assert len(chunks) > 0
     assert chunks[0].content == "Success!"
+
+
+# --- Cost ceiling / global budget tests ---
+
+
+def test_build_chat_kwargs_includes_stream_options_when_streaming():
+    """Streaming must request include_usage so token accounting sees usage."""
+    client = GroqClient(api_key="test-key", model="test-model")
+    kwargs = client._build_chat_kwargs(
+        [Message(role="user", content="hi")], None, True, 0.7, None
+    )
+    assert kwargs["stream_options"] == {"include_usage": True}
+
+
+def test_build_chat_kwargs_no_stream_options_when_not_streaming():
+    client = GroqClient(api_key="test-key", model="test-model")
+    kwargs = client._build_chat_kwargs(
+        [Message(role="user", content="hi")], None, False, 0.7, None
+    )
+    assert "stream_options" not in kwargs
+
+
+def _usage_mock(total: int = 15):
+    usage = MagicMock()
+    usage.prompt_tokens = 10
+    usage.completion_tokens = total - 10
+    usage.total_tokens = total
+    return usage
+
+
+@pytest.mark.asyncio
+async def test_chat_meters_token_usage(monkeypatch):
+    """A completed streaming chat increments the global Groq token budget."""
+    import app.clients.groq as groq_module
+
+    monkeypatch.setattr(config_module.settings, "enable_cost_ceilings", True)
+
+    recorded = {}
+
+    async def fake_incr(metric, amount, limit, **kwargs):
+        recorded["metric"] = metric
+        recorded["amount"] = amount
+        return True, amount
+
+    async def not_tripped(metric, limit, **kwargs):
+        return False
+
+    monkeypatch.setattr(groq_module, "incr_and_check_global_budget", fake_incr)
+    monkeypatch.setattr(groq_module, "is_global_budget_tripped", not_tripped)
+
+    client = GroqClient(api_key="test-key", model="test-model")
+
+    async def mock_stream():
+        delta = MagicMock()
+        delta.content = "Hi"
+        delta.tool_calls = None
+        yield MockChunk(choices=[MockChoice(delta=delta, finish_reason="stop")])
+        # Terminal usage-only chunk (empty choices) as emitted with include_usage.
+        yield MockChunk(choices=[], usage=_usage_mock(42))
+
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = AsyncMock(return_value=mock_stream())
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):
+        async for _ in client.chat([Message(role="user", content="hi")], stream=True):
+            pass
+
+    assert recorded["metric"] == "groq_tokens"
+    assert recorded["amount"] == 42
+
+
+@pytest.mark.asyncio
+async def test_chat_raises_when_budget_tripped(monkeypatch):
+    """When the breaker is already tripped, chat fails fast before calling Groq."""
+    import app.clients.groq as groq_module
+    from app.core.errors import GlobalBudgetExceeded
+
+    monkeypatch.setattr(config_module.settings, "enable_cost_ceilings", True)
+
+    async def tripped(metric, limit, **kwargs):
+        return True
+
+    monkeypatch.setattr(groq_module, "is_global_budget_tripped", tripped)
+
+    client = GroqClient(api_key="test-key", model="test-model")
+    create = AsyncMock()
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = create
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):  # noqa: SIM117
+        with pytest.raises(GlobalBudgetExceeded):
+            async for _ in client.chat([Message(role="user", content="hi")], stream=True):
+                pass
+
+    create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chat_skips_metering_when_disabled(monkeypatch):
+    """With ceilings disabled, neither the pre-check nor the meter runs."""
+    import app.clients.groq as groq_module
+
+    monkeypatch.setattr(config_module.settings, "enable_cost_ceilings", False)
+
+    called = {"incr": False, "tripped": False}
+
+    async def fake_incr(*args, **kwargs):
+        called["incr"] = True
+        return True, 0
+
+    async def fake_tripped(*args, **kwargs):
+        called["tripped"] = True
+        return False
+
+    monkeypatch.setattr(groq_module, "incr_and_check_global_budget", fake_incr)
+    monkeypatch.setattr(groq_module, "is_global_budget_tripped", fake_tripped)
+
+    client = GroqClient(api_key="test-key", model="test-model")
+
+    async def mock_stream():
+        delta = MagicMock()
+        delta.content = "Hi"
+        delta.tool_calls = None
+        yield MockChunk(choices=[MockChoice(delta=delta, finish_reason="stop")])
+        yield MockChunk(choices=[], usage=_usage_mock(42))
+
+    mock_async_groq = MagicMock()
+    mock_async_groq.chat.completions.create = AsyncMock(return_value=mock_stream())
+
+    with patch.object(client, "_get_client", return_value=mock_async_groq):
+        async for _ in client.chat([Message(role="user", content="hi")], stream=True):
+            pass
+
+    assert called == {"incr": False, "tripped": False}

@@ -17,6 +17,9 @@ from typing import Any
 import httpx
 
 from app.clients.skiplagged_parser import parse_flight_segments
+from app.core.config import settings
+from app.core.errors import GlobalBudgetExceeded
+from app.core.quota import incr_and_check_global_budget
 from app.core.telemetry import langfuse_context, observe
 from app.schemas.flight_search import FlightSearchFlight, FlightSearchResult
 from app.schemas.hotel_search import HotelRoom, HotelSearchHotel, HotelSearchResult
@@ -141,6 +144,25 @@ class SkiplaggedClient:
         self._initialized = True
         logger.debug("Skiplagged MCP session initialized: session_id=%s", self._session_id)
 
+    @staticmethod
+    async def _enforce_global_budget() -> None:
+        """Meter this MCP call against the global daily Skiplagged call budget.
+
+        One increment per logical `_call_mcp` (the internal transient-retry loop is
+        not separately counted). Raises GlobalBudgetExceeded once the day's total
+        crosses the ceiling so the worker activity / chat tool fails gracefully.
+        """
+        if not settings.enable_cost_ceilings:
+            return
+        within, _ = await incr_and_check_global_budget(
+            "skiplagged_calls", 1, settings.global_daily_skiplagged_call_budget
+        )
+        if not within:
+            raise GlobalBudgetExceeded(
+                "The flight/hotel search service has reached its daily ceiling. "
+                "Please try again tomorrow."
+            )
+
     @observe(name="skiplagged.mcp_call")
     async def _call_mcp(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """Call the MCP server with JSON-RPC format.
@@ -158,6 +180,7 @@ class SkiplaggedClient:
             metadata={"provider": "skiplagged", "mcp_url": self._mcp_url, "tool_name": tool_name},
         )
         await self._ensure_initialized()
+        await self._enforce_global_budget()
 
         payload = {
             "jsonrpc": "2.0",

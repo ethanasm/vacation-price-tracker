@@ -75,7 +75,9 @@ stack, copy `.env.prod.example` to `.env.prod` (see Deployment).
 `LANGFUSE_*` (LLM/MCP tracing).
 
 **Feature flags:** `ENABLE_BETA_OPTIMIZER`, `ENABLE_SMS_NOTIFICATIONS`,
-`MAX_TRIPS_PER_USER` (default 10).
+`MAX_TRIPS_PER_USER` (default 10), `ENABLE_COST_CEILINGS` (per-user daily quotas
++ a global daily Groq/Skiplagged spend circuit-breaker in Redis, auto-resetting
+at UTC midnight; details in [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md)).
 
 ## Directory Structure
 
