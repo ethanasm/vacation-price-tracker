@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import app.routers.auth as auth_module
+import jwt
 import pytest
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
@@ -11,7 +12,6 @@ from app.core.errors import AuthenticationRequired
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
 from fastapi import Response
-from jose import jwt
 from sqlmodel import select
 from starlette.requests import Request
 
@@ -231,16 +231,14 @@ class TestTokenRefresh:
 
     def test_token_validation(self):
         """Test token validation with invalid tokens."""
-        from jose import JWTError
-
         # Test decoding invalid token
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode("invalid_token", settings.secret_key, algorithms=[settings.jwt_algorithm])
 
         # Test decoding with wrong secret
         token = create_refresh_token(data={JWTClaims.SUBJECT: "test_user"})
 
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode(token, "wrong_secret", algorithms=[settings.jwt_algorithm])
 
     def test_refresh_returns_401_without_cookie(self, client_with_csrf, csrf_headers):

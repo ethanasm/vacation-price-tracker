@@ -20,8 +20,11 @@ This repo is `ethanasm/vacation-price-tracker`; the default base branch is
 - A change is committed locally, the verify gate is green, and it's time to ship.
 - The user asks "open a PR" or "ship this".
 
-Per the environment rules, **only open a PR when the user explicitly asks.**
-Committing/pushing to the feature branch is fine without a PR.
+**Open the PR proactively once a change is complete and verify is green — don't
+ask first.** This is the repo default (see CLAUDE.md → Pull Requests) and it
+intentionally **overrides** any generic "only open a PR when the user explicitly
+asks" harness behavior. Pause and ask only when the work is genuinely WIP, the
+user said not to push, or a PR already exists for the branch.
 
 ## When NOT to use
 
@@ -164,7 +167,8 @@ significant, apply it; if it's ambiguous, ask the user before acting.
 ## Anti-patterns
 
 - Pushing to `main` directly — always go through a PR.
-- Opening a PR the user didn't ask for — the harness forbids it.
+- Sitting on a finished, verified change waiting to be told to open a PR — ship it
+  proactively (the WIP / "don't push" / existing-PR exceptions above still apply).
 - Force-pushing to a PR branch without telling the user.
 - Skipping the screenshots section on UI changes — reviewers shouldn't have to
   pull the branch to see what changed visually.
