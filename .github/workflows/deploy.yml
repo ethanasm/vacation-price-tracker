@@ -66,11 +66,27 @@ jobs:
           pnpm prod:pull
           pnpm prod:up
 
+      - name: Pre-migration DB backup
+        working-directory: /opt/vacation-price-tracker
+        # Snapshot the DB before migrations so a bad migration has a recovery
+        # point. Writes backups/pre-migrate-<sha>.dump. A backup we can't take
+        # is exactly when we least want to migrate, so this is fatal.
+        env:
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
+        run: pnpm prod:db:backup
+
       - name: Run database migrations
         working-directory: /opt/vacation-price-tracker
         env:
           IMAGE_TAG: ${{ steps.sha.outputs.sha }}
         run: pnpm prod:db:migrate
+
+      - name: Post-deploy health gate
+        working-directory: /opt/vacation-price-tracker
+        # Block "deploy succeeded" until the api reports ready (DB + Redis +
+        # Temporal all reachable). /ready returns 503 until they are; the curl
+        # retries cover the boot/migration window.
+        run: pnpm prod:health:ready
 
       - name: Prune dangling images
         run: docker image prune -f

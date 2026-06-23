@@ -62,9 +62,12 @@ if os.getenv("DEBUG") == "1":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup, cleanup on shutdown."""
-    # Create database tables
-    async with async_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    # Create database tables in dev only. In production Alembic owns the schema
+    # (`pnpm prod:db:migrate`); auto-creating here would race migrations and
+    # leave the DB with tables but no alembic_version stamp.
+    if not settings.is_production:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
 
     # Initialize Temporal client
     await init_temporal_client()

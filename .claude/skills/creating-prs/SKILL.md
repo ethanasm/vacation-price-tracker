@@ -99,7 +99,43 @@ body via `https://github.com/ethanasm/vacation-price-tracker/raw/pr-screenshots/
 — never commit screenshots to `main` or the PR branch. If nothing matches, skip
 this step.
 
-### 5. Subscribe to CI activity
+### 5. Peer-review the PR with an Opus subagent
+
+Once the PR is open, spawn a **subagent on the Opus model** (`Agent` with
+`model: "opus"`) to peer-review the diff and **post its findings as a single PR
+comment**. This is a fresh-eyes review of the shipped change, separate from any
+local `/code-review` you ran while writing it. Run it in the background
+(`run_in_background: true`) so CI and the rest of the loop proceed in parallel;
+fold its findings in when it returns.
+
+Give the subagent:
+
+- the PR number + repo (`ethanasm/vacation-price-tracker`) and that the branch is
+  checked out locally, so it can read the diff via
+  `mcp__github__pull_request_read` (method `get_diff`) **and** the full files
+  locally for context;
+- a short description of what the change does and the riskiest areas to
+  scrutinize — Temporal workflow/activity job + retry semantics, Alembic
+  migrations + FK/cascade behavior, query correctness (including the
+  `/v1/admin/sql` guard and SQLModel queries), cross-surface parity (web ↔ api
+  schemas), edge/empty/error states, and test coverage of the key invariants
+  (95% Python gate) — correctness and robustness, not style nits;
+- the deliverable: a structured verdict (approve / approve-with-nits /
+  request-changes) plus findings grouped by severity (P0 / P1 / P2), each with a
+  `file:line` reference and a concrete recommendation;
+- instructions to **post the review as ONE consolidated comment** via
+  `mcp__github__add_issue_comment` (prefixed `## Peer review (automated)`), to
+  **not** post multiple comments, and to **not** modify any code. (Posting a
+  review comment is the point of this step, so the external-write is intended —
+  note that to the user when you relay results.)
+
+When it returns, **you (the main agent) own the findings**: fix every P0 and P1,
+and fix P2s at your discretion (lean toward fixing). Re-run the relevant non-E2E
+gate (`pnpm verify` or the targeted Nx task) and push. Surface anything you're
+deliberately not fixing (with the reason) to the user rather than dropping it
+silently.
+
+### 6. Subscribe to CI activity
 
     mcp__github__subscribe_pr_activity { owner: "ethanasm", repo: "vacation-price-tracker", pullNumber: <n> }
 
@@ -107,7 +143,7 @@ Events arrive wrapped in `<github-webhook-activity>` tags. CI for this repo runs
 `nextjs.yml` (web build/lint/test), `python.yml` (api + worker), and
 `sonarqube.yml`. While CI runs you can move on to other work.
 
-### 6. React to events
+### 7. React to events
 
 When a failure event arrives:
 

@@ -47,6 +47,8 @@
     "prod:ps": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml ps",
     "prod:logs": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml logs -f --tail=100",
     "prod:db:migrate": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'",
+    "prod:db:backup": "mkdir -p backups && docker compose --env-file .env.prod -f infra/docker-compose.prod.yml exec -T db pg_dump --format=custom --no-owner --no-acl -U postgres vacation_tracker > \"backups/pre-migrate-${DEPLOY_SHA:-$(date -u +%Y%m%dT%H%M%SZ)}.dump\"",
+    "prod:health:ready": "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8001/ready",
     "prod:query": "node scripts/prod-query.mjs"
   },
   "devDependencies": {

@@ -136,6 +136,29 @@ class TestGoogleOAuthCallback:
         assert response.status_code == 400
         assert response.json()["detail"] == "Missing required user info from Google."
 
+    def test_callback_denied_by_allowlist_redirects(self, client, monkeypatch):
+        """A non-allowlisted email is redirected to /access-denied, not logged in."""
+        monkeypatch.setattr(settings, "auth_allowed_emails", "allowed@example.com")
+        monkeypatch.setattr(settings, "auth_allowed_domains", "")
+        monkeypatch.setattr(
+            auth_module.oauth.google,
+            "authorize_access_token",
+            AsyncMock(
+                return_value={
+                    "userinfo": {
+                        "sub": "google_user_denied",
+                        "email": "stranger@evil.com",
+                        "email_verified": True,
+                    }
+                }
+            ),
+        )
+
+        response = client.get("/v1/auth/google/callback", follow_redirects=False)
+
+        assert response.status_code == 307
+        assert response.headers["location"].endswith("/access-denied")
+
     @pytest.mark.asyncio
     async def test_callback_success_creates_user(self, test_session, mock_redis, monkeypatch):
         """Test successful OAuth callback creates user and redirects."""
