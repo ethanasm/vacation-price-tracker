@@ -165,6 +165,9 @@ importers:
       react-native-worklets:
         specifier: 0.8.3
         version: 0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
+      semver:
+        specifier: ^7.8.4
+        version: 7.8.4
     devDependencies:
       '@babel/core':
         specifier: ^7.29.7
@@ -8921,11 +8924,6 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  semver@7.7.3:
-    resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
     engines: {node: '>=10'}
@@ -12583,7 +12581,7 @@ snapshots:
       copy-webpack-plugin: 14.0.0(webpack@5.105.2)
       ignore: 7.0.5
       next: 16.2.6(@babel/core@7.29.7)(@playwright/test@1.59.1)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(sass@1.97.3)
-      semver: 7.7.3
+      semver: 7.8.4
       tslib: 2.8.1
       webpack-merge: 5.10.0
     transitivePeerDependencies:
@@ -12898,7 +12896,7 @@ snapshots:
       glob: 10.5.0
       lodash: 4.18.1
       minimatch: 10.2.5
-      semver: 7.7.3
+      semver: 7.8.4
       tree-sitter-wasms: 0.1.13
       tslib: 2.8.1
       uuid: 14.0.1
@@ -20520,7 +20518,7 @@ snapshots:
 
   resolve@1.22.8:
     dependencies:
-      is-core-module: 2.16.1
+      is-core-module: 2.16.2
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
     optional: true
@@ -20768,8 +20766,6 @@ snapshots:
 
   semver@7.6.3:
     optional: true
-
-  semver@7.7.3: {}
 
   semver@7.7.4: {}
 
