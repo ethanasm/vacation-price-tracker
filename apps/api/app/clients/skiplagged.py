@@ -152,8 +152,6 @@ class SkiplaggedClient:
         not separately counted). Raises GlobalBudgetExceeded once the day's total
         crosses the ceiling so the worker activity / chat tool fails gracefully.
         """
-        if not settings.enable_cost_ceilings:
-            return
         within, _ = await incr_and_check_global_budget(
             "skiplagged_calls", 1, settings.global_daily_skiplagged_call_budget
         )

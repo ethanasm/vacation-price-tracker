@@ -494,8 +494,6 @@ class GroqClient:
     @staticmethod
     async def _enforce_global_budget() -> None:
         """Raise GlobalBudgetExceeded if the daily Groq token budget is tripped."""
-        if not settings.enable_cost_ceilings:
-            return
         if await is_global_budget_tripped(
             "groq_tokens", settings.global_daily_groq_token_budget
         ):
@@ -506,8 +504,6 @@ class GroqClient:
     @staticmethod
     async def _meter_token_usage(accumulator: dict[str, Any]) -> None:
         """Add this completion's token usage to the global daily Groq budget."""
-        if not settings.enable_cost_ceilings:
-            return
         usage = accumulator.get("usage")
         if not usage or not usage.get("total_tokens"):
             return

@@ -76,10 +76,9 @@ class Settings(BaseSettings):
     chat_rate_limit_per_minute: int = 10
 
     # Cost / abuse ceilings (daily quotas + global daily spend circuit-breaker).
-    # All counters live in Redis and auto-reset at UTC midnight. Every field is
-    # env-overridable; only ENABLE_COST_CEILINGS is surfaced in .env.example —
-    # the numeric ceilings are documented in apps/api/CLAUDE.md.
-    enable_cost_ceilings: bool = True  # master kill-switch for the whole feature
+    # Always on, like the per-minute rate limiter above. All counters live in
+    # Redis and auto-reset at UTC midnight. The four limits are the tunable knobs
+    # (surfaced in .env.example); set one very high to effectively disable it.
     chat_daily_quota_per_user: int = 200  # message-producing chat requests/user/day
     daily_quota_per_user: int = 2000  # overall API requests/user/day
     global_daily_groq_token_budget: int = 50_000_000  # Groq tokens/day across all users

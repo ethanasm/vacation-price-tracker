@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.core.cache_keys import CacheKeys
-from app.core.config import settings
 from app.core.constants import CookieNames
 from app.core.security import create_access_token
 from app.middleware import rate_limit as rate_limit_module
@@ -640,28 +639,7 @@ def test_is_refresh_trigger_ignores_non_post():
 
 
 @pytest.mark.asyncio
-async def test_ceilings_disabled_skips_all_checks(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", False)
-
-    called = False
-
-    async def mock_quota(*args, **kwargs):
-        nonlocal called
-        called = True
-        return True, 1, 0
-
-    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
-
-    request = _make_request(method="POST", path="/v1/chat/messages")
-    result = await _check_daily_ceilings(request, "user:abc")
-    assert result is None
-    assert called is False
-
-
-@pytest.mark.asyncio
 async def test_daily_api_quota_exceeded_returns_429(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
-
     async def mock_quota(identifier, resource, limit, **kwargs):
         return False, 0, 3600
 
@@ -676,8 +654,6 @@ async def test_daily_api_quota_exceeded_returns_429(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_daily_chat_quota_exceeded_returns_429(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
-
     async def mock_quota(identifier, resource, limit, **kwargs):
         # api cap fine, chat cap exceeded.
         if resource == "chat":
@@ -695,8 +671,6 @@ async def test_daily_chat_quota_exceeded_returns_429(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_global_groq_budget_tripped_returns_503(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
-
     async def allow_quota(*args, **kwargs):
         return True, 1, 0
 
@@ -716,8 +690,6 @@ async def test_global_groq_budget_tripped_returns_503(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_global_skiplagged_budget_tripped_returns_503(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
-
     async def allow_quota(*args, **kwargs):
         return True, 1, 0
 
@@ -735,8 +707,6 @@ async def test_global_skiplagged_budget_tripped_returns_503(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ceilings_allow_when_under_all_limits(monkeypatch):
-    monkeypatch.setattr(settings, "enable_cost_ceilings", True)
-
     async def allow_quota(*args, **kwargs):
         return True, 1, 0
 

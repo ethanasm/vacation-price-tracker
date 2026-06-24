@@ -210,12 +210,9 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
     """Enforce per-user daily quotas + the global budget breaker at the edge.
 
     Returns a rejection Response when a ceiling is hit, or None to proceed.
-    Skipped entirely when cost ceilings are disabled. Fails open (returns None)
-    on Redis errors via the underlying quota helpers.
+    Always on (like the per-minute limiter); fails open (returns None) on Redis
+    errors via the underlying quota helpers.
     """
-    if not settings.enable_cost_ceilings:
-        return None
-
     path = request.url.path
     is_chat_message = _is_chat_message_path(path)
     is_refresh = _is_refresh_trigger(request)

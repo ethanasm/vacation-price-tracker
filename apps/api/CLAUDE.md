@@ -82,7 +82,8 @@ On top of the per-minute limiter, two Redis-backed daily defenses guard against
 unbounded spend (a user parked at the per-minute cap for hours, or a leaked
 session). All counters carry a `:{YYYYMMDD}` (UTC) suffix and a
 seconds-to-midnight TTL, so they **auto-reset at UTC midnight — no cron**. Every
-helper **fails open** on a Redis error. Master switch: `ENABLE_COST_CEILINGS`.
+helper **fails open** on a Redis error. Always on (like the per-minute limiter);
+there is no on/off flag — set a limit very high to effectively disable it.
 
 - **Per-user daily quota** — day-bucketed counters enforced in
   `rate_limit_middleware`: an overall API cap (`DAILY_QUOTA_PER_USER`, default
@@ -109,8 +110,8 @@ helper **fails open** on a Redis error. Master switch: `ENABLE_COST_CEILINGS`.
   global breaker simultaneously. Defense-in-depth (process-local fallback, or a
   hard provider-side spend cap) is intentionally out of scope.
 
-The four numeric ceilings are plain env-overridable `Settings` fields; only
-`ENABLE_COST_CEILINGS` is surfaced in `.env.example`.
+The four numeric ceilings are plain env-overridable `Settings` fields, all
+surfaced in `.env.example` (they're the only knobs).
 
 ## Skiplagged MCP client
 

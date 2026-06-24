@@ -745,8 +745,6 @@ class TestSkiplaggedGlobalBudget:
     async def test_call_mcp_increments_budget_and_proceeds(self, monkeypatch):
         import app.clients.skiplagged as sk_module
 
-        monkeypatch.setattr(sk_module.settings, "enable_cost_ceilings", True)
-
         recorded = {}
 
         async def fake_incr(metric, amount, limit, **kwargs):
@@ -773,8 +771,6 @@ class TestSkiplaggedGlobalBudget:
         import app.clients.skiplagged as sk_module
         from app.core.errors import GlobalBudgetExceeded
 
-        monkeypatch.setattr(sk_module.settings, "enable_cost_ceilings", True)
-
         async def over_budget(metric, amount, limit, **kwargs):
             return False, limit + amount
 
@@ -791,29 +787,3 @@ class TestSkiplaggedGlobalBudget:
             await client._call_mcp("sk_flights_search", {"origin": "SFO"})
 
         send.assert_not_called()
-
-    @pytest.mark.anyio
-    async def test_call_mcp_skips_budget_when_disabled(self, monkeypatch):
-        import app.clients.skiplagged as sk_module
-
-        monkeypatch.setattr(sk_module.settings, "enable_cost_ceilings", False)
-
-        called = False
-
-        async def fake_incr(*args, **kwargs):
-            nonlocal called
-            called = True
-            return True, 0
-
-        monkeypatch.setattr(sk_module, "incr_and_check_global_budget", fake_incr)
-
-        client = SkiplaggedClient()
-        client._initialized = True
-        client._session_id = "test-session"
-        mock_post = AsyncMock(return_value=_flights_response(1))
-        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-            await client.search_flights("SFO", "CDG", "2026-06-15")
-
-        assert called is False
