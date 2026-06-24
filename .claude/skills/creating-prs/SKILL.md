@@ -80,6 +80,20 @@ Use `mcp__github__create_pull_request` with
 
 Tell the user the PR URL as soon as it's created.
 
+**Keep the body in sync with the diff.** The PR description is written once here,
+but the diff keeps changing — peer-review fixes (step 5), CI fixes and
+review-comment changes (step 7), and any later commits you push to the branch.
+**Every time you push a commit that changes what the PR does, update the PR body
+to match** via `mcp__github__update_pull_request` (`owner: "ethanasm",
+repo: "vacation-price-tracker", pullNumber: <n>, body: <updated>`) before moving
+on. Refresh the `## Summary` bullets and the `## Test plan` checklist so they
+describe the *current* head of the branch, not just the first commit. A
+follow-up commit that adds, removes, or materially changes behavior, files, or
+test coverage without a matching body edit leaves the description stale — treat
+that as a bug in your own workflow, not an optional nicety. Pure-mechanical
+pushes that don't change the description's claims (a lint-only fix, a
+comment/typo fix) don't need an edit, but when in doubt, update it.
+
 ### 4. Attach visual review material if the diff touches UI
 
 Run `git diff --name-only main...HEAD` and match against the web UI paths:
@@ -134,9 +148,10 @@ Give the subagent:
 
 When it returns, **you (the main agent) own the findings**: fix every P0 and P1,
 and fix P2s at your discretion (lean toward fixing). Re-run the relevant non-E2E
-gate (`pnpm verify` or the targeted Nx task) and push. Surface anything you're
-deliberately not fixing (with the reason) to the user rather than dropping it
-silently.
+gate (`pnpm verify` or the targeted Nx task) and push. If those fixes change what
+the PR does, **update the PR body** (see "Keep the body in sync with the diff"
+in step 3) before continuing. Surface anything you're deliberately not fixing
+(with the reason) to the user rather than dropping it silently.
 
 ### 6. Subscribe to CI activity
 
@@ -156,13 +171,15 @@ When a failure event arrives:
    environment issue.
 3. If it's a real failure, fix it locally, re-run the relevant gate
    (`pnpm verify` or the targeted Nx task), and push — CI re-runs
-   automatically.
+   automatically. If the fix changes what the PR does, **update the PR body** to
+   match (see "Keep the body in sync with the diff" in step 3).
 4. Repeat until CI is green. Unsubscribe with
    `mcp__github__unsubscribe_pr_activity` once the PR is merged or the user
    releases you.
 
 For review-comment events: if the suggestion is clear and not architecturally
-significant, apply it; if it's ambiguous, ask the user before acting.
+significant, apply it; if it's ambiguous, ask the user before acting. When you
+apply one and it changes the diff's behavior, **update the PR body** too.
 
 ## Anti-patterns
 
@@ -170,6 +187,9 @@ significant, apply it; if it's ambiguous, ask the user before acting.
 - Sitting on a finished, verified change waiting to be told to open a PR — ship it
   proactively (the WIP / "don't push" / existing-PR exceptions above still apply).
 - Force-pushing to a PR branch without telling the user.
+- Pushing follow-up commits (peer-review fixes, CI fixes, review-comment changes)
+  while leaving the PR description describing only the first commit — refresh the
+  body whenever the diff's behavior changes.
 - Skipping the screenshots section on UI changes — reviewers shouldn't have to
   pull the branch to see what changed visually.
 - Committing screenshots to `main` or the PR branch instead of the orphan
