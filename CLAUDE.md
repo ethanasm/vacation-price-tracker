@@ -19,6 +19,9 @@ relevant one before working in an app:**
   Skiplagged client, LLM/MCP tools, **`POST /v1/admin/sql`**, auth/CORS/CSRF).
 - [`apps/worker/CLAUDE.md`](apps/worker/CLAUDE.md) — Temporal workflows
   (PriceCheck/RefreshAll/Optimizer, post-fetch filtering).
+- [`apps/mobile/CLAUDE.md`](apps/mobile/CLAUDE.md) — Expo app (Expo Router screens,
+  REST/JWT auth bridge, Aurora design tokens, Maestro e2e flows, `apps/mobile/lib/**`-scoped
+  coverage gate).
 
 ## Project Overview
 
@@ -27,13 +30,25 @@ for specific vacations using AI-powered chat and distributed workflows. Users
 monitor price fluctuations and get notified when costs drop below custom thresholds.
 
 **Architecture:**
-- **Frontend:** Next.js 14 (App Router), Tailwind, shadcn/ui, assistant-ui (`apps/web`)
+- **Frontend:** Next.js 16 (App Router), Tailwind, shadcn/ui, assistant-ui (`apps/web`)
+- **Mobile:** Expo SDK 56 + Expo Router (`apps/mobile`) — iOS + Android.
 - **Backend:** FastAPI (Python 3.12), SQLModel/PostgreSQL — owns the DB (`apps/api`)
 - **Orchestration:** Temporal SDK for Python (`apps/worker`)
 - **Auth:** Google OAuth 2.0 only (no local passwords)
 - **LLM:** Groq (GPT OSS 120B) with MCP tool integration
 
-This is a **web-only** product — there is no mobile app.
+## Cross-platform parity
+
+Vacation Price Tracker ships on **web** (Next.js, `apps/web`) and **mobile** (Expo, `apps/mobile`). User-visible features reach parity on both surfaces unless a platform constraint genuinely prevents it. **When you change one surface, make the matching change on the other unless the change is explicitly scoped to a single surface.**
+
+Before finalizing a change, ask:
+- **Trip screens** — trip list, trip detail (the interactive selection→total→chart), create-trip, and settings have web + mobile twins (`apps/web/src/app/trips/**` ↔ `apps/mobile/app/**`). A change to one needs the mirror on the other.
+- **Assistant chat** — the Groq assistant exists on both (`apps/web/src/components/chat/**` ↔ `apps/mobile/app/(tabs)/chat.tsx`).
+- **Notification / threshold settings** — both surfaces expose them; new options need rows on both.
+- **API / schema change** — a new or changed `/v1/*` endpoint or schema affects both clients; regenerate the OpenAPI types consumed by web (`apps/web/src/lib/api/types.ts`) AND mobile (`apps/mobile/lib/api/types.ts`).
+- **Observability event** — keep the web telemetry relay and mobile telemetry consistent.
+
+If you intentionally scope work to one surface (e.g. ship web first, mobile follow-up), **say so explicitly in the PR body** and track the second-surface work durably — don't ship asymmetric features silently.
 
 ## Data Provider Strategy
 
@@ -93,7 +108,8 @@ vacation-price-tracker/
 ├── apps/
 │   ├── web/        # Next.js frontend
 │   ├── api/        # FastAPI backend (owns the database + migrations)
-│   └── worker/     # Temporal workflows
+│   ├── worker/     # Temporal workflows
+│   └── mobile/     # Expo + Expo Router app (iOS + Android)
 ├── infra/          # docker-compose.prod.yml (self-hosted prod stack)
 ├── scripts/        # dev.sh, verify.sh, prod-query.mjs, …
 └── .env.example    # dev configuration template (.env.prod.example for prod)
@@ -201,7 +217,9 @@ dev`), then `build`, `lint`, `typecheck`, `test:coverage` across all projects, t
 security audits (`pnpm audit --prod`, `pip-audit`). Pass `--e2e` to also run
 Playwright (requires the Docker stack up).
 
-Coverage gates: **95%** for both Python apps (`api`, `worker`).
+Coverage gates: **95%** for both Python apps (`api`, `worker`); **80%** for mobile,
+scoped to `apps/mobile/lib/**` only (screen/layout code under
+`apps/mobile/{app,components}` is excluded).
 
 ### SonarCloud quality gate (run locally before a PR)
 
@@ -264,8 +282,8 @@ can still drop the gate. Use `--scan` to be sure.
 ```
 
 - **Types:** `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
-- **Scopes:** `web`, `api`, `worker`; no scope for repo-wide changes (docs, CI,
-  root configs).
+- **Scopes:** `web`, `api`, `worker`, `mobile`; no scope for repo-wide changes (docs,
+  CI, root configs).
 
 ```bash
 feat(api): add trip creation endpoint
@@ -290,8 +308,15 @@ the commit subject on `main` — that history is the contract, not the individua
 branch commits (which are squashed away at merge). Title every PR as
 `type(scope)?: imperative summary`, under 70 chars, using the same types and
 scopes as commits above (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`;
-scope = `web`/`api`/`worker`, omitted for repo-wide changes). Append `!` for a
+scope = `web`/`api`/`worker`/`mobile`, omitted for repo-wide changes). Append `!` for a
 breaking change (`feat(api)!: …`).
+
+**PR-title subjects drive the mobile version bump.** Because mobile ships via
+EAS, the merged PR subject feeds the `mobile-v*` auto-bump: `feat:` → MINOR and a
+breaking `!` → MAJOR (both mapped to MINOR while the app is pre-1.0); everything
+else → patch. So a stray `feat:` on a non-feature PR inflates the mobile minor
+version, and an unprefixed feature loses its release-log signal — title mobile-
+touching PRs deliberately.
 
 Opening a PR is the **default** at the end of every change here — when local
 `pnpm verify` is green and the work is committed, hand off to the `creating-prs`
@@ -318,3 +343,10 @@ in the PR body should be **before/after** rather than just "after".
 - **OAuth ingress:** the home server has no port forwarding — a Cloudflare Tunnel
   fronts ingress; the Google callback is `https://<domain>/v1/auth/google/callback`
   (see `apps/api/CLAUDE.md`).
+- **Mobile:** built and released via **EAS**. `mobile-deploy.yml` (P4) does
+  continuous **OTA** (JS-only) updates to the `preview` channel plus an
+  approval-gated **native release** (EAS build → submit to TestFlight + Play
+  internal) that auto-bumps the `mobile-v*` tag. Maestro e2e runs via
+  `mobile-e2e.yml` on the self-hosted runner against the isolated `vpt-e2e`
+  stack. Details: [`apps/mobile/CLAUDE.md`](apps/mobile/CLAUDE.md) and
+  `docs/mobile-cicd.md` (added by P4).
