@@ -91,8 +91,8 @@ describe the *current* head of the branch, not just the first commit. A
 follow-up commit that adds, removes, or materially changes behavior, files, or
 test coverage without a matching body edit leaves the description stale — treat
 that as a bug in your own workflow, not an optional nicety. Pure-mechanical
-pushes that don't change the description's claims (a lint-only fix, a rebase with
-no behavior delta) don't need an edit, but when in doubt, update it.
+pushes that don't change the description's claims (a lint-only fix, a
+comment/typo fix) don't need an edit, but when in doubt, update it.
 
 ### 4. Attach visual review material if the diff touches UI
 
