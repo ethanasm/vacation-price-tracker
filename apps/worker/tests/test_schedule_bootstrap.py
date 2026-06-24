@@ -90,3 +90,56 @@ async def test_ensure_daily_refresh_schedule_updates_when_exists(monkeypatch):
     assert trace_updates[0]["name"] == "schedule_bootstrap"
     assert "schedule_bootstrap" in trace_updates[0]["tags"]
     assert observations[-1]["output"] == {"action": "updated"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_daily_health_schedule_creates_when_missing(monkeypatch):
+    observations: list[dict] = []
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context, "update_current_trace", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_observation",
+        lambda **kwargs: observations.append(kwargs),
+    )
+
+    client = FakeClient(already_exists=False)
+
+    await schedule_bootstrap.ensure_daily_health_schedule(client)
+
+    client.create_schedule.assert_awaited_once()
+    schedule_id, schedule = client.create_schedule.await_args.args
+    assert schedule_id == schedule_bootstrap.HEALTH_SCHEDULE_ID
+    assert schedule.action.workflow == schedule_bootstrap.HEALTH_WORKFLOW_NAME
+    assert schedule.spec.cron_expressions
+    assert observations[-1]["output"] == {"action": "created"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_daily_health_schedule_updates_when_exists(monkeypatch):
+    observations: list[dict] = []
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context, "update_current_trace", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        schedule_bootstrap.langfuse_context,
+        "update_current_observation",
+        lambda **kwargs: observations.append(kwargs),
+    )
+
+    handle = FakeScheduleHandle()
+
+    class HealthClient:
+        def __init__(self) -> None:
+            self.create_schedule = AsyncMock(side_effect=ScheduleAlreadyRunningError())
+
+        def get_schedule_handle(self, schedule_id: str) -> FakeScheduleHandle:
+            assert schedule_id == schedule_bootstrap.HEALTH_SCHEDULE_ID
+            return handle
+
+    await schedule_bootstrap.ensure_daily_health_schedule(HealthClient())
+
+    assert isinstance(handle.update_called_with, ScheduleUpdate)
+    assert handle.update_called_with.schedule.action.workflow == schedule_bootstrap.HEALTH_WORKFLOW_NAME
+    assert observations[-1]["output"] == {"action": "updated"}

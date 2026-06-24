@@ -57,6 +57,17 @@ vacation-price-tracker/
 └── .env.example          # Configuration template
 ```
 
+## Scheduled jobs (cron)
+
+The worker bootstraps two daily Temporal schedules on startup (UTC):
+
+| Cron (env) | Default | Job |
+|:-----------|:--------|:----|
+| `DAILY_REFRESH_CRON` | `0 6 * * *` | Refresh all active trips, then send per-user price-drop digests. |
+| `DAILY_HEALTH_CRON` | `0 7 * * *` | Run system health checks and email an ops summary to `ADMIN_EMAILS`. |
+
+See [`apps/worker/CLAUDE.md`](apps/worker/CLAUDE.md) for details.
+
 ## Setup
 
 ### Prerequisites
