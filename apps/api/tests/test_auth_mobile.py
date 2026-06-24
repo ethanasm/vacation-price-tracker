@@ -1,6 +1,7 @@
 """Tests for the mobile auth surface: Bearer-header auth, the mobile-token
 bridge endpoint, and body/Bearer refresh."""
 
+import hmac  # noqa: F401
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -211,3 +212,71 @@ class TestRefresh:
     async def test_no_token_anywhere_401(self, client, mock_redis):
         resp = client.post("/v1/auth/refresh")
         assert resp.status_code == 401
+
+
+class TestE2eMintToken:
+    SYNTHETIC_EMAIL = "e2e@vpt.test"
+
+    @pytest.mark.asyncio
+    async def test_inert_when_e2e_mode_off(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", False)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+        resp = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_valid_secret_mints_working_bearer(self, client, test_session, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+
+        resp = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["access_token"]
+        assert body["refresh_token"]
+        assert body["user"]["email"] == self.SYNTHETIC_EMAIL
+
+        # The synthetic user was upserted.
+        created = (
+            await test_session.execute(select(User).where(User.email == self.SYNTHETIC_EMAIL))
+        ).scalars().first()
+        assert created is not None
+
+        # The minted access_token authenticates via Task 1's Bearer path.
+        me = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
+        assert me.status_code == 200
+        assert me.json()["id"] == body["user"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_reuses_existing_synthetic_user(self, client, test_session, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+
+        first = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        second = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        assert first.json()["user"]["id"] == second.json()["user"]["id"]
+        rows = (
+            await test_session.execute(select(User).where(User.email == self.SYNTHETIC_EMAIL))
+        ).scalars().all()
+        assert len(rows) == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_secret_header_403(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+        resp = client.post("/v1/e2e/mint-token")
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_wrong_secret_header_403(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+        resp = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "wrong-token"})
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_e2e_mode_on_but_token_unset_500(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "")
+        resp = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "anything"})
+        assert resp.status_code == 500

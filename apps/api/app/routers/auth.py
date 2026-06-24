@@ -1,3 +1,4 @@
+import hmac
 import logging
 import uuid
 
@@ -14,7 +15,13 @@ from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
-from app.core.errors import AccessDenied, AppError, AuthenticationRequired, BadRequestError
+from app.core.errors import (
+    AccessDenied,
+    AppError,
+    AuthenticationRequired,
+    BadRequestError,
+    NotFoundError,
+)
 from app.core.google_verify import GoogleIdentity, GoogleTokenError, verify_google_id_token
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
 from app.db.deps import get_db
@@ -52,6 +59,10 @@ class RefreshRequest(BaseModel):
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+E2E_SECRET_HEADER = "X-E2E-Token"
+E2E_SYNTHETIC_GOOGLE_SUB = "e2e-user-000"
+E2E_SYNTHETIC_EMAIL = "e2e@vpt.test"
 
 oauth = OAuth()
 oauth.register(
@@ -380,6 +391,65 @@ async def test_login(
 
     _set_auth_cookies(response, access_token, refresh_token)
     return {"id": str(user.id), "email": user.email}
+
+
+@router.post("/v1/e2e/mint-token", response_model=MobileTokenResponse)
+async def e2e_mint_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Mint a bearer JWT pair for the synthetic e2e user (P4 mobile-e2e harness).
+
+    Doubly gated: inert (404) unless `E2E_MODE` is on, and requires the shared
+    `X-E2E-Token` secret. Returns the pair in the body; the access_token then
+    authenticates via the Bearer path in get_current_user (Task 1). Only ever
+    enabled on the isolated vpt-e2e backend, never normal prod.
+    """
+    if not settings.e2e_mode:
+        # Endpoint is inert outside e2e — behave as if it does not exist.
+        raise NotFoundError("Not found.")
+
+    if not settings.vpt_e2e_backend_token:
+        logger.error(
+            "e2e mint-token called but VPT_E2E_BACKEND_TOKEN is unset",
+            extra={"event": "auth.e2e.config_error"},
+        )
+        raise AppError("E2E token minting is not configured.")
+
+    provided = request.headers.get(E2E_SECRET_HEADER, "")
+    if not provided or not hmac.compare_digest(provided, settings.vpt_e2e_backend_token):
+        logger.warning(
+            "e2e mint-token rejected: bad or missing secret",
+            extra={"event": "auth.e2e.denied"},
+        )
+        raise AccessDenied("Invalid e2e token.")
+
+    result = await db.execute(select(User).where(User.google_sub == E2E_SYNTHETIC_GOOGLE_SUB))
+    user = result.scalars().first()
+    if not user:
+        user = User(google_sub=E2E_SYNTHETIC_GOOGLE_SUB, email=E2E_SYNTHETIC_EMAIL)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_data = _build_jwt_data(user.id)
+    access_token = create_access_token(data=jwt_data)
+    refresh_token = create_refresh_token(data=jwt_data)
+    await _store_refresh_token(user.id, refresh_token)
+
+    logger.info(
+        "Minted e2e bearer token",
+        extra={"event": "auth.e2e.minted", "user_id": str(user.id)},
+    )
+    return MobileTokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            email_notifications_enabled=user.email_notifications_enabled,
+        ),
+    )
 
 
 def _extract_access_token(request: Request) -> str | None:

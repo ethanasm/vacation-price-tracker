@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     admin_query_token: str = ""
     admin_query_database_url: str = ""
 
+    # End-to-end test harness (P4 mobile-e2e). When `e2e_mode` is on (set ONLY on
+    # the isolated vpt-e2e deployment), POST /v1/e2e/mint-token issues a bearer
+    # JWT for a synthetic user so Maestro can authenticate without real Google
+    # OAuth. Guarded by a shared secret matched against vpt_e2e_backend_token.
+    # Both default off/blank so the endpoint is inert in normal prod.
+    e2e_mode: bool = False
+    vpt_e2e_backend_token: str = ""
+
     # Langfuse (LLM/MCP tracing) — leave keys blank to disable
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

@@ -24,6 +24,7 @@ CSRF_EXEMPT_PREFIXES = (
     "/v1/notifications/unsubscribe",
     "/v1/notifications/device-token",
     "/v1/telemetry/",
+    "/v1/e2e/",
     # Bearer/token machine endpoints for the mobile app — no browser cookie
     # session, so the double-submit-cookie CSRF defense does not apply.
     "/v1/auth/mobile-token",
