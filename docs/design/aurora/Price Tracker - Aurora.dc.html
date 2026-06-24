@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  .ap{font-family:Manrope,sans-serif}
+  .ico{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+  .logo{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:8px;color:#fff;font-family:Manrope;font-weight:800;letter-spacing:.02em}
+</style>
+<script src="./image-slot.js"></script>
+</helmet>
+
+<!-- ====================== CANVAS TITLE ====================== -->
+<div style="position:absolute;left:80px;top:36px;width:1000px" class="ap">
+  <div style="display:flex;align-items:center;gap:13px">
+    <div class="ico" style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 6px 16px rgba(124,58,237,.35)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+    </div>
+    <div>
+      <div style="font:800 26px Manrope;color:#1a1a2e;letter-spacing:-0.02em">Price Tracker — Aurora redesign</div>
+      <div style="font:500 15px Manrope;color:#6b6680;margin-top:2px">Web (responsive · half-width), tablet &amp; phone (iOS + Android). Real data from your repo.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 4. CREATE TRIP ====================== -->
+<div style="position:absolute;left:6320px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Create trip — collapsible sections</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:300px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app/trips/new</span>
+    </div>
+    <div style="padding:30px calc((100% - 720px)/2);background:#faf8ff">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+        <span class="ico" style="width:38px;height:38px;border-radius:11px;background:#fff;border:1px solid #e7e2f2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7M19 12H5"/></svg></span>
+        <div><div style="font:800 23px Manrope;color:#1a1a2e;letter-spacing:-0.01em">Create new trip</div><div style="font:500 13px Manrope;color:#8b86a0">Set up price tracking for your vacation</div></div>
+      </div>
+      <!-- trip details section -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:18px;margin-bottom:14px">
+        <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:14px">Trip details</div>
+        <div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Trip name</div>
+        <div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e;margin-bottom:14px">Bend ski week</div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:end;margin-bottom:14px">
+          <div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">From</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">SFO · San Francisco</div></div>
+          <span class="ico" style="width:34px;height:34px;border-radius:9px;background:#f4f1fc;margin-bottom:3px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></span>
+          <div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">To</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">RDM · Redmond</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Depart</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">Aug 22</div></div>
+          <div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Return</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">Aug 26</div></div>
+          <div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Adults</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">2</div></div>
+        </div>
+      </div>
+      <!-- collapsible: flight prefs (open) -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:18px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flight preferences</span>
+          </div>
+          <div style="width:40px;height:23px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:#fff"></span></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font:700 12px Manrope;color:#6d28d9;background:#ede9fe;border:1px solid #d8c9f7;padding:7px 13px;border-radius:9px">Economy</span>
+          <span style="font:600 12px Manrope;color:#6b6680;background:#faf8ff;border:1px solid #e7e2f2;padding:7px 13px;border-radius:9px">Premium</span>
+          <span style="font:600 12px Manrope;color:#6b6680;background:#faf8ff;border:1px solid #e7e2f2;padding:7px 13px;border-radius:9px">Business</span>
+          <span style="width:1px;background:#f1eef8;margin:0 2px"></span>
+          <span style="font:700 12px Manrope;color:#6d28d9;background:#ede9fe;border:1px solid #d8c9f7;padding:7px 13px;border-radius:9px">Non-stop only</span>
+          <span style="font:600 12px Manrope;color:#6b6680;background:#faf8ff;border:1px solid #e7e2f2;padding:7px 13px;border-radius:9px">Any stops</span>
+        </div>
+      </div>
+      <!-- collapsible: hotel prefs (collapsed) -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Hotel preferences</span>
+        <div style="display:flex;align-items:center;gap:12px"><div style="width:40px;height:23px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:#fff"></span></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a8a2bd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+      <!-- notification -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:18px;margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e;margin-bottom:14px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Alert me when…</div>
+        <div style="display:flex;align-items:center;gap:10px;font:600 13px Manrope;color:#4a4660">total drops below<span style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:9px;padding:8px 14px;font:800 14px Manrope;color:#7c3aed">$750</span></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <span style="font:600 14px Manrope;color:#6b6680;padding:11px 20px">Cancel</span>
+        <span style="font:700 14px Manrope;color:#fff;background:#7c3aed;padding:11px 24px;border-radius:11px;box-shadow:0 6px 16px rgba(124,58,237,.32)">Create trip</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 5. SETTINGS / ALERTS ====================== -->
+<div style="position:absolute;left:7880px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Settings &amp; price alerts</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:280px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app/trips/settings</span>
+    </div>
+    <div style="padding:30px calc((100% - 720px)/2);background:#faf8ff">
+      <div style="font:800 23px Manrope;color:#1a1a2e;letter-spacing:-0.01em;margin-bottom:20px">Settings</div>
+      <!-- notifications card -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:20px;margin-bottom:14px">
+        <div style="font:700 15px Manrope;color:#1a1a2e">Notifications</div>
+        <div style="font:500 13px Manrope;color:#8b86a0;margin:4px 0 18px">Manage how you hear about price changes on your tracked trips.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid #f4f1fc">
+          <div><div style="font:600 14px Manrope;color:#1a1a2e">Email notifications</div><div style="font:500 12px Manrope;color:#8b86a0;margin-top:2px;max-width:340px">Daily digest when a tracked trip drops below your price target.</div></div>
+          <div style="width:44px;height:25px;border-radius:13px;background:#7c3aed;position:relative;flex-shrink:0"><span style="position:absolute;top:3px;right:3px;width:19px;height:19px;border-radius:50%;background:#fff"></span></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid #f4f1fc">
+          <div><div style="font:600 14px Manrope;color:#1a1a2e">SMS alerts</div><div style="font:500 12px Manrope;color:#8b86a0;margin-top:2px">Instant text on a major price drop.</div></div>
+          <div style="width:44px;height:25px;border-radius:13px;background:#e3dcf2;position:relative;flex-shrink:0"><span style="position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- ============ BAND LABEL: WEB ================================ -->
+<!-- ============================================================= -->
+<div data-drags-parent="1" style="position:absolute;left:80px;top:150px" class="ap">
+  <span style="font:800 13px Manrope;letter-spacing:.16em;color:#7c3aed;background:#f4f1fc;padding:7px 14px;border-radius:8px">WEB · DESKTOP</span>
+</div>
+
+<!-- ============ BAND LABEL: WEB HALF-WIDTH (720px) ============ -->
+<div data-drags-parent="1" style="position:absolute;left:80px;top:1230px" class="ap">
+  <span style="font:800 13px Manrope;letter-spacing:.16em;color:#7c3aed;background:#f4f1fc;padding:7px 14px;border-radius:8px">WEB · HALF-WIDTH (720px)</span>
+  <span style="font:500 13px Manrope;color:#8b86a0;margin-left:12px">Every web page at a half-screen browser width — single-column reflow.</span>
+</div>
+
+<div style="position:absolute;left:80px;top:1290px;width:720px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">Sign in</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f6f4fb;border-bottom:1px solid #ece8f5"><span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span><span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span><span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span><span style="margin-left:10px;flex:1;background:#fff;border:1px solid #e7e2f2;border-radius:6px;font:500 11px Manrope;color:#8b86a0;padding:4px 10px">pricetracker.app</span></div>
+    <div style="flex:1;position:relative;overflow:hidden;background:#faf8ff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px">
+      <div style="position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.4),transparent 70%);top:-80px;left:-60px"></div>
+      <div style="position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(236,72,153,.25),transparent 70%);bottom:-70px;right:-40px"></div>
+      <div style="position:relative;max-width:380px">
+        <div class="ico" style="width:58px;height:58px;border-radius:16px;background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 10px 24px rgba(124,58,237,.4);margin:0 auto 20px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+        <span style="display:inline-block;font:700 11px Manrope;letter-spacing:.04em;color:#6d28d9;background:#ede9fe;padding:6px 13px;border-radius:999px">Date-Range Optimizer</span>
+        <h1 style="font:800 34px/1.1 Manrope;color:#1a1a2e;letter-spacing:-0.02em;margin:18px 0 0">Find your cheapest<br><span style="background:linear-gradient(120deg,#a78bfa,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">vacation window</span></h1>
+        <p style="font:500 15px/1.55 Manrope;color:#5a5670;margin:16px 0 0">We scan every flight &amp; hotel combination across your flexible dates to find when the whole trip costs least.</p>
+        <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin:24px 0 28px;font:600 13px Manrope;color:#4a4660">
+          <span>Flights</span><span style="color:#cfc8e0">·</span><span>Hotels</span><span style="color:#cfc8e0">·</span><span>Price alerts</span>
+        </div>
+        <div style="background:#fff;border-radius:16px;box-shadow:0 14px 40px rgba(60,40,120,.14);padding:26px 24px;border:1px solid #f1eef8">
+          <div style="font:800 19px Manrope;color:#1a1a2e;margin-bottom:14px">Ready to get started?</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:11px;background:#fff;border:1.5px solid #e7e2f2;border-radius:12px;padding:13px;font:700 15px Manrope;color:#3c3c44;box-shadow:0 2px 6px rgba(60,40,120,.05)"><svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.44 14.97.5 12 .5A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 4.75 12 4.75z"/></svg>Continue with Google</div>
+          <p style="font:500 11px Manrope;color:#a8a2bd;margin:12px 0 0">Google OAuth only. We never store passwords.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="position:absolute;left:900px;top:1290px;width:720px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">Dashboard</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f6f4fb;border-bottom:1px solid #ece8f5"><span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span><span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span><span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span><span style="margin-left:10px;flex:1;background:#fff;border:1px solid #e7e2f2;border-radius:6px;font:500 11px Manrope;color:#8b86a0;padding:4px 10px">pricetracker.app/trips</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid #f1eef8;background:#fff">
+      <div style="display:flex;align-items:center;gap:10px"><div class="ico" style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div><span style="font:800 17px Manrope;color:#1a1a2e">Price Tracker</span></div>
+      <div class="ico" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font:700 11px Manrope">ET</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:16px 18px;background:#faf8ff">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px"><div><div style="font:800 21px Manrope;color:#1a1a2e">Your Trips</div><div style="font:500 12px Manrope;color:#8b86a0">6 trips · 5 active</div></div><span style="display:flex;align-items:center;gap:6px;font:700 12px Manrope;color:#fff;background:#7c3aed;padding:8px 14px;border-radius:10px">+ New Trip</span></div>
+      <div style="display:flex;gap:4px;background:#f1eef8;border-radius:10px;padding:4px;margin-bottom:14px"><span style="flex:1;text-align:center;font:700 12px Manrope;color:#6d28d9;background:#fff;padding:8px;border-radius:7px;box-shadow:0 1px 3px rgba(60,40,120,.1)">Trips</span><span style="flex:1;text-align:center;font:600 12px Manrope;color:#8b86a0;padding:8px">Assistant</span></div>
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px;box-shadow:0 1px 4px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font:700 15px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 9px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:11px"><span>SFO ↔ RDM</span><span style="color:#cfc8e0">·</span><span>Aug 22–26</span></div>
+          <div style="display:flex;gap:8px"><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$177</div></div><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$612</div></div><div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$789</div></div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px;box-shadow:0 1px 4px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font:700 15px Manrope;color:#1a1a2e">Maui in March</span><span style="font:700 9px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:11px"><span>JFK ↔ OGG</span><span style="color:#cfc8e0">·</span><span>Mar 14–21</span></div>
+          <div style="display:flex;gap:8px"><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$498</div></div><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$1,340</div></div><div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$1,838</div></div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px;box-shadow:0 1px 4px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font:700 15px Manrope;color:#1a1a2e">Lisbon with Sam</span><span style="font:700 9px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:11px"><span>SFO ↔ LIS</span><span style="color:#cfc8e0">·</span><span>Sep 3–12</span></div>
+          <div style="display:flex;gap:8px"><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$640</div></div><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$1,020</div></div><div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$1,660</div></div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px;box-shadow:0 1px 4px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font:700 15px Manrope;color:#1a1a2e">Tokyo cherry blossom</span><span style="font:700 9px Manrope;letter-spacing:.05em;color:#9a7b18;background:#fef6dd;padding:4px 9px;border-radius:7px">PAUSED</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:11px"><span>LAX ↔ HND</span><span style="color:#cfc8e0">·</span><span>Apr 1–10</span></div>
+          <div style="display:flex;gap:8px"><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$842</div></div><div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$1,180</div></div><div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px 10px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$2,022</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="position:absolute;left:1720px;top:1290px;width:720px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">Trip detail</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f6f4fb;border-bottom:1px solid #ece8f5"><span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span><span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span><span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span><span style="margin-left:10px;flex:1;background:#fff;border:1px solid #e7e2f2;border-radius:6px;font:500 11px Manrope;color:#8b86a0;padding:4px 10px">pricetracker.app/trips/test-2</span></div>
+    <div style="flex:1;overflow-y:auto;background:#faf8ff">
+      <div style="position:sticky;top:0;z-index:5;background:#faf8ff;padding:13px 18px 11px;border-bottom:1px solid #ece8f5">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px">
+          <span class="ico" style="width:28px;height:28px;border-radius:8px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          <h1 style="font:800 21px Manrope;color:#1a1a2e;letter-spacing:-0.02em;margin:0">Test 2</h1>
+          <span style="font:700 9px Manrope;letter-spacing:.06em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span>
+          <span style="width:1px;height:15px;background:#e0d9ef"></span>
+          <span style="font:700 14px Manrope;color:#4a4660">SFO <span style="color:#bdb6d4">↔</span> RDM</span>
+          <span style="font:500 12px Manrope;color:#8b86a0">Aug 22–26 · 4 nights</span>
+        </div>
+        <div style="display:flex;gap:9px;margin-bottom:11px"><div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 11px;display:flex;align-items:center;gap:9px"><span class="ico" style="width:28px;height:28px;border-radius:8px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span><div><div style="font:600 10px Manrope;color:#8b86a0">Flight</div><div style="display:flex;align-items:baseline;gap:5px"><span style="font:800 17px Manrope;color:#1a1a2e;letter-spacing:-0.02em">$177</span></div></div></div><div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 11px;display:flex;align-items:center;gap:9px"><span class="ico" style="width:28px;height:28px;border-radius:8px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span><div><div style="font:600 10px Manrope;color:#8b86a0">Hotel</div><div style="display:flex;align-items:baseline;gap:5px"><span style="font:800 17px Manrope;color:#1a1a2e;letter-spacing:-0.02em">$612</span><span style="font:600 10px Manrope;color:#8b86a0">$153/nt</span></div></div></div><div style="flex:1;background:linear-gradient(135deg,#7c3aed,#9333ea);border:none;border-radius:12px;padding:9px 11px;display:flex;align-items:center;gap:9px;box-shadow:0 6px 16px rgba(124,58,237,.28)"><span class="ico" style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><div><div style="font:600 10px Manrope;color:#e9defb">Trip total</div><div style="display:flex;align-items:baseline;gap:5px"><span style="font:800 17px Manrope;color:#fff;letter-spacing:-0.02em">$789</span></div></div></div></div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:12px 13px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px"><div style="font:700 13px Manrope;color:#1a1a2e">Price history</div><span style="font:700 10px Manrope;color:#6d28d9;background:#f4f1fc;padding:4px 9px;border-radius:6px">Now $789</span></div>
+          <svg viewBox="0 0 680 200" preserveAspectRatio="none" style="width:100%;height:110px;display:block"><defs><linearGradient id="hwg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".16"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient></defs><g stroke="#f1eef8" stroke-width="1"><line x1="0" y1="50" x2="680" y2="50"/><line x1="0" y1="100" x2="680" y2="100"/><line x1="0" y1="150" x2="680" y2="150"/></g><polygon points="0,82 97,76 194,90 291,72 388,84 485,58 582,70 680,46 680,200 0,200" fill="url(#hwg)"/><polyline points="0,128 97,124 194,132 291,120 388,126 485,112 582,120 680,108" fill="none" stroke="#22d3ee" stroke-width="2" stroke-dasharray="5 5"/><polyline points="0,82 97,76 194,90 291,72 388,84 485,58 582,70 680,46" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><circle cx="680" cy="46" r="6" fill="#fff" stroke="#7c3aed" stroke-width="3"/></svg>
+        </div>
+      </div>
+      <div style="padding:14px 18px 22px;display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:15px;padding:15px">
+          <div style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e;margin-bottom:11px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flights</div>
+          <div style="border:1.5px solid #c9b8f5;background:#f8f5fe;border-radius:12px;padding:12px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:9px"><span class="ico" style="width:14px;height:14px;border-radius:50%;border:5px solid #7c3aed"></span><span class="logo" style="width:26px;height:26px;font-size:9px;background:linear-gradient(135deg,#10617f,#093247)">AS</span><span style="font:700 13px Manrope;color:#1a1a2e">Alaska Airlines</span><span style="font:700 8px Manrope;color:#059669;background:#ecfdf5;padding:3px 7px;border-radius:999px">NON-STOP</span><span style="flex:1"></span><span style="font:800 16px Manrope;color:#7c3aed">$177</span></div>
+            <div style="display:flex;align-items:center;gap:9px;margin-top:9px;font:600 11px Manrope;color:#6b6680;padding-left:49px"><span>7:05a SFO</span><span style="flex:1;height:1.5px;background:#d8cef0"></span><span>9:00a RDM</span></div>
+          </div>
+          <div style="border:1px solid #f1eef8;border-radius:12px;padding:12px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:9px"><span class="ico" style="width:14px;height:14px;border-radius:50%;border:2px solid #cfc8e0"></span><span style="display:inline-flex"><span class="logo" style="width:26px;height:26px;font-size:9px;background:linear-gradient(135deg,#2456c9,#13357f);border:2px solid #fff;z-index:2">UA</span><span class="logo" style="width:26px;height:26px;font-size:9px;background:linear-gradient(135deg,#10617f,#093247);border:2px solid #fff;margin-left:-9px">AS</span></span><span style="font:700 13px Manrope;color:#1a1a2e">United · Alaska</span><span style="font:700 8px Manrope;color:#9a7b18;background:#fef6dd;padding:3px 7px;border-radius:999px">1 STOP</span><span style="flex:1"></span><span style="font:800 16px Manrope;color:#1a1a2e">$142</span></div><div style="margin:7px 0 0 49px;font:600 11px Manrope;color:#8b86a0">6:15a SFO → 11:45a RDM · via DEN</div></div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:8px;border:1px dashed #d8cef0;border-radius:10px">Show 10 more flights</div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:15px;padding:15px">
+          <div style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e;margin-bottom:11px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Hotels</div>
+          <div style="border:1.5px solid #c9b8f5;background:#f8f5fe;border-radius:12px;padding:11px;margin-bottom:8px;display:flex;gap:11px"><div class="ico" style="width:50px;height:50px;border-radius:10px;background:linear-gradient(135deg,#ddd0fb,#c4b0f4);flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div><div style="flex:1"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 13px Manrope;color:#1a1a2e">Riverhouse on the Deschutes</span><span class="ico" style="width:14px;height:14px;border-radius:50%;border:5px solid #7c3aed"></span></div><div style="display:flex;align-items:center;gap:5px;margin:4px 0 6px"><span style="color:#f5a623;font-size:11px;letter-spacing:1px">★★★★</span><span style="font:600 10px Manrope;color:#8b86a0">River view</span></div><div style="display:flex;align-items:baseline;gap:6px"><span style="font:800 16px Manrope;color:#7c3aed">$153</span><span style="font:600 10px Manrope;color:#8b86a0">/night · $612 total</span></div></div></div>
+          <div style="border:1px solid #f1eef8;border-radius:12px;padding:11px;margin-bottom:8px;display:flex;gap:11px"><div class="ico" style="width:50px;height:50px;border-radius:10px;background:#f4f1fc;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a89cc4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div><div style="flex:1"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 13px Manrope;color:#1a1a2e">SCP Redmond Hotel</span><span class="ico" style="width:14px;height:14px;border-radius:50%;border:2px solid #cfc8e0"></span></div><div style="display:flex;align-items:center;gap:5px;margin:4px 0 6px"><span style="color:#f5a623;font-size:11px;letter-spacing:1px">★★★★</span><span style="font:600 10px Manrope;color:#8b86a0">Downtown</span></div><div style="display:flex;align-items:baseline;gap:6px"><span style="font:800 16px Manrope;color:#1a1a2e">$171</span><span style="font:600 10px Manrope;color:#8b86a0">/night · $684 total</span></div></div></div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:8px;border:1px dashed #d8cef0;border-radius:10px">Show all 9 hotels</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="position:absolute;left:2540px;top:1290px;width:720px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">Create trip</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f6f4fb;border-bottom:1px solid #ece8f5"><span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span><span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span><span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span><span style="margin-left:10px;flex:1;background:#fff;border:1px solid #e7e2f2;border-radius:6px;font:500 11px Manrope;color:#8b86a0;padding:4px 10px">pricetracker.app/trips/new</span></div>
+    <div style="flex:1;overflow-y:auto;padding:22px;background:#faf8ff">
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px"><span class="ico" style="width:34px;height:34px;border-radius:10px;background:#fff;border:1px solid #e7e2f2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7M19 12H5"/></svg></span><div><div style="font:800 21px Manrope;color:#1a1a2e">Create new trip</div><div style="font:500 12px Manrope;color:#8b86a0">Set up price tracking</div></div></div>
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px;margin-bottom:12px">
+        <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:12px">Trip details</div>
+        <div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Trip name</div>
+        <div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e;margin-bottom:12px">Bend ski week</div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end;margin-bottom:12px"><div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">From</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">SFO</div></div><span class="ico" style="width:32px;height:32px;border-radius:9px;background:#f4f1fc;margin-bottom:3px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></span><div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">To</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">RDM</div></div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"><div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Depart</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">Aug 22</div></div><div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Return</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">Aug 26</div></div><div><div style="font:600 12px Manrope;color:#6b6680;margin-bottom:6px">Adults</div><div style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:10px;padding:11px 13px;font:600 14px Manrope;color:#1a1a2e">2</div></div></div>
+      </div>
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flight preferences</span><div style="width:38px;height:22px;border-radius:11px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:16px;height:16px;border-radius:50%;background:#fff"></span></div></div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap"><span style="font:700 12px Manrope;color:#6d28d9;background:#ede9fe;border:1px solid #d8c9f7;padding:7px 12px;border-radius:9px">Economy</span><span style="font:600 12px Manrope;color:#6b6680;background:#faf8ff;border:1px solid #e7e2f2;padding:7px 12px;border-radius:9px">Premium</span><span style="font:700 12px Manrope;color:#6d28d9;background:#ede9fe;border:1px solid #d8c9f7;padding:7px 12px;border-radius:9px">Non-stop only</span></div>
+      </div>
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between"><span style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Hotel preferences</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a8a2bd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px;margin-bottom:16px"><div style="display:flex;align-items:center;gap:7px;font:700 14px Manrope;color:#1a1a2e;margin-bottom:12px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg>Alert me when…</div><div style="display:flex;align-items:center;gap:10px;font:600 13px Manrope;color:#4a4660">total drops below<span style="background:#faf8ff;border:1px solid #e7e2f2;border-radius:9px;padding:8px 14px;font:800 14px Manrope;color:#7c3aed">$750</span></div></div>
+      <div style="background:#7c3aed;border-radius:12px;padding:14px;text-align:center;font:700 15px Manrope;color:#fff;box-shadow:0 6px 16px rgba(124,58,237,.32)">Create trip</div>
+    </div>
+  </div>
+</div>
+
+<div style="position:absolute;left:3360px;top:1290px;width:720px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">Settings</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f6f4fb;border-bottom:1px solid #ece8f5"><span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span><span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span><span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span><span style="margin-left:10px;flex:1;background:#fff;border:1px solid #e7e2f2;border-radius:6px;font:500 11px Manrope;color:#8b86a0;padding:4px 10px">pricetracker.app/trips/settings</span></div>
+    <div style="flex:1;overflow-y:auto;padding:22px;background:#faf8ff">
+      <div style="font:800 21px Manrope;color:#1a1a2e;margin-bottom:16px">Settings</div>
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:18px">
+        <div style="font:700 15px Manrope;color:#1a1a2e">Notifications</div>
+        <div style="font:500 13px Manrope;color:#8b86a0;margin:4px 0 16px">Manage how you hear about price changes on your tracked trips.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid #f4f1fc"><div><div style="font:600 14px Manrope;color:#1a1a2e">Email notifications</div><div style="font:500 12px Manrope;color:#8b86a0;margin-top:2px">Daily digest when a tracked trip drops below your target.</div></div><div style="width:44px;height:25px;border-radius:13px;background:#7c3aed;position:relative;flex-shrink:0;margin-left:14px"><span style="position:absolute;top:3px;right:3px;width:19px;height:19px;border-radius:50%;background:#fff"></span></div></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid #f4f1fc"><div><div style="font:600 14px Manrope;color:#1a1a2e">SMS alerts</div><div style="font:500 12px Manrope;color:#8b86a0;margin-top:2px">Instant text on a major price drop.</div></div><div style="width:44px;height:25px;border-radius:13px;background:#e3dcf2;position:relative;flex-shrink:0;margin-left:14px"><span style="position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff"></span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 1. LOGIN ====================== -->
+<div style="position:absolute;left:80px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Sign in</div>
+  <!-- browser chrome -->
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:340px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app</span>
+    </div>
+    <!-- login body -->
+    <div style="position:relative;overflow:hidden;background:#faf8ff;min-height:860px;display:flex;align-items:center">
+      <div style="position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.45),transparent 70%);top:-120px;left:-80px"></div>
+      <div style="position:absolute;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,rgba(236,72,153,.28),transparent 70%);bottom:-130px;right:80px"></div>
+      <div style="position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,238,.22),transparent 70%);top:60px;right:-60px"></div>
+      <div style="position:relative;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center;padding:50px 60px;flex:1">
+        <!-- left copy -->
+        <div>
+          <span style="display:inline-block;font:700 12px Manrope;letter-spacing:.04em;color:#6d28d9;background:#ede9fe;padding:7px 14px;border-radius:999px">Date-Range Optimizer</span>
+          <h1 style="font:800 48px/1.05 Manrope;color:#1a1a2e;letter-spacing:-0.03em;margin:22px 0 0">Find your cheapest<br><span style="background:linear-gradient(120deg,#a78bfa,#7c3aed 55%,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">vacation window</span></h1>
+          <p style="font:500 17px/1.55 Manrope;color:#5a5670;max-width:440px;margin:20px 0 0">We scan every flight and hotel combination across your flexible dates to find when your entire trip costs the least.</p>
+          <div style="display:flex;align-items:center;gap:18px;margin-top:30px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="ico" style="width:38px;height:38px;border-radius:11px;background:#fff;border:1px solid #efeafc;box-shadow:0 3px 8px rgba(60,40,120,.06)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
+              <span style="font:600 14px Manrope;color:#4a4660">Flights</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="ico" style="width:38px;height:38px;border-radius:11px;background:#fff;border:1px solid #efeafc;box-shadow:0 3px 8px rgba(60,40,120,.06)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span>
+              <span style="font:600 14px Manrope;color:#4a4660">Hotels</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="ico" style="width:38px;height:38px;border-radius:11px;background:#fff;border:1px solid #efeafc;box-shadow:0 3px 8px rgba(60,40,120,.06)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
+              <span style="font:600 14px Manrope;color:#4a4660">Price alerts</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:40px;margin-top:20px;padding-top:18px;border-top:1px solid #ece8f5">
+            <div><div style="font:800 30px Manrope;color:#7c3aed;letter-spacing:-0.02em">$186</div><div style="font:500 13px Manrope;color:#8b86a0;margin-top:2px">avg. savings per trip</div></div>
+            <div><div style="font:800 30px Manrope;color:#7c3aed;letter-spacing:-0.02em">90+</div><div style="font:500 13px Manrope;color:#8b86a0;margin-top:2px">date combos checked</div></div>
+          </div>
+        </div>
+        <!-- right sign-in card -->
+        <div style="background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(60,40,120,.16);padding:38px 34px;border:1px solid #f1eef8">
+          <div class="ico" style="width:54px;height:54px;border-radius:15px;background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 8px 20px rgba(124,58,237,.4);margin-bottom:22px">
+            <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+          </div>
+          <h2 style="font:800 24px Manrope;color:#1a1a2e;letter-spacing:-0.01em;margin:0">Ready to get started?</h2>
+          <p style="font:500 15px/1.5 Manrope;color:#6b6680;margin:10px 0 26px">Sign in to create your first trip and start tracking prices.</p>
+          <div style="display:flex;align-items:center;justify-content:center;gap:12px;background:#fff;border:1.5px solid #e7e2f2;border-radius:12px;padding:13px;font:600 15px Manrope;color:#3c3c44;box-shadow:0 2px 6px rgba(60,40,120,.05)">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.44 14.97.5 12 .5A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 4.75 12 4.75z"/></svg>
+            Sign in with Google
+          </div>
+          <p style="font:500 12px Manrope;color:#a8a2bd;text-align:center;margin:16px 0 0">Google OAuth only. We never store passwords.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 3. TRIP DETAIL ====================== -->
+<div style="position:absolute;left:3200px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Trip detail — sticky graph &amp; totals; pick a flight/hotel to update them. Lists scroll below.</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:380px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app/trips/test-2</span>
+    </div>
+    <div style="height:860px;overflow-y:auto;background:#faf8ff">
+      <div style="position:sticky;top:0;z-index:5;background:#faf8ff;padding:14px 22px 12px;border-bottom:1px solid #ece8f5">
+        <div style="display:flex;align-items:center;gap:7px;font:600 12px Manrope;color:#8b86a0;margin-bottom:10px"><span style="display:flex;align-items:center;gap:5px;color:#7c3aed"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Your Trips</span><span style="color:#cfc8e0">/</span><span style="color:#4a4660">Test 2</span></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px">
+          <h1 style="font:800 24px Manrope;color:#1a1a2e;letter-spacing:-0.02em;margin:0">Test 2</h1>
+          <span style="font:700 9px Manrope;letter-spacing:.06em;color:#6d28d9;background:#ede9fe;padding:5px 10px;border-radius:8px">ACTIVE</span>
+          <span style="width:1px;height:18px;background:#e0d9ef"></span>
+          <span style="font:700 15px Manrope;color:#4a4660">SFO <span style="color:#bdb6d4">↔</span> RDM</span>
+          <span style="font:500 13px Manrope;color:#8b86a0">Aug 22 – 26, 2025</span>
+          <span style="font:600 11px Manrope;color:#6b6680;background:#f1eef8;padding:4px 9px;border-radius:7px">4 nights · 2 adults</span>
+          <span style="flex:1"></span>
+          <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#4a4660;background:#fff;border:1px solid #e7e2f2;padding:7px 12px;border-radius:9px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</span>
+          <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#4a4660;background:#fff;border:1px solid #e7e2f2;padding:7px 12px;border-radius:9px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</span>
+        </div>
+        <div style="display:flex;gap:11px;margin-bottom:13px">
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px">
+            <span class="ico" style="width:30px;height:30px;border-radius:9px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
+            <div><div style="font:600 11px Manrope;color:#8b86a0">Flight</div><div style="font:800 19px Manrope;color:#1a1a2e;letter-spacing:-0.02em">{{ flightPriceStr }}</div></div>
+          </div>
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px">
+            <span class="ico" style="width:30px;height:30px;border-radius:9px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span>
+            <div><div style="font:600 11px Manrope;color:#8b86a0">Hotel</div><div style="display:flex;align-items:baseline;gap:6px"><span style="font:800 19px Manrope;color:#1a1a2e;letter-spacing:-0.02em">{{ hotelTotalStr }}</span><span style="font:600 11px Manrope;color:#8b86a0">{{ hotelNightStr }}</span></div></div>
+          </div>
+          <div style="flex:1;background:linear-gradient(135deg,#7c3aed,#9333ea);border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px rgba(124,58,237,.28)">
+            <span class="ico" style="width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+            <div><div style="font:600 11px Manrope;color:#e9defb">Trip total</div><div style="font:800 19px Manrope;color:#fff;letter-spacing:-0.02em">{{ totalStr }}</div></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:13px 15px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font:700 13px Manrope;color:#1a1a2e">Price history</div>
+            <div style="display:flex;align-items:center;gap:12px;font:600 10px Manrope;color:#6b6680">
+              <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#7c3aed"></span>Total</span>
+              <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#22d3ee"></span>Hotel</span>
+              <span style="font:700 10px Manrope;color:#6d28d9;background:#f4f1fc;padding:4px 9px;border-radius:6px">Now {{ totalStr }}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:9px">
+            <div style="display:flex;flex-direction:column;justify-content:space-between;font:600 9px Manrope;color:#bdb6d4;padding:1px 0 16px"><span>$1000</span><span>$500</span><span>$0</span></div>
+            <div style="flex:1">{{ chartEl }}<div style="display:flex;justify-content:space-between;font:600 9px Manrope;color:#bdb6d4;margin-top:5px"><span>May 26</span><span>Jun 9</span><span>Jun 24</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:14px 22px 28px">
+        <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:16px">
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;padding:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;font:700 15px Manrope;color:#1a1a2e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flights</div><span style="font:600 11px Manrope;color:#a8a2bd">12 offers · tap to expand</span></div>
+            <sc-for list="{{ flights }}" as="f" hint-placeholder-count="4">
+              <div onClick="{{ f.pick }}" style="border-radius:13px;padding:11px 12px;margin-bottom:8px;cursor:pointer;background:{{ f.rowBg }};border:{{ f.rowBorder }}">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span class="ico" style="width:15px;height:15px;border-radius:50%;border:{{ f.radioBorder }}"></span>
+                  <sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:28px;height:28px;font-size:10px;background:{{ f.logoBg }}">{{ f.code }}</span></sc-if>
+                  <span style="font:700 14px Manrope;color:#1a1a2e">{{ f.airline }}</span>
+                  <span style="display:inline-flex;align-items:center;gap:4px;font:700 9px Manrope;letter-spacing:.05em;color:{{ f.kindColor }};background:{{ f.kindBg }};padding:4px 8px;border-radius:999px"><span style="width:5px;height:5px;border-radius:50%;background:{{ f.kindDot }}"></span>{{ f.kind }}</span>
+                  <span style="flex:1"></span>
+                  <span style="font:800 17px Manrope;color:{{ f.priceColor }}">{{ f.priceStr }}</span>
+                  <span style="font:700 10px Manrope;color:#bdb6d4;width:12px;text-align:center">{{ f.chevron }}</span>
+                </div>
+                <sc-if value="{{ f.notExpanded }}"><div style="margin:5px 0 0 53px;font:600 11px Manrope;color:#8b86a0">{{ f.summary }}</div></sc-if>
+                <sc-if value="{{ f.showOutRet }}">
+                  <div style="margin-top:10px;border-top:1px solid #ece5f9;padding-top:8px">
+                    <div style="display:flex;align-items:center;gap:10px;padding:4px 0"><span style="font:700 9px Manrope;letter-spacing:.08em;color:#a8a2bd;width:52px">OUTBOUND</span><div style="width:46px"><div style="font:700 13px Manrope;color:#1a1a2e">{{ f.out.dep }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ f.out.from }}</div></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:500 9px Manrope;color:#a8a2bd">{{ f.out.dur }} · {{ f.out.fl }}</span><div style="width:100%;height:2px;border-radius:2px;background:#d8cef0"></div></div><div style="width:46px;text-align:right"><div style="font:700 13px Manrope;color:#1a1a2e">{{ f.out.arr }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ f.out.to }}</div></div></div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:4px 0"><span style="font:700 9px Manrope;letter-spacing:.08em;color:#a8a2bd;width:52px">RETURN</span><div style="width:46px"><div style="font:700 13px Manrope;color:#1a1a2e">{{ f.ret.dep }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ f.ret.from }}</div></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:500 9px Manrope;color:#a8a2bd">{{ f.ret.dur }} · {{ f.ret.fl }}</span><div style="width:100%;height:2px;border-radius:2px;background:#d8cef0"></div></div><div style="width:46px;text-align:right"><div style="font:700 13px Manrope;color:#1a1a2e">{{ f.ret.arr }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ f.ret.to }}</div></div></div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ f.showLegs }}">
+                  <div style="margin-top:10px;border-top:1px solid #ece5f9;padding-top:8px">
+                    <div style="font:700 9px Manrope;letter-spacing:.08em;color:#a8a2bd;margin-bottom:2px">OUTBOUND</div>
+                    <sc-for list="{{ f.legs }}" as="lg" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;gap:9px;padding:3px 0"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:24px;height:24px;font-size:9px;background:{{ lg.logoBg }}">{{ lg.code }}</span></sc-if><div style="width:44px"><div style="font:700 13px Manrope;color:#1a1a2e">{{ lg.dep }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ lg.from }}</div></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:500 9px Manrope;color:#a8a2bd">{{ lg.dur }} · {{ lg.fl }}</span><div style="width:100%;height:2px;border-radius:2px;background:#e6dff5"></div></div><div style="width:44px;text-align:right"><div style="font:700 13px Manrope;color:#1a1a2e">{{ lg.arr }}</div><div style="font:600 10px Manrope;color:#8b86a0">{{ lg.to }}</div></div></div>
+                    </sc-for>
+                    <div style="margin:3px 0 3px 33px"><span style="display:inline-flex;align-items:center;gap:5px;font:600 10px Manrope;color:#c98a3a;background:#fdf6e9;border:1px solid #f6e7c8;border-radius:999px;padding:3px 9px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#c98a3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{{ f.layover }}</span></div>
+                    <div style="font:600 11px Manrope;color:#6b6680;margin-top:5px;padding-left:33px"><b style="color:#a8a2bd;font-weight:700;letter-spacing:.06em;font-size:9px">RETURN&nbsp;&nbsp;</b>{{ f.retSummary }}</div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:9px;border:1px dashed #d8cef0;border-radius:11px;margin-top:2px">Show 8 more flights<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;padding:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;font:700 15px Manrope;color:#1a1a2e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Hotels</div><span style="font:600 11px Manrope;color:#a8a2bd">4 nights · 1 room</span></div>
+            <sc-for list="{{ hotels }}" as="h" hint-placeholder-count="3">
+              <div onClick="{{ h.pick }}" style="border-radius:13px;padding:11px;margin-bottom:8px;cursor:pointer;display:flex;gap:11px;background:{{ h.rowBg }};border:{{ h.rowBorder }}">
+                <sc-if value="{{ h.showPhoto }}" hint-placeholder-val="{{ true }}"><image-slot id="{{ h.slot }}" style="width:54px;height:54px;flex-shrink:0" shape="rounded" radius="11" placeholder="Photo"></image-slot></sc-if>
+                <sc-if value="{{ h.showIcon }}"><div class="ico" style="width:54px;height:54px;border-radius:11px;background:#f4f1fc;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a89cc4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div></sc-if>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font:700 14px Manrope;color:#1a1a2e">{{ h.name }}</span><span style="display:flex;align-items:center;gap:7px"><span class="ico" style="width:15px;height:15px;border-radius:50%;border:{{ h.radioBorder }}"></span><span style="font:700 10px Manrope;color:#bdb6d4">{{ h.chevron }}</span></span></div>
+                  <div style="display:flex;align-items:center;gap:6px;margin:5px 0 7px"><span style="color:#f5a623;font-size:12px;letter-spacing:1px">{{ h.starsFilled }}</span><span style="color:#e0d9ef;font-size:12px;letter-spacing:1px">{{ h.starsEmpty }}</span><span style="font:600 11px Manrope;color:#8b86a0">{{ h.desc }}</span></div>
+                  <div style="display:flex;align-items:baseline;gap:7px"><span style="font:800 17px Manrope;color:{{ h.priceColor }}">{{ h.nightStr }}</span><span style="font:600 11px Manrope;color:#8b86a0">/night · {{ h.totalStr }}</span></div>
+                  <sc-if value="{{ h.expanded }}"><div style="margin-top:8px;border-top:1px solid #ece5f9;padding-top:8px;font:600 11px Manrope;color:#6b6680">{{ h.info }}</div></sc-if>
+                </div>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:9px;border:1px dashed #d8cef0;border-radius:11px;margin-top:2px">Show all 9 hotels<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 3b. TRIP DETAIL (scrolled) ====================== -->
+<div style="position:absolute;left:4760px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Trip detail — scrolled state · graph &amp; totals stay pinned · 1-stop flight expanded · “show more”</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:380px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app/trips/test-2</span>
+    </div>
+    <div style="height:860px;overflow:hidden;background:#faf8ff;display:flex;flex-direction:column">
+      <div style="background:#faf8ff;padding:14px 22px 12px;border-bottom:1px solid #ece8f5;box-shadow:0 8px 14px -10px rgba(60,40,120,.3)">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px">
+          <h1 style="font:800 24px Manrope;color:#1a1a2e;letter-spacing:-0.02em;margin:0">Test 2</h1>
+          <span style="font:700 9px Manrope;letter-spacing:.06em;color:#6d28d9;background:#ede9fe;padding:5px 10px;border-radius:8px">ACTIVE</span>
+          <span style="width:1px;height:18px;background:#e0d9ef"></span>
+          <span style="font:700 15px Manrope;color:#4a4660">SFO <span style="color:#bdb6d4">↔</span> RDM</span>
+          <span style="font:500 13px Manrope;color:#8b86a0">Aug 22 – 26, 2025</span>
+          <span style="font:600 11px Manrope;color:#6b6680;background:#f1eef8;padding:4px 9px;border-radius:7px">4 nights · 2 adults</span>
+          <span style="flex:1"></span>
+          <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#4a4660;background:#fff;border:1px solid #e7e2f2;padding:7px 12px;border-radius:9px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</span>
+          <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#4a4660;background:#fff;border:1px solid #e7e2f2;padding:7px 12px;border-radius:9px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</span>
+        </div>
+        <div style="display:flex;gap:11px;margin-bottom:13px">
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px"><span class="ico" style="width:30px;height:30px;border-radius:9px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span><div><div style="font:600 11px Manrope;color:#8b86a0">Flight</div><div style="font:800 19px Manrope;color:#1a1a2e;letter-spacing:-0.02em">$142</div></div></div>
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px"><span class="ico" style="width:30px;height:30px;border-radius:9px;background:#f4f1fc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span><div><div style="font:600 11px Manrope;color:#8b86a0">Hotel</div><div style="display:flex;align-items:baseline;gap:6px"><span style="font:800 19px Manrope;color:#1a1a2e;letter-spacing:-0.02em">$612</span><span style="font:600 11px Manrope;color:#8b86a0">$153/night</span></div></div></div>
+          <div style="flex:1;background:linear-gradient(135deg,#7c3aed,#9333ea);border-radius:12px;padding:9px 13px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px rgba(124,58,237,.28)"><span class="ico" style="width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><div><div style="font:600 11px Manrope;color:#e9defb">Trip total</div><div style="font:800 19px Manrope;color:#fff;letter-spacing:-0.02em">$754</div></div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:13px 15px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font:700 13px Manrope;color:#1a1a2e">Price history</div><div style="display:flex;align-items:center;gap:12px;font:600 10px Manrope;color:#6b6680"><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#7c3aed"></span>Total</span><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#22d3ee"></span>Hotel</span><span style="font:700 10px Manrope;color:#6d28d9;background:#f4f1fc;padding:4px 9px;border-radius:6px">Now $754</span></div></div>
+          <div style="display:flex;gap:9px"><div style="display:flex;flex-direction:column;justify-content:space-between;font:600 9px Manrope;color:#bdb6d4;padding:1px 0 16px"><span>$1000</span><span>$500</span><span>$0</span></div><div style="flex:1"><svg viewBox="0 0 920 240" preserveAspectRatio="none" style="width:100%;height:120px;display:block"><defs><linearGradient id="f2g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".16"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient></defs><g stroke="#f1eef8" stroke-width="1"><line x1="0" y1="60" x2="920" y2="60"/><line x1="0" y1="120" x2="920" y2="120"/><line x1="0" y1="180" x2="920" y2="180"/></g><polygon points="0,98 131,92 262,106 393,88 524,100 655,74 786,86 920,59 920,240 0,240" fill="url(#f2g)"/><polyline points="0,153 131,150 262,154 393,147 524,150 655,144 786,147 920,147" fill="none" stroke="#22d3ee" stroke-width="2" stroke-dasharray="5 5"/><polyline points="0,98 131,92 262,106 393,88 524,100 655,74 786,86 920,59" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><circle cx="920" cy="59" r="6" fill="#fff" stroke="#7c3aed" stroke-width="3"/></svg><div style="display:flex;justify-content:space-between;font:600 9px Manrope;color:#bdb6d4;margin-top:5px"><span>May 26</span><span>Jun 9</span><span>Jun 24</span></div></div></div>
+        </div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:14px 22px 0;position:relative">
+        <div style="position:absolute;top:0;left:22px;right:22px;height:16px;background:linear-gradient(#faf8ff,rgba(250,248,255,0));z-index:2"></div>
+        <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:16px">
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;padding:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;font:700 15px Manrope;color:#1a1a2e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flights</div><span style="font:600 11px Manrope;color:#a8a2bd">12 offers · sorted by price</span></div>
+                <div style="border-radius:13px;padding:11px 12px;margin-bottom:8px;background:#f8f5fe;border:1.5px solid #c9b8f5">
+                  <div style="display:flex;align-items:center;gap:10px"><span class="ico" style="width:15px;height:15px;border-radius:50%;border:5px solid #7c3aed"></span><span style="display:inline-flex"><span class="logo" style="width:28px;height:28px;font-size:10px;background:linear-gradient(135deg,#2456c9,#13357f);border:2px solid #fff;z-index:2">UA</span><span class="logo" style="width:28px;height:28px;font-size:10px;background:linear-gradient(135deg,#10617f,#093247);border:2px solid #fff;margin-left:-10px">AS</span></span><div><div style="display:flex;align-items:center;gap:7px"><span style="font:700 14px Manrope;color:#1a1a2e">United · Alaska</span><span style="display:inline-flex;align-items:center;gap:4px;font:700 9px Manrope;letter-spacing:.05em;color:#9a7b18;background:#fef6dd;padding:4px 8px;border-radius:999px"><span style="width:5px;height:5px;border-radius:50%;background:#f5a623"></span>1 STOP · DEN</span></div><div style="font:600 10px Manrope;color:#a8a2bd;margin-top:2px">Operated by United &amp; Alaska</div></div><span style="flex:1"></span><span style="font:800 17px Manrope;color:#7c3aed">$142</span><span style="font:700 10px Manrope;color:#bdb6d4;width:12px;text-align:center">▲</span></div>
+                  <div style="margin-top:10px;border-top:1px solid #ece5f9;padding-top:8px">
+                    <div style="font:700 9px Manrope;letter-spacing:.08em;color:#a8a2bd;margin-bottom:2px">OUTBOUND</div>
+                    <div style="display:flex;align-items:center;gap:9px;padding:3px 0"><span class="logo" style="width:24px;height:24px;font-size:9px;background:linear-gradient(135deg,#2456c9,#13357f)">UA</span><div style="width:44px"><div style="font:700 13px Manrope;color:#1a1a2e">6:15a</div><div style="font:600 10px Manrope;color:#8b86a0">SFO</div></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:500 9px Manrope;color:#a8a2bd">2h 25m · UA 508</span><div style="width:100%;height:2px;border-radius:2px;background:#e6dff5"></div></div><div style="width:44px;text-align:right"><div style="font:700 13px Manrope;color:#1a1a2e">8:40a</div><div style="font:600 10px Manrope;color:#8b86a0">DEN</div></div></div>
+                    <div style="display:flex;align-items:center;gap:9px;padding:3px 0"><span class="logo" style="width:24px;height:24px;font-size:9px;background:linear-gradient(135deg,#10617f,#093247)">AS</span><div style="width:44px"><div style="font:700 13px Manrope;color:#1a1a2e">9:50a</div><div style="font:600 10px Manrope;color:#8b86a0">DEN</div></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:500 9px Manrope;color:#a8a2bd">1h 55m · AS 2201</span><div style="width:100%;height:2px;border-radius:2px;background:#e6dff5"></div></div><div style="width:44px;text-align:right"><div style="font:700 13px Manrope;color:#1a1a2e">11:45a</div><div style="font:600 10px Manrope;color:#8b86a0">RDM</div></div></div>
+                    <div style="margin:3px 0 3px 33px"><span style="display:inline-flex;align-items:center;gap:5px;font:600 10px Manrope;color:#c98a3a;background:#fdf6e9;border:1px solid #f6e7c8;border-radius:999px;padding:3px 9px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#c98a3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>1h 10m layover in Denver (DEN)</span></div>
+                    <div style="font:600 11px Manrope;color:#6b6680;margin-top:5px;padding-left:33px"><b style="color:#a8a2bd;font-weight:700;letter-spacing:.06em;font-size:9px">RETURN&nbsp;&nbsp;</b>12:20p RDM → 5:30p SFO · 1 stop via DEN</div>
+                  </div>
+                </div>
+                <div style="border-radius:13px;padding:11px 12px;margin-bottom:8px;background:#fff;border:1px solid #f1eef8">
+                  <div style="display:flex;align-items:center;gap:10px"><span class="ico" style="width:15px;height:15px;border-radius:50%;border:2px solid #cfc8e0"></span><span class="logo" style="width:28px;height:28px;font-size:10px;background:linear-gradient(135deg,#c8102e,#7a0a1c)">DL</span><span style="font:700 14px Manrope;color:#1a1a2e">Delta</span><span style="display:inline-flex;align-items:center;gap:4px;font:700 9px Manrope;letter-spacing:.05em;color:#9a7b18;background:#fef6dd;padding:4px 8px;border-radius:999px"><span style="width:5px;height:5px;border-radius:50%;background:#f5a623"></span>1 STOP</span><span style="flex:1"></span><span style="font:800 17px Manrope;color:#1a1a2e">$168</span><span style="font:700 10px Manrope;color:#bdb6d4;width:12px;text-align:center">▼</span></div>
+                  <div style="margin:5px 0 0 53px;font:600 11px Manrope;color:#8b86a0">8:20a SFO → 1:40p RDM · via SLC</div>
+                </div>
+                <div style="border-radius:13px;padding:11px 12px;margin-bottom:8px;background:#fff;border:1px solid #f1eef8">
+                  <div style="display:flex;align-items:center;gap:10px"><span class="ico" style="width:15px;height:15px;border-radius:50%;border:2px solid #cfc8e0"></span><span class="logo" style="width:28px;height:28px;font-size:10px;background:linear-gradient(135deg,#10617f,#093247)">AS</span><span style="font:700 14px Manrope;color:#1a1a2e">Alaska Airlines</span><span style="display:inline-flex;align-items:center;gap:4px;font:700 9px Manrope;letter-spacing:.05em;color:#059669;background:#ecfdf5;padding:4px 8px;border-radius:999px"><span style="width:5px;height:5px;border-radius:50%;background:#10b981"></span>NON-STOP</span><span style="flex:1"></span><span style="font:800 17px Manrope;color:#1a1a2e">$204</span><span style="font:700 10px Manrope;color:#bdb6d4;width:12px;text-align:center">▼</span></div>
+                  <div style="margin:5px 0 0 53px;font:600 11px Manrope;color:#8b86a0">4:35p SFO → 6:25p RDM · nonstop</div>
+                </div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:9px;border:1px dashed #d8cef0;border-radius:11px;margin-top:2px">Show 8 more flights<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;padding:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;font:700 15px Manrope;color:#1a1a2e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Hotels</div><span style="font:600 11px Manrope;color:#a8a2bd">4 nights · 1 room</span></div>
+              <div style="border-radius:13px;padding:11px;margin-bottom:8px;display:flex;gap:11px;background:#f8f5fe;border:1.5px solid #c9b8f5"><div class="ico" style="width:54px;height:54px;border-radius:11px;background:linear-gradient(135deg,#ddd0fb,#c4b0f4);flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font:700 14px Manrope;color:#1a1a2e">Riverhouse on the Deschutes</span><span class="ico" style="width:15px;height:15px;border-radius:50%;border:5px solid #7c3aed"></span></div><div style="display:flex;align-items:center;gap:6px;margin:5px 0 7px"><span style="color:#f5a623;font-size:12px;letter-spacing:1px">★★★★</span><span style="color:#e0d9ef;font-size:12px;letter-spacing:1px">★</span><span style="font:600 11px Manrope;color:#8b86a0">River view</span></div><div style="display:flex;align-items:baseline;gap:7px"><span style="font:800 17px Manrope;color:#7c3aed">$153</span><span style="font:600 11px Manrope;color:#8b86a0">/night · $612 total</span></div></div></div>
+              <div style="border-radius:13px;padding:11px;margin-bottom:8px;display:flex;gap:11px;background:#fff;border:1px solid #f1eef8"><div class="ico" style="width:54px;height:54px;border-radius:11px;background:#f4f1fc;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a89cc4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font:700 14px Manrope;color:#1a1a2e">SCP Redmond Hotel</span><span class="ico" style="width:15px;height:15px;border-radius:50%;border:2px solid #cfc8e0"></span></div><div style="display:flex;align-items:center;gap:6px;margin:5px 0 7px"><span style="color:#f5a623;font-size:12px;letter-spacing:1px">★★★★</span><span style="color:#e0d9ef;font-size:12px;letter-spacing:1px">★</span><span style="font:600 11px Manrope;color:#8b86a0">Downtown</span></div><div style="display:flex;align-items:baseline;gap:7px"><span style="font:800 17px Manrope;color:#1a1a2e">$171</span><span style="font:600 11px Manrope;color:#8b86a0">/night · $684 total</span></div></div></div>
+              <div style="border-radius:13px;padding:11px;margin-bottom:8px;display:flex;gap:11px;background:#fff;border:1px solid #f1eef8"><div class="ico" style="width:54px;height:54px;border-radius:11px;background:#f4f1fc;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a89cc4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font:700 14px Manrope;color:#1a1a2e">Eviva Hotel</span><span class="ico" style="width:15px;height:15px;border-radius:50%;border:2px solid #cfc8e0"></span></div><div style="display:flex;align-items:center;gap:6px;margin:5px 0 7px"><span style="color:#f5a623;font-size:12px;letter-spacing:1px">★★★</span><span style="color:#e0d9ef;font-size:12px;letter-spacing:1px">★★</span><span style="font:600 11px Manrope;color:#8b86a0">Old Mill District</span></div><div style="display:flex;align-items:baseline;gap:7px"><span style="font:800 17px Manrope;color:#1a1a2e">$128</span><span style="font:600 11px Manrope;color:#8b86a0">/night · $512 total</span></div></div></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;font:600 12px Manrope;color:#7c3aed;padding:9px;border:1px dashed #d8cef0;border-radius:11px;margin-top:2px">Show all 9 hotels<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== 2. DASHBOARD (two-pane: table + chat) ====================== -->
+<div style="position:absolute;left:1640px;top:200px;width:1440px" class="ap">
+  <div data-drags-parent="1" style="font:700 14px Manrope;color:#8b86a0;margin-bottom:10px">Dashboard — trips table + AI assistant (two-pane)</div>
+  <div style="border-radius:14px;height:900px;overflow:hidden;box-shadow:0 16px 50px rgba(60,40,120,.13);background:#faf8ff;display:flex;flex-direction:column">
+    <!-- browser chrome -->
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 15px;background:#f6f4fb;border-bottom:1px solid #ece8f5">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#febc2e"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;flex:1;max-width:340px;background:#fff;border:1px solid #e7e2f2;border-radius:7px;font:500 12px Manrope;color:#8b86a0;padding:5px 12px">pricetracker.app/trips</span>
+    </div>
+    <!-- app top bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-bottom:1px solid #f1eef8;background:#fff">
+      <div style="display:flex;align-items:center;gap:11px">
+        <div class="ico" style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 4px 12px rgba(124,58,237,.35)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+        <span style="font:800 18px Manrope;color:#1a1a2e">Price Tracker</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:13px">
+        <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#059669;background:#ecfdf5;padding:5px 11px;border-radius:8px"><span style="width:7px;height:7px;border-radius:50%;background:#10b981"></span>Live</span>
+        <div class="ico" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font:700 12px Manrope">ET</div>
+      </div>
+    </div>
+    <!-- page header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;background:#faf8ff">
+      <div>
+        <div style="font:800 24px Manrope;color:#1a1a2e;letter-spacing:-0.02em">Your Trips</div>
+        <div style="font:500 13px Manrope;color:#8b86a0;margin-top:2px">6 trips · 5 active · last checked 6m ago</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="display:flex;align-items:center;gap:7px;font:600 13px Manrope;color:#4a4660;background:#fff;border:1px solid #e7e2f2;padding:8px 13px;border-radius:10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>Refresh All</span>
+        <span style="display:flex;align-items:center;gap:7px;font:700 13px Manrope;color:#fff;background:#7c3aed;padding:8px 15px;border-radius:10px;box-shadow:0 4px 12px rgba(124,58,237,.32)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New Trip</span>
+      </div>
+    </div>
+    <!-- two columns -->
+    <div style="display:grid;grid-template-columns:1fr 360px;background:#faf8ff;padding:0 22px 22px;gap:18px;flex:1;min-height:0">
+      <!-- table -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(60,40,120,.04);display:flex;flex-direction:column">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:13px 18px;background:#faf8ff;border-bottom:1px solid #f1eef8;font:700 11px Manrope;letter-spacing:.04em;color:#a8a2bd;text-transform:uppercase">
+          <span>Trip</span><span>Route</span><span>Dates</span><span style="text-align:right">Flight</span><span style="text-align:right">Hotel</span><span style="text-align:right">Total</span><span>Status</span>
+        </div>
+        <!-- rows -->
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;border-bottom:1px solid #f6f3fc;align-items:center;background:#fbfaff">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Test 2</span>
+          <span style="font:600 13px Manrope;color:#4a4660">SFO <span style="color:#bdb6d4">↔</span> RDM</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Aug 22 – 26</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$177</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$612</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$789</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;border-bottom:1px solid #f6f3fc;align-items:center">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Maui in March</span>
+          <span style="font:600 13px Manrope;color:#4a4660">JFK <span style="color:#bdb6d4">↔</span> OGG</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Mar 14 – 21</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$498</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$1,340</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$1,838</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;border-bottom:1px solid #f6f3fc;align-items:center">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Lisbon with Sam</span>
+          <span style="font:600 13px Manrope;color:#4a4660">SFO <span style="color:#bdb6d4">↔</span> LIS</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Sep 3 – 12</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$640</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$1,020</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$1,660</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;border-bottom:1px solid #f6f3fc;align-items:center">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Reykjavík stopover</span>
+          <span style="font:600 13px Manrope;color:#4a4660">BOS <span style="color:#bdb6d4">↔</span> KEF</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Oct 18 – 24</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$388</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$910</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$1,298</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:7px">ACTIVE</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;border-bottom:1px solid #f6f3fc;align-items:center">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Tokyo cherry blossom</span>
+          <span style="font:600 13px Manrope;color:#4a4660">LAX <span style="color:#bdb6d4">↔</span> HND</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Apr 1 – 10</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$842</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$1,180</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$2,022</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#9a7b18;background:#fef6dd;padding:4px 9px;border-radius:7px">PAUSED</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr .8fr .8fr .9fr .85fr;gap:8px;padding:15px 18px;align-items:center">
+          <span style="font:700 14px Manrope;color:#1a1a2e">Aspen, New Year</span>
+          <span style="font:600 13px Manrope;color:#4a4660">DEN <span style="color:#bdb6d4">↔</span> ASE</span>
+          <span style="font:500 13px Manrope;color:#6b6680">Dec 29 – Jan 2</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$214</span>
+          <span style="font:700 14px Manrope;color:#1a1a2e;text-align:right">$1,560</span>
+          <span style="font:800 14px Manrope;color:#7c3aed;text-align:right">$1,774</span>
+          <span><span style="font:700 10px Manrope;letter-spacing:.05em;color:#9a7b18;background:#fef6dd;padding:4px 9px;border-radius:7px">PAUSED</span></span>
+        </div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-top:1px solid #f1eef8;background:#fbfaff">
+          <span style="font:600 12px Manrope;color:#8b86a0">Showing 6 of 6 trips</span>
+          <span style="display:flex;align-items:center;gap:6px;font:600 12px Manrope;color:#8b86a0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a8a2bd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Prices refresh daily at 6:00 AM</span>
+        </div>
+      </div>
+      <!-- chat -->
+      <div style="background:#fff;border:1px solid #f1eef8;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 2px 10px rgba(60,40,120,.04)">
+        <div style="display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid #f1eef8">
+          <div class="ico" style="width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4zM2 14h2M20 14h2M15 13v2M9 13v2"/></svg></div>
+          <div style="flex:1"><div style="font:700 13px Manrope;color:#1a1a2e">Assistant</div><div style="font:500 11px Manrope;color:#a8a2bd">Powered by Groq</div></div>
+        </div>
+        <div style="flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;background:#fbfaff">
+          <div style="align-self:flex-end;max-width:88%;background:#7c3aed;color:#fff;font:500 13px/1.45 Manrope;padding:10px 13px;border-radius:14px 14px 4px 14px">Track flights from SFO to Bend in late August</div>
+          <div style="align-self:flex-start;max-width:90%;background:#fff;border:1px solid #f1eef8;font:500 13px/1.45 Manrope;color:#3c3c44;padding:10px 13px;border-radius:14px 14px 14px 4px">Done — I created <b style="color:#7c3aed">Test 2</b> (SFO ↔ RDM, Aug 22–26) and pulled initial prices. Cheapest right now is <b>$789</b> total.</div>
+          <div style="align-self:flex-start;display:flex;align-items:center;gap:7px;background:#f4f1fc;border:1px solid #e7ddfa;font:600 11px Manrope;color:#6d28d9;padding:7px 11px;border-radius:9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>create_trip · refresh_prices</div>
+        </div>
+        <div style="padding:12px;border-top:1px solid #f1eef8;display:flex;align-items:center;gap:8px">
+          <div style="flex:1;background:#f4f1fc;border-radius:10px;font:500 13px Manrope;color:#a8a2bd;padding:10px 13px">Ask anything…</div>
+          <div class="ico" style="width:36px;height:36px;border-radius:10px;background:#7c3aed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================= -->
+<!-- ============ BAND LABEL: TABLET ============================= -->
+<!-- ============================================================= -->
+<div data-drags-parent="1" style="position:absolute;left:80px;top:2320px" class="ap">
+  <span style="font:800 13px Manrope;letter-spacing:.16em;color:#7c3aed;background:#f4f1fc;padding:7px 14px;border-radius:8px">TABLET · iPad</span>
+  <span style="font:500 13px Manrope;color:#8b86a0;margin-left:12px">Sidebar nav appears; two-pane on landscape, single column on portrait.</span>
+</div>
+
+<!-- iPad landscape — dashboard with sidebar + chat -->
+<div style="position:absolute;left:80px;top:2370px;width:1180px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">iPad landscape — sidebar · trips · assistant</div>
+  <div style="background:#1a1726;border-radius:34px;padding:13px;box-shadow:0 22px 60px rgba(60,40,120,.22)">
+    <div style="background:#faf8ff;border-radius:22px;overflow:hidden;display:grid;grid-template-columns:200px 1fr 320px;height:740px">
+      <!-- sidebar -->
+      <div style="background:#fff;border-right:1px solid #f1eef8;padding:20px 14px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 8px 18px">
+          <div class="ico" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+          <span style="font:800 15px Manrope;color:#1a1a2e">Tracker</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#f4f1fc;font:700 13px Manrope;color:#6d28d9"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Trips</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font:600 13px Manrope;color:#6b6680"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a8a2bd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg>Alerts</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font:600 13px Manrope;color:#6b6680"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a8a2bd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>Settings</div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:9px;padding:10px 12px"><div class="ico" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font:700 11px Manrope">ET</div><span style="font:600 12px Manrope;color:#4a4660">Ethan</span></div>
+      </div>
+      <!-- trips -->
+      <div style="padding:22px 20px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div style="font:800 22px Manrope;color:#1a1a2e">Your Trips</div><span style="font:700 12px Manrope;color:#fff;background:#7c3aed;padding:8px 14px;border-radius:10px">+ New Trip</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:15px;display:flex;align-items:center;gap:14px">
+            <div style="flex:1"><div style="display:flex;align-items:center;gap:9px"><span style="font:700 15px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:3px 8px;border-radius:6px">ACTIVE</span></div><div style="font:600 12px Manrope;color:#6b6680;margin-top:4px">SFO ↔ RDM · Aug 22–26</div></div>
+            <div style="text-align:right"><div style="font:600 10px Manrope;color:#a8a2bd">Total</div><div style="font:800 18px Manrope;color:#7c3aed">$789</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:15px;display:flex;align-items:center;gap:14px">
+            <div style="flex:1"><div style="display:flex;align-items:center;gap:9px"><span style="font:700 15px Manrope;color:#1a1a2e">Maui in March</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:3px 8px;border-radius:6px">ACTIVE</span></div><div style="font:600 12px Manrope;color:#6b6680;margin-top:4px">JFK ↔ OGG · Mar 14–21</div></div>
+            <div style="text-align:right"><div style="font:600 10px Manrope;color:#a8a2bd">Total</div><div style="font:800 18px Manrope;color:#7c3aed">$1,838</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:15px;display:flex;align-items:center;gap:14px;opacity:.72">
+            <div style="flex:1"><div style="display:flex;align-items:center;gap:9px"><span style="font:700 15px Manrope;color:#1a1a2e">Tokyo cherry blossom</span><span style="font:700 9px Manrope;color:#9a7b18;background:#fef6dd;padding:3px 8px;border-radius:6px">PAUSED</span></div><div style="font:600 12px Manrope;color:#6b6680;margin-top:4px">LAX ↔ HND · Apr 1–10</div></div>
+            <div style="text-align:right"><div style="font:600 10px Manrope;color:#a8a2bd">Total</div><div style="font:800 18px Manrope;color:#1a1a2e">$2,022</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- chat -->
+      <div style="background:#fff;border-left:1px solid #f1eef8;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:9px;padding:16px;border-bottom:1px solid #f1eef8"><div class="ico" style="width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4zM2 14h2M20 14h2"/></svg></div><span style="font:700 13px Manrope;color:#1a1a2e">Assistant</span></div>
+        <div style="flex:1;padding:16px;display:flex;flex-direction:column;gap:11px;background:#fbfaff">
+          <div style="align-self:flex-end;max-width:85%;background:#7c3aed;color:#fff;font:500 12px/1.45 Manrope;padding:9px 12px;border-radius:13px 13px 3px 13px">Which trip dropped the most this week?</div>
+          <div style="align-self:flex-start;max-width:90%;background:#fff;border:1px solid #f1eef8;font:500 12px/1.45 Manrope;color:#3c3c44;padding:9px 12px;border-radius:13px 13px 13px 3px"><b style="color:#7c3aed">Test 2</b> fell <b>9%</b> ($789, down $76). Want me to set a $750 alert?</div>
+        </div>
+        <div style="padding:12px;border-top:1px solid #f1eef8;display:flex;gap:8px;align-items:center"><div style="flex:1;background:#f4f1fc;border-radius:10px;font:500 12px Manrope;color:#a8a2bd;padding:9px 12px">Ask anything…</div><div class="ico" style="width:34px;height:34px;border-radius:9px;background:#7c3aed"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/></svg></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- iPad portrait — trip detail -->
+<div style="position:absolute;left:1320px;top:2370px;width:600px" class="ap">
+  <div data-drags-parent="1" style="font:700 13px Manrope;color:#8b86a0;margin-bottom:10px">iPad portrait — trip detail</div>
+  <div style="background:#1a1726;border-radius:36px;padding:13px;box-shadow:0 22px 60px rgba(60,40,120,.22)">
+    <div style="background:#faf8ff;border-radius:24px;overflow:hidden;height:760px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:10px;padding:18px 20px;background:#fff;border-bottom:1px solid #f1eef8">
+        <span class="ico" style="width:30px;height:30px;border-radius:8px;background:#f4f1fc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+        <div style="flex:1"><div style="display:flex;align-items:center;gap:9px"><span style="font:800 19px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:3px 8px;border-radius:6px">ACTIVE</span></div><div style="font:600 12px Manrope;color:#6b6680;margin-top:2px">SFO ↔ RDM · Aug 22–26 · 4 nights</div></div>
+      </div>
+      <div style="padding:18px 20px;overflow:hidden">
+        <div style="display:flex;gap:10px;margin-bottom:16px">
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:14px"><div style="font:600 11px Manrope;color:#a8a2bd">Flight</div><div style="font:800 22px Manrope;color:#1a1a2e">$177</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:14px"><div style="font:600 11px Manrope;color:#a8a2bd">Hotel</div><div style="font:800 22px Manrope;color:#1a1a2e">$612</div></div>
+          <div style="flex:1;background:linear-gradient(135deg,#7c3aed,#9333ea);border-radius:13px;padding:14px"><div style="font:600 11px Manrope;color:#e9defb">Total</div><div style="font:800 22px Manrope;color:#fff">$789</div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px;margin-bottom:14px">
+          <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:12px">Price history</div>
+          <svg viewBox="0 0 520 160" style="width:100%;height:auto;display:block">
+            <defs><linearGradient id="totT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".16"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient></defs>
+            <g stroke="#f1eef8" stroke-width="1"><line x1="0" y1="40" x2="520" y2="40"/><line x1="0" y1="80" x2="520" y2="80"/><line x1="0" y1="120" x2="520" y2="120"/></g>
+            <path d="M0,80 L90,74 L180,90 L270,66 L360,78 L450,52 L520,44 L520,160 L0,160 Z" fill="url(#totT)"/>
+            <path d="M0,80 L90,74 L180,90 L270,66 L360,78 L450,52 L520,44" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M0,128 L90,124 L180,132 L270,120 L360,126 L450,112 L520,106" fill="none" stroke="#22d3ee" stroke-width="2" stroke-dasharray="5 5"/>
+            <circle cx="520" cy="44" r="4.5" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+          </svg>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:16px">
+          <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:12px">Flights</div>
+          <div style="border:1.5px solid #c9b8f5;background:#f8f5fe;border-radius:11px;padding:12px;margin-bottom:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:8px"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:20px;height:20px;background:linear-gradient(135deg,#10617f,#093247);font-size:8px">AS</span></sc-if><span style="font:700 13px Manrope;color:#1a1a2e">Alaska</span><span style="font:700 8px Manrope;color:#059669;background:#ecfdf5;padding:2px 6px;border-radius:5px">NON-STOP</span></div><span style="font:800 15px Manrope;color:#7c3aed">$177</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font:600 11px Manrope;color:#6b6680"><span>7:05a SFO</span><span style="flex:1;height:1.5px;background:#d8cef0"></span><span>9:00a RDM</span></div>
+          </div>
+          <div style="border:1px solid #f1eef8;border-radius:11px;padding:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:8px"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:20px;height:20px;background:linear-gradient(135deg,#2456c9,#13357f);font-size:8px">UA</span></sc-if><span style="font:700 13px Manrope;color:#1a1a2e">United</span><span style="font:700 8px Manrope;color:#9a7b18;background:#fef6dd;padding:2px 6px;border-radius:5px">1 STOP</span></div><span style="font:800 15px Manrope;color:#1a1a2e">$142</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font:600 11px Manrope;color:#6b6680"><span>6:15a SFO</span><span style="flex:1;height:1.5px;background:#e6dff5;position:relative"><span style="position:absolute;left:45%;top:-2.5px;width:5px;height:5px;border-radius:50%;background:#f5a623"></span></span><span>11:45a RDM</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- ============ BAND LABEL: PHONE iOS ========================== -->
+<!-- ============================================================= -->
+<div data-drags-parent="1" style="position:absolute;left:80px;top:3240px" class="ap">
+  <span style="font:800 13px Manrope;letter-spacing:.16em;color:#7c3aed;background:#f4f1fc;padding:7px 14px;border-radius:8px">PHONE · iOS</span>
+  <span style="font:500 13px Manrope;color:#8b86a0;margin-left:12px">Sign in · Trips · Trip detail · Create · Price-drop alert · Assistant · Tab bar nav.</span>
+</div>
+
+<!-- iOS frame template repeated. Width 312 (scaled visual). -->
+<!-- 1. Login -->
+<div style="position:absolute;left:80px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Sign in</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:36px;overflow:hidden">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#1a1726;border-radius:14px;z-index:5"></div>
+      <div style="position:absolute;top:0;width:100%;display:flex;justify-content:space-between;padding:15px 26px 0;font:700 11px Manrope;color:#1a1a2e;z-index:4"><span>9:41</span><span>▮▮▮ 􀙇</span></div>
+      <div style="position:absolute;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.5),transparent 70%);top:-60px;left:-70px"></div>
+      <div style="position:absolute;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,rgba(236,72,153,.3),transparent 70%);bottom:120px;right:-80px"></div>
+      <div style="position:relative;padding:90px 26px 0;display:flex;flex-direction:column;align-items:center;text-align:center;height:100%">
+        <div class="ico" style="width:62px;height:62px;border-radius:18px;background:linear-gradient(135deg,#a78bfa,#7c3aed);box-shadow:0 10px 24px rgba(124,58,237,.42)"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+        <h1 style="font:800 27px/1.1 Manrope;color:#1a1a2e;letter-spacing:-0.02em;margin:22px 0 0">Find your cheapest<br><span style="background:linear-gradient(120deg,#a78bfa,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">vacation window</span></h1>
+        <p style="font:500 14px/1.5 Manrope;color:#6b6680;margin:14px 0 0">Track flights &amp; hotels across your flexible dates. Get pinged when the whole trip gets cheaper.</p>
+        <div style="margin-top:auto;width:100%;padding-bottom:30px">
+          <div style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;border:1.5px solid #e7e2f2;border-radius:14px;padding:14px;font:700 15px Manrope;color:#3c3c44;box-shadow:0 4px 12px rgba(60,40,120,.08)"><svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.44 14.97.5 12 .5A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 4.75 12 4.75z"/></svg>Continue with Google</div>
+          <p style="font:500 11px Manrope;color:#a8a2bd;margin:12px 0 0">We never store passwords.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Trips list -->
+<div style="position:absolute;left:432px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Trips</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:36px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#1a1726;border-radius:14px;z-index:5"></div>
+      <div style="background:#fff;padding:46px 20px 14px;border-bottom:1px solid #f1eef8">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 11px Manrope;color:#1a1a2e">9:41</span><span style="font:700 11px Manrope;color:#1a1a2e">▮▮▮ 􀙇</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+          <div><div style="font:800 25px Manrope;color:#1a1a2e;letter-spacing:-0.02em">Your Trips</div><div style="font:500 12px Manrope;color:#8b86a0">3 tracked · updated 6m ago</div></div>
+          <div class="ico" style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font:700 12px Manrope">ET</div>
+        </div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:11px">
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:15px;padding:15px;box-shadow:0 2px 8px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px"><span style="font:700 16px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:4px 8px;border-radius:6px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:12px"><span>SFO ↔ RDM</span><span style="color:#cfc8e0">·</span><span>Aug 22–26</span></div>
+          <div style="display:flex;gap:7px">
+            <div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$177</div></div>
+            <div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$612</div></div>
+            <div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$789</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:10px;font:700 11px Manrope;color:#059669"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span style="transform:rotate(180deg);display:inline-block">↑</span>Down $76 (9%) this week</div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:15px;padding:15px;box-shadow:0 2px 8px rgba(60,40,120,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px"><span style="font:700 16px Manrope;color:#1a1a2e">Maui in March</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:4px 8px;border-radius:6px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:12px"><span>JFK ↔ OGG</span><span style="color:#cfc8e0">·</span><span>Mar 14–21</span></div>
+          <div style="display:flex;gap:7px">
+            <div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$498</div></div>
+            <div style="flex:1;background:#faf8ff;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$1,340</div></div>
+            <div style="flex:1;background:#f4f1fc;border-radius:9px;padding:8px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$1,838</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- fab + tab bar -->
+      <div style="position:absolute;right:18px;bottom:78px;width:52px;height:52px;border-radius:17px;background:#7c3aed;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(124,58,237,.45)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>
+      <div style="background:#fff;border-top:1px solid #f1eef8;display:flex;justify-content:space-around;padding:11px 0 22px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#7c3aed"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span style="font:700 9px Manrope">Trips</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#bdb6d4"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#bdb6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg><span style="font:600 9px Manrope">Alerts</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#bdb6d4"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#bdb6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4z"/></svg><span style="font:600 9px Manrope">Chat</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Trip detail -->
+<div style="position:absolute;left:784px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Trip detail</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:36px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#1a1726;border-radius:14px;z-index:5"></div>
+      <div style="background:#fff;padding:46px 18px 14px;border-bottom:1px solid #f1eef8">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 11px Manrope;color:#1a1a2e">9:41</span><span style="font:700 11px Manrope;color:#1a1a2e">▮▮▮ 􀙇</span></div>
+        <div style="display:flex;align-items:center;gap:11px;margin-top:12px">
+          <span class="ico" style="width:30px;height:30px;border-radius:9px;background:#f4f1fc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          <div><div style="display:flex;align-items:center;gap:8px"><span style="font:800 19px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 8px Manrope;color:#6d28d9;background:#ede9fe;padding:3px 7px;border-radius:6px">ACTIVE</span></div><div style="font:600 11px Manrope;color:#6b6680;margin-top:1px">SFO ↔ RDM · Aug 22–26</div></div>
+        </div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:8px">
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:11px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 17px Manrope;color:#1a1a2e">$177</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #f1eef8;border-radius:12px;padding:11px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 17px Manrope;color:#1a1a2e">$612</div></div>
+          <div style="flex:1;background:linear-gradient(135deg,#7c3aed,#9333ea);border-radius:12px;padding:11px"><div style="font:600 9px Manrope;color:#e9defb">TOTAL</div><div style="font:800 17px Manrope;color:#fff">$789</div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span style="font:700 13px Manrope;color:#1a1a2e">Price history</span><span style="font:700 10px Manrope;color:#059669;background:#ecfdf5;padding:3px 7px;border-radius:6px">▼ 9%</span></div>
+          <svg viewBox="0 0 260 110" style="width:100%;height:auto;display:block">
+            <defs><linearGradient id="totP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".16"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0,56 L52,50 L104,64 L156,42 L208,54 L260,32 L260,110 L0,110 Z" fill="url(#totP)"/>
+            <path d="M0,56 L52,50 L104,64 L156,42 L208,54 L260,32" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+            <circle cx="260" cy="32" r="4" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+          </svg>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:14px;padding:14px">
+          <div style="font:700 13px Manrope;color:#1a1a2e;margin-bottom:10px">Cheapest flight</div>
+          <div style="border:1.5px solid #c9b8f5;background:#f8f5fe;border-radius:11px;padding:11px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:7px"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:20px;height:20px;background:linear-gradient(135deg,#10617f,#093247);font-size:8px">AS</span></sc-if><span style="font:700 13px Manrope;color:#1a1a2e">Alaska</span><span style="font:700 8px Manrope;color:#059669;background:#ecfdf5;padding:2px 6px;border-radius:5px">NON-STOP</span></div><span style="font:800 15px Manrope;color:#7c3aed">$177</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font:600 11px Manrope;color:#6b6680"><span>7:05a SFO</span><span style="flex:1;height:1.5px;background:#d8cef0"></span><span>9:00a RDM</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Create trip -->
+<div style="position:absolute;left:1136px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Create trip</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:36px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#1a1726;border-radius:14px;z-index:5"></div>
+      <div style="background:#fff;padding:46px 18px 14px;border-bottom:1px solid #f1eef8">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 11px Manrope;color:#1a1a2e">9:41</span><span style="font:700 11px Manrope;color:#1a1a2e">▮▮▮ 􀙇</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px"><span style="font:600 14px Manrope;color:#8b86a0">Cancel</span><span style="font:800 16px Manrope;color:#1a1a2e">New Trip</span><span style="font:700 14px Manrope;color:#c9bce8">Save</span></div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:13px">
+        <div>
+          <div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:6px">TRIP NAME</div>
+          <div style="background:#fff;border:1px solid #e7e2f2;border-radius:11px;padding:12px;font:600 14px Manrope;color:#1a1a2e">Bend ski week</div>
+        </div>
+        <div style="display:flex;gap:9px;align-items:flex-end">
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:6px">FROM</div><div style="background:#fff;border:1px solid #e7e2f2;border-radius:11px;padding:12px;font:700 14px Manrope;color:#1a1a2e">SFO</div></div>
+          <span class="ico" style="width:34px;height:34px;border-radius:9px;background:#f4f1fc;margin-bottom:2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></span>
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:6px">TO</div><div style="background:#fff;border:1px solid #e7e2f2;border-radius:11px;padding:12px;font:700 14px Manrope;color:#1a1a2e">RDM</div></div>
+        </div>
+        <div style="display:flex;gap:9px">
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:6px">DEPART</div><div style="background:#fff;border:1px solid #e7e2f2;border-radius:11px;padding:12px;font:600 14px Manrope;color:#1a1a2e">Aug 22</div></div>
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:6px">RETURN</div><div style="background:#fff;border:1px solid #e7e2f2;border-radius:11px;padding:12px;font:600 14px Manrope;color:#1a1a2e">Aug 26</div></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:13px;display:flex;align-items:center;justify-content:between;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg><span style="font:700 13px Manrope;color:#1a1a2e">Track flights</span></div>
+          <div style="width:40px;height:23px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:#fff"></span></div>
+        </div>
+        <div style="background:#fff;border:1px solid #f1eef8;border-radius:13px;padding:13px;display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg><span style="font:700 13px Manrope;color:#1a1a2e">Track hotels</span></div>
+          <div style="width:40px;height:23px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:#fff"></span></div>
+        </div>
+        <div style="margin-top:auto;background:#7c3aed;border-radius:14px;padding:15px;text-align:center;font:700 15px Manrope;color:#fff;box-shadow:0 8px 20px rgba(124,58,237,.4)">Create &amp; track</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. Price-drop alert (lock screen notification) -->
+<div style="position:absolute;left:1488px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Price-drop alert</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;border-radius:36px;overflow:hidden;background:linear-gradient(165deg,#2a1d4a,#4c2a7a 55%,#7c3aed)">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#000;border-radius:14px;z-index:5"></div>
+      <div style="position:absolute;top:0;width:100%;display:flex;justify-content:space-between;padding:15px 26px 0;font:700 11px Manrope;color:#fff;z-index:4"><span>9:41</span><span>▮▮▮ 􀙇</span></div>
+      <div style="text-align:center;padding:60px 0 0;color:#fff"><div style="font:600 16px Manrope;opacity:.85">Friday, August 1</div><div style="font:300 64px Manrope;letter-spacing:-0.02em;margin-top:2px">9:41</div></div>
+      <!-- notification -->
+      <div style="margin:40px 14px 0;background:rgba(255,255,255,.92);backdrop-filter:blur(20px);border-radius:18px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.2)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+          <div class="ico" style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+          <span style="font:700 12px Manrope;color:#1a1a2e;flex:1">PRICE TRACKER</span><span style="font:500 11px Manrope;color:#8b86a0">now</span>
+        </div>
+        <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:3px">📉 Test 2 just dropped below $750</div>
+        <div style="font:500 13px/1.45 Manrope;color:#4a4660">SFO ↔ RDM (Aug 22–26) is now <b style="color:#7c3aed">$724 total</b> — down $65 since yesterday. Tap to view &amp; book.</div>
+      </div>
+      <div style="margin:11px 14px 0;background:rgba(255,255,255,.82);backdrop-filter:blur(20px);border-radius:18px;padding:13px;display:flex;align-items:center;gap:9px">
+        <div class="ico" style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4z"/></svg></div>
+        <div style="flex:1"><div style="font:700 12px Manrope;color:#1a1a2e">Assistant</div><div style="font:500 12px Manrope;color:#4a4660">3 cheaper hotel options found for Maui.</div></div>
+      </div>
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);width:120px;height:5px;border-radius:3px;background:rgba(255,255,255,.6)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 6. Assistant -->
+<div style="position:absolute;left:1840px;top:3300px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Assistant</div>
+  <div style="width:312px;height:660px;background:#1a1726;border-radius:46px;padding:11px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:36px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:90px;height:26px;background:#1a1726;border-radius:14px;z-index:5"></div>
+      <div style="background:#fff;padding:46px 18px 13px;border-bottom:1px solid #f1eef8">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:700 11px Manrope;color:#1a1a2e">9:41</span><span style="font:700 11px Manrope;color:#1a1a2e">▮▮▮ 􀙇</span></div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:12px">
+          <div class="ico" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4zM2 14h2M20 14h2"/></svg></div>
+          <div style="flex:1"><div style="font:800 16px Manrope;color:#1a1a2e">Assistant</div><div style="font:500 11px Manrope;color:#a8a2bd">Powered by Groq · live data</div></div>
+        </div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:11px;background:#fbfaff">
+        <div style="align-self:flex-start;max-width:88%;background:#fff;border:1px solid #f1eef8;font:500 13px/1.45 Manrope;color:#3c3c44;padding:11px 13px;border-radius:15px 15px 15px 4px">Hi Ethan 👋 Want me to find a cheaper week for your Bend trip?</div>
+        <div style="align-self:flex-end;max-width:85%;background:#7c3aed;color:#fff;font:500 13px/1.45 Manrope;padding:11px 13px;border-radius:15px 15px 4px 15px">Yes, anything under $700 in August?</div>
+        <div style="align-self:flex-start;max-width:90%;background:#fff;border:1px solid #f1eef8;font:500 13px/1.45 Manrope;color:#3c3c44;padding:11px 13px;border-radius:15px 15px 15px 4px">Aug 19–23 comes to <b style="color:#7c3aed">$681</b> — $108 cheaper. Shift the dates?</div>
+        <div style="align-self:flex-start;display:flex;gap:7px">
+          <span style="font:700 12px Manrope;color:#fff;background:#7c3aed;padding:8px 14px;border-radius:10px">Yes, update</span>
+          <span style="font:700 12px Manrope;color:#6d28d9;background:#ede9fe;padding:8px 14px;border-radius:10px">Keep dates</span>
+        </div>
+        <div style="align-self:flex-start;display:flex;align-items:center;gap:6px;background:#f4f1fc;border:1px solid #e7ddfa;font:600 10px Manrope;color:#6d28d9;padding:6px 10px;border-radius:8px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>search_dates · compare_prices</div>
+      </div>
+      <div style="padding:12px;border-top:1px solid #f1eef8;display:flex;gap:8px;align-items:center;background:#fff">
+        <div style="flex:1;background:#f4f1fc;border-radius:11px;font:500 13px Manrope;color:#a8a2bd;padding:11px 13px">Ask anything…</div>
+        <div class="ico" style="width:38px;height:38px;border-radius:11px;background:#7c3aed"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- ============ BAND LABEL: PHONE ANDROID ====================== -->
+<!-- ============================================================= -->
+<div data-drags-parent="1" style="position:absolute;left:80px;top:4060px" class="ap">
+  <span style="font:800 13px Manrope;letter-spacing:.16em;color:#7c3aed;background:#f4f1fc;padding:7px 14px;border-radius:8px">PHONE · ANDROID</span>
+  <span style="font:500 13px Manrope;color:#8b86a0;margin-left:12px">Material adaptation — extended FAB, nav bar, heads-up notification, larger touch targets.</span>
+</div>
+
+<!-- 1. Trips (Material) -->
+<div style="position:absolute;left:80px;top:4120px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Trips</div>
+  <div style="width:312px;height:660px;background:#0e0e12;border-radius:38px;padding:8px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:31px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 18px 0;font:600 11px Manrope;color:#1a1a2e"><span>9:41</span><span style="letter-spacing:1px">📶 􀙇 100%</span></div>
+      <div style="padding:14px 18px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><div class="ico" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div><span style="font:800 21px Manrope;color:#1a1a2e">Your Trips</span></div><div class="ico" style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font:700 12px Manrope">ET</div></div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:0 14px;display:flex;flex-direction:column;gap:11px">
+        <div style="background:#fff;border-radius:18px;padding:16px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px"><span style="font:700 16px Manrope;color:#1a1a2e">Test 2</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:999px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:12px"><span>SFO ↔ RDM</span><span style="color:#cfc8e0">·</span><span>Aug 22–26</span></div>
+          <div style="display:flex;gap:7px"><div style="flex:1;background:#faf8ff;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$177</div></div><div style="flex:1;background:#faf8ff;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$612</div></div><div style="flex:1;background:#f4f1fc;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$789</div></div></div>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:10px;font:700 11px Manrope;color:#059669"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Down $76 (9%) this week</div>
+        </div>
+        <div style="background:#fff;border-radius:18px;padding:16px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px"><span style="font:700 16px Manrope;color:#1a1a2e">Maui in March</span><span style="font:700 9px Manrope;color:#6d28d9;background:#ede9fe;padding:4px 9px;border-radius:999px">ACTIVE</span></div>
+          <div style="display:flex;align-items:center;gap:8px;font:600 12px Manrope;color:#6b6680;margin-bottom:12px"><span>JFK ↔ OGG</span><span style="color:#cfc8e0">·</span><span>Mar 14–21</span></div>
+          <div style="display:flex;gap:7px"><div style="flex:1;background:#faf8ff;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#a8a2bd">FLIGHT</div><div style="font:800 14px Manrope;color:#1a1a2e">$498</div></div><div style="flex:1;background:#faf8ff;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#a8a2bd">HOTEL</div><div style="font:800 14px Manrope;color:#1a1a2e">$1,340</div></div><div style="flex:1;background:#f4f1fc;border-radius:10px;padding:9px"><div style="font:600 9px Manrope;color:#8b7bbf">TOTAL</div><div style="font:800 14px Manrope;color:#7c3aed">$1,838</div></div></div>
+        </div>
+      </div>
+      <!-- extended FAB -->
+      <div style="position:absolute;right:16px;bottom:84px;display:flex;align-items:center;gap:8px;background:#7c3aed;border-radius:16px;padding:14px 18px;box-shadow:0 8px 20px rgba(124,58,237,.45)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span style="font:700 13px Manrope;color:#fff">New trip</span></div>
+      <!-- nav bar -->
+      <div style="background:#fff;border-top:1px solid #f1eef8;display:flex;justify-content:space-around;padding:10px 0 16px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="background:#ede9fe;border-radius:999px;padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><span style="font:700 9px Manrope;color:#6d28d9">Trips</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#bdb6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg></div><span style="font:600 9px Manrope;color:#bdb6d4">Alerts</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#bdb6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8M4 8h16v12H4z"/></svg></div><span style="font:600 9px Manrope;color:#bdb6d4">Chat</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Trip detail (Material) -->
+<div style="position:absolute;left:432px;top:4120px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Trip detail</div>
+  <div style="width:312px;height:660px;background:#0e0e12;border-radius:38px;padding:8px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:31px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 18px 0;font:600 11px Manrope;color:#1a1a2e"><span>9:41</span><span style="letter-spacing:1px">📶 􀙇 100%</span></div>
+      <!-- collapsing app bar -->
+      <div style="background:linear-gradient(135deg,#7c3aed,#9333ea);padding:14px 16px 18px;color:#fff">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg><span style="font:800 18px Manrope;color:#fff">Test 2</span><span style="font:700 8px Manrope;color:#fff;background:rgba(255,255,255,.25);padding:4px 9px;border-radius:999px;margin-left:auto">ACTIVE</span></div>
+        <div style="font:600 12px Manrope;color:#e9defb;margin-bottom:12px">SFO ↔ RDM · Aug 22–26 · 4 nights</div>
+        <div style="display:flex;align-items:baseline;gap:9px"><span style="font:600 12px Manrope;color:#e9defb">Trip total</span><span style="font:800 30px Manrope;color:#fff;letter-spacing:-0.02em">$789</span><span style="font:700 11px Manrope;color:#fff;background:rgba(255,255,255,.25);padding:3px 9px;border-radius:999px">▼ 9%</span></div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:12px;margin-top:-10px">
+        <div style="background:#fff;border-radius:18px;padding:15px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span style="font:700 13px Manrope;color:#1a1a2e">Price history</span><div style="display:flex;gap:10px;font:600 10px Manrope;color:#6b6680"><span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;border-radius:2px;background:#7c3aed"></span>Total</span><span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;border-radius:2px;background:#22d3ee"></span>Hotel</span></div></div>
+          <svg viewBox="0 0 260 110" style="width:100%;height:auto;display:block">
+            <defs><linearGradient id="totM" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".16"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0,56 L52,50 L104,64 L156,42 L208,54 L260,32 L260,110 L0,110 Z" fill="url(#totM)"/>
+            <path d="M0,56 L52,50 L104,64 L156,42 L208,54 L260,32" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M0,84 L52,80 L104,86 L156,76 L208,82 L260,68" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-dasharray="4 4"/>
+            <circle cx="260" cy="32" r="4" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+          </svg>
+        </div>
+        <div style="background:#fff;border-radius:18px;padding:15px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <div style="font:700 13px Manrope;color:#1a1a2e;margin-bottom:11px">Flights</div>
+          <div style="border:1.5px solid #c9b8f5;background:#f8f5fe;border-radius:13px;padding:12px;margin-bottom:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:7px"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:20px;height:20px;background:linear-gradient(135deg,#10617f,#093247);font-size:8px">AS</span></sc-if><span style="font:700 13px Manrope;color:#1a1a2e">Alaska</span><span style="font:700 8px Manrope;color:#059669;background:#ecfdf5;padding:2px 7px;border-radius:999px">NON-STOP</span></div><span style="font:800 15px Manrope;color:#7c3aed">$177</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font:600 11px Manrope;color:#6b6680"><span>7:05a SFO</span><span style="flex:1;height:1.5px;background:#d8cef0"></span><span>9:00a RDM</span></div>
+          </div>
+          <div style="border:1px solid #f1eef8;border-radius:13px;padding:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:7px"><sc-if value="{{ showAirlineLogos }}" hint-placeholder-val="{{ true }}"><span class="logo" style="width:20px;height:20px;background:linear-gradient(135deg,#2456c9,#13357f);font-size:8px">UA</span></sc-if><span style="font:700 13px Manrope;color:#1a1a2e">United</span><span style="font:700 8px Manrope;color:#9a7b18;background:#fef6dd;padding:2px 7px;border-radius:999px">1 STOP</span></div><span style="font:800 15px Manrope;color:#1a1a2e">$142</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font:600 11px Manrope;color:#6b6680"><span>6:15a SFO</span><span style="flex:1;height:1.5px;background:#e6dff5;position:relative"><span style="position:absolute;left:45%;top:-2.5px;width:5px;height:5px;border-radius:50%;background:#f5a623"></span></span><span>11:45a RDM</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Create (Material) -->
+<div style="position:absolute;left:784px;top:4120px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Create trip</div>
+  <div style="width:312px;height:660px;background:#0e0e12;border-radius:38px;padding:8px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;background:#faf8ff;border-radius:31px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 18px 0;font:600 11px Manrope;color:#1a1a2e"><span>9:41</span><span style="letter-spacing:1px">📶 􀙇 100%</span></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a1a2e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg><span style="font:800 19px Manrope;color:#1a1a2e">New Trip</span></div>
+      <div style="flex:1;overflow:hidden;padding:6px 16px;display:flex;flex-direction:column;gap:18px">
+        <div>
+          <div style="font:600 11px Manrope;color:#7c3aed;margin-bottom:4px">Trip name</div>
+          <div style="border-bottom:2px solid #7c3aed;padding:6px 2px;font:600 15px Manrope;color:#1a1a2e">Bend ski week</div>
+        </div>
+        <div style="display:flex;gap:16px">
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:4px">From</div><div style="border-bottom:1.5px solid #d8cef0;padding:6px 2px;font:700 15px Manrope;color:#1a1a2e">SFO</div></div>
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:4px">To</div><div style="border-bottom:1.5px solid #d8cef0;padding:6px 2px;font:700 15px Manrope;color:#1a1a2e">RDM</div></div>
+        </div>
+        <div style="display:flex;gap:16px">
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:4px">Depart</div><div style="border-bottom:1.5px solid #d8cef0;padding:6px 2px;font:600 15px Manrope;color:#1a1a2e">Aug 22</div></div>
+          <div style="flex:1"><div style="font:600 11px Manrope;color:#8b86a0;margin-bottom:4px">Return</div><div style="border-bottom:1.5px solid #d8cef0;padding:6px 2px;font:600 15px Manrope;color:#1a1a2e">Aug 26</div></div>
+        </div>
+        <div style="background:#fff;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <span style="font:700 13px Manrope;color:#1a1a2e;flex:1">Track flights</span>
+          <div style="width:42px;height:24px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff"></span></div>
+        </div>
+        <div style="background:#fff;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(60,40,120,.1)">
+          <span style="font:700 13px Manrope;color:#1a1a2e;flex:1">Track hotels</span>
+          <div style="width:42px;height:24px;border-radius:12px;background:#7c3aed;position:relative"><span style="position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff"></span></div>
+        </div>
+      </div>
+      <div style="padding:14px 16px 22px"><div style="background:#7c3aed;border-radius:999px;padding:15px;text-align:center;font:700 15px Manrope;color:#fff;box-shadow:0 8px 20px rgba(124,58,237,.4)">Create &amp; track</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Heads-up notification (Material) -->
+<div style="position:absolute;left:1136px;top:4120px" class="ap">
+  <div data-drags-parent="1" style="font:700 12px Manrope;color:#8b86a0;margin-bottom:9px">Price-drop alert</div>
+  <div style="width:312px;height:660px;background:#0e0e12;border-radius:38px;padding:8px;box-shadow:0 22px 55px rgba(60,40,120,.22)">
+    <div style="position:relative;width:100%;height:100%;border-radius:31px;overflow:hidden;background:linear-gradient(165deg,#241a3e,#3a2660 60%,#5b3aa0)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 18px 0;font:600 11px Manrope;color:#fff"><span>9:41</span><span style="letter-spacing:1px">📶 􀙇 100%</span></div>
+      <div style="text-align:center;padding:46px 0 0;color:#fff"><div style="font:200 58px Manrope;letter-spacing:-0.02em">9:41</div><div style="font:600 14px Manrope;opacity:.85;margin-top:2px">Fri, Aug 1</div></div>
+      <!-- heads-up card -->
+      <div style="margin:34px 12px 0;background:#fff;border-radius:24px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.28)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px">
+          <div class="ico" style="width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#a78bfa,#7c3aed)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div>
+          <span style="font:700 11px Manrope;color:#6b6680;flex:1">Price Tracker · now</span>
+        </div>
+        <div style="font:700 14px Manrope;color:#1a1a2e;margin-bottom:4px">Test 2 dropped below $750 📉</div>
+        <div style="font:500 13px/1.45 Manrope;color:#4a4660;margin-bottom:12px">SFO ↔ RDM (Aug 22–26) is now <b style="color:#7c3aed">$724 total</b> — down $65 since yesterday.</div>
+        <div style="display:flex;gap:8px;border-top:1px solid #f1eef8;padding-top:11px"><span style="font:700 13px Manrope;color:#7c3aed;flex:1;text-align:center">VIEW TRIP</span><span style="font:700 13px Manrope;color:#8b86a0;flex:1;text-align:center">DISMISS</span></div>
+      </div>
+      <div style="position:absolute;bottom:14px;left:0;right:0;display:flex;justify-content:center;gap:60px;color:rgba(255,255,255,.7)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".7"><path d="M19 12H5M12 19l-7-7 7-7"/></svg><div style="width:13px;height:13px;border:2px solid rgba(255,255,255,.7);border-radius:3px"></div><div style="width:13px;height:13px;border:2px solid rgba(255,255,255,.7);border-radius:50%"></div></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;showAirlineLogos&quot;: {&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},
+  &quot;showHotelPhotos&quot;: {&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},
+  &quot;multiCarrier&quot;: {&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}
+}">class Component extends DCLogic {
+  constructor(props){ super(props); this.state={ selFlight:'as', expFlight:'as', selHotel:'river', expHotel:null }; }
+
+  flightData(){
+    return [
+      { id:'as', code:'AS', logoBg:'linear-gradient(135deg,#10617f,#093247)', airline:'Alaska Airlines', kind:'NON-STOP', price:177,
+        out:{dep:'7:05a',from:'SFO',dur:'1h 55m',arr:'9:00a',to:'RDM',fl:'AS 1180'},
+        ret:{dep:'5:40p',from:'RDM',dur:'2h 05m',arr:'7:45p',to:'SFO',fl:'AS 1181'} },
+      { id:'ua', code:'UA', logoBg:'linear-gradient(135deg,#2456c9,#13357f)', airline:'United · Alaska', kind:'1 STOP', price:142,
+        legs:[
+          {code:'UA',logoBg:'linear-gradient(135deg,#2456c9,#13357f)',dep:'6:15a',from:'SFO',dur:'2h 25m',fl:'UA 508',arr:'8:40a',to:'DEN'},
+          {code:'AS',logoBg:'linear-gradient(135deg,#10617f,#093247)',dep:'9:50a',from:'DEN',dur:'1h 55m',fl:'AS 2201',arr:'11:45a',to:'RDM'} ],
+        layover:'1h 10m layover in Denver (DEN)', retSummary:'12:20p RDM \u2192 5:30p SFO \u00b7 1 stop via DEN' },
+      { id:'dl', code:'DL', logoBg:'linear-gradient(135deg,#c8102e,#7a0a1c)', airline:'Delta', kind:'1 STOP', price:168,
+        legs:[
+          {code:'DL',logoBg:'linear-gradient(135deg,#c8102e,#7a0a1c)',dep:'8:20a',from:'SFO',dur:'2h 40m',fl:'DL 1442',arr:'12:00p',to:'SLC'},
+          {code:'DL',logoBg:'linear-gradient(135deg,#c8102e,#7a0a1c)',dep:'1:05p',from:'SLC',dur:'1h 35m',fl:'DL 3318',arr:'1:40p',to:'RDM'} ],
+        layover:'1h 05m layover in Salt Lake City (SLC)', retSummary:'2:10p RDM \u2192 7:25p SFO \u00b7 1 stop via SLC' },
+      { id:'as2', code:'AS', logoBg:'linear-gradient(135deg,#10617f,#093247)', airline:'Alaska Airlines', kind:'NON-STOP', price:204,
+        out:{dep:'4:35p',from:'SFO',dur:'1h 50m',arr:'6:25p',to:'RDM',fl:'AS 1186'},
+        ret:{dep:'7:10a',from:'RDM',dur:'2h 00m',arr:'9:10a',to:'SFO',fl:'AS 1175'} },
+    ];
+  }
+  hotelData(){
+    return [
+      {id:'river', slot:'hotel-riverhouse', name:'Riverhouse on the Deschutes', stars:4, desc:'River view', night:153, total:612, info:'Free cancellation \u00b7 Breakfast included \u00b7 0.4 mi to Old Mill'},
+      {id:'scp', slot:'hotel-scp', name:'SCP Redmond Hotel', stars:4, desc:'Downtown', night:171, total:684, info:'Free cancellation \u00b7 Rooftop bar \u00b7 Pet friendly'},
+      {id:'eviva', slot:'hotel-eviva', name:'Eviva Hotel', stars:3, desc:'Old Mill District', night:128, total:512, info:'Non-refundable \u00b7 Pool \u00b7 2.1 mi to airport'},
+    ];
+  }
+  pickFlight(id){ this.setState(s=>({selFlight:id, expFlight: s.expFlight===id ? null : id})); }
+  pickHotel(id){ this.setState(s=>({selHotel:id, expHotel: s.expHotel===id ? null : id})); }
+
+  chartEl(total){
+    const R=React.createElement, W=920, H=240, max=1000;
+    const Y=v=>+(H*(1-v/max)).toFixed(1);
+    const histT=[840,820,834,808,816,792,802], histH=[636,628,640,612,624,600,612];
+    const ptsT=histT.concat([total]), n=ptsT.length, X=i=>+(i*(W/(n-1))).toFixed(1);
+    const lineT=ptsT.map((v,i)=>X(i)+','+Y(v)).join(' ');
+    const area='0,'+H+' '+lineT+' '+W+','+H;
+    const lineH=histH.concat([histH[6]]).map((v,i)=>X(i)+','+Y(v)).join(' ');
+    const grid=[40,90,140,190].map((y,i)=>R('line',{key:'g'+i,x1:0,y1:y,x2:W,y2:y,stroke:'#f1eef8',strokeWidth:1}));
+    return R('svg',{viewBox:'0 0 '+W+' '+H,preserveAspectRatio:'none',style:{width:'100%',height:'150px',display:'block'}},
+      R('defs',null,R('linearGradient',{id:'totg',x1:0,y1:0,x2:0,y2:1},
+        R('stop',{offset:0,stopColor:'#7c3aed',stopOpacity:.16}),R('stop',{offset:1,stopColor:'#7c3aed',stopOpacity:0}))),
+      grid,
+      R('polygon',{points:area,fill:'url(#totg)'}),
+      R('polyline',{points:lineH,fill:'none',stroke:'#22d3ee',strokeWidth:2,strokeDasharray:'5 5',strokeLinejoin:'round'}),
+      R('polyline',{points:lineT,fill:'none',stroke:'#7c3aed',strokeWidth:3,strokeLinejoin:'round',strokeLinecap:'round'}),
+      R('circle',{cx:X(n-1),cy:Y(total),r:6,fill:'#fff',stroke:'#7c3aed',strokeWidth:3})
+    );
+  }
+
+  renderVals(){
+    const logos=this.props.showAirlineLogos ?? true;
+    const photos=this.props.showHotelPhotos ?? true;
+    const multi=this.props.multiCarrier ?? true;
+    const FL=this.flightData(), HO=this.hotelData();
+    const sf=FL.find(f=>f.id===this.state.selFlight)||FL[0];
+    const sh=HO.find(h=>h.id===this.state.selHotel)||HO[0];
+    const total=sf.price+sh.total;
+    const SC={'NON-STOP':{c:'#059669',bg:'#ecfdf5',dot:'#10b981'},'1 STOP':{c:'#9a7b18',bg:'#fef6dd',dot:'#f5a623'}};
+    const flights=FL.map(f=>{
+      const sc=SC[f.kind], sel=f.id===this.state.selFlight, exp=f.id===this.state.expFlight;
+      const last=f.legs?f.legs[f.legs.length-1]:null;
+      return { id:f.id, airline:f.airline, code:f.code, logoBg:f.logoBg, kind:f.kind,
+        kindColor:sc.c, kindBg:sc.bg, kindDot:sc.dot,
+        priceStr:'$'+f.price, priceColor: sel?'#7c3aed':'#1a1a2e',
+        rowBg: sel?'#f8f5fe':'#fff', rowBorder: sel?'1.5px solid #c9b8f5':'1px solid #f1eef8',
+        radioBorder: sel?'5px solid #7c3aed':'2px solid #cfc8e0', chevron: exp?'\u25b2':'\u25bc',
+        out:f.out, ret:f.ret, legs:f.legs, layover:f.layover, retSummary:f.retSummary,
+        summary: f.kind==='NON-STOP' ? (f.out.dep+' '+f.out.from+' \u2192 '+f.out.arr+' '+f.out.to+' \u00b7 nonstop') : (f.legs[0].dep+' '+f.legs[0].from+' \u2192 '+last.arr+' '+last.to+' \u00b7 via '+f.legs[0].to),
+        showOutRet: exp && f.kind==='NON-STOP', showLegs: exp && f.kind!=='NON-STOP', notExpanded: !exp,
+        pick:()=>this.pickFlight(f.id) };
+    });
+    const hotels=HO.map(h=>{
+      const sel=h.id===this.state.selHotel, exp=h.id===this.state.expHotel;
+      return { id:h.id, slot:h.slot, name:h.name, desc:h.desc, info:h.info,
+        starsFilled:'\u2605\u2605\u2605\u2605\u2605'.slice(0,h.stars), starsEmpty:'\u2605\u2605\u2605\u2605\u2605'.slice(0,5-h.stars),
+        nightStr:'$'+h.night, totalStr:'$'+h.total+' total', chevron: exp?'\u25b2':'\u25bc',
+        priceColor: sel?'#7c3aed':'#1a1a2e',
+        rowBg: sel?'#f8f5fe':'#fff', rowBorder: sel?'1.5px solid #c9b8f5':'1px solid #f1eef8',
+        radioBorder: sel?'5px solid #7c3aed':'2px solid #cfc8e0',
+        showPhoto: photos, showIcon: !photos, expanded: exp,
+        pick:()=>this.pickHotel(h.id) };
+    });
+    return {
+      showAirlineLogos:logos, showHotelPhotos:photos, noHotelPhotos:!photos,
+      multiCarrier:multi, singleCarrier:!multi, logosMulti:logos&&multi, logosSingle:logos&&!multi,
+      flights, hotels,
+      flightPriceStr:'$'+sf.price, hotelTotalStr:'$'+sh.total, hotelNightStr:'$'+sh.night+'/night',
+      totalStr:'$'+total, chartEl:this.chartEl(total),
+    };
+  }
+}</script>
+</body>
+</html>
