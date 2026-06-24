@@ -21,6 +21,7 @@ from app.core.constants import NotificationStatus, ThresholdType
 from app.core.feature_flags import FeatureFlags, is_feature_enabled
 from app.core.security import make_unsubscribe_token
 from app.db.session import AsyncSessionLocal
+from app.models.device_token import DeviceToken
 from app.models.notification_outbox import NotificationOutbox
 from app.models.notification_rule import NotificationRule
 from app.models.price_snapshot import PriceSnapshot
@@ -29,6 +30,7 @@ from app.models.user import User
 from app.services.email_render import DigestTrip, render_daily_digest
 from sqlmodel import select
 from temporalio import activity
+from worker.clients.expo_push import ExpoPushClient, ExpoPushError, ExpoPushMessage
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,92 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
             "Enqueued price-drop notification for trip_id=%s new_price=%s", trip.id, price
         )
         return True
+
+
+async def _load_push_context(session, snapshot_uuid: uuid.UUID):
+    """Return (outbox_row, trip, device_tokens) for a snapshot, or (None, None, []).
+
+    Push fires for exactly the snapshots that ``evaluate_notifications_activity``
+    enqueued an outbox row for — so this is a pure read of the decision that
+    activity already committed, keeping push idempotent on snapshot_id without
+    advancing any dedup state.
+    """
+    outbox = (
+        await session.execute(
+            select(NotificationOutbox).where(NotificationOutbox.snapshot_id == snapshot_uuid)
+        )
+    ).scalar_one_or_none()
+    if outbox is None:
+        return None, None, []
+    trip = await session.get(Trip, outbox.trip_id)
+    devices = (
+        await session.execute(
+            select(DeviceToken).where(DeviceToken.user_id == outbox.user_id)
+        )
+    ).scalars().all()
+    return outbox, trip, list(devices)
+
+
+def _format_push(trip_name: str, new_price: Decimal) -> tuple[str, str]:
+    """Build the push title + body. Mirrors the digest's 'price dropped' framing."""
+    title = "Price drop"
+    body = f"{trip_name} is now ${new_price:.0f}. Tap to see the latest prices."
+    return title, body
+
+
+@activity.defn
+async def send_push_notification_activity(snapshot_id: str) -> int:
+    """Send an Expo push to each of the user's devices when a price-drop outbox
+    row exists for this snapshot. Returns the number of messages sent.
+
+    Idempotent on ``snapshot_id`` (reads, never mutates, the dedup state). A
+    delivery failure is logged and swallowed (returns 0) so it never fails the
+    price-check workflow — the email digest remains the durable channel.
+    """
+    snapshot_uuid = uuid.UUID(snapshot_id)
+    async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, FeatureFlags.PUSH_NOTIFICATIONS):
+            return 0
+
+        outbox, trip, devices = await _load_push_context(session, snapshot_uuid)
+        if outbox is None or trip is None or not devices:
+            return 0
+
+        title, body = _format_push(trip.name, outbox.new_price)
+        messages: list[ExpoPushMessage] = [
+            {
+                "to": device.expo_push_token,
+                "title": title,
+                "body": body,
+                "data": {"trip_id": str(trip.id)},
+            }
+            for device in devices
+        ]
+
+    # Network send is outside the DB session (no row writes needed).
+    try:
+        await ExpoPushClient().send(messages)
+    except ExpoPushError as exc:
+        logger.error(
+            "Expo push send failed",
+            exc_info=exc,
+            extra={
+                "event": "notifications.push.send_failed",
+                "trip_id": str(trip.id),
+                "device_count": len(messages),
+            },
+        )
+        return 0
+
+    logger.info(
+        "Sent push notifications",
+        extra={
+            "event": "notifications.push.sent",
+            "trip_id": str(trip.id),
+            "device_count": len(messages),
+        },
+    )
+    return len(messages)
 
 
 @activity.defn
