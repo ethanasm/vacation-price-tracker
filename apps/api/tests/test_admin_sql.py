@@ -50,6 +50,36 @@ class TestJsonDefault:
         # The str() catch-all guarantees no column type can 500 the endpoint.
         assert _json_default(Exotic()) == "exotic-value"
 
+    def test_render_replaces_non_finite_floats_with_null(self):
+        """A NaN/Infinity float (from a real/double column) isn't routed through
+        `default` and would raise ValueError in render(); it must serialize as
+        null instead of escaping as an opaque 500."""
+        import json
+
+        from app.routers.admin import _RowsJSONResponse
+
+        body = _RowsJSONResponse(
+            {"rows": [{"a": float("nan"), "b": float("inf"), "c": float("-inf"),
+                       "d": 1.5, "s": "ok", "n": 3}]}
+        ).body
+        assert json.loads(body) == {
+            "rows": [{"a": None, "b": None, "c": None, "d": 1.5, "s": "ok", "n": 3}]
+        }
+
+    def test_render_handles_db_native_and_nested(self):
+        """Finite happy path: DB-native scalars and nested containers serialize
+        via _json_default without hitting the non-finite retry."""
+        import json
+
+        from app.routers.admin import _RowsJSONResponse
+
+        body = _RowsJSONResponse(
+            {"rows": [{"d": date(2026, 8, 22), "amounts": [Decimal("1.10"), Decimal("2.20")]}]}
+        ).body
+        assert json.loads(body) == {
+            "rows": [{"d": "2026-08-22", "amounts": ["1.10", "2.20"]}]
+        }
+
 
 # ---------------------------------------------------------------------------
 # Query validator (pure logic)

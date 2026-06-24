@@ -35,6 +35,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import math
 import time
 from collections.abc import AsyncGenerator
 from datetime import date, datetime
@@ -71,8 +72,10 @@ def _json_default(obj: object) -> object:
     cannot encode. Because the response is rendered *after* the handler's
     try/except, such a ``TypeError`` would escape as an opaque 500 (forcing
     callers to ``::text``-cast every date/numeric column). Coerce the known
-    types, and fall back to ``str()`` for anything else so no column type can
-    500 this debug endpoint again.
+    types, and fall back to ``str()`` for anything else. Non-finite floats
+    (``NaN``/``Infinity`` from a real/double column) are *not* routed here —
+    they are handled in :meth:`_RowsJSONResponse.render` — but between the two,
+    no column type can 500 this debug endpoint.
     """
     if isinstance(obj, (datetime, date, dtime)):
         return obj.isoformat()
@@ -85,17 +88,48 @@ def _json_default(obj: object) -> object:
     return str(obj)
 
 
+def _replace_non_finite_floats(obj: object) -> object:
+    """Recursively replace NaN/Infinity floats with None (valid JSON null).
+
+    A non-finite ``float`` (from a Postgres ``real``/``double precision``
+    column) is *not* passed to ``json.dumps``' ``default`` hook, so it can't be
+    coerced there; with ``allow_nan=False`` it raises ``ValueError``. We emit
+    ``null`` rather than flip ``allow_nan`` on, because ``NaN``/``Infinity`` are
+    not valid JSON and would break strict consumers (e.g. ``JSON.parse`` in
+    ``scripts/prod-query.mjs``).
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _replace_non_finite_floats(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_replace_non_finite_floats(v) for v in obj]
+    return obj
+
+
 class _RowsJSONResponse(JSONResponse):
     """JSONResponse that tolerates DB-native scalar types in row values."""
 
     def render(self, content: object) -> bytes:
-        return json.dumps(
-            content,
-            ensure_ascii=False,
-            allow_nan=False,
-            separators=(",", ":"),
-            default=_json_default,
-        ).encode("utf-8")
+        try:
+            return json.dumps(
+                content,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                default=_json_default,
+            ).encode("utf-8")
+        except ValueError:
+            # Only reachable when a non-finite float slipped in; retry with
+            # those replaced by null. Kept as a fallback so the common path
+            # pays no traversal cost.
+            return json.dumps(
+                _replace_non_finite_floats(content),
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                default=_json_default,
+            ).encode("utf-8")
 
 
 # Lazily-created dedicated engine. Prefer ADMIN_QUERY_DATABASE_URL so prod can
