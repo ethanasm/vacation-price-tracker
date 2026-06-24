@@ -123,4 +123,52 @@ describe("Dashboard (Aurora)", () => {
     expect(screen.getByText(/Showing 2 of 2 trips/i)).toBeInTheDocument();
     expect(screen.getByText(/refresh daily at 6:00 AM/i)).toBeInTheDocument();
   });
+
+  describe("compact viewport (≤820px)", () => {
+    beforeEach(() => {
+      // The dashboard swaps the table for stacked trip cards below 820px,
+      // driven by useMediaQuery -> window.matchMedia. jsdom has no matchMedia,
+      // so emulate a matching (mobile) query for this branch.
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+          addListener: jest.fn(),
+          removeListener: jest.fn(),
+          dispatchEvent: jest.fn(),
+        }),
+      });
+    });
+
+    afterEach(() => {
+      // Restore desktop default so the table-path test is unaffected by order.
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        configurable: true,
+        value: undefined,
+      });
+    });
+
+    it("renders stacked trip cards with status chips and Flight/Hotel/Total mini-stats", async () => {
+      render(<DashboardPage />);
+      await waitFor(() =>
+        expect(screen.getByText("Test 2")).toBeInTheDocument(),
+      );
+
+      // Stacked cards, not the table: the Aurora status chips still render…
+      expect(screen.getByText("ACTIVE")).toHaveClass("aurora-chip-active");
+      expect(screen.getByText("PAUSED")).toHaveClass("aurora-chip-paused");
+      // …each card shows the three mini-stats…
+      expect(screen.getAllByText("Flight").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Hotel").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Total").length).toBeGreaterThan(0);
+      // …and the violet/bold per-trip total.
+      expect(screen.getByText("$789")).toBeInTheDocument();
+    });
+  });
 });
