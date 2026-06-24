@@ -53,6 +53,17 @@ class CacheKeys:
         """Key for rate limit tracking (e.g., resource='api', 'price_check')."""
         return f"rate_limit:{user_id}:{resource}"
 
+    # Cost / abuse ceilings (per-user daily quota + global daily budget guard)
+    @staticmethod
+    def daily_quota(identifier: str, resource: str, day: str) -> str:
+        """Per-user daily quota counter. day=YYYYMMDD (UTC); auto-expires at midnight."""
+        return f"daily_quota:{identifier}:{resource}:{day}"
+
+    @staticmethod
+    def global_budget(metric: str, day: str) -> str:
+        """Global per-UTC-day spend counter. metric in {'groq_tokens', 'skiplagged_calls'}."""
+        return f"global_budget:{metric}:{day}"
+
 
 class CacheTTL:
     """Centralized TTL constants (in seconds)."""
@@ -64,3 +75,4 @@ class CacheTTL:
     RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
     REFRESH_LOCK = 1800  # 30 minutes
     AUDIT_LOG_RETENTION = 86400 * 90  # 90 days
+    DAILY_QUOTA_MIN_TTL = 60  # floor for the seconds-to-midnight day-bucket TTL

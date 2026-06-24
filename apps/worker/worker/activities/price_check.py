@@ -9,6 +9,7 @@ from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
 from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
 from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
+from app.core.errors import GlobalBudgetExceeded
 from app.core.telemetry import langfuse_context, observe
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
@@ -16,6 +17,7 @@ from app.models.trip import Trip
 from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from sqlmodel import select
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from worker.types import FetchResult, FilterInput, FilterOutput, SaveSnapshotInput, TripDetails
 
@@ -32,6 +34,17 @@ NESTED_PRICE_FIELDS = ("total", "total_price", "amount", "grandTotal", "base")
 
 # Maximum number of hotels to fetch full details for (avoids API abuse)
 MAX_HOTEL_DETAIL_CALLS = 20
+
+
+def _budget_application_error(exc: GlobalBudgetExceeded) -> ApplicationError:
+    """Wrap a tripped global budget breaker as a non-retriable Temporal error.
+
+    Retrying won't help while the breaker is tripped (it resets at UTC midnight),
+    so we mark it non-retryable. With the workflow's `return_exceptions=True`, a
+    one-sided trip still snapshots the other side's data with this error recorded.
+    """
+    logger.warning("Global budget breaker tripped during fetch: %s", exc)
+    return ApplicationError(str(exc), type="GlobalBudgetExceeded", non_retryable=True)
 
 
 @activity.defn
@@ -154,6 +167,8 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             max_stops=max_stops,
             max_pages=4,
         )
+    except GlobalBudgetExceeded as exc:
+        raise _budget_application_error(exc) from exc
     except SkiplaggedMCPError as exc:
         logger.warning(
             "Flight fetch failed for trip_id=%s",
@@ -270,6 +285,8 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             rooms=hotel_prefs["rooms"],
             max_pages=4,
         )
+    except GlobalBudgetExceeded as exc:
+        raise _budget_application_error(exc) from exc
     except SkiplaggedMCPError as exc:
         logger.warning(
             "Hotel search failed for trip_id=%s",
@@ -296,7 +313,10 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
         },
     )
 
-    # Fetch details concurrently (with fallback to search-level data on failure)
+    # Fetch details concurrently (with fallback to search-level data on failure).
+    # A tripped global budget must NOT be swallowed by the fallback — let it
+    # propagate so the remaining detail calls are abandoned (no further
+    # increments) and the activity fails non-retriably.
     async def _fetch_one(hotel):
         try:
             detail = await client.get_hotel_details(
@@ -307,6 +327,8 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
                 rooms=hotel_prefs["rooms"],
             )
             return _normalize_hotel_detail(detail, hotel)
+        except GlobalBudgetExceeded:
+            raise
         except Exception as exc:
             logger.warning(
                 "Failed to get details for hotel_id=%s: %s",
@@ -317,7 +339,10 @@ async def fetch_hotels_activity(trip: TripDetails) -> FetchResult:
             )
             return _hotel_to_offer_dict(hotel)
 
-    offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
+    try:
+        offers = await asyncio.gather(*[_fetch_one(h) for h in top_hotels])
+    except GlobalBudgetExceeded as exc:
+        raise _budget_application_error(exc) from exc
 
     logger.info(
         "Fetched %d hotel offers for trip_id=%s",

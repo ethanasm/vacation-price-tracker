@@ -12,7 +12,12 @@ from fastapi.responses import JSONResponse, Response
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims
-from app.core.errors import PROBLEM_JSON_MEDIA_TYPE, RateLimitExceeded
+from app.core.errors import PROBLEM_JSON_MEDIA_TYPE, GlobalBudgetExceeded, RateLimitExceeded
+from app.core.quota import (
+    _seconds_to_utc_midnight,
+    check_and_incr_daily_quota,
+    is_global_budget_tripped,
+)
 from app.db.redis import redis_client
 
 logger = logging.getLogger(__name__)
@@ -22,6 +27,11 @@ EXEMPT_PATHS = {"/health", "/ready", "/docs", "/redoc", "/openapi.json", "/v1/ss
 
 # Chat endpoints have stricter rate limits (10/min per user)
 CHAT_PATHS = {"/v1/chat/messages", "/v1/chat"}
+
+# Message-producing chat endpoints that actually drive Groq calls. The daily chat
+# quota counts only these (not conversation list/read/delete under /v1/chat),
+# unlike the per-minute limiter which gates the whole /v1/chat prefix.
+CHAT_MESSAGE_PATHS = {"/v1/chat/messages", "/v1/chat/elicitation"}
 
 
 def _get_client_ip(request: Request) -> str:
@@ -73,6 +83,25 @@ def _get_rate_limit_identifier(request: Request) -> str:
 def _is_chat_path(path: str) -> bool:
     """Check if the request path is a chat endpoint."""
     return any(path.startswith(chat_path) for chat_path in CHAT_PATHS)
+
+
+def _is_chat_message_path(path: str) -> bool:
+    """Check if the path is a message-producing chat endpoint (drives Groq)."""
+    return path in CHAT_MESSAGE_PATHS
+
+
+def _is_refresh_trigger(request: Request) -> bool:
+    """Check if the request triggers a (Skiplagged-backed) price refresh.
+
+    Matches POST /v1/trips/refresh-all and POST /v1/trips/{trip_id}/refresh
+    without catching GET /v1/trips/refresh-status.
+    """
+    if request.method != "POST":
+        return False
+    path = request.url.path
+    return path == "/v1/trips/refresh-all" or (
+        path.startswith("/v1/trips/") and path.endswith("/refresh")
+    )
 
 
 async def _check_rate_limit(
@@ -171,6 +200,60 @@ def _rate_limit_response(retry_after: int, path: str) -> Response:
     )
 
 
+def _budget_response(retry_after: int, path: str) -> Response:
+    """Create a 503 response when the global daily budget breaker is tripped."""
+    exc = GlobalBudgetExceeded(retry_after=retry_after)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_problem_detail(path),
+        media_type=PROBLEM_JSON_MEDIA_TYPE,
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+async def _check_daily_ceilings(request: Request, identifier: str) -> Response | None:
+    """Enforce per-user daily quotas + the global budget breaker at the edge.
+
+    Returns a rejection Response when a ceiling is hit, or None to proceed.
+    Always on (like the per-minute limiter); fails open (returns None) on Redis
+    errors via the underlying quota helpers.
+    """
+    path = request.url.path
+    is_chat_message = _is_chat_message_path(path)
+    is_refresh = _is_refresh_trigger(request)
+
+    # Per-user daily quota: an overall API cap plus a stricter chat-message cap.
+    allowed, _, retry_after = await check_and_incr_daily_quota(
+        identifier, "api", settings.daily_quota_per_user
+    )
+    if not allowed:
+        logger.info("Daily API quota exceeded for %s on path %s", identifier, path)
+        return _rate_limit_response(retry_after, path)
+
+    if is_chat_message:
+        allowed, _, retry_after = await check_and_incr_daily_quota(
+            identifier, "chat", settings.chat_daily_quota_per_user
+        )
+        if not allowed:
+            logger.info("Daily chat quota exceeded for %s on path %s", identifier, path)
+            return _rate_limit_response(retry_after, path)
+
+    # Global budget breaker (read-only gate): reject new expensive work cheaply.
+    if is_chat_message and await is_global_budget_tripped(
+        "groq_tokens", settings.global_daily_groq_token_budget
+    ):
+        logger.warning("Global Groq budget tripped; rejecting chat on %s", path)
+        return _budget_response(_seconds_to_utc_midnight(), path)
+
+    if is_refresh and await is_global_budget_tripped(
+        "skiplagged_calls", settings.global_daily_skiplagged_call_budget
+    ):
+        logger.warning("Global Skiplagged budget tripped; rejecting refresh on %s", path)
+        return _budget_response(_seconds_to_utc_midnight(), path)
+
+    return None
+
+
 async def rate_limit_middleware(request: Request, call_next) -> Response:
     """Rate limiting middleware using sliding window counter."""
     # Skip rate limiting for exempt paths
@@ -200,6 +283,11 @@ async def rate_limit_middleware(request: Request, call_next) -> Response:
             },
         )
         return _rate_limit_response(retry_after, request.url.path)
+
+    # Daily quotas + global budget breaker (no-op when ceilings are disabled).
+    ceiling_response = await _check_daily_ceilings(request, identifier)
+    if ceiling_response is not None:
+        return ceiling_response
 
     # Process request
     response = await call_next(request)
