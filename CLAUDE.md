@@ -213,13 +213,17 @@ Maintainability, Duplications — and a PR can fail on any of them.
 **Two levels of local check** (`scripts/sonar-local.sh`):
 
 - **`pnpm sonar:verify`** (no token) — regenerates the same reports CI feeds Sonar
-  and checks every path resolves to a real file. This covers the **Coverage
-  dimension only**: SonarCloud resolves report paths against the repo root, and a
-  path that doesn't resolve is silently dropped and shown as **0% on new code**
-  (this is exactly how jest's `SF:src/...` paths, relative to `apps/web`,
-  vanished). `--no-tests` validates existing reports only. **It does NOT evaluate
-  the Security/Reliability/Maintainability ratings** — those are computed by
-  Sonar's rule engine, not from the coverage reports.
+  and checks the **Coverage dimension** two ways: (1) every report path resolves
+  against the repo root (a path that doesn't is silently dropped and shown as **0%
+  on new code** — exactly how jest's `SF:src/...` paths, relative to `apps/web`,
+  vanished); and (2) **no scanned source file is absent from the reports** — a file
+  Sonar scans but that no report mentions is zero-coverage'd to 0% (this is how the
+  `apps/api/app/models/**` files, omitted from coverage.py but not from
+  `sonar.coverage.exclusions`, tanked new-code coverage). `sonar.coverage.exclusions`
+  must stay in sync with coverage.py's `omit` and jest's `collectCoverageFrom`
+  negations; this check enforces that. `--no-tests` validates existing reports only.
+  **It does NOT evaluate the Security/Reliability/Maintainability ratings** — those
+  are computed by Sonar's rule engine, not from the coverage reports.
 - **`pnpm sonar:verify --scan`** (needs `SONAR_TOKEN`) — runs the **real scanner**
   with `sonar.qualitygate.wait=true`, which uploads the analysis and blocks until
   SonarCloud returns the gate verdict, failing on **any** condition (security

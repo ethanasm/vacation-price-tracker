@@ -10,6 +10,7 @@ on:
       - "nx.json"
       - "tsconfig*.json"
       - ".github/workflows/nextjs.yml"
+      - "sonar-project.properties"
   pull_request:
     branches: [main]
     paths:
@@ -19,6 +20,7 @@ on:
       - "nx.json"
       - "tsconfig*.json"
       - ".github/workflows/nextjs.yml"
+      - "sonar-project.properties"
 
 # Cancel superseded runs on a PR; let main builds finish.
 concurrency:

@@ -25,9 +25,9 @@
 // To reproduce the FULL gate locally, run `scripts/sonar-local.sh --scan` with a
 // SONAR_TOKEN — that uploads the real analysis and waits on the gate verdict.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative } from "node:path";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const propsPath = join(ROOT, "sonar-project.properties");
@@ -125,6 +125,109 @@ function pct(covered, total) {
   return `${((covered / total) * 100).toFixed(1)}%`;
 }
 
+/** Convert a Sonar/ant glob (with `**` and `*`) to an anchored RegExp. */
+function globToRegex(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        i++;
+        if (glob[i + 1] === "/") {
+          i++;
+          re += "(?:.*/)?"; // `**/` — any leading directories, or none
+        } else {
+          re += ".*"; // trailing `**` — anything under here
+        }
+      } else {
+        re += "[^/]*"; // single `*` — within one path segment
+      }
+    } else if ("\\^$+?.()|[]{}".includes(c)) {
+      re += `\\${c}`;
+    } else {
+      re += c;
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** Recursively list files under `dir` (repo-root-relative, forward slashes). */
+function walkFiles(dir) {
+  const out = [];
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkFiles(abs));
+    else if (e.isFile()) out.push(relative(ROOT, abs).split("\\").join("/"));
+  }
+  return out;
+}
+
+// Source extensions Sonar measures coverage for. `.d.ts` carries no coverage.
+const COVERAGE_EXTS = [".py", ".ts", ".tsx"];
+const isCoverable = (f) => COVERAGE_EXTS.some((x) => f.endsWith(x)) && !f.endsWith(".d.ts");
+
+/**
+ * Does this file produce executable lines Sonar would count? Python modules
+ * always do. A TypeScript file that is pure type declarations (interfaces/types,
+ * no runtime exports or re-exports) compiles to nothing, so it has no lines to
+ * cover and never affects the coverage %. Skipping those avoids false positives
+ * (e.g. the generated `lib/api/types.ts`).
+ */
+function producesCoverage(file) {
+  if (file.endsWith(".py")) return true;
+  let code;
+  try {
+    code = readFileSync(join(ROOT, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  } catch {
+    return true;
+  }
+  return (
+    /\bexport\s+(default|const|let|var|function|async|class|enum|namespace)\b/.test(code) ||
+    /^\s*(const|let|var|function|class|enum)\s/m.test(code) ||
+    /\bexport\s*\{[^}]*\}\s*from\b/.test(code) // re-export barrel — runtime
+  );
+}
+
+/**
+ * Find source files Sonar will scan (under sonar.sources) that are NOT in any
+ * coverage report and NOT excluded — Sonar's "Zero Coverage Sensor" marks these
+ * 0%, silently dragging down Coverage on New Code. This is the trap where a file
+ * omitted from coverage.py (e.g. apps/api/app/models/*) isn't also listed in
+ * sonar.coverage.exclusions.
+ */
+function findZeroCoverageSources(props, coveredFiles) {
+  const sources = (props["sonar.sources"]?.split(",") ?? []).map((s) => s.trim()).filter(Boolean);
+  const testRes = (props["sonar.test.inclusions"]?.split(",") ?? [])
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(globToRegex);
+  const exclRes = (props["sonar.coverage.exclusions"]?.split(",") ?? [])
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(globToRegex);
+
+  const flagged = [];
+  for (const src of sources) {
+    for (const file of walkFiles(join(ROOT, src))) {
+      if (!isCoverable(file)) continue;
+      if (testRes.some((r) => r.test(file))) continue; // test file, not production code
+      if (exclRes.some((r) => r.test(file))) continue; // intentionally excluded
+      if (coveredFiles.has(file)) continue; // present in a coverage report
+      if (!producesCoverage(file)) continue; // type-only module — no lines to cover
+      flagged.push(file);
+    }
+  }
+  return flagged.sort();
+}
+
 const props = parseProps(readFileSync(propsPath, "utf8"));
 const reports = [
   ...(props["sonar.javascript.lcov.reportPaths"]?.split(",") ?? []).map((p) => ({
@@ -139,6 +242,7 @@ const reports = [
 
 let problems = 0;
 let missingReports = 0;
+const coveredFiles = new Set();
 
 console.log(`${BOLD}SonarCloud coverage path check${NC} ${DIM}(repo root: ${ROOT})${NC}\n`);
 
@@ -160,6 +264,10 @@ for (const { path, kind } of reports) {
   const resolvesOnDisk = (file) =>
     existsSync(resolve(ROOT, file)) || sources.some((s) => existsSync(resolve(ROOT, s, file)));
   const unresolved = records.filter((r) => !resolvesOnDisk(r.file));
+
+  // Record every file present in a report (repo-root-relative) so we can later
+  // find source files that are ABSENT from all reports.
+  for (const r of records) coveredFiles.add(r.file.split("\\").join("/"));
 
   const totalLines = records.reduce((a, r) => a + r.total, 0);
   const coveredLines = records.reduce((a, r) => a + r.covered, 0);
@@ -185,22 +293,46 @@ for (const { path, kind } of reports) {
   }
 }
 
+// Only hunt for zero-coverage'd sources when the reports are actually present;
+// otherwise every file looks "absent" and the signal is noise.
+let zeroCov = [];
+if (missingReports === 0) {
+  zeroCov = findZeroCoverageSources(props, coveredFiles);
+  if (zeroCov.length > 0) {
+    console.log("");
+    console.log(
+      `${RED}✗${NC} ${BOLD}${zeroCov.length} source file(s)${NC} are scanned by Sonar but absent from every` +
+        ` coverage report ${DIM}(not in sonar.coverage.exclusions)${NC}:`
+    );
+    for (const f of zeroCov.slice(0, 20)) console.log(`    ${RED}zero-coverage${NC} ${f}`);
+    if (zeroCov.length > 20) console.log(`    ${DIM}…and ${zeroCov.length - 20} more${NC}`);
+    console.log(
+      `    ${YELLOW}Sonar's Zero Coverage Sensor marks these 0% on new code. Either add tests,` +
+        ` or — if intentionally not measured (e.g. coverage.py \`omit\`) — add them to` +
+        ` sonar.coverage.exclusions.${NC}`
+    );
+  }
+}
+
 console.log("");
 if (missingReports > 0) {
   console.log(
     `${YELLOW}${missingReports} report(s) missing — generate them with ${BOLD}pnpm test:coverage${NC}${YELLOW} and re-run.${NC}`
   );
 }
-if (problems > 0) {
-  console.log(
-    `${RED}${BOLD}FAIL${NC} ${problems} coverage path(s) won't resolve in SonarCloud (they'd show as 0%).`
-  );
+if (problems > 0 || zeroCov.length > 0) {
+  const bits = [];
+  if (problems > 0) bits.push(`${problems} unresolvable coverage path(s)`);
+  if (zeroCov.length > 0) bits.push(`${zeroCov.length} zero-coverage'd source file(s)`);
+  console.log(`${RED}${BOLD}FAIL${NC} ${bits.join(" + ")} — Sonar would report these as 0% on new code.`);
   process.exit(1);
 }
 if (missingReports > 0) {
   process.exit(1);
 }
-console.log(`${GREEN}${BOLD}OK${NC} every coverage path resolves to a real file — SonarCloud will map it.`);
+console.log(
+  `${GREEN}${BOLD}OK${NC} every coverage path resolves and every scanned source file is in a report.`
+);
 console.log(
   `${DIM}Note: this checks the Coverage dimension only. Security / Reliability /` +
     ` Maintainability ratings are evaluated by the real scan (sonar-local.sh --scan).${NC}`
