@@ -22,18 +22,19 @@ from app.core.errors import (
     unhandled_exception_response,
     validation_exception_response,
 )
+from app.core.feature_flags import ensure_feature_flags
 from app.core.observability import flush as flush_observability
 from app.core.observability import init_observability
 from app.core.telemetry import flush as flush_telemetry
 from app.db.deps import get_db
 from app.db.redis import redis_client
-from app.db.session import async_engine
+from app.db.session import AsyncSessionLocal, async_engine
 from app.db.temporal import close_temporal_client, get_temporal_client, init_temporal_client
 from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.security_headers import security_headers_middleware
-from app.routers import admin, auth, chat, notifications, sse, telemetry, trips
+from app.routers import admin, auth, chat, notifications, sse, telemetry, trips, users
 
 init_observability("vpt-api")
 logger = logging.getLogger(__name__)
@@ -62,6 +63,18 @@ async def lifespan(app: FastAPI):
     if not settings.is_production:
         async with async_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
+
+    # Seed any missing feature flags (idempotent). The table exists via create_all
+    # in dev and via Alembic in prod; guarded so a pre-migration boot doesn't crash.
+    try:
+        async with AsyncSessionLocal() as session:
+            await ensure_feature_flags(session)
+    except Exception as exc:
+        logger.warning(
+            "Feature-flag seeding skipped",
+            exc_info=exc,
+            extra={"event": "feature_flags.seed.skip"},
+        )
 
     # Initialize Temporal client
     await init_temporal_client()
@@ -116,6 +129,7 @@ app.include_router(chat.router, tags=["chat"])
 app.include_router(sse.router, tags=["sse"])
 app.include_router(trips.router, tags=["trips"])
 app.include_router(notifications.router)
+app.include_router(users.router)
 app.include_router(telemetry.router)
 app.include_router(admin.router)
 

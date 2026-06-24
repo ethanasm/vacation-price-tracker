@@ -11,6 +11,20 @@ class MockResizeObserver {
 // biome-ignore lint/suspicious/noExplicitAny: Polyfill for ResizeObserver
 global.ResizeObserver = MockResizeObserver as any;
 
+// jsdom lacks these; Radix UI (DropdownMenu, Select, etc.) calls them on open.
+// Guarded for node-environment test suites where `Element` is undefined.
+if (typeof Element !== "undefined") {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
+}
+
 // Mock react-markdown (ESM module that Jest can't transform)
 jest.mock("react-markdown", () => {
   return {

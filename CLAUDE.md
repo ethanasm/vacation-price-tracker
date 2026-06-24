@@ -74,8 +74,10 @@ stack, copy `.env.prod.example` to `.env.prod` (see Deployment).
 `ADMIN_QUERY_TOKEN`/`ADMIN_QUERY_DATABASE_URL` (admin SQL endpoint),
 `LANGFUSE_*` (LLM/MCP tracing).
 
-**Feature flags:** `ENABLE_BETA_OPTIMIZER`, `ENABLE_SMS_NOTIFICATIONS`,
-`MAX_TRIPS_PER_USER` (default 10).
+**Feature flags:** boolean feature gates (`email_notifications`,
+`sms_notifications`, `beta_optimizer`) live in the DB `feature_flags` table
+(`app/core/feature_flags.py`), seeded disabled on startup and toggled at runtime
+(no redeploy) — not env vars. `MAX_TRIPS_PER_USER` (default 10) stays an env limit.
 
 **Cost / abuse ceilings** are always on (like the per-minute rate limiter):
 per-user daily quotas + a global daily Groq/Skiplagged spend circuit-breaker in

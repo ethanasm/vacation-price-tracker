@@ -18,6 +18,7 @@ from decimal import Decimal
 from app.clients.email import EmailError, ResendClient
 from app.core.config import settings
 from app.core.constants import NotificationStatus, ThresholdType
+from app.core.feature_flags import FeatureFlags, is_feature_enabled
 from app.core.security import make_unsubscribe_token
 from app.db.session import AsyncSessionLocal
 from app.models.notification_outbox import NotificationOutbox
@@ -54,11 +55,11 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
     threshold (or dropped, for ``notify_without_threshold`` rules). Returns True
     when a row was enqueued. Idempotent on ``snapshot_id``.
     """
-    if not settings.enable_email_notifications:
-        return False
-
     snapshot_uuid = uuid.UUID(snapshot_id)
     async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, FeatureFlags.EMAIL_NOTIFICATIONS):
+            return False
+
         snapshot = await session.get(PriceSnapshot, snapshot_uuid)
         if snapshot is None:
             logger.warning("evaluate_notifications: snapshot %s not found", snapshot_id)
@@ -152,9 +153,9 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
 @activity.defn
 async def get_pending_digest_user_ids() -> list[str]:
     """Distinct user ids that have at least one pending notification."""
-    if not settings.enable_email_notifications:
-        return []
     async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, FeatureFlags.EMAIL_NOTIFICATIONS):
+            return []
         result = await session.execute(
             select(NotificationOutbox.user_id)
             .where(NotificationOutbox.status == NotificationStatus.PENDING)
@@ -176,11 +177,11 @@ async def send_user_digest_activity(user_id: str) -> dict:
     and recorded (rows stay ``pending`` for the next run) so one bad send never
     fails the batch.
     """
-    if not settings.enable_email_notifications:
-        return {"sent": False, "count": 0}
-
     user_uuid = uuid.UUID(user_id)
     async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, FeatureFlags.EMAIL_NOTIFICATIONS):
+            return {"sent": False, "count": 0}
+
         rows = (
             await session.execute(
                 select(NotificationOutbox)
@@ -217,9 +218,10 @@ async def send_user_digest_activity(user_id: str) -> dict:
             ).all()
         )
 
-        base = settings.app_base_url.rstrip("/")
+        app_base = settings.frontend_url.rstrip("/")
+        api_base = settings.backend_url.rstrip("/")
         token = make_unsubscribe_token(user_id)
-        unsubscribe_url = f"{base}/v1/notifications/unsubscribe?token={token}"
+        unsubscribe_url = f"{api_base}/v1/notifications/unsubscribe?token={token}"
 
         # Collapse to one line per trip (a manual refresh can enqueue more than
         # one pending row for the same trip in a day). Rows are ordered by
@@ -235,14 +237,14 @@ async def send_user_digest_activity(user_id: str) -> dict:
                 "new_price": row.new_price,
                 "threshold_value": row.threshold_value,
                 "threshold_label": _THRESHOLD_LABELS.get(row.threshold_type, "Trip total"),
-                "trip_url": f"{base}/trips/{row.trip_id}",
+                "trip_url": f"{app_base}/trips/{row.trip_id}",
             }
             for row in latest_by_trip.values()
         ]
 
         subject, html = render_daily_digest(
             trips=digest_trips,
-            app_url=base or "#",
+            app_url=app_base or "#",
             unsubscribe_url=unsubscribe_url,
             physical_address=settings.email_physical_address,
         )

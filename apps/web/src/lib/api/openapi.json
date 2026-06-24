@@ -260,55 +260,43 @@
         }
       }
     },
-    "/v1/trips/refresh-all": {
-      "post": {
+    "/v1/trips/{trip_id}": {
+      "patch": {
         "tags": [
           "trips"
         ],
-        "summary": "Refresh All Trips",
-        "description": "Trigger a manual refresh for all active trips.",
-        "operationId": "refresh_all_trips_v1_trips_refresh_all_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIResponse_RefreshStartResponse_"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/trips/refresh-status": {
-      "get": {
-        "tags": [
-          "trips"
-        ],
-        "summary": "Refresh Status",
-        "description": "Check refresh workflow progress.",
-        "operationId": "refresh_status_v1_trips_refresh_status_get",
+        "summary": "Update Trip",
+        "description": "Update an existing trip's details, preferences, and notifications.",
+        "operationId": "update_trip_v1_trips__trip_id__patch",
         "parameters": [
           {
-            "name": "refresh_group_id",
-            "in": "query",
+            "name": "trip_id",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "title": "Refresh Group Id"
+              "format": "uuid",
+              "title": "Trip Id"
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TripUpdate"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_RefreshStatusResponse_"
+                  "$ref": "#/components/schemas/APIResponse_TripDetail_"
                 }
               }
             }
@@ -324,9 +312,7 @@
             }
           }
         }
-      }
-    },
-    "/v1/trips/{trip_id}": {
+      },
       "get": {
         "tags": [
           "trips"
@@ -414,6 +400,72 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/refresh-all": {
+      "post": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Refresh All Trips",
+        "description": "Trigger a manual refresh for all active trips.",
+        "operationId": "refresh_all_trips_v1_trips_refresh_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_RefreshStartResponse_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trips/refresh-status": {
+      "get": {
+        "tags": [
+          "trips"
+        ],
+        "summary": "Refresh Status",
+        "description": "Check refresh workflow progress.",
+        "operationId": "refresh_status_v1_trips_refresh_status_get",
+        "parameters": [
+          {
+            "name": "refresh_group_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Refresh Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_RefreshStatusResponse_"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -2344,7 +2396,8 @@
         "enum": [
           "active",
           "paused",
-          "error"
+          "error",
+          "expired"
         ],
         "title": "TripStatus",
         "description": "Trip tracking status values."
@@ -2368,6 +2421,150 @@
         "title": "TripStatusUpdate",
         "description": "Schema for updating trip status (pause/resume)."
       },
+      "TripUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "origin_airport": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Airport"
+          },
+          "destination_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Code"
+          },
+          "is_round_trip": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Round Trip"
+          },
+          "depart_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depart Date"
+          },
+          "return_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Date"
+          },
+          "adults": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adults"
+          },
+          "track_flights": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Flights"
+          },
+          "track_hotels": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Hotels"
+          },
+          "flight_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlightPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hotel_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HotelPrefs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notification_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPrefs-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "TripUpdate",
+        "description": "Schema for updating an existing trip. All fields optional."
+      },
       "UserResponse": {
         "properties": {
           "id": {
@@ -2377,6 +2574,11 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "email_notifications_enabled": {
+            "type": "boolean",
+            "title": "Email Notifications Enabled",
+            "default": true
           }
         },
         "type": "object",

@@ -52,7 +52,8 @@ Auto-expires trips past their travel dates (`expire_past_trips`).
 ### RunOptimizerWorkflow (Phase 4)
 Surveys date ranges via the Skiplagged flexible calendar: generate up to 90 date
 combinations, fetch in parallel with rate limiting, rank by total price, verify the
-top 5 against live data. Gated behind `ENABLE_BETA_OPTIMIZER`.
+top 5 against live data. Gated behind the `beta_optimizer` feature flag (DB
+`feature_flags` table; see `app/core/feature_flags.py`).
 
 ## Post-fetch filtering (`activities/price_check.py`)
 

@@ -94,7 +94,8 @@ describe("DashboardLayout", () => {
     });
   });
 
-  it("renders sign out button", () => {
+  it("shows Settings and Sign out in the account menu", async () => {
+    const user = userEvent.setup();
     mockUseAuth.mockReturnValue({
       user: { id: "123", email: "test@example.com" },
       isLoading: false,
@@ -107,11 +108,33 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    // Sign out button has title="Sign out"
-    expect(screen.getByTitle("Sign out")).toBeInTheDocument();
+    await user.click(screen.getByTitle("Account menu"));
+
+    expect(await screen.findByRole("menuitem", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it("calls logout and redirects when sign out button clicked", async () => {
+  it("navigates to settings from the account menu", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      user: { id: "123", email: "test@example.com" },
+      isLoading: false,
+      logout: mockLogout,
+    });
+
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
+
+    await user.click(screen.getByTitle("Account menu"));
+    await user.click(await screen.findByRole("menuitem", { name: /settings/i }));
+
+    expect(mockPush).toHaveBeenCalledWith("/trips/settings");
+  });
+
+  it("calls logout and redirects when sign out clicked", async () => {
     const user = userEvent.setup();
 
     mockUseAuth.mockReturnValue({
@@ -126,7 +149,8 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    await user.click(screen.getByTitle("Sign out"));
+    await user.click(screen.getByTitle("Account menu"));
+    await user.click(await screen.findByRole("menuitem", { name: /sign out/i }));
 
     await waitFor(() => {
       expect(mockLogout).toHaveBeenCalledTimes(1);

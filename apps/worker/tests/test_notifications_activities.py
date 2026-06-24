@@ -7,6 +7,8 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from app.core.constants import NotificationStatus, ThresholdType
+from app.core.feature_flags import FeatureFlags, set_feature_flag
+from app.models.feature_flag import FeatureFlag
 from app.models.notification_outbox import NotificationOutbox
 from app.models.notification_rule import NotificationRule
 from app.models.price_snapshot import PriceSnapshot
@@ -18,6 +20,11 @@ from sqlmodel import SQLModel, select
 from worker.activities import notifications as wn
 
 BASE_TIME = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+
+
+async def _set_email_flag(factory, enabled: bool) -> None:
+    async with factory() as session:
+        await set_feature_flag(session, FeatureFlags.EMAIL_NOTIFICATIONS, enabled)
 
 
 @pytest_asyncio.fixture
@@ -34,9 +41,20 @@ async def session_factory(monkeypatch):
 
     factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(wn, "AsyncSessionLocal", factory)
-    monkeypatch.setattr(wn.settings, "enable_email_notifications", True)
-    monkeypatch.setattr(wn.settings, "app_base_url", "https://app.test")
+    monkeypatch.setattr(wn.settings, "frontend_url", "https://app.test")
+    monkeypatch.setattr(wn.settings, "backend_url", "https://api.test")
     monkeypatch.setattr(wn.settings, "email_physical_address", "1 Test St")
+
+    # The email-notifications feature flag gates the activities; default it on.
+    async with factory() as session:
+        session.add(
+            FeatureFlag(
+                name=FeatureFlags.EMAIL_NOTIFICATIONS,
+                description="Send daily price-drop email digests to users.",
+                enabled=True,
+            )
+        )
+        await session.commit()
 
     yield factory
     await engine.dispose()
@@ -236,8 +254,8 @@ async def test_evaluate_skips_when_email_disabled_on_rule(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_evaluate_feature_flag_off(session_factory, monkeypatch):
-    monkeypatch.setattr(wn.settings, "enable_email_notifications", False)
+async def test_evaluate_feature_flag_off(session_factory):
+    await _set_email_flag(session_factory, False)
     _, trip_id = await _seed_trip(session_factory)
     snap_id = await _add_snapshot(session_factory, trip_id, total=1000, created_at=BASE_TIME)
     assert await wn.evaluate_notifications_activity(str(snap_id)) is False
@@ -327,8 +345,8 @@ async def test_get_pending_digest_user_ids(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_get_pending_digest_user_ids_flag_off(session_factory, monkeypatch):
-    monkeypatch.setattr(wn.settings, "enable_email_notifications", False)
+async def test_get_pending_digest_user_ids_flag_off(session_factory):
+    await _set_email_flag(session_factory, False)
     assert await wn.get_pending_digest_user_ids() == []
 
 
@@ -432,6 +450,6 @@ async def test_send_user_digest_records_failure(session_factory, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_user_digest_flag_off(session_factory, monkeypatch):
-    monkeypatch.setattr(wn.settings, "enable_email_notifications", False)
+async def test_send_user_digest_flag_off(session_factory):
+    await _set_email_flag(session_factory, False)
     assert await wn.send_user_digest_activity(str(uuid.uuid4())) == {"sent": False, "count": 0}

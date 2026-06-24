@@ -158,6 +158,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/trips/{trip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trip Details
+         * @description Get trip details including prefs, notification rules, and price history.
+         */
+        get: operations["get_trip_details_v1_trips__trip_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Trip
+         * @description Delete a trip and all associated records.
+         */
+        delete: operations["delete_trip_v1_trips__trip_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Trip
+         * @description Update an existing trip's details, preferences, and notifications.
+         */
+        patch: operations["update_trip_v1_trips__trip_id__patch"];
+        trace?: never;
+    };
     "/v1/trips/refresh-all": {
         parameters: {
             query?: never;
@@ -193,30 +221,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/trips/{trip_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Trip Details
-         * @description Get trip details including prefs, notification rules, and price history.
-         */
-        get: operations["get_trip_details_v1_trips__trip_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Trip
-         * @description Delete a trip and all associated records.
-         */
-        delete: operations["delete_trip_v1_trips__trip_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1169,7 +1173,7 @@ export interface components {
          * @description Trip tracking status values.
          * @enum {string}
          */
-        TripStatus: "active" | "paused" | "error";
+        TripStatus: "active" | "paused" | "error" | "expired";
         /**
          * TripStatusUpdate
          * @description Schema for updating trip status (pause/resume).
@@ -1183,6 +1187,33 @@ export interface components {
             status: "active" | "paused";
         };
         /**
+         * TripUpdate
+         * @description Schema for updating an existing trip. All fields optional.
+         */
+        TripUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Origin Airport */
+            origin_airport?: string | null;
+            /** Destination Code */
+            destination_code?: string | null;
+            /** Is Round Trip */
+            is_round_trip?: boolean | null;
+            /** Depart Date */
+            depart_date?: string | null;
+            /** Return Date */
+            return_date?: string | null;
+            /** Adults */
+            adults?: number | null;
+            /** Track Flights */
+            track_flights?: boolean | null;
+            /** Track Hotels */
+            track_hotels?: boolean | null;
+            flight_prefs?: components["schemas"]["FlightPrefs"] | null;
+            hotel_prefs?: components["schemas"]["HotelPrefs"] | null;
+            notification_prefs?: components["schemas"]["NotificationPrefs-Input"] | null;
+        };
+        /**
          * UserResponse
          * @description Response model for authenticated user info.
          */
@@ -1191,6 +1222,11 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+            /**
+             * Email Notifications Enabled
+             * @default true
+             */
+            email_notifications_enabled: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1420,57 +1456,6 @@ export interface operations {
             };
         };
     };
-    refresh_all_trips_v1_trips_refresh_all_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIResponse_RefreshStartResponse_"];
-                };
-            };
-        };
-    };
-    refresh_status_v1_trips_refresh_status_get: {
-        parameters: {
-            query: {
-                refresh_group_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIResponse_RefreshStatusResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_trip_details_v1_trips__trip_id__get: {
         parameters: {
             query?: {
@@ -1522,6 +1507,92 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_trip_v1_trips__trip_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TripUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_TripDetail_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_all_trips_v1_trips_refresh_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_RefreshStartResponse_"];
+                };
+            };
+        };
+    };
+    refresh_status_v1_trips_refresh_status_get: {
+        parameters: {
+            query: {
+                refresh_group_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIResponse_RefreshStatusResponse_"];
+                };
             };
             /** @description Validation Error */
             422: {

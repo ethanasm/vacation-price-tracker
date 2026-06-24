@@ -381,6 +381,37 @@ export const api = {
     },
   },
 
+  users: {
+    /**
+     * Update the current user's notification preferences.
+     * Returns the updated user.
+     */
+    async updatePreferences(
+      emailNotificationsEnabled: boolean
+    ): Promise<UserResponse> {
+      const response = await fetchWithAuth("/v1/users/preferences", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email_notifications_enabled: emailNotificationsEnabled,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to update preferences",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+  },
+
   locations: {
     /**
      * Search airports using static data.

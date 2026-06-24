@@ -26,6 +26,7 @@ class UserResponse(BaseModel):
 
     id: str
     email: str
+    email_notifications_enabled: bool = True
 
 
 router = APIRouter()
@@ -302,4 +303,8 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     if not user:
         raise AuthenticationRequired("User not found")
 
-    return UserResponse(id=str(user.id), email=user.email)
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        email_notifications_enabled=user.email_notifications_enabled,
+    )
