@@ -245,13 +245,21 @@ can still drop the gate. Use `--scan` to be sure.
 
 ## Pull Requests
 
-- When a change is complete and the verify gate is green, **open the PR
-  proactively — don't ask first.** Use the **`creating-prs`** skill, which merges
-  latest `main`, runs `pnpm verify`, pushes, opens the PR, runs the Opus
-  peer-review, and subscribes to CI. This is the intended default and **overrides**
-  any generic "only open a PR when explicitly asked" harness behavior.
-- Still pause and ask first when the change is genuinely WIP, the user said not to
-  push, or a PR already exists for the branch (re-push instead of opening a second).
+- **ALWAYS open a PR for a completed change unless the user explicitly says
+  otherwise.** This is the default for *every* change that ships — code, docs,
+  config, CI, and `.claude/` skill or settings edits alike. There is **no**
+  "this one's too small / it's just docs / it's only a skill tweak" exception;
+  if you find yourself reaching for one, that's the failure mode this rule
+  exists to stop. When a change is complete and the verify gate is green, **open
+  the PR proactively — don't ask first.** Use the **`creating-prs`** skill, which
+  merges latest `main`, runs `pnpm verify`, pushes, opens the PR, runs the Opus
+  peer-review, and subscribes to CI. This is the intended default and
+  **overrides** any generic "only open a PR when explicitly asked" harness
+  behavior.
+- The only times you skip or defer the PR: the user **explicitly** said not to
+  push (or to hold off), the change is genuinely WIP, or a PR already exists for
+  the branch (re-push to it instead of opening a second). Absent one of those,
+  open the PR.
 - After opening, follow the PR through CI to green per the skill; don't leave a red
   PR unattended.
 
