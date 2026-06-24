@@ -44,6 +44,12 @@ class MobileTokenResponse(BaseModel):
     user: UserResponse
 
 
+class RefreshRequest(BaseModel):
+    """Optional body for the mobile refresh path (web sends the cookie instead)."""
+
+    refresh_token: str | None = None
+
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -228,9 +234,24 @@ async def mobile_token(
 
 
 @router.post("/v1/auth/refresh")
-async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
-    """Refreshes the access token using a valid refresh token."""
-    refresh_token_value = request.cookies.get(CookieNames.REFRESH_TOKEN)
+async def refresh_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh the access token. Web sends the refresh token in the
+    ``refresh_token_cookie`` cookie and gets new cookies back; mobile sends it in
+    a JSON body (``{"refresh_token": ...}``) and gets the new pair in the body."""
+    # Detect the mode: a JSON body with a refresh_token means the mobile path.
+    body_token: str | None = None
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict) and isinstance(raw.get("refresh_token"), str):
+            body_token = raw["refresh_token"]
+    except Exception:  # noqa: BLE001 - no/invalid body is the cookie (web) path
+        body_token = None
+
+    refresh_token_value = body_token or request.cookies.get(CookieNames.REFRESH_TOKEN)
+    body_mode = body_token is not None
 
     if not refresh_token_value:
         raise AuthenticationRequired("Refresh token not found.")
@@ -245,30 +266,38 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     except (jwt.PyJWTError, ValueError) as exc:
         raise AuthenticationRequired("Invalid refresh token.") from exc
 
-    # Verify refresh token is still valid in Redis
     stored_token = await redis_client.get(CacheKeys.refresh_token(str(user_id)))
     if stored_token != refresh_token_value:
         raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
 
-    # Issue new tokens
     jwt_data = _build_jwt_data(user_id)
     new_access_token = create_access_token(data=jwt_data)
     new_refresh_token = create_refresh_token(data=jwt_data)
     await _store_refresh_token(user_id, new_refresh_token)
 
-    response = Response("Tokens refreshed.", status_code=200)
-    _set_auth_cookies(response, new_access_token, new_refresh_token)
-
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user:
         logger.info(
-            "User token refreshed: id=%s email=%s",
-            user.id,
-            user.email,
+            "User token refreshed",
             extra={"event": "auth.token.refresh", "user_id": str(user.id)},
         )
 
+    if body_mode:
+        if user is None:  # pragma: no cover - the refresh token's user must exist
+            raise AuthenticationRequired("User not found")
+        return MobileTokenResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            user=UserResponse(
+                id=str(user.id),
+                email=user.email,
+                email_notifications_enabled=user.email_notifications_enabled,
+            ),
+        )
+
+    response = Response("Tokens refreshed.", status_code=200)
+    _set_auth_cookies(response, new_access_token, new_refresh_token)
     return response
 
 

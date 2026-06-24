@@ -161,3 +161,53 @@ class TestMobileToken:
         monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "")
         resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
         assert resp.status_code == 500
+
+
+class TestRefresh:
+    @pytest.mark.asyncio
+    async def test_body_refresh_returns_new_pair_in_body(self, client, test_session, mock_redis):
+        from app.core.security import create_refresh_token
+
+        user = await _make_user(test_session)
+        rt = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        # The endpoint checks Redis for the stored refresh token.
+        mock_redis.get = AsyncMock(return_value=rt)
+
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": rt})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["access_token"]
+        assert body["refresh_token"]
+        assert body["user"]["id"] == str(user.id)
+        assert "set-cookie" not in {k.lower() for k in resp.headers}
+
+    @pytest.mark.asyncio
+    async def test_cookie_refresh_still_sets_cookies(self, client, test_session, mock_redis):
+        from app.core.constants import CookieNames as CN
+        from app.core.security import create_refresh_token
+
+        user = await _make_user(test_session)
+        rt = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get = AsyncMock(return_value=rt)
+
+        resp = client.post("/v1/auth/refresh", cookies={CN.REFRESH_TOKEN: rt})
+
+        assert resp.status_code == 200
+        assert "set-cookie" in {k.lower() for k in resp.headers}
+
+    @pytest.mark.asyncio
+    async def test_body_refresh_rotated_token_401(self, client, test_session, mock_redis):
+        from app.core.security import create_refresh_token
+
+        user = await _make_user(test_session)
+        rt = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get = AsyncMock(return_value="a-different-stored-token")
+
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": rt})
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_no_token_anywhere_401(self, client, mock_redis):
+        resp = client.post("/v1/auth/refresh")
+        assert resp.status_code == 401
