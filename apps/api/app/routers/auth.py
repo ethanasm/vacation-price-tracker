@@ -14,7 +14,8 @@ from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
-from app.core.errors import AuthenticationRequired, BadRequestError
+from app.core.errors import AccessDenied, AppError, AuthenticationRequired, BadRequestError
+from app.core.google_verify import GoogleIdentity, GoogleTokenError, verify_google_id_token
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
 from app.db.deps import get_db
 from app.db.redis import redis_client
@@ -27,6 +28,20 @@ class UserResponse(BaseModel):
     id: str
     email: str
     email_notifications_enabled: bool = True
+
+
+class MobileTokenRequest(BaseModel):
+    """Body the native app POSTs: a Google ID token obtained via Expo AuthSession."""
+
+    id_token: str
+
+
+class MobileTokenResponse(BaseModel):
+    """The JWT pair + user, returned in the BODY (never Set-Cookie) for mobile."""
+
+    access_token: str
+    refresh_token: str
+    user: UserResponse
 
 
 router = APIRouter()
@@ -141,6 +156,75 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     # Set cookies
     _set_auth_cookies(response, access_token, refresh_token)
     return response
+
+
+@router.post("/v1/auth/mobile-token", response_model=MobileTokenResponse)
+async def mobile_token(
+    payload: MobileTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Exchange a Google ID token (from the native app) for the same JWT pair the
+    web OAuth callback issues. Returns the pair in the body — the mobile client
+    stores it in expo-secure-store and sends `Authorization: Bearer`."""
+    audiences = settings.google_oauth_mobile_audiences_list
+    if not audiences:
+        # Missing config is an operator error, not a client error → 500. AppError
+        # is the 500-status base in app/core/errors.py.
+        logger.error(
+            "mobile-token called but GOOGLE_OAUTH_MOBILE_AUDIENCES is unset",
+            extra={"event": "auth.mobile.config_error"},
+        )
+        raise AppError("Mobile auth is not configured.")
+
+    try:
+        identity: GoogleIdentity = verify_google_id_token(payload.id_token, audiences)
+    except GoogleTokenError:
+        # Never log the raw token (CWE-117); the event name is enough to triage.
+        logger.warning(
+            "Mobile Google ID token verification failed",
+            extra={"event": "auth.mobile.token_invalid"},
+        )
+        raise AuthenticationRequired("invalid_google_token") from None
+
+    if not should_allow_sign_in(
+        email=identity.email,
+        email_verified=identity.email_verified,
+        emails=parse_allowlist(settings.auth_allowed_emails),
+        domains=parse_allowlist(settings.auth_allowed_domains),
+    ):
+        logger.info(
+            "Mobile sign-in denied by allowlist",
+            extra={"event": "auth.mobile.denied"},
+        )
+        raise AccessDenied("access_denied")
+
+    result = await db.execute(select(User).where(User.google_sub == identity.sub))
+    user = result.scalars().first()
+    if not user:
+        user = User(google_sub=identity.sub, email=identity.email)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_data = _build_jwt_data(user.id)
+    access_token = create_access_token(data=jwt_data)
+    refresh_token = create_refresh_token(data=jwt_data)
+    await _store_refresh_token(user.id, refresh_token)
+
+    logger.info(
+        "Mobile sign-in successful",
+        extra={"event": "auth.mobile.success", "user_id": str(user.id)},
+    )
+
+    return MobileTokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            email_notifications_enabled=user.email_notifications_enabled,
+        ),
+    )
 
 
 @router.post("/v1/auth/refresh")

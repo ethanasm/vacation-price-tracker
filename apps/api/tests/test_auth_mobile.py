@@ -2,7 +2,7 @@
 bridge endpoint, and body/Bearer refresh."""
 
 import uuid
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import app.routers.auth as auth_module
 import pytest
@@ -77,3 +77,87 @@ class TestSettingsAndCsrf:
         assert _is_csrf_exempt("/v1/notifications/device-token")
         # The web cookie endpoints are NOT exempt.
         assert not _is_csrf_exempt("/v1/auth/logout")
+
+
+class TestMobileToken:
+    @pytest.mark.asyncio
+    async def test_new_user_minted_and_returned_in_body(self, client, test_session, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "aud-1")
+        identity = auth_module.GoogleIdentity(
+            sub="new-google-sub", email="new@example.com", email_verified=True
+        )
+        with patch.object(auth_module, "verify_google_id_token", return_value=identity):
+            resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["access_token"]
+        assert body["refresh_token"]
+        assert body["user"]["email"] == "new@example.com"
+        assert body["user"]["email_notifications_enabled"] is True
+        assert uuid.UUID(body["user"]["id"])  # valid uuid
+        # The pair is in the BODY, never Set-Cookie.
+        assert "set-cookie" not in {k.lower() for k in resp.headers}
+        # User row was created.
+        created = (
+            await test_session.execute(select(User).where(User.google_sub == "new-google-sub"))
+        ).scalars().first()
+        assert created is not None
+
+    @pytest.mark.asyncio
+    async def test_existing_user_reused_no_duplicate(self, client, test_session, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "aud-1")
+        user = User(google_sub="existing-sub", email="existing@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        identity = auth_module.GoogleIdentity(
+            sub="existing-sub", email="existing@example.com", email_verified=True
+        )
+        with patch.object(auth_module, "verify_google_id_token", return_value=identity):
+            resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+
+        assert resp.status_code == 200
+        assert resp.json()["user"]["id"] == str(user.id)
+        rows = (
+            await test_session.execute(select(User).where(User.google_sub == "existing-sub"))
+        ).scalars().all()
+        assert len(rows) == 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_google_token_401(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "aud-1")
+        with patch.object(
+            auth_module, "verify_google_id_token", side_effect=auth_module.GoogleTokenError("bad")
+        ):
+            resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_allowlist_denial_403(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "aud-1")
+        monkeypatch.setattr(settings, "auth_allowed_domains", "allowed.com")
+        identity = auth_module.GoogleIdentity(
+            sub="denied-sub", email="denied@notallowed.com", email_verified=True
+        )
+        with patch.object(auth_module, "verify_google_id_token", return_value=identity):
+            resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_unverified_email_denied_403(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "aud-1")
+        identity = auth_module.GoogleIdentity(
+            sub="unv-sub", email="unverified@example.com", email_verified=False
+        )
+        with patch.object(auth_module, "verify_google_id_token", return_value=identity):
+            resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_missing_audiences_config_500(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "google_oauth_mobile_audiences", "")
+        resp = client.post("/v1/auth/mobile-token", json={"id_token": "x" * 30})
+        assert resp.status_code == 500
