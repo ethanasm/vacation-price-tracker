@@ -11,8 +11,11 @@
 //
 // Config (from .env.prod at repo root, or the environment — env wins):
 //   ADMIN_QUERY_TOKEN  required, the Bearer token (>= 32 chars)
-//   PROD_API_URL       API base URL; falls back to BACKEND_URL; default
-//                      http://127.0.0.1:8001 (the loopback bind in prod compose)
+//   PROD_API_URL       API base URL; falls back to BACKEND_URL, then
+//                      ADMIN_QUERY_URL (the var Claude Code web sessions inject),
+//                      then http://127.0.0.1:8001 (the loopback bind in prod
+//                      compose). ADMIN_QUERY_URL may be the API origin or the
+//                      full /v1/admin/sql endpoint — both are accepted.
 //
 // Only read-only statements are accepted; the endpoint enforces that server-side.
 
@@ -82,7 +85,11 @@ async function main() {
   if (!token) die("ADMIN_QUERY_TOKEN is not set (.env.prod or environment)");
   if (token.length < 32) die("ADMIN_QUERY_TOKEN must be >= 32 chars");
 
-  const base = (getVar("PROD_API_URL") || getVar("BACKEND_URL") || "http://127.0.0.1:8001").replace(/\/$/, "");
+  // ADMIN_QUERY_URL is injected into Claude Code web sessions; it may be the API
+  // origin or the full endpoint, so normalise either to a base before appending.
+  const base = (getVar("PROD_API_URL") || getVar("BACKEND_URL") || getVar("ADMIN_QUERY_URL") || "http://127.0.0.1:8001")
+    .replace(/\/$/, "")
+    .replace(/\/v1\/admin\/sql$/, "");
   const url = `${base}/v1/admin/sql`;
 
   let res;
