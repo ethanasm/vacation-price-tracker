@@ -1,8 +1,10 @@
 name: Prune GHCR
 
-# Reap old/untagged image versions so the GHCR packages don't grow without
-# bound. Keeps the most recent versions and only removes untagged ones, so
-# :latest and any SHA-tagged images that prod might roll back to are preserved.
+# Reap old image versions so the GHCR packages don't grow without bound. Every
+# merge to main pushes a :latest plus a :<sha> tag per package, so pruning only
+# untagged versions would let the SHA-tagged images accumulate forever. Instead
+# keep the most recent N versions (tagged or not) for rollback, and never touch
+# :latest.
 on:
   schedule:
     - cron: "0 4 * * 0" # Weekly, Sunday 04:00 UTC
@@ -27,5 +29,6 @@ jobs:
         with:
           package-name: ${{ matrix.package }}
           package-type: container
-          min-versions-to-keep: 10
-          delete-only-untagged-versions: true
+          min-versions-to-keep: 25
+          delete-only-untagged-versions: false
+          ignore-versions: '^latest$'
