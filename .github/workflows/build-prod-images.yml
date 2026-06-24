@@ -70,5 +70,11 @@ jobs:
           build-args: ${{ matrix.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Push a single image manifest per tag (no provenance/SBOM attestation
+          # children). The GHCR prune deletes old tagged versions, and untagged
+          # attestation manifests referenced by a *retained* :<sha> index could
+          # otherwise be reaped out from under it, leaving that image un-pullable.
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}

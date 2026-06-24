@@ -88,5 +88,10 @@ jobs:
         # retries cover the boot/migration window.
         run: pnpm prod:health:ready
 
-      - name: Prune dangling images
-        run: docker image prune -f
+      - name: Prune old images
+        # Each deploy pulls fresh :<sha> images; they're tagged, so a plain
+        # dangling prune never reclaims them and the host disk grows deploy over
+        # deploy. Also sweep tagged-but-unused images older than 30 days.
+        run: |
+          docker image prune -f
+          docker image prune -af --filter "until=720h"
