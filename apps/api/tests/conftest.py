@@ -37,6 +37,7 @@ async def test_engine():
     # Import all models so SQLAlchemy registers them with metadata
     from app.models import (
         Conversation,
+        DeviceToken,
         Message,
         NotificationOutbox,
         NotificationRule,
@@ -58,6 +59,7 @@ async def test_engine():
         NotificationOutbox,
         Conversation,
         Message,
+        DeviceToken,
     )
 
     # Use unique file per test to avoid race conditions in parallel execution
