@@ -33,9 +33,14 @@ Defense in depth (deepest-first):
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
+from datetime import date, datetime
+from datetime import time as dtime
+from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -55,6 +60,43 @@ STATEMENT_TIMEOUT_MS = 3000
 RATE_LIMIT_MAX = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
 MIN_TOKEN_LENGTH = 32
+
+
+def _json_default(obj: object) -> object:
+    """Best-effort JSON coercion for DB-native types the stdlib encoder rejects.
+
+    The endpoint returns arbitrary query results, so a column typed
+    date / timestamp / numeric / uuid / bytea comes back as a Python
+    ``date``/``datetime``/``Decimal``/``UUID``/``bytes`` that ``json.dumps``
+    cannot encode. Because the response is rendered *after* the handler's
+    try/except, such a ``TypeError`` would escape as an opaque 500 (forcing
+    callers to ``::text``-cast every date/numeric column). Coerce the known
+    types, and fall back to ``str()`` for anything else so no column type can
+    500 this debug endpoint again.
+    """
+    if isinstance(obj, (datetime, date, dtime)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return str(obj)  # keep exact precision (prices); float would lose it
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        return bytes(obj).hex()
+    return str(obj)
+
+
+class _RowsJSONResponse(JSONResponse):
+    """JSONResponse that tolerates DB-native scalar types in row values."""
+
+    def render(self, content: object) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            default=_json_default,
+        ).encode("utf-8")
+
 
 # Lazily-created dedicated engine. Prefer ADMIN_QUERY_DATABASE_URL so prod can
 # point this at a dedicated read-only role (`vpt_query`); fall back to the main
@@ -224,6 +266,6 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
             "elapsed_ms": elapsed,
         },
     )
-    return JSONResponse(
+    return _RowsJSONResponse(
         {"rows": out, "rowCount": len(out), "truncated": truncated, "elapsedMs": elapsed}
     )
