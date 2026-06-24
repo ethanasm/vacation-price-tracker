@@ -201,24 +201,34 @@ Playwright (requires the Docker stack up).
 
 Coverage gates: **95%** for both Python apps (`api`, `worker`).
 
-### SonarCloud coverage (run locally before a PR)
+### SonarCloud quality gate (run locally before a PR)
 
 CI computes coverage in the Next.js + Python workflows, then a **separate**
 SonarQube workflow downloads those reports and scans (`sonar-project.properties`).
-That scan can under-report **silently**: SonarCloud resolves every path in a
-coverage report against the repo root, and any path that doesn't resolve is
-dropped and shown as **0% on new code** with no error (this is exactly how jest's
-`SF:src/...` lcov paths — relative to `apps/web` — vanished). To catch it before
-pushing:
+The gate has **several conditions** — Coverage, **Security Rating**, Reliability,
+Maintainability, Duplications — and a PR can fail on any of them.
 
-- **`pnpm sonar:verify`** — regenerates the same reports CI feeds Sonar
-  (`test:coverage` for web/api/worker) and checks every path resolves to a real
-  file. `--no-tests` validates existing reports only; `--scan` also runs the real
-  scanner (needs `SONAR_TOKEN`).
-- **`pnpm sonar:check`** — just the path/coverage validator over existing reports.
+**Two levels of local check** (`scripts/sonar-local.sh`):
+
+- **`pnpm sonar:verify`** (no token) — regenerates the same reports CI feeds Sonar
+  and checks every path resolves to a real file. This covers the **Coverage
+  dimension only**: SonarCloud resolves report paths against the repo root, and a
+  path that doesn't resolve is silently dropped and shown as **0% on new code**
+  (this is exactly how jest's `SF:src/...` paths, relative to `apps/web`,
+  vanished). `--no-tests` validates existing reports only. **It does NOT evaluate
+  the Security/Reliability/Maintainability ratings** — those are computed by
+  Sonar's rule engine, not from the coverage reports.
+- **`pnpm sonar:verify --scan`** (needs `SONAR_TOKEN`) — runs the **real scanner**
+  with `sonar.qualitygate.wait=true`, which uploads the analysis and blocks until
+  SonarCloud returns the gate verdict, failing on **any** condition (security
+  included). This is the only faithful local reproduction of the full gate.
+- **`pnpm sonar:check`** — just the coverage path validator over existing reports.
 
 The web `test:coverage` target reroots its lcov to repo-root-relative paths via
-`scripts/lcov-reroot.mjs`, so the report Sonar consumes always maps onto real files.
+`scripts/lcov-reroot.mjs`, so the report Sonar consumes always maps onto real
+files. **Heads-up:** a green `sonar:verify` only means coverage will map — a
+security finding (e.g. CWE-117 log injection: never log un-scrubbed client input)
+can still drop the gate. Use `--scan` to be sure.
 
 ## Verification Preference
 

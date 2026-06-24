@@ -17,6 +17,13 @@
 //
 // Run AFTER generating coverage (`pnpm test:coverage`), or use the
 // `scripts/sonar-local.sh` wrapper which does both. No SONAR_TOKEN needed.
+//
+// SCOPE — this validates ONLY the *Coverage* quality-gate dimension. It does NOT
+// run SonarCloud's rule engine, so it cannot see the Security / Reliability /
+// Maintainability / Duplications ratings. A gate can still fail on those even
+// when this passes (e.g. a CWE-117 log-injection finding drops Security to B).
+// To reproduce the FULL gate locally, run `scripts/sonar-local.sh --scan` with a
+// SONAR_TOKEN — that uploads the real analysis and waits on the gate verdict.
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -32,10 +39,13 @@ const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 const NC = "\x1b[0m";
 
+/** Split on LF or CRLF so Windows-authored reports parse identically. */
+const splitLines = (text) => text.split(/\r?\n/);
+
 /** Parse sonar-project.properties into a flat key→value map (handles `\` line continuations). */
 function parseProps(text) {
   const out = {};
-  const lines = text.split("\n");
+  const lines = splitLines(text);
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
     if (!line.trim() || line.trim().startsWith("#")) continue;
@@ -61,7 +71,7 @@ function parseLcov(text) {
   let file = null;
   let found = 0;
   let hit = 0;
-  for (const line of text.split("\n")) {
+  for (const line of splitLines(text)) {
     if (line.startsWith("SF:")) {
       file = line.slice(3).trim();
       found = 0;
@@ -78,9 +88,20 @@ function parseLcov(text) {
   return records;
 }
 
-/** Extract { file, total, covered } records from a Cobertura (coverage.py) XML report. */
+/**
+ * Extract { records, sources } from a Cobertura (coverage.py) XML report.
+ * `sources` are the <source> roots; a class filename may be relative to the
+ * repo root OR to one of these, so callers try both when resolving.
+ */
 function parseCobertura(text) {
   const records = [];
+  const sources = [];
+  const srcRe = /<source>([^<]*)<\/source>/g;
+  let sm;
+  while ((sm = srcRe.exec(text)) !== null) {
+    const s = sm[1].trim();
+    if (s) sources.push(s);
+  }
   const classRe = /<class\b[^>]*\bfilename="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
   let m;
   while ((m = classRe.exec(text)) !== null) {
@@ -96,7 +117,7 @@ function parseCobertura(text) {
     }
     records.push({ file, total, covered });
   }
-  return records;
+  return { records, sources };
 }
 
 function pct(covered, total) {
@@ -130,8 +151,15 @@ for (const { path, kind } of reports) {
   }
 
   const text = readFileSync(abs, "utf8");
-  const records = kind === "lcov" ? parseLcov(text) : parseCobertura(text);
-  const unresolved = records.filter((r) => !existsSync(resolve(ROOT, r.file)));
+  const { records, sources } =
+    kind === "lcov" ? { records: parseLcov(text), sources: [] } : parseCobertura(text);
+
+  // Sonar resolves a coverage path against the project base dir (the repo root);
+  // for Cobertura it may also be relative to a declared <source> root. A record
+  // resolves if any of those candidates exists on disk.
+  const resolvesOnDisk = (file) =>
+    existsSync(resolve(ROOT, file)) || sources.some((s) => existsSync(resolve(ROOT, s, file)));
+  const unresolved = records.filter((r) => !resolvesOnDisk(r.file));
 
   const totalLines = records.reduce((a, r) => a + r.total, 0);
   const coveredLines = records.reduce((a, r) => a + r.covered, 0);
@@ -173,3 +201,7 @@ if (missingReports > 0) {
   process.exit(1);
 }
 console.log(`${GREEN}${BOLD}OK${NC} every coverage path resolves to a real file — SonarCloud will map it.`);
+console.log(
+  `${DIM}Note: this checks the Coverage dimension only. Security / Reliability /` +
+    ` Maintainability ratings are evaluated by the real scan (sonar-local.sh --scan).${NC}`
+);
