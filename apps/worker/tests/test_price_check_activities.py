@@ -584,6 +584,48 @@ def test_filter_helpers_and_price_extraction():
     assert pc._extract_min_price([nested_hotel]) == Decimal("289.00")
     # No offers array
     assert pc._extract_price_value({"hotel": {"name": "Test"}}) is None
+    # Zero / non-positive prices are unpriced offers, not a real $0 fare: they
+    # are excluded from both the min-price and the priced count.
+    zero_priced = [
+        {"price": {"amount": 0, "currency": "USD"}},
+        {"price": {"amount": 0, "currency": "USD"}},
+    ]
+    assert pc._extract_min_price(zero_priced) is None
+    assert pc._priced_values(zero_priced) == []
+    mixed = [{"price": "0"}, {"price": "175"}, {"price": "210"}]
+    assert pc._extract_min_price(mixed) == Decimal("175")
+    assert pc._priced_values(mixed) == [Decimal("175"), Decimal("210")]
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_activity_all_zero_prices_stores_null(monkeypatch):
+    """Degraded provider response (all flights priced 0) must not become a $0
+    snapshot: price stays None and the offers are marked as unpriced.
+
+    Regression for the SFO->RDM trip whose refresh stored flight_price=0.00.
+    """
+    trip_id = str(uuid.uuid4())
+    session = DummySessionWithDedup(None, [], recent_snapshot=None)
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManagerWithDedup(session))
+
+    payload = {
+        "trip_id": trip_id,
+        "flights": [
+            {"id": "SFO-RDM-trip=AS3361,AS3360", "price": {"amount": 0, "currency": "USD"}},
+            {"id": "SFO-RDM-trip=UA670,UA702", "price": {"amount": 0, "currency": "USD"}},
+        ],
+        "hotels": [],
+        "raw_data": {"ok": True},
+    }
+
+    snapshot_id = await pc.save_snapshot_activity(payload)
+
+    assert snapshot_id
+    assert session.added.flight_price is None
+    assert session.added.total_price is None
+    raw_flights = session.added.raw_data["flights"]
+    assert raw_flights["priced_count"] == 0
+    assert raw_flights["unpriced_count"] == 2
 
 
 # ---------------------------------------------------------------------------
