@@ -3,8 +3,10 @@ name: Prune GHCR
 # Reap old image versions so the GHCR packages don't grow without bound. Every
 # merge to main pushes a :latest plus a :<sha> tag per package, so pruning only
 # untagged versions would let the SHA-tagged images accumulate forever. Instead
-# keep the most recent N versions (tagged or not) for rollback, and never touch
-# :latest.
+# keep the most recent N versions (tagged or not) for rollback. :latest always
+# points at the newest build's digest, so it's inherently within the retained
+# window — no explicit ignore needed (and ignore-versions matches the version's
+# digest name, not its tag, so a '^latest$' guard would be inert anyway).
 on:
   schedule:
     - cron: "0 4 * * 0" # Weekly, Sunday 04:00 UTC
@@ -31,4 +33,3 @@ jobs:
           package-type: container
           min-versions-to-keep: 25
           delete-only-untagged-versions: false
-          ignore-versions: '^latest$'
