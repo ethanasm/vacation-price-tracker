@@ -14,6 +14,7 @@ from temporalio.worker.workflow_sandbox import (
     SandboxRestrictions,
 )
 
+from worker.activities.health_check import run_health_check_activity
 from worker.activities.notifications import (
     evaluate_notifications_activity,
     get_pending_digest_user_ids,
@@ -32,7 +33,11 @@ from worker.activities.trips import (
     get_active_trips,
     get_all_user_ids_with_active_trips,
 )
-from worker.schedule_bootstrap import ensure_daily_refresh_schedule
+from worker.schedule_bootstrap import (
+    ensure_daily_health_schedule,
+    ensure_daily_refresh_schedule,
+)
+from worker.workflows.health_check import RunHealthCheckWorkflow
 from worker.workflows.price_check import PriceCheckWorkflow
 from worker.workflows.refresh_all_trips import RefreshAllTripsWorkflow
 from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
@@ -44,6 +49,7 @@ async def main() -> None:
     client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
 
     await ensure_daily_refresh_schedule(client)
+    await ensure_daily_health_schedule(client)
 
     # Configure sandbox to pass through modules that are only used in activities
     sandbox_runner = SandboxedWorkflowRunner(
@@ -62,6 +68,7 @@ async def main() -> None:
             PriceCheckWorkflow,
             ScheduledRefreshAllUsersWorkflow,
             SendDailyDigestsWorkflow,
+            RunHealthCheckWorkflow,
         ],
         activities=[
             get_active_trips,
@@ -76,6 +83,7 @@ async def main() -> None:
             evaluate_notifications_activity,
             get_pending_digest_user_ids,
             send_user_digest_activity,
+            run_health_check_activity,
         ],
         graceful_shutdown_timeout=timedelta(seconds=30),
         workflow_runner=sandbox_runner,

@@ -1,0 +1,327 @@
+"""Daily system-health digest (showbook-style).
+
+Runs independent checks in parallel — each catching its own errors and returning
+a ``CheckResult`` — rolls them up to an overall status, and emails a summary to
+``ADMIN_EMAILS`` via the shared ``ResendClient``. Never throws: a single check or
+the email failing must not fail the workflow.
+
+Axiom-backed checks return ``unknown`` when the query token is unset (mirrors
+showbook's skip semantics); DB/infra checks run without Axiom.
+"""
+
+import asyncio
+import logging
+from datetime import UTC, datetime, timedelta
+
+from app.clients.axiom_query import query_count
+from app.clients.email import EmailError, ResendClient
+from app.core.cache_keys import CacheKeys
+from app.core.config import settings
+from app.core.constants import NotificationStatus, TripStatus
+from app.core.feature_flags import list_feature_flags
+from app.db.redis import redis_client
+from app.db.session import AsyncSessionLocal
+from app.models.notification_outbox import NotificationOutbox
+from app.models.price_snapshot import PriceSnapshot
+from app.models.trip import Trip
+from app.services.email_render import CheckResult, render_health_digest
+from sqlalchemy import func, text
+from sqlmodel import select
+from temporalio import activity
+from temporalio.client import Client
+
+logger = logging.getLogger(__name__)
+
+REFRESH_SCHEDULE_ID = "daily-price-refresh"
+_DATA_FRESHNESS_WINDOW_HOURS = 24
+_ERROR_VOLUME_FAIL_THRESHOLD = 100
+
+
+def _result(name: str, status: str, summary: str, detail: dict | None = None) -> CheckResult:
+    return {"name": name, "status": status, "summary": summary, "detail": detail}
+
+
+def _rollup(checks: list[CheckResult]) -> str:
+    statuses = {c["status"] for c in checks}
+    if "fail" in statuses:
+        return "fail"
+    if "warn" in statuses:
+        return "warn"
+    if statuses == {"unknown"}:
+        return "unknown"
+    return "ok"
+
+
+async def _check_database() -> CheckResult:
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        return _result("database", "ok", "Postgres reachable")
+    except Exception as exc:
+        return _result("database", "fail", f"Postgres unreachable: {exc}")
+
+
+async def _check_redis() -> CheckResult:
+    try:
+        await redis_client.ping()
+        return _result("redis", "ok", "Redis reachable")
+    except Exception as exc:
+        return _result("redis", "fail", f"Redis unreachable: {exc}")
+
+
+def _check_temporal(client: Client | None) -> CheckResult:
+    if client is None:
+        return _result("temporal", "fail", "Temporal unreachable")
+    return _result("temporal", "ok", "Temporal reachable")
+
+
+async def _check_data_freshness() -> CheckResult:
+    try:
+        cutoff = datetime.now(UTC) - timedelta(hours=_DATA_FRESHNESS_WINDOW_HOURS)
+        async with AsyncSessionLocal() as session:
+            count = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(PriceSnapshot)
+                    .where(PriceSnapshot.created_at >= cutoff)
+                )
+            ).scalar_one()
+        detail = {"snapshots_24h": count}
+        if count == 0:
+            return _result(
+                "data_freshness",
+                "fail",
+                "No price snapshots in the last 24h — the refresh may not be running",
+                detail,
+            )
+        return _result("data_freshness", "ok", f"{count} price snapshots in the last 24h", detail)
+    except Exception as exc:
+        return _result("data_freshness", "fail", f"Snapshot query failed: {exc}")
+
+
+async def _check_failed_trips() -> CheckResult:
+    try:
+        async with AsyncSessionLocal() as session:
+            errored = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Trip)
+                    .where(Trip.status == TripStatus.ERROR)
+                )
+            ).scalar_one()
+            active = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Trip)
+                    .where(Trip.status == TripStatus.ACTIVE)
+                )
+            ).scalar_one()
+        detail = {"error": errored, "active": active}
+        if errored:
+            return _result("failed_trips", "warn", f"{errored} trip(s) in ERROR status", detail)
+        return _result("failed_trips", "ok", f"No errored trips ({active} active)", detail)
+    except Exception as exc:
+        return _result("failed_trips", "fail", f"Trip status query failed: {exc}")
+
+
+async def _check_notifications() -> CheckResult:
+    try:
+        async with AsyncSessionLocal() as session:
+            failed = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(NotificationOutbox)
+                    .where(NotificationOutbox.status == NotificationStatus.FAILED)
+                )
+            ).scalar_one()
+            pending = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(NotificationOutbox)
+                    .where(NotificationOutbox.status == NotificationStatus.PENDING)
+                )
+            ).scalar_one()
+        detail = {"failed": failed, "pending": pending}
+        if failed:
+            return _result(
+                "notifications", "warn", f"{failed} notification(s) failed to send", detail
+            )
+        return _result(
+            "notifications", "ok", f"No failed notifications ({pending} pending)", detail
+        )
+    except Exception as exc:
+        return _result("notifications", "fail", f"Outbox query failed: {exc}")
+
+
+async def _check_budget(name: str, metric: str, limit: int, label: str) -> CheckResult:
+    try:
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        raw = await redis_client.get(CacheKeys.global_budget(metric, day))
+        used = int(raw) if raw else 0
+        pct = (used / limit * 100) if limit else 0.0
+        detail = {"used": used, "limit": limit, "pct": round(pct, 1)}
+        summary = f"{label}: {used:,}/{limit:,} ({pct:.0f}%) today"
+        if limit and used >= limit:
+            return _result(name, "fail", f"{summary} — breaker tripped", detail)
+        if pct >= 80:
+            return _result(name, "warn", summary, detail)
+        return _result(name, "ok", summary, detail)
+    except Exception as exc:
+        return _result(name, "unknown", f"{label} budget read failed: {exc}")
+
+
+async def _check_refresh_run(client: Client | None) -> CheckResult:
+    if client is None:
+        return _result("refresh_run", "unknown", "Temporal unreachable — schedule history unread")
+    try:
+        handle = client.get_schedule_handle(REFRESH_SCHEDULE_ID)
+        desc = await handle.describe()
+        actions = desc.info.recent_actions
+        if not actions:
+            return _result("refresh_run", "warn", "No recorded refresh runs yet")
+        last = actions[-1]
+        wf = client.get_workflow_handle(
+            last.action.workflow_id, run_id=last.action.first_execution_run_id
+        )
+        wf_desc = await wf.describe()
+        status_name = wf_desc.status.name if wf_desc.status else "UNKNOWN"
+        detail: dict = {"workflow_id": last.action.workflow_id, "status": status_name}
+        if status_name == "COMPLETED":
+            try:
+                result = await wf.result()
+                if isinstance(result, dict):
+                    detail.update(result)
+                    failed = result.get("users_failed", 0)
+                    if failed:
+                        return _result(
+                            "refresh_run",
+                            "warn",
+                            f"Last refresh completed with {failed} user failure(s)",
+                            detail,
+                        )
+                    return _result(
+                        "refresh_run",
+                        "ok",
+                        f"Last refresh OK ({result.get('users_successful', 0)}/"
+                        f"{result.get('users_total', 0)} users)",
+                        detail,
+                    )
+            except Exception:  # pragma: no cover - result fetch best-effort
+                pass
+            return _result("refresh_run", "ok", "Last refresh completed", detail)
+        if status_name == "RUNNING":
+            return _result("refresh_run", "ok", "Refresh currently running", detail)
+        if status_name in {"FAILED", "TERMINATED", "TIMED_OUT", "CANCELED"}:
+            return _result("refresh_run", "fail", f"Last refresh {status_name}", detail)
+        return _result("refresh_run", "warn", f"Last refresh status: {status_name}", detail)
+    except Exception as exc:
+        return _result("refresh_run", "unknown", f"Schedule history read failed: {exc}")
+
+
+async def _check_error_volume() -> CheckResult:
+    if not settings.axiom_query_enabled:
+        return _result("error_volume", "unknown", "Axiom query token unset — skipped")
+    apl = (
+        f'["{settings.axiom_dataset}"] '
+        '| where _time > ago(24h) and level == "error" | count'
+    )
+    count = await query_count(apl)
+    if count is None:
+        return _result("error_volume", "unknown", "Axiom query failed")
+    detail = {"errors_24h": count}
+    if count >= _ERROR_VOLUME_FAIL_THRESHOLD:
+        return _result("error_volume", "fail", f"{count} error logs in the last 24h", detail)
+    if count > 0:
+        return _result("error_volume", "warn", f"{count} error logs in the last 24h", detail)
+    return _result("error_volume", "ok", "No error logs in the last 24h", detail)
+
+
+async def _connect_temporal() -> Client | None:
+    try:
+        return await Client.connect(
+            settings.temporal_address, namespace=settings.temporal_namespace
+        )
+    except Exception as exc:
+        logger.warning(
+            "Health check could not connect to Temporal",
+            exc_info=exc,
+            extra={"event": "health.check.temporal.connect_failed"},
+        )
+        return None
+
+
+@activity.defn
+async def run_health_check_activity() -> dict:
+    """Run all health checks, roll up status, and email the digest to ADMIN_EMAILS."""
+    now = datetime.now(UTC)
+    temporal_client = await _connect_temporal()
+
+    checks: list[CheckResult] = list(
+        await asyncio.gather(
+            _check_database(),
+            _check_redis(),
+            _check_data_freshness(),
+            _check_failed_trips(),
+            _check_notifications(),
+            _check_budget(
+                "groq_budget", "groq_tokens", settings.global_daily_groq_token_budget, "Groq tokens"
+            ),
+            _check_budget(
+                "skiplagged_budget",
+                "skiplagged_calls",
+                settings.global_daily_skiplagged_call_budget,
+                "Skiplagged calls",
+            ),
+            _check_refresh_run(temporal_client),
+            _check_error_volume(),
+        )
+    )
+    checks.insert(2, _check_temporal(temporal_client))
+
+    status = _rollup(checks)
+    counts = {s: sum(1 for c in checks if c["status"] == s) for s in ("ok", "warn", "fail", "unknown")}
+
+    try:
+        async with AsyncSessionLocal() as session:
+            flags = await list_feature_flags(session)
+    except Exception:  # pragma: no cover - informational only
+        flags = []
+
+    recipients = settings.admin_emails_list
+    sent = 0
+    if not recipients:
+        logger.info(
+            "Health check complete (%s); email skipped — no ADMIN_EMAILS",
+            status,
+            extra={"event": "health.check.summary", "status": status, **counts, "sent": 0},
+        )
+        return {"status": status, "sent": 0, "skipped": True, **counts}
+
+    subject, html = render_health_digest(
+        status=status,
+        checks=checks,
+        flags=flags,
+        run_at=now.strftime("%Y-%m-%d %H:%M UTC"),
+        app_url=settings.frontend_url.rstrip("/"),
+    )
+    try:
+        await ResendClient().send(
+            to=recipients,
+            subject=subject,
+            html=html,
+            idempotency_key=f"health-summary-{now.strftime('%Y%m%d')}",
+        )
+        sent = len(recipients)
+    except EmailError as exc:
+        logger.error(
+            "Health digest send failed",
+            exc_info=exc,
+            extra={"event": "health.check.email.failed"},
+        )
+
+    logger.info(
+        "Health check complete (%s)",
+        status,
+        extra={"event": "health.check.summary", "status": status, **counts, "sent": sent},
+    )
+    return {"status": status, "sent": sent, "skipped": False, **counts}

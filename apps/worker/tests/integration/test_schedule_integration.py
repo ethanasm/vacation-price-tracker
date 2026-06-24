@@ -28,6 +28,7 @@ from worker.schedule_bootstrap import (
     WORKFLOW_NAME,
     ensure_daily_refresh_schedule,
 )
+from worker.workflows.health_check import RunHealthCheckWorkflow
 from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
 from worker.workflows.send_daily_digests import SendDailyDigestsWorkflow
 
@@ -60,6 +61,12 @@ async def _fake_get_pending_digest_user_ids() -> list[str]:
 async def _fake_send_user_digest(_user_id: str) -> dict:
     """Stub activity — not reached when there are no pending digests."""
     return {"sent": False, "count": 0}
+
+
+@activity.defn(name="run_health_check_activity")
+async def _fake_run_health_check() -> dict:
+    """Stub activity — registered so RunHealthCheckWorkflow stays sandbox-valid."""
+    return {"status": "ok", "sent": 0, "skipped": True, "ok": 0, "warn": 0, "fail": 0, "unknown": 0}
 
 
 async def _wait_for_recent_actions(handle, timeout_seconds: float = 20.0):
@@ -116,12 +123,17 @@ async def test_schedule_trigger_runs_configured_workflow(monkeypatch):
         async with Worker(
             env.client,
             task_queue=_TEST_TASK_QUEUE,
-            workflows=[ScheduledRefreshAllUsersWorkflow, SendDailyDigestsWorkflow],
+            workflows=[
+                ScheduledRefreshAllUsersWorkflow,
+                SendDailyDigestsWorkflow,
+                RunHealthCheckWorkflow,
+            ],
             activities=[
                 _fake_get_all_user_ids,
                 _fake_expire_past_trips,
                 _fake_get_pending_digest_user_ids,
                 _fake_send_user_digest,
+                _fake_run_health_check,
             ],
         ):
             await ensure_daily_refresh_schedule(env.client)
