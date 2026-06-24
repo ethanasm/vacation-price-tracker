@@ -26,8 +26,9 @@ Logs are structured: filter on `event` (dotted namespace), `level`, `service`,
 (`['fields']['key']`). See `docs/specs/operations/axiom-map-fields.md`. Example:
 
 ```bash
+ORG=${AXIOM_ORG_ID:-showbook-egap}   # Axiom org slug hosting the vpt-prod dataset
 curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
-  -H "Authorization: Bearer $AXIOM_QUERY_TOKEN" -H "X-AXIOM-ORG-ID: $AXIOM_ORG_ID" \
+  -H "Authorization: Bearer $AXIOM_QUERY_TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
   -H "Content-Type: application/json" \
   -d '{"apl":"[\"vpt-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\") | sort by _time desc"}'
 ```

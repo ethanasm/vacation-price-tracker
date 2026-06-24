@@ -158,6 +158,7 @@ logger.error("Fetch failed", exc_info=exc, extra={"event": "skiplagged.request.f
 Personal Access Token (Query capability) with the `X-AXIOM-ORG-ID` header:
 
 ```bash
+ORG=showbook-egap   # the Axiom org slug (hosts the vpt-prod dataset)
 curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
   -H "Authorization: Bearer $TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
   -H "Content-Type: application/json" \
