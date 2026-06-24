@@ -77,6 +77,13 @@ stack, copy `.env.prod.example` to `.env.prod` (see Deployment).
 **Feature flags:** `ENABLE_BETA_OPTIMIZER`, `ENABLE_SMS_NOTIFICATIONS`,
 `MAX_TRIPS_PER_USER` (default 10).
 
+**Cost / abuse ceilings** are always on (like the per-minute rate limiter):
+per-user daily quotas + a global daily Groq/Skiplagged spend circuit-breaker in
+Redis, auto-resetting at UTC midnight. Tune via `CHAT_DAILY_QUOTA_PER_USER`,
+`DAILY_QUOTA_PER_USER`, `GLOBAL_DAILY_GROQ_TOKEN_BUDGET`,
+`GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` (details in
+[`apps/api/CLAUDE.md`](apps/api/CLAUDE.md)).
+
 ## Directory Structure
 
 ```

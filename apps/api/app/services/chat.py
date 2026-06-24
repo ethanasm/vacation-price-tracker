@@ -29,6 +29,7 @@ from app.clients.groq import (
 from app.clients.groq import (
     Message as GroqMessage,
 )
+from app.core.errors import GlobalBudgetExceeded
 from app.core.prompts import build_system_prompt
 from app.core.telemetry import langfuse_context, observe
 from app.models.message import Message
@@ -524,6 +525,10 @@ async def process_chat_with_tools(
                     logger.warning("Tools that hit retry limit: %s", exceeded)
                 return
 
+        except GlobalBudgetExceeded as e:
+            logger.warning("Global budget breaker tripped during chat: %s", e)
+            yield ChatChunk.error_chunk(str(e.detail))
+            return
         except GroqClientError as e:
             _log_groq_error(e)
             yield _get_error_chunk(e)
