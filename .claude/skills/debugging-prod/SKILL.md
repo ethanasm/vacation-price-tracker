@@ -1,6 +1,6 @@
 ---
 name: debugging-prod
-description: Investigate production issues for the self-hosted Vacation Price Tracker stack (project vpt-prod). Use when something is broken or suspicious in prod — 5xx/empty responses, a tracked trip with wrong/stale prices, a stuck or failing price-check workflow, missing notifications, slow/odd LLM chat behaviour, or a deploy that won't come healthy. Covers the read paths: docker logs on the prod host, structured app logs in Axiom (when configured), the /v1/admin/sql endpoint (via `pnpm prod:query`), the Temporal Web UI, Langfuse, and the /ready probe.
+description: Investigate production issues for the self-hosted Vacation Price Tracker stack (project vpt-prod). Use when something is broken or suspicious in prod — 5xx/empty responses, a tracked trip with wrong/stale prices, a stuck or failing price-check workflow, missing notifications, slow/odd LLM chat behaviour, or a deploy that won't come healthy. Covers the read paths: docker logs on the prod host, structured app logs in Axiom (via `pnpm prod:axiom`), the /v1/admin/sql endpoint (via `pnpm prod:query`), the Temporal Web UI, Langfuse, and the /ready probe. From a Claude Code web session, `pnpm prod:query` and `pnpm prod:axiom` work out of the box using injected shell-env credentials (no .env.prod).
 ---
 
 # Debugging production (vpt-prod)
@@ -19,16 +19,60 @@ from GHCR. This skill is the **read/diagnose** counterpart to the local
 App logging is stdlib `logging` → stdout → Docker's `json-file` driver, **and**
 shipped to **Axiom** when `AXIOM_TOKEN`/`AXIOM_DATASET` are set in `.env.prod`
 (one dataset, `vacation-price-tracker-prod`, for api + worker + web — distinguished by `service` /
-`component`). LLM/MCP calls are traced in **Langfuse**. Query Axiom with a PAT
-(Query capability) + `X-AXIOM-ORG-ID` header — the repo's ingest token can't read.
-Logs are structured: filter on `event` (dotted namespace), `level`, `service`,
-`trip_id`, `workflow_id`; non-core fields are under the `fields` map
-(`['fields']['key']`). See `docs/specs/operations/axiom-map-fields.md`. Example:
+`component`). LLM/MCP calls are traced in **Langfuse**.
+
+### Credentials & access (read this first in a web session)
+
+A Claude Code **web/remote session is NOT the prod host** — there is no
+`.env.prod`, and the dev `.env` is useless for prod (`BACKEND_URL` there points
+at `localhost`). Instead the prod read-credentials are injected into the **shell
+environment**:
+
+| Env var | What it is | Used by |
+|---------|-----------|---------|
+| `ADMIN_QUERY_URL` | prod API origin (`https://vacation-price-tracker.ethanasm.me`) | `pnpm prod:query` (auto-resolved) |
+| `ADMIN_QUERY_TOKEN` | bearer token for `/v1/admin/sql` | `pnpm prod:query` |
+| `AXIOM_QUERY_TOKEN` | PAT with Query capability (the ingest token can't read) | `pnpm prod:axiom` |
+| `AXIOM_ORG_ID` | Axiom org slug (`showbook-egap`) | `pnpm prod:axiom` |
+
+So the two read paths **just work** from a web session: `pnpm prod:query "…"`
+for Postgres and `pnpm prod:axiom "…"` for logs. The Docker / Temporal / Langfuse
+paths below require being on (or tunnelled to) the prod host and are not
+reachable from a plain web session. Check `env | grep -E 'ADMIN_QUERY|AXIOM'` if
+unsure what's available.
+
+### Querying Axiom — `pnpm prod:axiom`
+
+Prefer the helper; it wraps the PAT auth, JSON escaping, and the column-oriented
+"tabular" response (fiddly to read by hand). **Don't reach for the Axiom MCP
+tools first** — that server's own token is usually expired in web sessions; the
+PAT helper is the reliable path. Raw `curl` (below) is the fallback.
 
 ```bash
-ORG=${AXIOM_ORG_ID:-showbook-egap}   # Axiom org slug hosting the vacation-price-tracker-prod dataset
+pnpm prod:axiom "['vacation-price-tracker-prod'] | where _time > ago(24h) | summarize count() by service, level"
+pnpm prod:axiom --json "['vacation-price-tracker-prod'] | where level == 'error' | take 20"
+```
+
+APL gotchas (each one cost a wasted query the first time):
+- **Always constrain time** — `| where _time > ago(24h)`. The `_apl` endpoint
+  otherwise scans a ~1-year default window.
+- The message column is **`msg`**, not `message`.
+- App-supplied fields (`logger`, `trip_id`, `workflow_id`, `count`, …) fold into
+  the **`fields` map** — query as `['fields']['logger']`, *not* as top-level
+  columns. Only `CORE_FIELDS` (`_time`, `service`, `level`, `event`, `env`,
+  `hostname`, `pid`, `msg`, `status`) and the `err.*` allowlist are real columns.
+  `getschema` / `getDatasetFields` won't list keys inside the map — sample a row.
+- Third-party library logs (langfuse, temporalio, uvicorn) arrive with
+  **`event == null`** — that's expected, not a wiring bug. App events carry a
+  dotted `event` (e.g. `trips.users.ok`, `admin.sql.executed`).
+- Low/zero volume usually means idle prod, not broken shipping — cross-check with
+  `pnpm prod:query "SELECT count(*) FROM trips"` before assuming Axiom is down.
+
+Raw fallback (if the helper is unavailable):
+
+```bash
 curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
-  -H "Authorization: Bearer $AXIOM_QUERY_TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
+  -H "Authorization: Bearer $AXIOM_QUERY_TOKEN" -H "X-AXIOM-ORG-ID: ${AXIOM_ORG_ID:-showbook-egap}" \
   -H "Content-Type: application/json" \
   -d '{"apl":"[\"vacation-price-tracker-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\") | sort by _time desc"}'
 ```
@@ -65,7 +109,9 @@ pnpm prod:query --json "SELECT id, status FROM trips WHERE status='Error'"
 echo "SELECT now()" | pnpm prod:query
 ```
 
-Reads `ADMIN_QUERY_TOKEN` + `PROD_API_URL`/`BACKEND_URL` from `.env.prod`.
+Reads `ADMIN_QUERY_TOKEN` + the API base URL. On the prod host that's
+`PROD_API_URL`/`BACKEND_URL` from `.env.prod`; in a web session it falls back to
+`ADMIN_QUERY_URL` from the shell env automatically (no `.env.prod` needed).
 Read-only is enforced server-side (Postgres `READ ONLY` txn, always rolled back),
 plus a 3 s statement timeout, 1000-row cap, and per-IP rate limit. Only
 `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` are accepted. See the recipe
