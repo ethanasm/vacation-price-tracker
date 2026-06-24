@@ -148,7 +148,7 @@ function ToolCallHeader({
   return (
     <div
       className={cn(
-        "w-full flex items-center gap-2 px-3 py-2 text-left",
+        "w-full flex items-center gap-2 px-3 py-2 text-left rounded-full bg-[var(--aurora-surface)] border border-[var(--aurora-hairline)] dark:bg-white/5 dark:border-white/10",
         hasExpandableContent && "hover:bg-muted/50 dark:hover:bg-white/5 transition-colors cursor-pointer"
       )}
       onClick={hasExpandableContent ? onToggle : undefined}

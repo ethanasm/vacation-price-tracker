@@ -81,7 +81,7 @@ export function ChatMessage({ message, toolResults = [], pendingUpdateIds, class
               "rounded-2xl px-4 py-2.5",
               isUser
                 ? "bg-primary text-primary-foreground rounded-tr-sm"
-                : "bg-muted dark:bg-white/10 rounded-tl-sm"
+                : "bg-white border border-[var(--aurora-hairline)] dark:bg-white/10 dark:border-white/10 rounded-tl-sm"
             )}
           >
             {message.content ? (
