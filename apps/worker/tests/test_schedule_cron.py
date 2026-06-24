@@ -36,8 +36,19 @@ def test_daily_refresh_cron_default_fires_at_0600_utc():
 
 
 def test_schedule_spec_embeds_configured_cron():
-    schedule = _build_schedule()
+    schedule = _build_schedule(
+        "ScheduledRefreshAllUsersWorkflow",
+        "scheduled-refresh-all-users",
+        settings.daily_refresh_cron,
+    )
     assert schedule.spec.cron_expressions == [settings.daily_refresh_cron]
+
+
+def test_daily_health_cron_default_fires_at_0700_utc():
+    assert settings.daily_health_cron == "0 7 * * *"
+    base = datetime(2026, 4, 21, 3, 0, tzinfo=UTC)
+    next_fire = croniter(settings.daily_health_cron, base).get_next(datetime)
+    assert next_fire == datetime(2026, 4, 21, 7, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(

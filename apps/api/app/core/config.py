@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "vacation-price-tracker-tasks"
     daily_refresh_cron: str = "0 6 * * *"  # 06:00 UTC daily
+    daily_health_cron: str = "0 7 * * *"  # 07:00 UTC daily — system health digest
 
     # Email Notifications
     smtp_host: str = "smtp.smtp2go.com"
@@ -63,6 +64,10 @@ class Settings(BaseSettings):
     # unsubscribe links reuse frontend_url (app) and backend_url (API).
     resend_api_key: str = ""
     email_physical_address: str = ""  # CAN-SPAM footer; required for real sends
+
+    # Daily system-health digest recipients (comma-separated). Blank → the health
+    # check still runs and logs, but emails nobody.
+    admin_emails: str = ""
 
     # SMS Notifications
     notification_api_key: str = ""
@@ -115,11 +120,26 @@ class Settings(BaseSettings):
     # the `service` field. The `fields` map field bounds the column schema.
     axiom_token: str = ""  # ingest-only API token
     axiom_dataset: str = ""  # e.g. vacation-price-tracker-prod
+    # Read access (the ingest token can't query). A Personal Access Token with
+    # Query capability + the org slug, used by the health digest's error-volume
+    # check. Blank → that check reports `unknown` (skipped).
+    axiom_query_token: str = ""
+    axiom_org_id: str = ""
 
     @property
     def axiom_enabled(self) -> bool:
         """Whether Axiom log shipping is configured."""
         return bool(self.axiom_token and self.axiom_dataset)
+
+    @property
+    def axiom_query_enabled(self) -> bool:
+        """Whether Axiom read/query access is configured (health digest)."""
+        return bool(self.axiom_query_token and self.axiom_org_id and self.axiom_dataset)
+
+    @property
+    def admin_emails_list(self) -> list[str]:
+        """Comma-separated ADMIN_EMAILS recipients for the health digest."""
+        return [e.strip() for e in self.admin_emails.split(",") if e.strip()]
 
     # JWT
     jwt_algorithm: str = "HS256"

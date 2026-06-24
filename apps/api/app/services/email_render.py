@@ -59,3 +59,52 @@ def render_daily_digest(
         format_price=_format_price,
     )
     return subject, html
+
+
+class CheckResult(TypedDict):
+    """One health check's outcome (mirrors showbook's CheckResult)."""
+
+    name: str
+    status: str  # "ok" | "warn" | "fail" | "unknown"
+    summary: str
+    detail: dict | None
+
+
+class FlagState(TypedDict):
+    name: str
+    description: str
+    enabled: bool
+
+
+def render_health_digest(
+    *,
+    status: str,
+    checks: list[CheckResult],
+    flags: list[FlagState],
+    run_at: str,
+    app_url: str,
+) -> tuple[str, str]:
+    """Render the system-health digest. Returns ``(subject, html)``.
+
+    Subject mirrors showbook's ``formatSubject``.
+    """
+    fail = sum(1 for c in checks if c["status"] == "fail")
+    warn = sum(1 for c in checks if c["status"] == "warn")
+    if status == "fail":
+        subject = f"[VPT health] FAIL — {fail} failing check{'' if fail == 1 else 's'}"
+    elif status == "warn":
+        subject = f"[VPT health] WARN — {warn} warning{'' if warn == 1 else 's'}"
+    elif status == "unknown":
+        subject = "[VPT health] UNKNOWN — checks unavailable"
+    else:
+        subject = "[VPT health] OK"
+
+    template = _env.get_template("health_digest.html.j2")
+    html = template.render(
+        status=status,
+        checks=checks,
+        flags=flags,
+        run_at=run_at,
+        app_url=app_url,
+    )
+    return subject, html

@@ -30,12 +30,36 @@ apps/worker/tests/       # pytest; integration tests marked `-m integration`
 
 95% coverage gate, same as the API.
 
+## Scheduled jobs (cron)
+
+Temporal schedules are created/updated idempotently on worker startup by
+`schedule_bootstrap.py` (`ensure_daily_refresh_schedule` + `ensure_daily_health_schedule`),
+all with `ScheduleOverlapPolicy.SKIP`. Times are UTC.
+
+| Schedule id | Cron (env) | Default | Workflow | What it does |
+|:------------|:-----------|:--------|:---------|:-------------|
+| `daily-price-refresh` | `DAILY_REFRESH_CRON` | `0 6 * * *` | `ScheduledRefreshAllUsersWorkflow` | Refresh every active trip, then chain the user price-drop digest. |
+| `daily-health-check` | `DAILY_HEALTH_CRON` | `0 7 * * *` | `RunHealthCheckWorkflow` | Run system health checks and email an ops summary to `ADMIN_EMAILS`. |
+
+The health check runs an hour after the refresh so it reports on the overnight run.
+
 ## Workflows
 
 ### RefreshAllTripsWorkflow
 Orchestrates updating all active trips for a user. Triggered by the manual refresh
 button (`POST /v1/trips/refresh-all`) and the daily cron (`daily_refresh_cron`,
 default `0 6 * * *`).
+
+### RunHealthCheckWorkflow
+Daily system-health digest (showbook's `runHealthCheck` analog). One activity
+(`run_health_check_activity`) runs independent checks in parallel — each catching
+its own errors → a `CheckResult{name, status: ok|warn|fail|unknown, summary}` —
+rolls them up, and emails a color-coded summary to `ADMIN_EMAILS` via `ResendClient`
+(idempotency key `health-summary-{date}`; skips when `ADMIN_EMAILS`/`RESEND_API_KEY`
+unset; **never throws**). Checks: DB/Redis/Temporal connectivity, snapshot
+freshness, errored trips, notification-outbox failures, Groq/Skiplagged daily-budget
+usage, last refresh-run outcome (Temporal history), and Axiom error volume
+(`unknown` when `AXIOM_QUERY_TOKEN` unset). Subject: `[VPT health] OK|FAIL|WARN|UNKNOWN`.
 
 ### PriceCheckWorkflow
 Single trip, saga-style (Temporal handles retries/compensation):

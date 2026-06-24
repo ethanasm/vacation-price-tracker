@@ -66,7 +66,7 @@ class ResendClient:
     async def send(
         self,
         *,
-        to: str,
+        to: str | list[str],
         subject: str,
         html: str,
         headers: dict[str, str] | None = None,
@@ -74,6 +74,7 @@ class ResendClient:
     ) -> dict:
         """Send a single HTML email.
 
+        ``to`` may be a single address or a list (Resend accepts a ``to`` array).
         Returns the parsed Resend response (``{"id": ...}``) on success, or a
         ``{"dry_run": True}`` marker when no API key is configured.
         """
