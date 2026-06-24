@@ -58,12 +58,17 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
     email_from: str = "notifications@yourdomain.com"
 
+    # Email delivery (Resend) — leave resend_api_key blank to run in dry-run mode
+    # (the digest job logs what it would send and skips delivery). Digest and
+    # unsubscribe links reuse frontend_url (app) and backend_url (API).
+    resend_api_key: str = ""
+    email_physical_address: str = ""  # CAN-SPAM footer; required for real sends
+
     # SMS Notifications
     notification_api_key: str = ""
 
-    # Feature Flags
-    enable_sms_notifications: bool = False
-    enable_beta_optimizer: bool = False
+    # Limits. Boolean feature gates (email/sms/optimizer) live in the DB
+    # `feature_flags` table (see app.core.feature_flags), not here.
     max_trips_per_user: int = 10
     default_refresh_frequency: str = "daily"
 

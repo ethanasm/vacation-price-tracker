@@ -29,6 +29,7 @@ from worker.schedule_bootstrap import (
     ensure_daily_refresh_schedule,
 )
 from worker.workflows.scheduled_refresh import ScheduledRefreshAllUsersWorkflow
+from worker.workflows.send_daily_digests import SendDailyDigestsWorkflow
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -47,6 +48,18 @@ async def _fake_get_all_user_ids() -> list[str]:
 async def _fake_expire_past_trips() -> int:
     """Stub activity — the scheduled workflow expires past trips before fan-out."""
     return 0
+
+
+@activity.defn(name="get_pending_digest_user_ids")
+async def _fake_get_pending_digest_user_ids() -> list[str]:
+    """Stub activity — no pending notifications, so the digest is a no-op."""
+    return []
+
+
+@activity.defn(name="send_user_digest_activity")
+async def _fake_send_user_digest(_user_id: str) -> dict:
+    """Stub activity — not reached when there are no pending digests."""
+    return {"sent": False, "count": 0}
 
 
 async def _wait_for_recent_actions(handle, timeout_seconds: float = 20.0):
@@ -103,8 +116,13 @@ async def test_schedule_trigger_runs_configured_workflow(monkeypatch):
         async with Worker(
             env.client,
             task_queue=_TEST_TASK_QUEUE,
-            workflows=[ScheduledRefreshAllUsersWorkflow],
-            activities=[_fake_get_all_user_ids, _fake_expire_past_trips],
+            workflows=[ScheduledRefreshAllUsersWorkflow, SendDailyDigestsWorkflow],
+            activities=[
+                _fake_get_all_user_ids,
+                _fake_expire_past_trips,
+                _fake_get_pending_digest_user_ids,
+                _fake_send_user_digest,
+            ],
         ):
             await ensure_daily_refresh_schedule(env.client)
 

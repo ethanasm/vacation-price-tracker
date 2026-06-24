@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from temporalio.exceptions import ApplicationError
+from worker.activities.notifications import evaluate_notifications_activity
 from worker.activities.price_check import (
     fetch_flights_activity,
     fetch_hotels_activity,
@@ -43,6 +44,9 @@ async def test_price_check_workflow_persists_partial_snapshot_when_one_side_fail
         if activity is save_snapshot_activity:
             captured["save"] = args[0]
             return "snapshot-partial"
+        if activity is evaluate_notifications_activity:
+            captured["evaluate"] = args[0]
+            return False
         raise AssertionError("Unexpected activity")
 
     monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)
@@ -177,6 +181,8 @@ async def test_price_check_workflow_skips_flights_when_track_flights_false(monke
             return filtered
         if activity is save_snapshot_activity:
             return "snapshot-no-flights"
+        if activity is evaluate_notifications_activity:
+            return False
         raise AssertionError(f"Unexpected activity: {activity}")
 
     monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)
@@ -220,6 +226,8 @@ async def test_price_check_workflow_skips_hotels_when_track_hotels_false(monkeyp
             return filtered
         if activity is save_snapshot_activity:
             return "snapshot-no-hotels"
+        if activity is evaluate_notifications_activity:
+            return False
         raise AssertionError(f"Unexpected activity: {activity}")
 
     monkeypatch.setattr(price_check_module.workflow, "execute_activity", fake_execute_activity)

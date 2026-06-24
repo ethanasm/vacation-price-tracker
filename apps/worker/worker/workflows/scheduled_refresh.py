@@ -14,6 +14,7 @@ with workflow.unsafe.imports_passed_through():
     )
 
 REFRESH_ALL_TRIPS_WORKFLOW_NAME = "RefreshAllTripsWorkflow"
+SEND_DAILY_DIGESTS_WORKFLOW_NAME = "SendDailyDigestsWorkflow"
 MAX_PARALLEL_USERS = 3
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,6 @@ class ScheduledRefreshAllUsersWorkflow:
             start_to_close_timeout=timedelta(seconds=30),
         )
 
-        if not user_ids:
-            return {"users_total": 0, "users_successful": 0, "users_failed": 0}
-
         successful = 0
         failed = 0
         for start in range(0, len(user_ids), MAX_PARALLEL_USERS):
@@ -58,11 +56,25 @@ class ScheduledRefreshAllUsersWorkflow:
                 else:
                     successful += 1
 
+        # Send the daily digest only after every per-user refresh (and thus every
+        # snapshot + outbox enqueue) has completed, so digests are never partial.
+        await self._send_daily_digests()
+
         return {
             "users_total": len(user_ids),
             "users_successful": successful,
             "users_failed": failed,
         }
+
+    async def _send_daily_digests(self) -> None:
+        run_id = workflow.info().run_id
+        try:
+            await workflow.execute_child_workflow(
+                SEND_DAILY_DIGESTS_WORKFLOW_NAME,
+                id=f"daily-digest-{run_id}",
+            )
+        except Exception as exc:
+            logger.exception("Daily digest dispatch failed", exc_info=exc)
 
     async def _run_child(self, user_id: str) -> None:
         run_id = workflow.info().run_id

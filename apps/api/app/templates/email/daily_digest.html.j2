@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vacation Price Tracker</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f4f7; font-family:Helvetica,Arial,sans-serif; color:#1a1a2e;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7; padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+            <tr>
+              <td style="background-color:#1a1a2e; padding:24px 32px;">
+                <h1 style="margin:0; color:#ffffff; font-size:20px;">Good news — prices dropped</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;">
+                <p style="margin:0 0 16px; font-size:15px; line-height:1.5;">
+                  {% if trips|length == 1 %}
+                  One of your tracked trips just hit your price target:
+                  {% else %}
+                  {{ trips|length }} of your tracked trips just hit your price target:
+                  {% endif %}
+                </p>
+
+                {% for trip in trips %}
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5ef; border-radius:8px; margin-bottom:16px;">
+                  <tr>
+                    <td style="padding:16px 20px;">
+                      <p style="margin:0 0 8px; font-size:16px; font-weight:bold;">
+                        <a href="{{ trip.trip_url }}" style="color:#1a1a2e; text-decoration:none;">{{ trip.name }}</a>
+                      </p>
+                      <p style="margin:0; font-size:15px;">
+                        <span style="color:#9aa0b4; text-decoration:line-through;">{{ format_price(trip.old_price) }}</span>
+                        &nbsp;&rarr;&nbsp;
+                        <span style="color:#1db954; font-weight:bold;">{{ format_price(trip.new_price) }}</span>
+                      </p>
+                      {% if trip.threshold_value is not none %}
+                      <p style="margin:8px 0 0; font-size:13px; color:#6b7280;">
+                        {{ trip.threshold_label }} target: {{ format_price(trip.threshold_value) }}
+                      </p>
+                      {% endif %}
+                    </td>
+                  </tr>
+                </table>
+                {% endfor %}
+
+                <p style="margin:24px 0 0;">
+                  <a href="{{ app_url }}" style="display:inline-block; background-color:#1a1a2e; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:6px; font-size:14px;">View your dashboard</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 32px; border-top:1px solid #e5e5ef; font-size:12px; color:#9aa0b4; line-height:1.5;">
+                <p style="margin:0 0 8px;">
+                  You're receiving this because you set a price alert in Vacation Price Tracker.
+                  <a href="{{ unsubscribe_url }}" style="color:#6b7280;">Unsubscribe from these emails</a>.
+                </p>
+                {% if physical_address %}
+                <p style="margin:0;">{{ physical_address }}</p>
+                {% endif %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

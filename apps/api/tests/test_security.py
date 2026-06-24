@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from app.core.config import settings
 from app.core.constants import JWTClaims, TokenType
-from app.core.security import create_access_token, create_refresh_token, get_cookie_params
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    get_cookie_params,
+    make_unsubscribe_token,
+    read_unsubscribe_token,
+)
 
 
 class TestTokenCreation:
@@ -55,6 +61,23 @@ class TestTokenCreation:
         # Original dict should be unchanged
         assert set(original_data.keys()) == original_keys
         assert JWTClaims.EXPIRATION not in original_data
+
+
+class TestUnsubscribeToken:
+    """Test unsubscribe token minting and verification."""
+
+    def test_roundtrip(self):
+        user_id = "123e4567-e89b-12d3-a456-426614174000"
+        token = make_unsubscribe_token(user_id)
+        assert read_unsubscribe_token(token) == user_id
+
+    def test_garbage_token_returns_none(self):
+        assert read_unsubscribe_token("not-a-jwt") is None
+
+    def test_wrong_purpose_rejected(self):
+        # An access token is a valid JWT but lacks the unsubscribe purpose claim.
+        access = create_access_token(data={JWTClaims.SUBJECT: "u1"})
+        assert read_unsubscribe_token(access) is None
 
 
 class TestCookieParams:
