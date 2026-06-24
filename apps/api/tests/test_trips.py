@@ -1003,6 +1003,70 @@ def test_extract_price_helper():
     # No rooms, no price
     assert trips_module._extract_price({"name": "Test Hotel"}) is None
 
+    # A zero `amount` must not be swallowed by the old `amount or total` idiom:
+    # it should be returned as 0 (and rejected later by _coerce_positive_price),
+    # not fall through to `total`.
+    assert trips_module._extract_price({"price": {"amount": 0}}) == 0
+    assert trips_module._extract_price({"price": {"amount": 0, "total": 250}}) == 0
+
+
+def test_coerce_positive_price_rejects_non_positive():
+    """Zero / negative / unparseable prices are treated as missing."""
+    assert trips_module._coerce_positive_price(0) is None
+    assert trips_module._coerce_positive_price("0") is None
+    assert trips_module._coerce_positive_price("0.00") is None
+    assert trips_module._coerce_positive_price(-5) is None
+    assert trips_module._coerce_positive_price(None) is None
+    assert trips_module._coerce_positive_price("not-a-number") is None
+    assert trips_module._coerce_positive_price("177") == Decimal("177")
+    assert trips_module._coerce_positive_price(399.99) == Decimal("399.99")
+
+
+def test_snapshot_to_response_drops_zero_priced_offers(test_session):
+    """Degraded provider responses (amount: 0) must not render as $0 offers.
+
+    Regression for the SFO->RDM trip where Skiplagged returned three flights all
+    priced 0; the old `amount or total` extraction dropped them via a falsy 0,
+    and the worker stored a misleading $0. The trip-detail response must expose
+    zero flight/hotel offers for such data.
+    """
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=None,
+        hotel_price=None,
+        total_price=None,
+        created_at=datetime.now(UTC),
+        raw_data={
+            "flights": {
+                "data": [
+                    {
+                        "id": "SFO-RDM-2026-08-22-2026-08-26-trip=AS3361,AS3360",
+                        "airlines": "Alaska Airlines",
+                        "carrier_code": "AS",
+                        "price": {"amount": 0, "currency": "USD"},
+                    },
+                    {
+                        "id": "SFO-RDM-2026-08-22-2026-08-26-trip=UA670,UA702",
+                        "airlines": "United Airlines",
+                        "carrier_code": "UA",
+                        "price": {"amount": 0, "currency": "USD"},
+                    },
+                ],
+            },
+            "hotels": {
+                "data": [
+                    {"id": "h1", "name": "Zero Inn", "price": {"amount": 0}},
+                ]
+            },
+        },
+    )
+
+    response = trips_module._snapshot_to_response(snapshot)
+
+    assert response.flight_offers == []
+    assert response.hotel_offers == []
+
 
 def test_snapshot_to_response_with_skiplagged_data(test_session):
     """Test _snapshot_to_response extracts Skiplagged-shaped flight and hotel data."""

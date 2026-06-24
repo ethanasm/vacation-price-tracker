@@ -86,10 +86,13 @@ interface AggregateOptions {
   selectedHotelKey?: string | null;
 }
 
-const snapshotTotal = (snapshot: PriceSnapshot): number => {
-  const minFlight = parsePrice(snapshot.flight_price) ?? 0;
-  const minHotel = parsePrice(snapshot.hotel_price) ?? 0;
-  return minFlight + minHotel;
+const snapshotTotal = (snapshot: PriceSnapshot): number | null => {
+  const minFlight = parsePrice(snapshot.flight_price);
+  const minHotel = parsePrice(snapshot.hotel_price);
+  // No priced component at all (e.g. a degraded provider response with only
+  // unpriced/$0 offers) is not a real $0 total — signal "nothing to plot".
+  if (minFlight === null && minHotel === null) return null;
+  return (minFlight ?? 0) + (minHotel ?? 0);
 };
 
 /**
@@ -115,8 +118,13 @@ export function aggregateDailyPriceHistory(
   for (const snapshot of priceHistory) {
     const day = snapshot.created_at.slice(0, 10);
     if (!day) continue;
+    const total = snapshotTotal(snapshot);
+    // Skip degraded snapshots (no priced offers) so they neither plot a fake $0
+    // point nor displace a genuinely-priced snapshot as the day's cheapest.
+    if (total === null) continue;
     const existing = cheapestByDay.get(day);
-    if (!existing || snapshotTotal(snapshot) < snapshotTotal(existing)) {
+    const existingTotal = existing ? snapshotTotal(existing) : null;
+    if (existingTotal === null || total < existingTotal) {
       cheapestByDay.set(day, snapshot);
     }
   }

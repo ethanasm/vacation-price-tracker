@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import func, select
@@ -152,7 +153,15 @@ def _extract_price(item: dict) -> str | None:
     if "price" in item:
         price_val = item["price"]
         if isinstance(price_val, dict):
-            return price_val.get("amount") or price_val.get("total")
+            # `amount` may legitimately be 0 — use an explicit None check so a
+            # zero price isn't silently swallowed by an `or` and mistaken for a
+            # missing one. `_coerce_positive_price` rejects the zero downstream.
+            # `amount` is authoritative: a present `amount` (even 0) intentionally
+            # shadows `total`; `total` is only the fallback when `amount` is
+            # absent. Don't "fix" this into an `amount or total` fallback — that
+            # reintroduces the falsy-zero bug this change exists to kill.
+            amount = price_val.get("amount")
+            return amount if amount is not None else price_val.get("total")
         return str(price_val)
     if "total_price" in item:
         return str(item["total_price"])
@@ -163,6 +172,23 @@ def _extract_price(item: dict) -> str | None:
         if prices:
             return str(min(prices))
     return None
+
+
+def _coerce_positive_price(raw: object) -> Decimal | None:
+    """Coerce an extracted price to a positive Decimal, else None.
+
+    A missing, unparseable, zero, or negative price means the provider returned
+    an unpriced/degraded offer (e.g. Skiplagged occasionally returns itineraries
+    with ``amount: 0``). Such offers must not render as a real $0 fare, so they
+    are dropped from the offer list.
+    """
+    if raw is None:
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    return value if value > 0 else None
 
 
 def _parse_skiplagged_trip_segments(flight_id: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -190,7 +216,7 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
     """
     if not isinstance(item, dict):
         return None
-    price = _extract_price(item)
+    price = _coerce_positive_price(_extract_price(item))
     if price is None:
         return None
 
@@ -306,7 +332,7 @@ def _parse_hotel_offer(item: dict, index: int) -> HotelOffer | None:
     """
     if not isinstance(item, dict):
         return None
-    price = _extract_price(item)
+    price = _coerce_positive_price(_extract_price(item))
     if price is None:
         return None
     # Description: concatenate room titles if present, else fallback to top-level fields

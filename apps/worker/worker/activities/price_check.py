@@ -508,8 +508,41 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
                 return str(recent_snapshot.id)
 
         # Proceed with normal snapshot creation
-        flight_price = _extract_min_price(payload["flights"])
-        hotel_price = _extract_min_price(payload["hotels"])
+        flight_items = payload["flights"]
+        hotel_items = payload["hotels"]
+        flight_price = _extract_min_price(flight_items)
+        hotel_price = _extract_min_price(hotel_items)
+        flight_priced = len(_priced_values(flight_items))
+        hotel_priced = len(_priced_values(hotel_items))
+
+        # A provider can return results that all carry a 0/unpriced amount
+        # (degraded response). Persist the snapshot with a null price rather than
+        # a misleading $0 fare, and surface the degradation so a daily/manual
+        # retry can recover it. The marker counts let the API/UI tell "no offers"
+        # apart from "offers came back but none were priced".
+        if flight_items and flight_price is None:
+            logger.warning(
+                "Provider returned %d flight result(s) for trip_id=%s but none were priced",
+                len(flight_items),
+                payload["trip_id"],
+                extra={
+                    "event": "activity.save_snapshot.no_priced_flights",
+                    "trip_id": payload["trip_id"],
+                    "result_count": len(flight_items),
+                },
+            )
+        if hotel_items and hotel_price is None:
+            logger.warning(
+                "Provider returned %d hotel result(s) for trip_id=%s but none were priced",
+                len(hotel_items),
+                payload["trip_id"],
+                extra={
+                    "event": "activity.save_snapshot.no_priced_hotels",
+                    "trip_id": payload["trip_id"],
+                    "result_count": len(hotel_items),
+                },
+            )
+
         # Calculate total from whatever prices are available
         total_price = None
         if flight_price is not None or hotel_price is not None:
@@ -531,10 +564,14 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
 
         raw_data = dict(payload["raw_data"] or {})
         raw_flights = dict(raw_data.get("flights") or {})
-        raw_flights["data"] = payload["flights"]
+        raw_flights["data"] = flight_items
+        raw_flights["priced_count"] = flight_priced
+        raw_flights["unpriced_count"] = len(flight_items) - flight_priced
         raw_data["flights"] = raw_flights
         raw_hotels = dict(raw_data.get("hotels") or {})
-        raw_hotels["data"] = payload["hotels"]
+        raw_hotels["data"] = hotel_items
+        raw_hotels["priced_count"] = hotel_priced
+        raw_hotels["unpriced_count"] = len(hotel_items) - hotel_priced
         raw_data["hotels"] = raw_hotels
 
         snapshot = PriceSnapshot(
@@ -699,12 +736,23 @@ def _matches_view(description: Any, views: list[str]) -> bool:
 
 
 def _extract_min_price(items: list[dict[str, Any]]) -> Decimal | None:
-    prices: list[Decimal] = []
-    for item in items:
-        value = _extract_price_value(item)
-        if value is not None:
-            prices.append(value)
+    prices = _priced_values(items)
     return min(prices) if prices else None
+
+
+def _priced_values(items: list[dict[str, Any]]) -> list[Decimal]:
+    """Return the strictly-positive prices among the given offers.
+
+    A price of 0 (or negative) means the provider returned an unpriced/degraded
+    offer — Skiplagged occasionally returns itineraries with ``amount: 0``. These
+    must not be counted as a real $0 fare, so they are excluded from both the
+    minimum-price calculation and the priced-offer count.
+    """
+    return [
+        value
+        for item in items
+        if (value := _extract_price_value(item)) is not None and value > 0
+    ]
 
 
 def _extract_from_fields(obj: dict[str, Any]) -> Decimal | None:

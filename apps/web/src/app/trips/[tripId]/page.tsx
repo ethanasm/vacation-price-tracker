@@ -110,7 +110,16 @@ function PriceHistoryChart({
   selectedFlightLabel?: string;
   showHotel?: boolean;
 }) {
-  if (priceHistory.length === 0) {
+  // Collapse to one point per calendar day (cheapest total that day) so long
+  // tracking windows stay readable. Carry-forward for selected offers is handled
+  // inside aggregateDailyPriceHistory. Degraded snapshots (no priced offers) are
+  // dropped here, so this can be empty even when priceHistory has rows.
+  const chartData = aggregateDailyPriceHistory(priceHistory, {
+    selectedFlightKey,
+    selectedHotelKey,
+  });
+
+  if (chartData.length === 0) {
     return (
       <div className={styles.emptyChart}>
         <TrendingUp className={styles.emptyChartIcon} />
@@ -118,14 +127,6 @@ function PriceHistoryChart({
       </div>
     );
   }
-
-  // Collapse to one point per calendar day (cheapest total that day) so long
-  // tracking windows stay readable. Carry-forward for selected offers is handled
-  // inside aggregateDailyPriceHistory.
-  const chartData = aggregateDailyPriceHistory(priceHistory, {
-    selectedFlightKey,
-    selectedHotelKey,
-  });
 
   const selectedFlightLineLabel = selectedFlightLabel ?? "Selected Flight";
   const selectedHotelLineLabel = selectedHotelLabel ?? "Selected Hotel";

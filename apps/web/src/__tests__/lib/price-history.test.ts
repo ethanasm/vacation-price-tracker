@@ -86,9 +86,28 @@ describe("aggregateDailyPriceHistory", () => {
     expect(result.map((r) => r.label)).toEqual(["Jul 15", "Jul 16", "Jul 17"]);
   });
 
-  it("treats missing prices as zero", () => {
+  it("drops a degraded snapshot with no priced component (no fake $0 point)", () => {
+    // Both prices null = a degraded provider response (only unpriced/$0 offers).
+    // It must not plot a misleading $0 point.
     const result = aggregateDailyPriceHistory([snapshot({ created_at: "2026-01-05T10:00:00Z" })]);
-    expect(result[0]).toMatchObject({ minFlight: 0, minHotel: 0, total: 0, label: "Jan 5" });
+    expect(result).toEqual([]);
+  });
+
+  it("keeps a snapshot with only one priced component", () => {
+    // Flights-only trip: hotel price absent should count as 0, not drop the day.
+    const result = aggregateDailyPriceHistory([
+      snapshot({ created_at: "2026-01-05T10:00:00Z", flight_price: "175" }),
+    ]);
+    expect(result[0]).toMatchObject({ minFlight: 175, minHotel: 0, total: 175, label: "Jan 5" });
+  });
+
+  it("does not let a degraded snapshot displace a priced one on the same day", () => {
+    const result = aggregateDailyPriceHistory([
+      snapshot({ created_at: "2026-01-05T09:00:00Z", flight_price: "175", hotel_price: "120" }),
+      snapshot({ created_at: "2026-01-05T18:00:00Z" }), // degraded, would be $0
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ minFlight: 175, minHotel: 120, total: 295 });
   });
 
   it("carries the selected hotel price forward across a gap day", () => {
