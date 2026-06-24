@@ -124,6 +124,18 @@ class TestAppConfiguration:
 
         assert cors_middleware is not None
         assert cors_middleware.kwargs["allow_origins"] == [settings.frontend_url]
+        # Pinned to explicit lists — wildcards are invalid with allow_credentials.
+        assert "*" not in cors_middleware.kwargs["allow_methods"]
+        assert "*" not in cors_middleware.kwargs["allow_headers"]
+        assert set(cors_middleware.kwargs["allow_methods"]) == {
+            "GET",
+            "POST",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+        }
+        assert "X-CSRF-Token" in cors_middleware.kwargs["allow_headers"]
+        assert "X-Idempotency-Key" in cors_middleware.kwargs["allow_headers"]
 
     def test_session_middleware_configured(self, app):
         """Test session middleware is configured for OAuth."""
@@ -152,13 +164,13 @@ def _make_request(path: str = "/test") -> Request:
 
 
 def test_configure_logging_sets_handler():
-    from app.main import _configure_logging
+    from app.core.observability import init_observability
 
     root_logger = logging.getLogger()
     existing_handlers = list(root_logger.handlers)
     root_logger.handlers = []
     try:
-        _configure_logging()
+        init_observability("vpt-api")
         assert root_logger.handlers
     finally:
         root_logger.handlers = existing_handlers

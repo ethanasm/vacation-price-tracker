@@ -107,7 +107,11 @@ async def _is_rate_limited(ip: str) -> bool:
             await redis_client.expire(key, RATE_LIMIT_WINDOW_SECONDS)
         return count > RATE_LIMIT_MAX
     except Exception as exc:  # noqa: BLE001 - fail open, but log
-        logger.warning("admin.sql rate-limit check failed, allowing: %s", exc)
+        logger.warning(
+            "admin.sql rate-limit check failed, allowing: %s",
+            exc,
+            extra={"event": "admin.sql.error", "ip": ip},
+        )
         return False
 
 
@@ -118,7 +122,10 @@ def _unauthorized() -> JSONResponse:
 def _authorized(request: Request) -> bool:
     expected = settings.admin_query_token
     if not expected or len(expected) < MIN_TOKEN_LENGTH:
-        logger.error("ADMIN_QUERY_TOKEN unset or too short — /v1/admin/sql disabled")
+        logger.error(
+            "ADMIN_QUERY_TOKEN unset or too short — /v1/admin/sql disabled",
+            extra={"event": "admin.sql.rejected", "reason": "token_unset_or_short"},
+        )
         return False
     header = request.headers.get("authorization", "")
     if not header.lower().startswith("bearer "):
@@ -136,7 +143,9 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
     # 2. Per-IP rate limit (after auth so we don't spend cycles for anon).
     ip = _client_ip(request)
     if await _is_rate_limited(ip):
-        logger.warning("admin.sql rate-limited ip=%s", ip)
+        logger.warning(
+            "admin.sql rate-limited ip=%s", ip, extra={"event": "admin.sql.rate_limited", "ip": ip}
+        )
         return JSONResponse({"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"})
 
     # 3. Parse + validate the body.
@@ -159,7 +168,7 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
     dialect = session.bind.dialect.name if session.bind is not None else ""
     started = time.monotonic()
     try:
-        if dialect == "postgresql":
+        if dialect == "postgresql":  # pragma: no cover - Postgres-only; tests run on SQLite
             await session.execute(text("SET TRANSACTION READ ONLY"))
             await session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
         rows = (await session.execute(text(query))).mappings().all()
@@ -168,15 +177,27 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
         elapsed = int((time.monotonic() - started) * 1000)
         kind = _classify_db_error(exc)
         if kind == "timeout":
-            logger.warning("admin.sql timeout elapsedMs=%s", elapsed)
+            logger.warning(
+                "admin.sql timeout elapsedMs=%s",
+                elapsed,
+                extra={"event": "admin.sql.timeout", "ip": ip, "elapsed_ms": elapsed},
+            )
             return JSONResponse({"error": "timeout"}, status_code=504)
         if kind == "read_only":
-            logger.warning("admin.sql blocked a write attempt")
+            logger.warning(
+                "admin.sql blocked a write attempt",
+                extra={"event": "admin.sql.rejected", "ip": ip, "reason": "read_only"},
+            )
             return JSONResponse(
                 {"error": "query_rejected", "details": "write operations are not allowed"},
                 status_code=422,
             )
-        logger.error("admin.sql query failed: %s", exc)
+        logger.error(
+            "admin.sql query failed: %s",
+            exc,
+            exc_info=exc,
+            extra={"event": "admin.sql.error", "ip": ip, "elapsed_ms": elapsed},
+        )
         return JSONResponse({"error": "server_error", "details": str(exc)}, status_code=500)
     finally:
         await session.rollback()
@@ -194,6 +215,14 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
         len(out),
         truncated,
         elapsed,
+        extra={
+            "event": "admin.sql.executed",
+            "ip": ip,
+            "query_length": len(query),
+            "row_count": len(out),
+            "truncated": truncated,
+            "elapsed_ms": elapsed,
+        },
     )
     return JSONResponse(
         {"rows": out, "rowCount": len(out), "truncated": truncated, "elapsedMs": elapsed}

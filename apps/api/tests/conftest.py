@@ -99,6 +99,32 @@ async def test_session(test_engine):
         await session.rollback()  # Rollback any uncommitted changes
 
 
+@pytest.fixture(autouse=True)
+def _allow_all_quota_redis():
+    """Default the cost-ceiling quota client to allow-all so unit tests that call
+    the middleware directly (without the `app` fixture) never touch a real Redis.
+
+    Tests that want specific quota/breaker behavior monkeypatch
+    `app.core.quota.redis_client` (or its `.eval`/`.get`) themselves.
+    """
+    import app.core.quota as quota_module
+
+    async def allow_all_eval(script, _numkeys, *args):
+        # The budget Lua INCRBYs and returns [within, total]; the daily-quota Lua
+        # returns [allowed, remaining, retry_after]. Shape the reply to the script.
+        if "INCRBY" in script:
+            return [1, 0]
+        return [1, 1_000_000, 0]
+
+    mock = MagicMock()
+    mock.eval = AsyncMock(side_effect=allow_all_eval)
+    mock.get = AsyncMock(return_value=None)  # global budget: never tripped
+    original = quota_module.redis_client
+    quota_module.redis_client = mock
+    yield
+    quota_module.redis_client = original
+
+
 @pytest.fixture
 def mock_redis():
     """Mock Redis client for testing."""
@@ -133,6 +159,7 @@ def app(test_session, mock_redis, mock_temporal_client):
     fastapi_app.dependency_overrides[get_db] = override_get_db
 
     # Mock redis_client globally
+    import app.core.quota as quota_module
     import app.main as main_module
     import app.middleware.idempotency as idempotency_module
     import app.middleware.rate_limit as rate_limit_module
@@ -141,6 +168,7 @@ def app(test_session, mock_redis, mock_temporal_client):
     auth_module.redis_client = mock_redis
     idempotency_module.redis_client = mock_redis
     rate_limit_module.redis_client = mock_redis
+    quota_module.redis_client = mock_redis
     main_module.redis_client = mock_redis
 
     # Mock temporal_client globally

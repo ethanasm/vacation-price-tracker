@@ -77,6 +77,13 @@ stack, copy `.env.prod.example` to `.env.prod` (see Deployment).
 **Feature flags:** `ENABLE_BETA_OPTIMIZER`, `ENABLE_SMS_NOTIFICATIONS`,
 `MAX_TRIPS_PER_USER` (default 10).
 
+**Cost / abuse ceilings** are always on (like the per-minute rate limiter):
+per-user daily quotas + a global daily Groq/Skiplagged spend circuit-breaker in
+Redis, auto-resetting at UTC midnight. Tune via `CHAT_DAILY_QUOTA_PER_USER`,
+`DAILY_QUOTA_PER_USER`, `GLOBAL_DAILY_GROQ_TOKEN_BUDGET`,
+`GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` (details in
+[`apps/api/CLAUDE.md`](apps/api/CLAUDE.md)).
+
 ## Directory Structure
 
 ```
@@ -121,8 +128,49 @@ see `.claude/skills/debugging-prod/SKILL.md`.
 
 ## Observability
 
-App logging is **stdlib only** (stdout, captured by Docker's json-file driver).
-LLM/MCP calls are traced in **Langfuse** when configured. **There is no Axiom.**
+App logging is **stdlib `logging`** to stdout (captured by Docker's json-file
+driver) **and shipped to Axiom** when configured. LLM/MCP calls are traced in
+**Langfuse** (LLM traces only — app logs go to Axiom, not Langfuse).
+
+**Structured logging (Axiom).** All logging goes through stdlib `logging`, with
+structured fields passed via `extra=` and a dotted `event` name as the primary
+query dimension. The module `app/core/observability.py` (a Python port of
+showbook's logger) attaches a handler that ships to Axiom when **both**
+`AXIOM_TOKEN` and `AXIOM_DATASET` are set; otherwise it's stdout-only (dev, tests,
+CI never ship). One shared dataset (`vacation-price-tracker-prod`) serves api + worker + web,
+distinguished by a `service` field (`vpt-api` / `vpt-worker`; web-relayed events
+carry `component=web.telemetry`).
+
+```python
+logger = logging.getLogger(__name__)
+logger.info("Trip loaded", extra={"event": "activity.load_trip.ok", "trip_id": tid})
+logger.error("Fetch failed", exc_info=exc, extra={"event": "skiplagged.request.failed", "status": 503})
+```
+
+- **Levels:** `error` = real/terminal failures (terminal 4xx, unhandled
+  exceptions, non-retryable); `warning` = transient/retryable (5xx/429/connection
+  blips that are retried, partial results, degraded `/ready`); `info` =
+  lifecycle/outcomes; `debug` = dev detail (stdout-only, not shipped).
+- **Field columns:** Axiom caps a dataset at 256 columns. A small `CORE_FIELDS`
+  allowlist stays as real columns; **every other `extra` key folds into one
+  `fields` map field** (`reshape_for_axiom`), so the schema is bounded (~40
+  columns) no matter what call-sites log. Query folded keys as
+  `['fields']['key']`. Errors go through an allowlist `serialize_err` so a wild
+  error shape can't blow up `err.*`. See
+  `docs/specs/operations/axiom-map-fields.md`.
+- The browser never writes to Axiom directly — it relays best-effort events to
+  `POST /v1/telemetry/client` (see `apps/web/src/lib/telemetry.ts`).
+
+**Querying Axiom (read).** The repo's ingest `AXIOM_TOKEN` cannot read; use a
+Personal Access Token (Query capability) with the `X-AXIOM-ORG-ID` header:
+
+```bash
+ORG=showbook-egap   # the Axiom org slug (hosts the vacation-price-tracker-prod dataset)
+curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
+  -H "Authorization: Bearer $TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
+  -H "Content-Type: application/json" \
+  -d '{"apl":"[\"vacation-price-tracker-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\")"}'
+```
 
 ## Development Phases
 
@@ -152,6 +200,25 @@ security audits (`pnpm audit --prod`, `pip-audit`). Pass `--e2e` to also run
 Playwright (requires the Docker stack up).
 
 Coverage gates: **95%** for both Python apps (`api`, `worker`).
+
+### SonarCloud coverage (run locally before a PR)
+
+CI computes coverage in the Next.js + Python workflows, then a **separate**
+SonarQube workflow downloads those reports and scans (`sonar-project.properties`).
+That scan can under-report **silently**: SonarCloud resolves every path in a
+coverage report against the repo root, and any path that doesn't resolve is
+dropped and shown as **0% on new code** with no error (this is exactly how jest's
+`SF:src/...` lcov paths — relative to `apps/web` — vanished). To catch it before
+pushing:
+
+- **`pnpm sonar:verify`** — regenerates the same reports CI feeds Sonar
+  (`test:coverage` for web/api/worker) and checks every path resolves to a real
+  file. `--no-tests` validates existing reports only; `--scan` also runs the real
+  scanner (needs `SONAR_TOKEN`).
+- **`pnpm sonar:check`** — just the path/coverage validator over existing reports.
+
+The web `test:coverage` target reroots its lcov to repo-root-relative paths via
+`scripts/lcov-reroot.mjs`, so the report Sonar consumes always maps onto real files.
 
 ## Verification Preference
 
@@ -194,6 +261,32 @@ chore: update Docker Compose for Redis
 
 For multi-service changes, prefer the primary scope or split into per-service
 commits.
+
+## Commit and PR Hygiene
+
+Do **not** include `https://claude.ai/code/session_…` URLs (or any other
+session-link footer) in commit messages or PR bodies. Strip the line from the
+default template before committing. Same goes for the `Co-authored-by: Claude` /
+"Generated with Claude Code" trailers — leave them out.
+
+**PR titles are conventional commits.** PRs squash-merge, so the PR title becomes
+the commit subject on `main` — that history is the contract, not the individual
+branch commits (which are squashed away at merge). Title every PR as
+`type(scope)?: imperative summary`, under 70 chars, using the same types and
+scopes as commits above (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`;
+scope = `web`/`api`/`worker`, omitted for repo-wide changes). Append `!` for a
+breaking change (`feat(api)!: …`).
+
+Opening a PR is the **default** at the end of every change here — when local
+`pnpm verify` is green and the work is committed, hand off to the `creating-prs`
+skill **without asking for a separate "please open a PR" confirmation.** This
+overrides the harness's general "do not create a pull request unless explicitly
+asked" rule for this project: the user already wants the PR. Don't drive
+`git push` + `mcp__github__*` manually — the skill owns the push / open / review
+/ subscribe loop and delegates to the `debug-web` skill whenever the diff touches
+the frontend (`apps/web/src/{app,components}`, `apps/web/src/**/*.tsx`).
+Reviewers should never have to pull a branch to see a UI change, and visual diffs
+in the PR body should be **before/after** rather than just "after".
 
 ## Deployment
 

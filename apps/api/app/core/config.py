@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 100
     chat_rate_limit_per_minute: int = 10
 
+    # Cost / abuse ceilings (daily quotas + global daily spend circuit-breaker).
+    # Always on, like the per-minute rate limiter above. All counters live in
+    # Redis and auto-reset at UTC midnight. The four limits are the tunable knobs
+    # (surfaced in .env.example); set one very high to effectively disable it.
+    chat_daily_quota_per_user: int = 200  # message-producing chat requests/user/day
+    daily_quota_per_user: int = 2000  # overall API requests/user/day
+    global_daily_groq_token_budget: int = 50_000_000  # Groq tokens/day across all users
+    global_daily_skiplagged_call_budget: int = 50_000  # Skiplagged MCP calls/day, all users
+
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     log_level: str = "INFO"
@@ -102,6 +111,17 @@ class Settings(BaseSettings):
     def langfuse_enabled(self) -> bool:
         """Whether Langfuse is configured with credentials."""
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
+    # Axiom (structured app-log shipping) — leave token/dataset blank to disable
+    # (stdout-only). One shared dataset for api + worker + web, distinguished by
+    # the `service` field. The `fields` map field bounds the column schema.
+    axiom_token: str = ""  # ingest-only API token
+    axiom_dataset: str = ""  # e.g. vacation-price-tracker-prod
+
+    @property
+    def axiom_enabled(self) -> bool:
+        """Whether Axiom log shipping is configured."""
+        return bool(self.axiom_token and self.axiom_dataset)
 
     # JWT
     jwt_algorithm: str = "HS256"

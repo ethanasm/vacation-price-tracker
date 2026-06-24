@@ -738,3 +738,52 @@ class TestSkiplaggedSseParsing:
         # The valid JSON in content[1].text was returned, so we get an empty (but successful) result
         assert result.success is True
         assert result.flights == []
+
+
+class TestSkiplaggedGlobalBudget:
+    @pytest.mark.anyio
+    async def test_call_mcp_increments_budget_and_proceeds(self, monkeypatch):
+        import app.clients.skiplagged as sk_module
+
+        recorded = {}
+
+        async def fake_incr(metric, amount, limit, **kwargs):
+            recorded["metric"] = metric
+            recorded["amount"] = amount
+            return True, amount
+
+        monkeypatch.setattr(sk_module, "incr_and_check_global_budget", fake_incr)
+
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        mock_post = AsyncMock(return_value=_flights_response(1))
+        with patch("app.clients.skiplagged.httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=mock_post))
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await client.search_flights("SFO", "CDG", "2026-06-15")
+
+        assert result.success is True
+        assert recorded == {"metric": "skiplagged_calls", "amount": 1}
+
+    @pytest.mark.anyio
+    async def test_call_mcp_raises_when_over_budget_before_sending(self, monkeypatch):
+        import app.clients.skiplagged as sk_module
+        from app.core.errors import GlobalBudgetExceeded
+
+        async def over_budget(metric, amount, limit, **kwargs):
+            return False, limit + amount
+
+        monkeypatch.setattr(sk_module, "incr_and_check_global_budget", over_budget)
+
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+
+        send = AsyncMock()
+        monkeypatch.setattr(client, "_send_request", send)
+
+        with pytest.raises(GlobalBudgetExceeded):
+            await client._call_mcp("sk_flights_search", {"origin": "SFO"})
+
+        send.assert_not_called()

@@ -136,7 +136,11 @@ async def send_message(
 
     if not user:
         # This shouldn't happen if auth is working correctly
-        logger.error("User not found in database: %s", user_id)
+        logger.error(
+            "User not found in database: %s",
+            user_id,
+            extra={"event": "chat.message", "user_id": str(user_id), "status": "user_not_found"},
+        )
         raise ConversationNotFound()
 
     # Get user's trips for context injection
@@ -375,7 +379,16 @@ async def submit_elicitation(
 
     if not user:
         # This shouldn't happen if auth is working correctly
-        logger.error("User not found in database: %s", user_id)
+        logger.error(
+            "User not found in database: %s",
+            user_id,
+            extra={
+                "event": "chat.elicitation",
+                "user_id": str(user_id),
+                "status": "user_not_found",
+                "tool_call_id": str(tool_call_id),
+            },
+        )
         raise ConversationNotFound()
 
     # Get user's trips for context in LLM continuation

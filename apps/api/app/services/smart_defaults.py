@@ -186,10 +186,18 @@ def infer_return_date(description: str, depart_date: date) -> date | None:
             days,
             description,
             pattern,
+            extra={
+                "event": "smart_defaults.return_date.inferred",
+                "count": days,
+            },
         )
         return depart_date + timedelta(days=days)
 
-    logger.debug("No duration pattern found in: '%s'", description)
+    logger.debug(
+        "No duration pattern found in: '%s'",
+        description,
+        extra={"event": "smart_defaults.return_date.no_match"},
+    )
     return None
 
 
@@ -223,7 +231,11 @@ def suggest_airports(city_name: str) -> list[str]:
         if normalized in city or city in normalized:
             return airports.copy()
 
-    logger.debug("No airports found for city: '%s'", city_name)
+    logger.debug(
+        "No airports found for city: '%s'",
+        city_name,
+        extra={"event": "smart_defaults.airports.no_match"},
+    )
     return []
 
 
@@ -265,6 +277,11 @@ def recommend_threshold(current_price: float, percentage: float | None = None) -
         current_price,
         rounded,
         percentage * 100,
+        extra={
+            "event": "smart_defaults.threshold.recommended",
+            "current_price": float(current_price),
+            "threshold": float(rounded),
+        },
     )
 
     return float(rounded)
@@ -292,7 +309,11 @@ async def get_default_adults(user_id: str, db: AsyncSession) -> int:
     try:
         user_uuid = UUID(user_id)
     except ValueError:
-        logger.warning("Invalid user_id format: %s", user_id[:8] if user_id else "None")
+        logger.warning(
+            "Invalid user_id format: %s",
+            user_id[:8] if user_id else "None",
+            extra={"event": "smart_defaults.adults.invalid_user_id"},
+        )
         return DEFAULT_ADULTS
 
     # Get most recent trip for this user
@@ -302,10 +323,26 @@ async def get_default_adults(user_id: str, db: AsyncSession) -> int:
     row = result.scalars().first()
 
     if row is not None:
-        logger.debug("Default adults from history: %d (user: %s)", row, user_id[:8])
+        logger.debug(
+            "Default adults from history: %d (user: %s)",
+            row,
+            user_id[:8],
+            extra={
+                "event": "smart_defaults.adults.from_history",
+                "count": int(row),
+            },
+        )
         return row
 
-    logger.debug("No trips found for user: %s, using default: %d", user_id[:8], DEFAULT_ADULTS)
+    logger.debug(
+        "No trips found for user: %s, using default: %d",
+        user_id[:8],
+        DEFAULT_ADULTS,
+        extra={
+            "event": "smart_defaults.adults.default",
+            "count": DEFAULT_ADULTS,
+        },
+    )
     return DEFAULT_ADULTS
 
 

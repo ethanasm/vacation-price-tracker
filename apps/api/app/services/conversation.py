@@ -188,6 +188,10 @@ class ConversationService:
             len(selected),
             total_tokens + system_tokens,
             self.max_context_tokens,
+            extra={
+                "event": "conversation.context_window",
+                "count": len(selected),
+            },
         )
 
         return selected
@@ -241,6 +245,11 @@ class ConversationService:
             deleted,
             conversation_id,
             keep_count,
+            extra={
+                "event": "conversation.messages_pruned",
+                "conversation_id": str(conversation_id),
+                "count": deleted,
+            },
         )
 
         return deleted
@@ -352,7 +361,11 @@ async def generate_title(user_message: str, assistant_response: str) -> str:
 
         return title
     except Exception as e:
-        logger.warning("Failed to generate conversation title: %s", e)
+        logger.warning(
+            "Failed to generate conversation title: %s",
+            e,
+            extra={"event": "conversation.title.failed"},
+        )
         # Return a fallback title based on the user message
         return _generate_fallback_title(user_message)
 
@@ -546,6 +559,10 @@ async def delete_oldest_conversations(
         "Deleted %d oldest conversations for user %s",
         deleted,
         str(user_id)[:8],
+        extra={
+            "event": "conversation.oldest_deleted",
+            "count": deleted,
+        },
     )
 
     return deleted

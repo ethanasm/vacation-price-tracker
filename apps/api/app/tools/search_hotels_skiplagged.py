@@ -78,10 +78,24 @@ class SearchHotelsSkiplaggedTool(BaseTool):
             formatted = self._format_results(result)
             return self.success(formatted)
         except SkiplaggedMCPError as e:
-            logger.warning("Skiplagged hotel search failed: %s", e)
+            logger.warning(
+                "Skiplagged hotel search failed: %s",
+                e,
+                extra={
+                    "event": "tool.search_hotels.failed",
+                    "tool_name": self.name,
+                },
+            )
             return self.error(f"Hotel search failed: {e}")
         except Exception as e:
-            logger.exception("Unexpected error in Skiplagged hotel search")
+            logger.exception(
+                "Unexpected error in Skiplagged hotel search",
+                exc_info=e,
+                extra={
+                    "event": "tool.search_hotels.error",
+                    "tool_name": self.name,
+                },
+            )
             return self.error(f"An unexpected error occurred: {e}")
 
     @staticmethod

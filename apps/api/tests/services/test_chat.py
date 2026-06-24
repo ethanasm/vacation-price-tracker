@@ -412,6 +412,36 @@ class TestProcessChatWithTools:
         assert "AI service is currently busy" in error_chunks[0].error
 
     @pytest.mark.asyncio
+    async def test_global_budget_exceeded(self):
+        """A tripped global budget surfaces as a clean error chunk, not a crash."""
+        from app.core.errors import GlobalBudgetExceeded
+
+        mock_client = MagicMock(spec=GroqClient)
+        mock_router = MagicMock(spec=MCPRouter)
+
+        async def mock_chat(*args, **kwargs):
+            if False:
+                yield  # make this an async generator
+            raise GlobalBudgetExceeded("The AI service has reached its daily usage ceiling.")
+
+        mock_client.chat = mock_chat
+
+        messages = [GroqMessage(role="user", content="Hi")]
+        chunks = await collect_chunks(
+            process_chat_with_tools(
+                messages=messages,
+                user_id="user-123",
+                db=None,
+                client=mock_client,
+                router=mock_router,
+            )
+        )
+
+        error_chunks = [c for c in chunks if c.type == ChatChunkType.ERROR]
+        assert len(error_chunks) == 1
+        assert "daily usage ceiling" in error_chunks[0].error
+
+    @pytest.mark.asyncio
     async def test_tool_loop_limit(self):
         """Test that tool loop is limited to prevent infinite loops.
 

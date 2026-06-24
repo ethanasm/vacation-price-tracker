@@ -88,6 +88,7 @@ class RefreshAllTripsWorkflow:
                 "Child workflow failed for trip_id=%s",
                 trip_id,
                 exc_info=exc,
+                extra={"event": "workflow.refresh_all.failed", "trip_id": trip_id},
             )
             self._failed += 1
         finally:

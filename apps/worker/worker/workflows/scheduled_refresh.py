@@ -90,5 +90,6 @@ class ScheduledRefreshAllUsersWorkflow:
                 "Scheduled child RefreshAllTripsWorkflow failed for user_id=%s",
                 user_id,
                 exc_info=exc,
+                extra={"event": "workflow.scheduled_refresh.failed", "user_id": user_id},
             )
             raise

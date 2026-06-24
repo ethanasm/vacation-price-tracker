@@ -16,12 +16,19 @@ async def init_temporal_client() -> Client:
     """Initialize the Temporal client singleton."""
     global temporal_client
     if temporal_client is None:
-        logger.info("Connecting to Temporal at %s", settings.temporal_address)
+        logger.info(
+            "Connecting to Temporal at %s",
+            settings.temporal_address,
+            extra={"event": "temporal.client.init", "status": "connecting"},
+        )
         temporal_client = await Client.connect(
             settings.temporal_address,
             namespace=settings.temporal_namespace,
         )
-        logger.info("Temporal client connected")
+        logger.info(
+            "Temporal client connected",
+            extra={"event": "temporal.client.init", "status": "connected"},
+        )
     return temporal_client
 
 
@@ -31,7 +38,7 @@ def close_temporal_client() -> None:
     # Note: Temporal Python SDK Client doesn't have explicit close()
     # Setting to None allows reconnection if needed
     temporal_client = None
-    logger.info("Temporal client disconnected")
+    logger.info("Temporal client disconnected", extra={"event": "temporal.client.close"})
 
 
 def get_temporal_client() -> Client:

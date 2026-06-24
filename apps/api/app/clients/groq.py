@@ -12,6 +12,8 @@ import tiktoken
 from groq import APIError, AsyncGroq, RateLimitError
 
 from app.core.config import settings
+from app.core.errors import GlobalBudgetExceeded
+from app.core.quota import incr_and_check_global_budget, is_global_budget_tripped
 from app.core.telemetry import langfuse_context, observe
 
 if TYPE_CHECKING:
@@ -286,6 +288,10 @@ class GroqClient:
             "temperature": temperature,
             "stream": stream,
         }
+        if stream:
+            # Without this the streaming API emits no terminal usage chunk, so
+            # token accounting (Langfuse + the global Groq budget) sees nothing.
+            kwargs["stream_options"] = {"include_usage": True}
         if tools:
             kwargs["tools"] = [tool.to_dict() for tool in tools]
         if max_tokens:
@@ -339,6 +345,11 @@ class GroqClient:
             logger.warning(
                 "Groq daily token limit reached. Retry after: %s seconds. Not retrying.",
                 retry_after,
+                extra={
+                    "event": "groq.request.failed",
+                    "retry_after": retry_after,
+                    "is_daily_limit": True,
+                },
             )
             return retry_after, delay, True
 
@@ -349,6 +360,11 @@ class GroqClient:
             attempt + 1,
             self._max_retries + 1,
             delay,
+            extra={
+                "event": "groq.request.retry",
+                "attempt": attempt + 1,
+                "delay_ms": int(delay * 1000),
+            },
         )
         return None, delay, False
 
@@ -369,6 +385,11 @@ class GroqClient:
                 "Tool call generation failed, retrying. Attempt %d/2. Error: %s",
                 attempt + 1,
                 str(error)[:100],
+                extra={
+                    "event": "groq.request.retry",
+                    "attempt": attempt + 1,
+                    "error": str(error)[:100],
+                },
             )
             await asyncio.sleep(0.5)  # Brief pause before retry
             return attempt + 1
@@ -420,7 +441,11 @@ class GroqClient:
             raise GroqToolCallError(
                 "The AI failed to generate a valid response. Please try rephrasing your request."
             ) from error
-        logger.exception("Groq API error: %s", error)
+        logger.exception(
+            "Groq API error: %s",
+            error,
+            extra={"event": "groq.request.failed", "error": str(error)},
+        )
         raise GroqRequestError(f"Groq API error: {error}") from error
 
     @observe(name="groq.chat", as_type="generation")
@@ -451,6 +476,11 @@ class GroqClient:
             GroqRateLimitError: If rate limited after all retries.
             GroqRequestError: If the request fails.
         """
+        # Global daily spend breaker: reject before spending if a prior call has
+        # already pushed the day over budget. The crossing call is allowed to
+        # finish; this gates the next one (e.g. the next tool round / request).
+        await self._enforce_global_budget()
+
         self._record_generation_input(messages, tools, stream, temperature, max_tokens)
         client = self._get_client()
         kwargs = self._build_chat_kwargs(messages, tools, stream, temperature, max_tokens)
@@ -464,6 +494,7 @@ class GroqClient:
                     self._accumulate_for_trace(chunk, accumulator)
                     yield chunk
                 self._record_generation_output(accumulator)
+                await self._meter_token_usage(accumulator)
                 return
             except RateLimitError as e:
                 delay, chunk = await self._handle_rate_limit_in_chat(e, attempt, max_attempts)
@@ -476,8 +507,33 @@ class GroqClient:
             except GroqClientError:
                 raise
             except Exception as e:
-                logger.exception("Groq API request failed")
+                logger.exception(
+                    "Groq API request failed",
+                    extra={"event": "groq.request.failed", "error": str(e)},
+                )
                 raise GroqRequestError(f"Groq request failed: {e}") from e
+
+    @staticmethod
+    async def _enforce_global_budget() -> None:
+        """Raise GlobalBudgetExceeded if the daily Groq token budget is tripped."""
+        if await is_global_budget_tripped(
+            "groq_tokens", settings.global_daily_groq_token_budget
+        ):
+            raise GlobalBudgetExceeded(
+                "The AI service has reached its daily usage ceiling. Please try again tomorrow."
+            )
+
+    @staticmethod
+    async def _meter_token_usage(accumulator: dict[str, Any]) -> None:
+        """Add this completion's token usage to the global daily Groq budget."""
+        usage = accumulator.get("usage")
+        if not usage or not usage.get("total_tokens"):
+            return
+        await incr_and_check_global_budget(
+            "groq_tokens",
+            int(usage["total_tokens"]),
+            settings.global_daily_groq_token_budget,
+        )
 
     def _record_generation_input(
         self,

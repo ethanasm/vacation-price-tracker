@@ -36,7 +36,10 @@ def _decode_cached_response(payload: str) -> dict | None:
     try:
         return json.loads(payload)
     except json.JSONDecodeError:
-        logger.warning("Failed to decode cached idempotency response")
+        logger.warning(
+            "Failed to decode cached idempotency response",
+            extra={"event": "idempotency.decode_failed"},
+        )
         return None
 
 
