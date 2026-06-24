@@ -11,6 +11,9 @@ These run against the SQLite test session, so the Postgres-specific guards
 `_classify_db_error` unit tests rather than a live Postgres backend.
 """
 
+import uuid
+from datetime import date, datetime, time
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,6 +21,64 @@ import pytest
 from fastapi.testclient import TestClient
 
 TOKEN = "a" * 40
+
+
+# ---------------------------------------------------------------------------
+# Result serialization (DB-native types -> JSON)
+# ---------------------------------------------------------------------------
+class TestJsonDefault:
+    def test_coerces_db_native_types(self):
+        from app.routers.admin import _json_default
+
+        assert _json_default(date(2026, 8, 22)) == "2026-08-22"
+        assert _json_default(datetime(2026, 8, 22, 13, 30, 0)) == "2026-08-22T13:30:00"
+        assert _json_default(time(13, 30)) == "13:30:00"
+        # Decimal stays exact (a float round-trip would not)
+        assert _json_default(Decimal("177.45")) == "177.45"
+        u = uuid.uuid4()
+        assert _json_default(u) == str(u)
+        assert _json_default(b"\x01\x02") == "0102"
+        assert _json_default(memoryview(b"\xab")) == "ab"
+
+    def test_unknown_type_falls_back_to_str(self):
+        from app.routers.admin import _json_default
+
+        class Exotic:
+            def __str__(self):
+                return "exotic-value"
+
+        # The str() catch-all guarantees no column type can 500 the endpoint.
+        assert _json_default(Exotic()) == "exotic-value"
+
+    def test_render_replaces_non_finite_floats_with_null(self):
+        """A NaN/Infinity float (from a real/double column) isn't routed through
+        `default` and would raise ValueError in render(); it must serialize as
+        null instead of escaping as an opaque 500."""
+        import json
+
+        from app.routers.admin import _RowsJSONResponse
+
+        body = _RowsJSONResponse(
+            {"rows": [{"a": float("nan"), "b": float("inf"), "c": float("-inf"),
+                       "d": 1.5, "s": "ok", "n": 3}]}
+        ).body
+        assert json.loads(body) == {
+            "rows": [{"a": None, "b": None, "c": None, "d": 1.5, "s": "ok", "n": 3}]
+        }
+
+    def test_render_handles_db_native_and_nested(self):
+        """Finite happy path: DB-native scalars and nested containers serialize
+        via _json_default without hitting the non-finite retry."""
+        import json
+
+        from app.routers.admin import _RowsJSONResponse
+
+        body = _RowsJSONResponse(
+            {"rows": [{"d": date(2026, 8, 22), "amounts": [Decimal("1.10"), Decimal("2.20")]}]}
+        ).body
+        assert json.loads(body) == {
+            "rows": [{"d": "2026-08-22", "amounts": ["1.10", "2.20"]}]
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +295,19 @@ class TestAdminSqlExecution:
         assert body["rowCount"] == 1
         assert body["truncated"] is False
         assert "elapsedMs" in body
+
+    def test_non_json_native_column_does_not_500(self, admin_client):
+        # A BLOB column comes back from SQLite as Python `bytes`, which the
+        # stdlib JSON encoder cannot serialize — the same failure mode as a
+        # Postgres date/numeric/uuid column. Regression: this used to escape
+        # the handler's try/except and surface as an opaque 500.
+        resp = admin_client.post(
+            "/v1/admin/sql",
+            json={"query": "SELECT CAST('hi' AS BLOB) AS b"},
+            headers=_auth(),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["rows"] == [{"b": "6869"}]  # b"hi" -> hex
 
     def test_write_query_rejected(self, admin_client):
         resp = admin_client.post(
