@@ -67,8 +67,17 @@ the SQLite test DB.
   `https://<domain>/v1/auth/google/callback`.
 - **CORS:** `CORS_ALLOWED_ORIGINS` is a comma-separated allowlist
   (`settings.cors_allowed_origins_list`). In prod set it to the single web origin.
+  Methods and headers are pinned to explicit lists (`GET/POST/PATCH/DELETE/OPTIONS`;
+  `Content-Type`, `X-CSRF-Token`, `X-Idempotency-Key`, `Authorization`) — wildcards
+  are spec-invalid alongside `allow_credentials=True`.
 - **CSRF:** state-changing requests require a CSRF token (see `middleware/csrf.py`).
   `/v1/admin/` is exempt because it authenticates with a bearer token instead.
+- **Security headers:** `middleware/security_headers.py` is registered as the
+  outermost layer and stamps every response with `X-Content-Type-Options`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`,
+  `X-Permitted-Cross-Domain-Policies`, and a locked-down `Content-Security-Policy`
+  (`default-src 'none'`; skipped for the dev-only `/docs`, `/redoc`, `/openapi.json`).
+  HSTS is emitted in production only.
 
 ## Rate limiting & caching
 

@@ -30,6 +30,7 @@ from app.db.temporal import close_temporal_client, get_temporal_client, init_tem
 from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
+from app.middleware.security_headers import security_headers_middleware
 from app.routers import admin, auth, chat, sse, trips
 
 
@@ -98,14 +99,22 @@ if settings.is_production:
         raise RuntimeError(
             "CORS_ALLOWED_ORIGINS must be a single, explicit origin in production."
         )
+# Pin explicit method/header allowlists. The wildcard ("*") form is invalid
+# alongside allow_credentials=True per the Fetch spec (browsers reject a wildcard
+# ACAO/ACAH on credentialed requests), so we enumerate exactly what the frontend
+# sends: JSON bodies, the CSRF double-submit header, and the idempotency key.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Idempotency-Key", "Authorization"],
 )
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+
+# Registered last so it is the outermost layer: baseline security headers land on
+# every response, including CORS preflight and error responses.
+app.middleware("http")(security_headers_middleware)
 
 # Include routers
 app.include_router(auth.router, tags=["auth"])

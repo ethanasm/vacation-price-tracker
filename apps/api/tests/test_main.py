@@ -124,6 +124,18 @@ class TestAppConfiguration:
 
         assert cors_middleware is not None
         assert cors_middleware.kwargs["allow_origins"] == [settings.frontend_url]
+        # Pinned to explicit lists — wildcards are invalid with allow_credentials.
+        assert "*" not in cors_middleware.kwargs["allow_methods"]
+        assert "*" not in cors_middleware.kwargs["allow_headers"]
+        assert set(cors_middleware.kwargs["allow_methods"]) == {
+            "GET",
+            "POST",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+        }
+        assert "X-CSRF-Token" in cors_middleware.kwargs["allow_headers"]
+        assert "X-Idempotency-Key" in cors_middleware.kwargs["allow_headers"]
 
     def test_session_middleware_configured(self, app):
         """Test session middleware is configured for OAuth."""

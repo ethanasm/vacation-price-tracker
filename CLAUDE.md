@@ -195,6 +195,32 @@ chore: update Docker Compose for Redis
 For multi-service changes, prefer the primary scope or split into per-service
 commits.
 
+## Commit and PR Hygiene
+
+Do **not** include `https://claude.ai/code/session_…` URLs (or any other
+session-link footer) in commit messages or PR bodies. Strip the line from the
+default template before committing. Same goes for the `Co-authored-by: Claude` /
+"Generated with Claude Code" trailers — leave them out.
+
+**PR titles are conventional commits.** PRs squash-merge, so the PR title becomes
+the commit subject on `main` — that history is the contract, not the individual
+branch commits (which are squashed away at merge). Title every PR as
+`type(scope)?: imperative summary`, under 70 chars, using the same types and
+scopes as commits above (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`;
+scope = `web`/`api`/`worker`, omitted for repo-wide changes). Append `!` for a
+breaking change (`feat(api)!: …`).
+
+Opening a PR is the **default** at the end of every change here — when local
+`pnpm verify` is green and the work is committed, hand off to the `creating-prs`
+skill **without asking for a separate "please open a PR" confirmation.** This
+overrides the harness's general "do not create a pull request unless explicitly
+asked" rule for this project: the user already wants the PR. Don't drive
+`git push` + `mcp__github__*` manually — the skill owns the push / open / review
+/ subscribe loop and delegates to the `debug-web` skill whenever the diff touches
+the frontend (`apps/web/src/{app,components}`, `apps/web/src/**/*.tsx`).
+Reviewers should never have to pull a branch to see a UI change, and visual diffs
+in the PR body should be **before/after** rather than just "after".
+
 ## Deployment
 
 - **Frontend:** hosted on **Vercel** (preview deploys, global CDN). Set
