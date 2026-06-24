@@ -160,6 +160,25 @@ Playwright (requires the Docker stack up).
 
 Coverage gates: **95%** for both Python apps (`api`, `worker`).
 
+### SonarCloud coverage (run locally before a PR)
+
+CI computes coverage in the Next.js + Python workflows, then a **separate**
+SonarQube workflow downloads those reports and scans (`sonar-project.properties`).
+That scan can under-report **silently**: SonarCloud resolves every path in a
+coverage report against the repo root, and any path that doesn't resolve is
+dropped and shown as **0% on new code** with no error (this is exactly how jest's
+`SF:src/...` lcov paths — relative to `apps/web` — vanished). To catch it before
+pushing:
+
+- **`pnpm sonar:verify`** — regenerates the same reports CI feeds Sonar
+  (`test:coverage` for web/api/worker) and checks every path resolves to a real
+  file. `--no-tests` validates existing reports only; `--scan` also runs the real
+  scanner (needs `SONAR_TOKEN`).
+- **`pnpm sonar:check`** — just the path/coverage validator over existing reports.
+
+The web `test:coverage` target reroots its lcov to repo-root-relative paths via
+`scripts/lcov-reroot.mjs`, so the report Sonar consumes always maps onto real files.
+
 ## Verification Preference
 
 - After code changes, automatically run the most relevant tests/checks without

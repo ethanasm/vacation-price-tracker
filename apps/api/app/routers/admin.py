@@ -159,7 +159,7 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
     dialect = session.bind.dialect.name if session.bind is not None else ""
     started = time.monotonic()
     try:
-        if dialect == "postgresql":
+        if dialect == "postgresql":  # pragma: no cover - Postgres-only; tests run on SQLite
             await session.execute(text("SET TRANSACTION READ ONLY"))
             await session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
         rows = (await session.execute(text(query))).mappings().all()

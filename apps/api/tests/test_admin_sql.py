@@ -11,6 +11,7 @@ These run against the SQLite test session, so the Postgres-specific guards
 `_classify_db_error` unit tests rather than a live Postgres backend.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -107,6 +108,63 @@ class TestClassifyDbError:
 
 
 # ---------------------------------------------------------------------------
+# Client-IP resolution (header precedence)
+# ---------------------------------------------------------------------------
+class TestClientIp:
+    def _request(self, headers, *, client_host="1.2.3.4"):
+        client = SimpleNamespace(host=client_host) if client_host is not None else None
+        return SimpleNamespace(headers=headers, client=client)
+
+    def test_prefers_x_forwarded_for(self):
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-forwarded-for": "9.9.9.9, 8.8.8.8"})
+        assert _client_ip(req) == "9.9.9.9"
+
+    def test_falls_back_to_x_real_ip(self):
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-real-ip": "  7.7.7.7  "})
+        assert _client_ip(req) == "7.7.7.7"
+
+    def test_falls_back_to_client_host(self):
+        from app.routers.admin import _client_ip
+
+        assert _client_ip(self._request({}, client_host="5.5.5.5")) == "5.5.5.5"
+
+    def test_anonymous_when_no_client(self):
+        from app.routers.admin import _client_ip
+
+        assert _client_ip(self._request({}, client_host=None)) == "anonymous"
+
+
+# ---------------------------------------------------------------------------
+# Admin session factory (lazy engine creation)
+# ---------------------------------------------------------------------------
+async def test_get_admin_session_creates_and_yields(monkeypatch, tmp_path):
+    import app.routers.admin as admin_module
+    from app.core.config import settings
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    # A file-backed SQLite URL uses a real connection pool, so the engine's
+    # pool_size/max_overflow kwargs are accepted (the :memory: StaticPool isn't).
+    db_url = f"sqlite+aiosqlite:///{tmp_path / 'admin.db'}"
+    monkeypatch.setattr(settings, "admin_query_database_url", None)
+    monkeypatch.setattr(settings, "database_url", db_url)
+    monkeypatch.setattr(admin_module, "_admin_sessionmaker", None)
+
+    agen = admin_module.get_admin_session()
+    session = await agen.__anext__()
+    try:
+        assert isinstance(session, AsyncSession)
+        # Sessionmaker is memoized after the first call.
+        assert admin_module._admin_sessionmaker is not None
+        assert admin_module._get_admin_sessionmaker() is admin_module._admin_sessionmaker
+    finally:
+        await agen.aclose()
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 @pytest.fixture
@@ -197,6 +255,15 @@ class TestAdminSqlExecution:
         resp = admin_client.post("/v1/admin/sql", json=[1, 2, 3], headers=_auth())
         assert resp.status_code == 400
 
+    def test_invalid_json_body(self, admin_client):
+        resp = admin_client.post(
+            "/v1/admin/sql",
+            content="not json",
+            headers={**_auth(), "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "bad_request"
+
     def test_invalid_sql_returns_server_error(self, admin_client):
         resp = admin_client.post(
             "/v1/admin/sql",
@@ -229,3 +296,55 @@ class TestAdminSqlRateLimit:
             "/v1/admin/sql", json={"query": "SELECT 1"}, headers=_auth()
         )
         assert resp.status_code == 429
+
+    def test_first_request_sets_window_expiry(self, admin_client, mock_redis):
+        # count == 1 is the first hit in a fresh window; the limiter sets the TTL.
+        mock_redis.incr = AsyncMock(return_value=1)
+        mock_redis.expire = AsyncMock()
+        resp = admin_client.post(
+            "/v1/admin/sql", json={"query": "SELECT 1 AS n"}, headers=_auth()
+        )
+        assert resp.status_code == 200
+        mock_redis.expire.assert_awaited_once()
+
+
+class TestAdminSqlDbErrors:
+    """The DB-error branches (timeout/read-only) via a session whose execute
+    raises a wrapped driver error carrying a SQLSTATE."""
+
+    @pytest.fixture
+    def app_with_raising_session(self, admin_app):
+        import app.routers.admin as admin_module
+
+        def _make(sqlstate):
+            class _RaisingSession:
+                bind = None  # dialect == "" → skips the Postgres-only guards
+
+                async def execute(self, *args, **kwargs):
+                    orig = SimpleNamespace(sqlstate=sqlstate)
+                    exc = RuntimeError("boom")
+                    exc.orig = orig
+                    raise exc
+
+                async def rollback(self):
+                    return None
+
+            async def override():
+                yield _RaisingSession()
+
+            admin_app.dependency_overrides[admin_module.get_admin_session] = override
+            return admin_app
+
+        return _make
+
+    def test_timeout_maps_to_504(self, app_with_raising_session):
+        client = TestClient(app_with_raising_session("57014"))
+        resp = client.post("/v1/admin/sql", json={"query": "SELECT 1"}, headers=_auth())
+        assert resp.status_code == 504
+        assert resp.json()["error"] == "timeout"
+
+    def test_read_only_maps_to_422(self, app_with_raising_session):
+        client = TestClient(app_with_raising_session("25006"))
+        resp = client.post("/v1/admin/sql", json={"query": "SELECT 1"}, headers=_auth())
+        assert resp.status_code == 422
+        assert resp.json()["error"] == "query_rejected"

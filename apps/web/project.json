@@ -77,7 +77,11 @@
       "inputs": ["default"],
       "outputs": ["{projectRoot}/coverage"],
       "options": {
-        "command": "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false --coverage",
+        "commands": [
+          "NODE_NO_WARNINGS=1 pnpm jest --watchAll=false --coverage",
+          "node ../../scripts/lcov-reroot.mjs coverage/lcov.info apps/web/"
+        ],
+        "parallel": false,
         "cwd": "apps/web",
         "forwardAllArgs": false
       }
