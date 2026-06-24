@@ -269,10 +269,25 @@ async def test_login(
     return {"id": str(user.id), "email": user.email}
 
 
+def _extract_access_token(request: Request) -> str | None:
+    """Resolve the access-token JWT from the cookie (web) or, failing that, an
+    ``Authorization: Bearer <jwt>`` header (mobile). The cookie wins so the web
+    flow is unchanged; the bearer path is additive and backwards-compatible."""
+    cookie_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    if cookie_token:
+        return cookie_token
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        scheme, _, credential = auth_header.partition(" ")
+        if scheme.lower() == "bearer" and credential:
+            return credential
+    return None
+
+
 @router.get("/v1/auth/me", response_model=UserResponse)
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     """Returns the current authenticated user's info."""
-    access_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    access_token = _extract_access_token(request)
 
     if not access_token:
         raise AuthenticationRequired("Not authenticated")
