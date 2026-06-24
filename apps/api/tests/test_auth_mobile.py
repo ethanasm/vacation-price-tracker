@@ -52,3 +52,28 @@ class TestBearerAuth:
         # A `Basic ...` header is not a bearer token → treated as no token → 401.
         resp = client.get("/v1/auth/me", headers={"Authorization": "Basic abc123"})
         assert resp.status_code == 401
+
+
+class TestSettingsAndCsrf:
+    def test_audiences_list_parses_and_trims(self, monkeypatch):
+        from app.core.config import Settings
+
+        s = Settings(google_oauth_mobile_audiences=" a.apps.googleusercontent.com , b.apps.googleusercontent.com ,")
+        assert s.google_oauth_mobile_audiences_list == [
+            "a.apps.googleusercontent.com",
+            "b.apps.googleusercontent.com",
+        ]
+
+    def test_audiences_list_empty_when_unset(self):
+        from app.core.config import Settings
+
+        assert Settings(google_oauth_mobile_audiences="").google_oauth_mobile_audiences_list == []
+
+    def test_mobile_endpoints_are_csrf_exempt(self):
+        from app.middleware.csrf import _is_csrf_exempt
+
+        assert _is_csrf_exempt("/v1/auth/mobile-token")
+        assert _is_csrf_exempt("/v1/auth/refresh")
+        assert _is_csrf_exempt("/v1/notifications/device-token")
+        # The web cookie endpoints are NOT exempt.
+        assert not _is_csrf_exempt("/v1/auth/logout")

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     auth_allowed_emails: str = ""
     auth_allowed_domains: str = ""
 
+    # Mobile auth bridge: comma-separated Google OAuth client IDs (iOS + Android)
+    # that may mint a session via POST /v1/auth/mobile-token. The native app's
+    # ID token's `aud` claim must match one of these.
+    google_oauth_mobile_audiences: str = ""
+
     # Database
     database_url: str
 
@@ -157,6 +162,12 @@ class Settings(BaseSettings):
         if not self.cors_allowed_origins:
             return []
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def google_oauth_mobile_audiences_list(self) -> list[str]:
+        """Allowed mobile OAuth client IDs (aud) for the mobile-token bridge."""
+        raw = self.google_oauth_mobile_audiences
+        return [a.strip() for a in raw.split(",") if a.strip()]
 
 
 settings = Settings()
