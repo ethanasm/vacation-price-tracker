@@ -156,6 +156,10 @@ def _extract_price(item: dict) -> str | None:
             # `amount` may legitimately be 0 — use an explicit None check so a
             # zero price isn't silently swallowed by an `or` and mistaken for a
             # missing one. `_coerce_positive_price` rejects the zero downstream.
+            # `amount` is authoritative: a present `amount` (even 0) intentionally
+            # shadows `total`; `total` is only the fallback when `amount` is
+            # absent. Don't "fix" this into an `amount or total` fallback — that
+            # reintroduces the falsy-zero bug this change exists to kill.
             amount = price_val.get("amount")
             return amount if amount is not None else price_val.get("total")
         return str(price_val)

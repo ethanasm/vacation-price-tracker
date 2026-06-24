@@ -599,8 +599,8 @@ def test_filter_helpers_and_price_extraction():
 
 @pytest.mark.asyncio
 async def test_save_snapshot_activity_all_zero_prices_stores_null(monkeypatch):
-    """Degraded provider response (all flights priced 0) must not become a $0
-    snapshot: price stays None and the offers are marked as unpriced.
+    """Degraded provider response (all flights AND hotels priced 0) must not
+    become a $0 snapshot: prices stay None and the offers are marked as unpriced.
 
     Regression for the SFO->RDM trip whose refresh stored flight_price=0.00.
     """
@@ -614,7 +614,9 @@ async def test_save_snapshot_activity_all_zero_prices_stores_null(monkeypatch):
             {"id": "SFO-RDM-trip=AS3361,AS3360", "price": {"amount": 0, "currency": "USD"}},
             {"id": "SFO-RDM-trip=UA670,UA702", "price": {"amount": 0, "currency": "USD"}},
         ],
-        "hotels": [],
+        "hotels": [
+            {"id": "h1", "name": "Zero Inn", "price": {"amount": 0, "currency": "USD"}},
+        ],
         "raw_data": {"ok": True},
     }
 
@@ -622,10 +624,14 @@ async def test_save_snapshot_activity_all_zero_prices_stores_null(monkeypatch):
 
     assert snapshot_id
     assert session.added.flight_price is None
+    assert session.added.hotel_price is None
     assert session.added.total_price is None
     raw_flights = session.added.raw_data["flights"]
     assert raw_flights["priced_count"] == 0
     assert raw_flights["unpriced_count"] == 2
+    raw_hotels = session.added.raw_data["hotels"]
+    assert raw_hotels["priced_count"] == 0
+    assert raw_hotels["unpriced_count"] == 1
 
 
 # ---------------------------------------------------------------------------
