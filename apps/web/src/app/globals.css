@@ -238,15 +238,14 @@ body {
 
 /* Primary button - gradient with glow */
 .btn-primary {
-  background: linear-gradient(135deg, hsl(262 83% 58%) 0%, hsl(262 83% 48%) 100%);
+  background: var(--aurora-violet);
   color: white;
   border: none;
-  box-shadow:
-    0 2px 8px rgba(124, 58, 237, 0.3),
-    0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--aurora-shadow-btn);
 }
 
 .btn-primary:hover {
+  background: var(--aurora-violet-deep);
   box-shadow:
     0 4px 16px rgba(124, 58, 237, 0.4),
     0 2px 4px rgba(0, 0, 0, 0.1);
@@ -255,20 +254,16 @@ body {
 
 /* Outline button - frosted glass */
 .btn-outline {
-  background: var(--glass-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-border);
-  color: var(--ink);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: var(--aurora-card);
+  border: 1px solid var(--aurora-hairline-2);
+  color: var(--aurora-ink);
+  box-shadow: none;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-outline:hover {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(0, 0, 0, 0.12);
+  background: var(--aurora-surface-2);
+  border-color: var(--aurora-selected-border);
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
