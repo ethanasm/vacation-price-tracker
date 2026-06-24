@@ -22,6 +22,8 @@ from app.core.errors import (
     unhandled_exception_response,
     validation_exception_response,
 )
+from app.core.observability import flush as flush_observability
+from app.core.observability import init_observability
 from app.core.telemetry import flush as flush_telemetry
 from app.db.deps import get_db
 from app.db.redis import redis_client
@@ -31,18 +33,9 @@ from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.security_headers import security_headers_middleware
-from app.routers import admin, auth, chat, sse, trips
+from app.routers import admin, auth, chat, sse, telemetry, trips
 
-
-def _configure_logging() -> None:
-    root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    root_logger.setLevel(logging.INFO)
-    logging.getLogger("app").setLevel(logging.INFO)
-
-
-_configure_logging()
+init_observability("vpt-api")
 logger = logging.getLogger(__name__)
 
 # Remote debugging: set DEBUG=1 and start PyCharm's debug server first
@@ -78,6 +71,7 @@ async def lifespan(app: FastAPI):
     # Cleanup
     close_temporal_client()
     flush_telemetry()
+    flush_observability()
 
 
 app = FastAPI(
@@ -121,6 +115,7 @@ app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, tags=["chat"])
 app.include_router(sse.router, tags=["sse"])
 app.include_router(trips.router, tags=["trips"])
+app.include_router(telemetry.router)
 app.include_router(admin.router)
 
 
@@ -141,7 +136,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled exception", exc_info=exc)
+    logger.exception(
+        "Unhandled exception",
+        exc_info=exc,
+        extra={"event": "exception.unhandled", "route": request.url.path},
+    )
     return unhandled_exception_response(request)
 
 
@@ -161,7 +160,9 @@ async def readiness_check(session: AsyncSession = Depends(get_db)):
         await session.execute(text("SELECT 1"))
         checks["database"] = "ok"
     except Exception as exc:
-        logger.warning("Readiness check failed for database", exc_info=exc)
+        logger.warning(
+            "Readiness check failed for database", exc_info=exc, extra={"event": "ready.check.database.fail"}
+        )
         checks["database"] = "error"
         status_code = 503
 
@@ -169,7 +170,7 @@ async def readiness_check(session: AsyncSession = Depends(get_db)):
         await redis_client.ping()
         checks["redis"] = "ok"
     except Exception as exc:
-        logger.warning("Readiness check failed for redis", exc_info=exc)
+        logger.warning("Readiness check failed for redis", exc_info=exc, extra={"event": "ready.check.redis.fail"})
         checks["redis"] = "error"
         status_code = 503
 
@@ -177,7 +178,9 @@ async def readiness_check(session: AsyncSession = Depends(get_db)):
         get_temporal_client()
         checks["temporal"] = "ok"
     except Exception as exc:
-        logger.warning("Readiness check failed for temporal", exc_info=exc)
+        logger.warning(
+            "Readiness check failed for temporal", exc_info=exc, extra={"event": "ready.check.temporal.fail"}
+        )
         checks["temporal"] = "error"
         status_code = 503
 

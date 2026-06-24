@@ -51,7 +51,12 @@ async def ensure_daily_refresh_schedule(client: Client) -> None:
     try:
         await client.create_schedule(SCHEDULE_ID, schedule)
         logger.info(
-            "Created schedule %s with cron %r", SCHEDULE_ID, settings.daily_refresh_cron
+            "Created schedule %s with cron %r", SCHEDULE_ID, settings.daily_refresh_cron,
+            extra={
+                "event": "schedule.bootstrap.ok",
+                "schedule_id": SCHEDULE_ID,
+                "cron": str(settings.daily_refresh_cron),
+            },
         )
         langfuse_context.update_current_observation(output={"action": "created"})
         return
@@ -65,6 +70,11 @@ async def ensure_daily_refresh_schedule(client: Client) -> None:
 
     await handle.update(_updater)
     logger.info(
-        "Updated schedule %s with cron %r", SCHEDULE_ID, settings.daily_refresh_cron
+        "Updated schedule %s with cron %r", SCHEDULE_ID, settings.daily_refresh_cron,
+        extra={
+            "event": "schedule.bootstrap.exists",
+            "schedule_id": SCHEDULE_ID,
+            "cron": str(settings.daily_refresh_cron),
+        },
     )
     langfuse_context.update_current_observation(output={"action": "updated"})

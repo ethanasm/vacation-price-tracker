@@ -50,13 +50,21 @@ async def expire_past_trips() -> int:
         )
         await session.commit()
         count = result.rowcount or 0
-        logger.info("Marked %d past trips as expired", count)
+        logger.info(
+            "Marked %d past trips as expired",
+            count,
+            extra={"event": "trip.expire.ok", "count": count},
+        )
         return count
 
 
 @activity.defn
 async def get_active_trips(user_id: str) -> list[str]:
-    logger.info("Fetching active trips for user_id=%s", user_id)
+    logger.info(
+        "Fetching active trips for user_id=%s",
+        user_id,
+        extra={"event": "trips.active.start", "user_id": user_id},
+    )
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Trip.id).where(
@@ -65,7 +73,12 @@ async def get_active_trips(user_id: str) -> list[str]:
             )
         )
         trip_ids = [str(trip_id) for trip_id in result.scalars().all()]
-        logger.info("Found %d active trips for user_id=%s", len(trip_ids), user_id)
+        logger.info(
+            "Found %d active trips for user_id=%s",
+            len(trip_ids),
+            user_id,
+            extra={"event": "trips.active.ok", "user_id": user_id, "count": len(trip_ids)},
+        )
         return trip_ids
 
 
@@ -87,7 +100,11 @@ async def get_all_user_ids_with_active_trips() -> list[str]:
             select(Trip.user_id).where(Trip.status.notin_(INACTIVE_STATUSES)).distinct()
         )
         user_ids = [str(user_id) for user_id in result.scalars().all()]
-        logger.info("Found %d users with active trips for scheduled refresh", len(user_ids))
+        logger.info(
+            "Found %d users with active trips for scheduled refresh",
+            len(user_ids),
+            extra={"event": "trips.users.ok", "count": len(user_ids)},
+        )
     langfuse_context.update_current_observation(
         output={"user_count": len(user_ids)},
     )
@@ -100,7 +117,15 @@ async def clear_refresh_lock(user_id: str) -> bool:
     lock_key = CacheKeys.refresh_lock(user_id)
     deleted = await redis_client.delete(lock_key)
     if deleted:
-        logger.info("Cleared refresh lock for user_id=%s", user_id)
+        logger.info(
+            "Cleared refresh lock for user_id=%s",
+            user_id,
+            extra={"event": "refresh.lock.cleared", "user_id": user_id},
+        )
     else:
-        logger.debug("No refresh lock to clear for user_id=%s", user_id)
+        logger.debug(
+            "No refresh lock to clear for user_id=%s",
+            user_id,
+            extra={"event": "refresh.lock.absent", "user_id": user_id},
+        )
     return deleted > 0

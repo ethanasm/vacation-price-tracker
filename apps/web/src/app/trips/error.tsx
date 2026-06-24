@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, LogIn, RefreshCw, Home } from "lucide-react";
 import Link from "next/link";
 import { Button } from "../../components/ui/button";
+import { logClientEvent } from "../../lib/telemetry";
 import styles from "./page.module.css";
 
 interface ErrorPageProps {
@@ -38,8 +39,13 @@ export default function TripsError({ error, reset }: ErrorPageProps) {
   const isAuth = useMemo(() => isAuthError(error), [error]);
 
   useEffect(() => {
-    // Log to console in development, could send to error tracking service
+    // Log to console in development, and relay to Axiom via the API.
     console.error("Trips route error:", error);
+    logClientEvent("route.error", {
+      message: error.message,
+      level: "error",
+      context: { type: error.name, code: error.digest },
+    });
   }, [error]);
 
   // For auth errors, redirect to home page after a short delay

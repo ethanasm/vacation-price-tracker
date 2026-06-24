@@ -345,6 +345,11 @@ class GroqClient:
             logger.warning(
                 "Groq daily token limit reached. Retry after: %s seconds. Not retrying.",
                 retry_after,
+                extra={
+                    "event": "groq.request.failed",
+                    "retry_after": retry_after,
+                    "is_daily_limit": True,
+                },
             )
             return retry_after, delay, True
 
@@ -355,6 +360,11 @@ class GroqClient:
             attempt + 1,
             self._max_retries + 1,
             delay,
+            extra={
+                "event": "groq.request.retry",
+                "attempt": attempt + 1,
+                "delay_ms": int(delay * 1000),
+            },
         )
         return None, delay, False
 
@@ -375,6 +385,11 @@ class GroqClient:
                 "Tool call generation failed, retrying. Attempt %d/2. Error: %s",
                 attempt + 1,
                 str(error)[:100],
+                extra={
+                    "event": "groq.request.retry",
+                    "attempt": attempt + 1,
+                    "error": str(error)[:100],
+                },
             )
             await asyncio.sleep(0.5)  # Brief pause before retry
             return attempt + 1
@@ -426,7 +441,11 @@ class GroqClient:
             raise GroqToolCallError(
                 "The AI failed to generate a valid response. Please try rephrasing your request."
             ) from error
-        logger.exception("Groq API error: %s", error)
+        logger.exception(
+            "Groq API error: %s",
+            error,
+            extra={"event": "groq.request.failed", "error": str(error)},
+        )
         raise GroqRequestError(f"Groq API error: {error}") from error
 
     @observe(name="groq.chat", as_type="generation")
@@ -488,7 +507,10 @@ class GroqClient:
             except GroqClientError:
                 raise
             except Exception as e:
-                logger.exception("Groq API request failed")
+                logger.exception(
+                    "Groq API request failed",
+                    extra={"event": "groq.request.failed", "error": str(e)},
+                )
                 raise GroqRequestError(f"Groq request failed: {e}") from e
 
     @staticmethod

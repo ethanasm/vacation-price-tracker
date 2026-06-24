@@ -29,6 +29,7 @@ import {
 } from "../../components/ui/table";
 import { formatPrice, formatShortDate, formatTimestamp } from "@/lib/format";
 import { api, ApiError, type TripResponse } from "@/lib/api";
+import { logClientEvent, errorMessage } from "@/lib/telemetry";
 import { TripRowContextMenu, TripRowKebab } from "@/components/trip-row-actions";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ChatProvider, useChatContext } from "@/lib/chat-provider";
@@ -254,6 +255,11 @@ function ChatPanelWithElicitation({
       }
     } catch (err) {
       console.error("[ChatPanelWithElicitation] Elicitation submission failed:", err);
+      logClientEvent("elicitation.submit.failed", {
+        message: errorMessage(err),
+        level: "error",
+        context: { status: err instanceof ApiError ? err.status : undefined },
+      });
       if (err instanceof ApiError) {
         toast.error("Failed to create trip", {
           description: err.detail,
@@ -340,6 +346,7 @@ export default function DashboardPage() {
     onPriceUpdate: handlePriceUpdate,
     onError: (err) => {
       console.error("SSE error:", err);
+      logClientEvent("sse.error", { message: errorMessage(err), level: "warn" });
     },
   });
 
@@ -355,6 +362,11 @@ export default function DashboardPage() {
       setTrips(displayTrips);
     } catch (err) {
       console.error("Failed to fetch trips:", err);
+      logClientEvent("trip.load.failed", {
+        message: errorMessage(err),
+        level: "error",
+        context: { status: err instanceof ApiError ? err.status : undefined },
+      });
       if (err instanceof ApiError) {
         setError(err.detail || err.message);
       } else {
@@ -433,6 +445,7 @@ export default function DashboardPage() {
         // If we can't get status, stop polling but don't show error
         // (the refresh might still be running)
         console.error("Failed to poll refresh status:", err);
+        logClientEvent("refresh.poll.failed", { message: errorMessage(err), level: "warn" });
         stopPolling();
         setIsRefreshing(false);
         setRefreshProgress(null);

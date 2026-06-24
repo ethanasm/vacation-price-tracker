@@ -239,6 +239,14 @@ def mock_flight_search(
         destination,
         departure_date,
         adults,
+        extra={
+            "event": "skiplagged.mock.flights",
+            "count": len(flights),
+            "origin": origin,
+            "destination": destination,
+            "departure_date": departure_date,
+            "adults": adults,
+        },
     )
 
     return {
@@ -409,6 +417,15 @@ def mock_hotel_search(
         checkout,
         adults,
         rooms,
+        extra={
+            "event": "skiplagged.mock.hotels",
+            "count": len(hotels),
+            "city": city,
+            "checkin": checkin,
+            "checkout": checkout,
+            "adults": adults,
+            "rooms": rooms,
+        },
     )
 
     return {
@@ -542,6 +559,12 @@ def mock_hotel_details(
         hotel_id,
         nights,
         len(mock_rooms),
+        extra={
+            "event": "skiplagged.mock.hotel_details",
+            "hotel_id": hotel_id,
+            "nights": nights,
+            "rooms": len(mock_rooms),
+        },
     )
 
     return {

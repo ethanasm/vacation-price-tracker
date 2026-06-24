@@ -15,7 +15,9 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 # Bearer-token machine endpoints don't use cookie auth, so the double-submit
 # cookie defense doesn't apply (and can't — there's no browser session).
-CSRF_EXEMPT_PREFIXES = ("/v1/admin/",)
+# /v1/telemetry/ is a best-effort, fire-and-forget client-log sink that must work
+# pre-auth (no CSRF cookie yet); it only writes logs and is rate-limited.
+CSRF_EXEMPT_PREFIXES = ("/v1/admin/", "/v1/telemetry/")
 
 
 class CsrfTokenInvalid(ForbiddenError):

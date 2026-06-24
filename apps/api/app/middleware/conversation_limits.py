@@ -79,6 +79,12 @@ class ConversationLimitsEnforcer:
                 pruned,
                 conversation_id,
                 self._max_messages,
+                extra={
+                    "event": "conversation.limit.pruned",
+                    "pruned": pruned,
+                    "conversation_id": str(conversation_id),
+                    "max_messages": self._max_messages,
+                },
             )
 
         return pruned

@@ -164,13 +164,13 @@ def _make_request(path: str = "/test") -> Request:
 
 
 def test_configure_logging_sets_handler():
-    from app.main import _configure_logging
+    from app.core.observability import init_observability
 
     root_logger = logging.getLogger()
     existing_handlers = list(root_logger.handlers)
     root_logger.handlers = []
     try:
-        _configure_logging()
+        init_observability("vpt-api")
         assert root_logger.handlers
     finally:
         root_logger.handlers = existing_handlers

@@ -105,7 +105,9 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
         emails=parse_allowlist(settings.auth_allowed_emails),
         domains=parse_allowlist(settings.auth_allowed_domains),
     ):
-        logger.warning("Sign-in denied by allowlist: email=%s", email)
+        logger.warning(
+            "Sign-in denied by allowlist: email=%s", email, extra={"event": "auth.google.denied"}
+        )
         return RedirectResponse(url=f"{settings.frontend_url}/access-denied")
 
     # Find existing user or create a new one
@@ -126,7 +128,12 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     # Store refresh token in Redis (or a DB table) for rotation and validation
     await _store_refresh_token(user.id, refresh_token)
 
-    logger.info("User logged in: id=%s email=%s", user.id, user.email)
+    logger.info(
+        "User logged in: id=%s email=%s",
+        user.id,
+        user.email,
+        extra={"event": "auth.google.success", "user_id": str(user.id)},
+    )
 
     response = RedirectResponse(url=f"{settings.frontend_url}/trips")
 
@@ -170,7 +177,12 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user:
-        logger.info("User token refreshed: id=%s email=%s", user.id, user.email)
+        logger.info(
+            "User token refreshed: id=%s email=%s",
+            user.id,
+            user.email,
+            extra={"event": "auth.token.refresh", "user_id": str(user.id)},
+        )
 
     return response
 
@@ -191,7 +203,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalars().first()
             if user:
-                logger.info("User logged out: id=%s email=%s", user.id, user.email)
+                logger.info(
+                    "User logged out: id=%s email=%s",
+                    user.id,
+                    user.email,
+                    extra={"event": "auth.token.revoke", "user_id": str(user.id)},
+                )
         except (jwt.PyJWTError, ValueError):
             # If token is invalid, we can't do much but clear cookies anyway
             pass

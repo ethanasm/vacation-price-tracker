@@ -236,7 +236,11 @@ def validate_query(query: str) -> QueryValidationResult:
     # Check for explicitly malicious/non-travel patterns first
     matches_non_travel, matched_pattern = _matches_non_travel_pattern(normalized)
     if matches_non_travel:
-        logger.warning("Query matched non-travel pattern: %s", matched_pattern)
+        logger.warning(
+            "Query matched non-travel pattern: %s",
+            matched_pattern,
+            extra={"event": "query_validator.rejected"},
+        )
         return QueryValidationResult(
             is_valid=False,
             reason="This request is outside my scope as a travel assistant.",
@@ -272,7 +276,11 @@ def validate_query(query: str) -> QueryValidationResult:
     # Longer queries without any travel context are likely off-topic
     # But we'll still allow them and let the LLM handle the response
     # The system prompt will guide it to redirect non-travel queries
-    logger.info("Query has no travel keywords but allowing: %s", query[:50])
+    logger.info(
+        "Query has no travel keywords but allowing: %s",
+        query[:50],
+        extra={"event": "query_validator.allowed_no_keywords"},
+    )
     return QueryValidationResult(
         is_valid=True,
         reason="Query may be off-topic but allowing LLM to respond.",

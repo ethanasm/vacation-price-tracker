@@ -24,10 +24,25 @@ async def trigger_price_check_workflow(trip_id: uuid.UUID) -> None:
             task_queue=settings.temporal_task_queue,
         )
     except temporal_exceptions.WorkflowAlreadyStartedError:
-        logger.info("PriceCheckWorkflow already started for trip_id=%s", trip_id)
+        logger.info(
+            "PriceCheckWorkflow already started for trip_id=%s",
+            trip_id,
+            extra={
+                "event": "temporal.workflow.already_started",
+                "trip_id": str(trip_id),
+            },
+        )
         return
     except Exception as exc:
-        logger.exception("Failed to start PriceCheckWorkflow for trip_id=%s", trip_id, exc_info=exc)
+        logger.exception(
+            "Failed to start PriceCheckWorkflow for trip_id=%s",
+            trip_id,
+            exc_info=exc,
+            extra={
+                "event": "temporal.workflow.start_failed",
+                "trip_id": str(trip_id),
+            },
+        )
         raise PriceCheckWorkflowStartFailed(extra={"trip_id": str(trip_id)}) from exc
 
 

@@ -180,7 +180,12 @@ async def _check_rate_limit(
         return bool(allowed), int(remaining), int(retry_after)
     except Exception as exc:
         # On Redis errors, allow the request (fail open) but log the error
-        logger.warning("Rate limit check failed, allowing request: %s", exc)
+        logger.warning(
+            "Rate limit check failed, allowing request: %s",
+            exc,
+            extra={"event": "ratelimit.check.failed", "error": str(exc)},
+            exc_info=exc,
+        )
         return True, max_requests, 0
 
 
@@ -270,6 +275,12 @@ async def rate_limit_middleware(request: Request, call_next) -> Response:
             identifier,
             request.url.path,
             is_chat,
+            extra={
+                "event": "ratelimit.exceeded",
+                "identifier": identifier,
+                "route": request.url.path,
+                "is_chat": is_chat,
+            },
         )
         return _rate_limit_response(retry_after, request.url.path)
 
