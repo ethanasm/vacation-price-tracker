@@ -14,12 +14,12 @@
 //   pnpm prod:axiom --json "['vacation-price-tracker-prod'] | where level == 'error' | take 20"
 //   echo "['vacation-price-tracker-prod'] | summarize count()" | pnpm prod:axiom
 //
-// Config (from the environment; .env.prod is NOT consulted — these come from the
-// shell env in web sessions, never the dev .env file):
+// Config (from .env.prod at repo root, or the environment — env wins; in web
+// sessions these come from the shell env, never the dev .env file):
 //   AXIOM_QUERY_TOKEN  required, a PAT with Query capability (the ingest token
 //                      used by the app cannot read)
 //   AXIOM_ORG_ID       Axiom org slug; defaults to showbook-egap
-//   AXIOM_DATASET      default dataset name; defaults to vacation-price-tracker-prod
+// The dataset name is written inline in the APL (e.g. ['vacation-price-tracker-prod']).
 //
 // APL gotchas you will hit (these are why the helper exists):
 //   - Always constrain time: `| where _time > ago(24h)`. The _apl endpoint
@@ -32,10 +32,40 @@
 //   - Third-party library logs (langfuse, temporalio, uvicorn) arrive with
 //     `event == null`; that's expected, not a misconfiguration.
 
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const ENV_PATH = resolve(__dirname, "..", ".env.prod");
+
+// Mirror prod-query.mjs: read .env.prod on the prod host, fall back to the shell
+// environment (which is how web sessions get these vars). Env wins over file.
+function loadEnvFile(path) {
+  const out = {};
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return out; // missing .env.prod is fine if vars are in the environment
+  }
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    out[key] = val;
+  }
+  return out;
+}
 
 function die(msg) {
   console.error(`prod-axiom: ${msg}`);
@@ -88,9 +118,12 @@ async function main() {
     die('no APL provided. Usage: pnpm prod:axiom "[\'vacation-price-tracker-prod\'] | summarize count()"');
   }
 
-  const token = process.env.AXIOM_QUERY_TOKEN;
-  if (!token) die("AXIOM_QUERY_TOKEN is not set (needs a PAT with Query capability)");
-  const org = process.env.AXIOM_ORG_ID || "showbook-egap";
+  const fileEnv = loadEnvFile(ENV_PATH);
+  const getVar = (name) => process.env[name] ?? fileEnv[name];
+
+  const token = getVar("AXIOM_QUERY_TOKEN");
+  if (!token) die("AXIOM_QUERY_TOKEN is not set (.env.prod or environment; needs a PAT with Query capability)");
+  const org = getVar("AXIOM_ORG_ID") || "showbook-egap";
 
   const url = "https://api.axiom.co/v1/datasets/_apl?format=tabular";
   let res;
@@ -117,7 +150,7 @@ async function main() {
   }
 
   if (!res.ok) {
-    die(`HTTP ${res.status}: ${payload.message || payload.error || raw.slice(0, 300)}`);
+    die(`HTTP ${res.status}: ${payload?.message || payload?.error || raw.slice(0, 300)}`);
   }
 
   // Surface query-planner warnings (e.g. license-limited time range) to stderr.

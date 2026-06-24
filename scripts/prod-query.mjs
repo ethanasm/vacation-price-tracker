@@ -115,8 +115,8 @@ async function main() {
   }
 
   if (!res.ok) {
-    const detail = payload.details ? ` — ${payload.details}` : "";
-    die(`HTTP ${res.status} ${payload.error || "error"}${detail}`);
+    const detail = payload?.details ? ` — ${payload.details}` : "";
+    die(`HTTP ${res.status} ${payload?.error || "error"}${detail}`);
   }
 
   if (asJson) {
