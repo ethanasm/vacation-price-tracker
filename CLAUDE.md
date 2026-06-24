@@ -130,7 +130,7 @@ structured fields passed via `extra=` and a dotted `event` name as the primary
 query dimension. The module `app/core/observability.py` (a Python port of
 showbook's logger) attaches a handler that ships to Axiom when **both**
 `AXIOM_TOKEN` and `AXIOM_DATASET` are set; otherwise it's stdout-only (dev, tests,
-CI never ship). One shared dataset (`vpt-prod`) serves api + worker + web,
+CI never ship). One shared dataset (`vacation-price-tracker-prod`) serves api + worker + web,
 distinguished by a `service` field (`vpt-api` / `vpt-worker`; web-relayed events
 carry `component=web.telemetry`).
 
@@ -158,11 +158,11 @@ logger.error("Fetch failed", exc_info=exc, extra={"event": "skiplagged.request.f
 Personal Access Token (Query capability) with the `X-AXIOM-ORG-ID` header:
 
 ```bash
-ORG=showbook-egap   # the Axiom org slug (hosts the vpt-prod dataset)
+ORG=showbook-egap   # the Axiom org slug (hosts the vacation-price-tracker-prod dataset)
 curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
   -H "Authorization: Bearer $TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
   -H "Content-Type: application/json" \
-  -d '{"apl":"[\"vpt-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\")"}'
+  -d '{"apl":"[\"vacation-price-tracker-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\")"}'
 ```
 
 ## Development Phases

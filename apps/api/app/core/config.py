@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     # (stdout-only). One shared dataset for api + worker + web, distinguished by
     # the `service` field. The `fields` map field bounds the column schema.
     axiom_token: str = ""  # ingest-only API token
-    axiom_dataset: str = ""  # e.g. vpt-prod
+    axiom_dataset: str = ""  # e.g. vacation-price-tracker-prod
 
     @property
     def axiom_enabled(self) -> bool:

@@ -1,4 +1,4 @@
-# Axiom: bound the schema with a `fields` map field (`vpt-prod`)
+# Axiom: bound the schema with a `fields` map field (`vacation-price-tracker-prod`)
 
 ## Why
 
@@ -23,7 +23,7 @@ schema is then structurally bounded forever — the cap can't be hit no matter w
 keys call-sites log — with no call-site changes. stdout / `docker logs` stay flat
 (the reshape runs on the Axiom stream only).
 
-One dataset, `vpt-prod`, serves all three surfaces (api + worker + web),
+One dataset, `vacation-price-tracker-prod`, serves all three surfaces (api + worker + web),
 distinguished by the `service` field (`vpt-api` / `vpt-worker`) and, for browser
 events relayed through `POST /v1/telemetry/client`, `component=web.telemetry`.
 
@@ -60,7 +60,7 @@ permanently**. Web telemetry adds nothing new — its context keys fold into `fi
 Core fields query directly; folded fields use map syntax:
 
 ```
-['vpt-prod']
+['vacation-price-tracker-prod']
 | where event == "skiplagged.request.retry"
 | extend tool = ['fields']['tool_name']
 | project _time, service, event, tool, status

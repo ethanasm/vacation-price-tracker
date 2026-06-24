@@ -18,7 +18,7 @@ from GHCR. This skill is the **read/diagnose** counterpart to the local
 
 App logging is stdlib `logging` → stdout → Docker's `json-file` driver, **and**
 shipped to **Axiom** when `AXIOM_TOKEN`/`AXIOM_DATASET` are set in `.env.prod`
-(one dataset, `vpt-prod`, for api + worker + web — distinguished by `service` /
+(one dataset, `vacation-price-tracker-prod`, for api + worker + web — distinguished by `service` /
 `component`). LLM/MCP calls are traced in **Langfuse**. Query Axiom with a PAT
 (Query capability) + `X-AXIOM-ORG-ID` header — the repo's ingest token can't read.
 Logs are structured: filter on `event` (dotted namespace), `level`, `service`,
@@ -26,11 +26,11 @@ Logs are structured: filter on `event` (dotted namespace), `level`, `service`,
 (`['fields']['key']`). See `docs/specs/operations/axiom-map-fields.md`. Example:
 
 ```bash
-ORG=${AXIOM_ORG_ID:-showbook-egap}   # Axiom org slug hosting the vpt-prod dataset
+ORG=${AXIOM_ORG_ID:-showbook-egap}   # Axiom org slug hosting the vacation-price-tracker-prod dataset
 curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
   -H "Authorization: Bearer $AXIOM_QUERY_TOKEN" -H "X-AXIOM-ORG-ID: $ORG" \
   -H "Content-Type: application/json" \
-  -d '{"apl":"[\"vpt-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\") | sort by _time desc"}'
+  -d '{"apl":"[\"vacation-price-tracker-prod\"] | where _time > ago(1h) and level in (\"warn\",\"error\") | sort by _time desc"}'
 ```
 
 When Axiom retention has rolled off (or it's unconfigured), `docker logs` is the
