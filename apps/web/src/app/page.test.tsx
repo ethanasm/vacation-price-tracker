@@ -17,8 +17,8 @@ describe("HomePage", () => {
   it("renders the main heading", () => {
     render(<HomePage />);
 
-    expect(screen.getByText("Find Your Cheapest")).toBeInTheDocument();
-    expect(screen.getByText("Vacation Window")).toBeInTheDocument();
+    expect(screen.getByText("Find your cheapest")).toBeInTheDocument();
+    expect(screen.getByText("vacation window")).toBeInTheDocument();
   });
 
   it("renders the badge", () => {
