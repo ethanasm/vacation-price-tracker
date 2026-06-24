@@ -14,7 +14,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app.clients.axiom_query import query_count
-from app.clients.email import EmailError, ResendClient
+from app.clients.email import ResendClient
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.constants import NotificationStatus, TripStatus
@@ -221,6 +221,7 @@ async def _check_refresh_run(client: Client | None) -> CheckResult:
 async def _check_error_volume() -> CheckResult:
     if not settings.axiom_query_enabled:
         return _result("error_volume", "unknown", "Axiom query token unset — skipped")
+    # axiom_dataset is trusted operator config (env), not user input — safe to interpolate.
     apl = (
         f'["{settings.axiom_dataset}"] '
         '| where _time > ago(24h) and level == "error" | count'
@@ -297,14 +298,17 @@ async def run_health_check_activity() -> dict:
         )
         return {"status": status, "sent": 0, "skipped": True, **counts}
 
-    subject, html = render_health_digest(
-        status=status,
-        checks=checks,
-        flags=flags,
-        run_at=now.strftime("%Y-%m-%d %H:%M UTC"),
-        app_url=settings.frontend_url.rstrip("/"),
-    )
+    # Render + send inside one guard so a template regression (or any send
+    # failure) is logged rather than thrown — the activity must never fail the
+    # workflow over the email itself.
     try:
+        subject, html = render_health_digest(
+            status=status,
+            checks=checks,
+            flags=flags,
+            run_at=now.strftime("%Y-%m-%d %H:%M UTC"),
+            app_url=settings.frontend_url.rstrip("/"),
+        )
         await ResendClient().send(
             to=recipients,
             subject=subject,
@@ -312,9 +316,9 @@ async def run_health_check_activity() -> dict:
             idempotency_key=f"health-summary-{now.strftime('%Y%m%d')}",
         )
         sent = len(recipients)
-    except EmailError as exc:
+    except Exception as exc:
         logger.error(
-            "Health digest send failed",
+            "Health digest render/send failed",
             exc_info=exc,
             extra={"event": "health.check.email.failed"},
         )
