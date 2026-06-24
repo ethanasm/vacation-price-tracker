@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import jwt
 from fastapi import APIRouter, Request
@@ -28,6 +29,19 @@ router = APIRouter(prefix="/v1/telemetry", tags=["telemetry"])
 logger = logging.getLogger("app.web.telemetry")
 
 MAX_CONTEXT_BYTES = 8 * 1024
+
+# Control characters (CR/LF, tabs, terminal escapes, …). Client-supplied strings
+# are scrubbed of these before they reach the logger so a crafted value can't
+# forge extra log records or smuggle escape sequences into the log/Axiom pipeline
+# (CWE-117, log injection).
+_LOG_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _scrub_for_log(value: str) -> str:
+    """Neutralize untrusted text for logging by stripping line breaks and other
+    control characters. Newlines are removed explicitly (the injection vector);
+    the regex catches the remaining control range."""
+    return _LOG_CONTROL_CHARS.sub(" ", value.replace("\r", " ").replace("\n", " "))
 
 # Allowlist of context keys promoted to structured log fields. Unknown keys are
 # dropped (and counted) so an unauthenticated caller can't bloat the log surface.
@@ -94,15 +108,19 @@ def _user_id_from_cookie(request: Request) -> str | None:
 async def log_client_event(payload: ClientEvent, request: Request) -> dict:
     """Relay a browser telemetry event into the shared Axiom pipeline."""
     safe = _sanitize_context(payload.context)
+    # Scrub the client-controlled strings of control characters before they reach
+    # the logger (CWE-117). `message` is the log message; `event` is interpolated
+    # into a structured field — both originate from the untrusted request body.
+    safe_message = _scrub_for_log(payload.message)
     # Server-controlled fields win — a client must not forge event/user_id.
     extra = {
         **safe,
-        "event": f"web.{payload.event}",
+        "event": f"web.{_scrub_for_log(payload.event)}",
         "component": "web.telemetry",
         "user_id": _user_id_from_cookie(request),
     }
     if payload.level == "warn":
-        logger.warning(payload.message, extra=extra)
+        logger.warning(safe_message, extra=extra)
     else:
-        logger.error(payload.message, extra=extra)
+        logger.error(safe_message, extra=extra)
     return {"ok": True}

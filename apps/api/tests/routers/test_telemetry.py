@@ -100,3 +100,24 @@ def test_no_context_is_fine(client, caplog):
     with caplog.at_level(logging.ERROR, logger="app.web.telemetry"):
         resp = client.post(URL, json={"event": "x", "message": "m", "context": None})
     assert resp.status_code == 200
+
+
+def test_message_and_event_are_scrubbed_of_control_chars(client, caplog):
+    """CR/LF (and other control chars) in client-controlled fields are stripped
+    before logging, so a crafted payload can't forge extra log lines (CWE-117)."""
+    with caplog.at_level(logging.ERROR, logger="app.web.telemetry"):
+        resp = client.post(
+            URL,
+            json={
+                "event": "trip\r\nadmin.spoof",
+                "message": "real\nINJECTED fake log line\ttabbed",
+            },
+        )
+    assert resp.status_code == 200
+    record = caplog.records[-1]
+    # No raw line breaks survive in either the message or the server-set event.
+    assert "\n" not in record.getMessage()
+    assert "\r" not in record.getMessage()
+    assert "\n" not in record.event and "\r" not in record.event
+    assert record.event == "web.trip  admin.spoof"
+    assert record.getMessage() == "real INJECTED fake log line tabbed"
