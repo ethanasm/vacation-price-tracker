@@ -29,9 +29,9 @@ export default function HomePage() {
             <Badge className={styles.badge}>Date-Range Optimizer</Badge>
 
             <h1 className={styles.title}>
-              Find Your Cheapest
+              Find your cheapest
               <br />
-              <span className={styles.titleAccent}>Vacation Window</span>
+              <span className={styles.titleAccent}>vacation window</span>
             </h1>
 
             <p className={styles.tagline}>
