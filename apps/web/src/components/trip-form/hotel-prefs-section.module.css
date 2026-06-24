@@ -21,7 +21,7 @@
 .fieldLabel {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--aurora-body-2);
 }
 
 .checkboxRow {
@@ -54,5 +54,5 @@
 
 .fieldHint {
   font-size: 0.75rem;
-  color: var(--muted-foreground, #6b7280);
+  color: var(--aurora-muted);
 }

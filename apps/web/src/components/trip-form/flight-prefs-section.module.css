@@ -21,12 +21,45 @@
 .fieldLabel {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--aurora-body-2);
 }
 
 .fieldHint {
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--aurora-muted);
+}
+
+/* Cabin class pill chips */
+.cabinChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cabinChip {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--aurora-body);
+  background: var(--aurora-surface);
+  border: 1px solid var(--aurora-hairline);
+  border-radius: var(--aurora-radius-chip);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.cabinChip:hover:not(:disabled) {
+  border-color: var(--aurora-selected-border);
+}
+
+.cabinChipSelected {
+  background: var(--aurora-chip);
+  color: var(--aurora-violet-deep);
+  border: 1px solid var(--aurora-selected-border);
+}
+
+.cabinChip:disabled {
+  cursor: not-allowed;
 }
 
 .checkboxRow {

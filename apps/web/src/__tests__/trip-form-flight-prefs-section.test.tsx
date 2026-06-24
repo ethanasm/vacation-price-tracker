@@ -56,10 +56,14 @@ describe("FlightPrefsSection", () => {
     expect(screen.getByText("Flight Preferences")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Type airline codes (e.g., UA, AA, DL)")).toBeInTheDocument();
 
-    await user.click(screen.getByTestId("select-economy"));
-    await user.click(screen.getByTestId("select-any"));
+    // Cabin class is rendered as pill chip buttons (aria-pressed marks selection).
+    const economyChip = screen.getByRole("button", { name: /^Economy$/i });
+    expect(economyChip).toHaveAttribute("aria-pressed", "true");
 
-    expect(onCabinChange).toHaveBeenCalledWith("economy");
+    await user.click(screen.getByRole("button", { name: /Premium Economy/i }));
+    expect(onCabinChange).toHaveBeenCalledWith("premium_economy");
+
+    await user.click(screen.getByTestId("select-any"));
     expect(onStopsModeChange).toHaveBeenCalledWith("any");
   });
 });
