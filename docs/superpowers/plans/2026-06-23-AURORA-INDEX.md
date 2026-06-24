@@ -181,6 +181,14 @@ names; they are the contract.
 - **`POST /v1/e2e/mint-token`** (issues a JWT for the synthetic e2e user, guarded by the `VPT_E2E_BACKEND_TOKEN`
   shared secret, e2e-build only) → **owned by P5** (`apps/api`). It reuses P5's Bearer/JWT machinery. P4's
   `mobile-e2e.yml` calls it; until P5 merges, the authenticated flows 401 (expected, label-gated).
+  **Canonical wire contract — P4 caller ↔ P5 endpoint MUST match verbatim:**
+  - **Gating:** endpoint active ONLY when **`E2E_MODE=1`** (404 otherwise). P4's `infra/docker-compose.e2e.yml`
+    MUST set both `E2E_MODE=1` and `VPT_E2E_BACKEND_TOKEN=<value>` on the `api` service.
+  - **Auth:** header **`X-E2E-Token: <VPT_E2E_BACKEND_TOKEN>`** (NOT `Authorization: Bearer`); missing/wrong → 403.
+  - **Body:** none — P5 mints a fixed configured synthetic user; P4 sends no request body.
+  - **Synthetic user:** **`e2e@vpt.test`** (P5 upserts it; P4's e2e sign-in allowlist uses the same value).
+  - **200 →** `{ access_token, refresh_token, user }`; the minted `access_token` authenticates via P5's Bearer
+    `get_current_user` path.
 - **`infra/docker-compose.e2e.yml`** (isolated `vpt-e2e` API+DB stack on the prod box, loopback port the
   emulator reaches at `http://10.0.2.2:8010`) → **owned by P4** (its only file outside `apps/mobile`/CI;
   mirrors the existing `infra/docker-compose.prod.yml`). Authoring the compose file is P4's; *bringing the

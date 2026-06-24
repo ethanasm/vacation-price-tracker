@@ -1475,7 +1475,7 @@ git commit -m "test: add Maestro e2e flows and dry-run validator for mobile"
 
 - [ ] **Step 1: Author `infra/docker-compose.e2e.yml` (the isolated `vpt-e2e` stack)**
 
-Mirrors `infra/docker-compose.prod.yml` exactly in shape (named volumes, loopback binds, healthchecks, the `x-logging` anchor) but: distinct project name `vpt-e2e`, distinct ports (so it never collides with the dev or prod stacks on the same box), an **isolated database** (`vacation_tracker_e2e`), and the **api published on `127.0.0.1:8010`** — the port the emulator reaches at `http://10.0.2.2:8010`. The api/worker images are the same GHCR images as prod (pinned by `IMAGE_TAG`). The stack reads its secrets from a separate `../.env.e2e` file (operator-managed, gitignored like `.env.prod`). The e2e env file sets `ENVIRONMENT=e2e`, a throwaway `SECRET_KEY`, the sign-in allowlist pinned to `maestro-e2e@vpt.test`, `VPT_E2E_BACKEND_TOKEN` (the shared secret P5's mint endpoint checks), and `MOCK_SKIPLAGGED_API=true` (so create-trip doesn't hit the live provider). No `web` service — the mobile e2e talks only to the api.
+Mirrors `infra/docker-compose.prod.yml` exactly in shape (named volumes, loopback binds, healthchecks, the `x-logging` anchor) but: distinct project name `vpt-e2e`, distinct ports (so it never collides with the dev or prod stacks on the same box), an **isolated database** (`vacation_tracker_e2e`), and the **api published on `127.0.0.1:8010`** — the port the emulator reaches at `http://10.0.2.2:8010`. The api/worker images are the same GHCR images as prod (pinned by `IMAGE_TAG`). The stack reads its secrets from a separate `../.env.e2e` file (operator-managed, gitignored like `.env.prod`). The e2e env file sets a throwaway `SECRET_KEY`, the sign-in allowlist pinned to `e2e@vpt.test` (the fixed user P5 mints), `VPT_E2E_BACKEND_TOKEN` (the shared secret P5's mint endpoint checks against the `X-E2E-Token` header), and `MOCK_SKIPLAGGED_API=true` (so create-trip doesn't hit the live provider). The compose `api` service sets **`E2E_MODE=1`**, which is what gates P5's mint endpoint on. No `web` service — the mobile e2e talks only to the api.
 
 Create `infra/docker-compose.e2e.yml`:
 ```yaml
@@ -1569,14 +1569,16 @@ services:
     restart: unless-stopped
     env_file: ../.env.e2e
     environment:
-      # Isolated DB + an e2e environment flag. ENVIRONMENT=e2e is what gates
-      # P5's POST /v1/e2e/mint-token endpoint on (it never exists in prod).
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/vacation_tracker_e2e}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
       TEMPORAL_NAMESPACE: default
       ENVIRONMENT: e2e
-      # The shared secret the mint endpoint checks (also the workflow secret).
+      # E2E_MODE=1 is what gates P5's POST /v1/e2e/mint-token endpoint on (it
+      # never exists in prod, where E2E_MODE is unset). VPT_E2E_BACKEND_TOKEN is
+      # the shared secret the endpoint checks against the X-E2E-Token header
+      # (also the mobile-e2e.yml workflow secret).
+      E2E_MODE: "1"
       VPT_E2E_BACKEND_TOKEN: ${VPT_E2E_BACKEND_TOKEN:?VPT_E2E_BACKEND_TOKEN is required}
       # Don't call the live Skiplagged provider during create-trip.
       MOCK_SKIPLAGGED_API: "true"
@@ -1624,7 +1626,7 @@ volumes:
   vpt_e2e_redis_data:
 ```
 
-> **Note on `POST /v1/e2e/mint-token` (P5-owned).** The api image above serves the e2e-only mint endpoint `mobile-e2e.yml` calls. **That endpoint is owned by P5** (it lives in `apps/api/**`, gated on `ENVIRONMENT=e2e` so it never exists in prod, and bearer-auth'd with `VPT_E2E_BACKEND_TOKEN`). P4 owns only the compose file + the workflow that calls it; the endpoint implementation is P5's. The minted JWT authenticating the mobile client also depends on P5's Bearer-header support in `get_current_user`.
+> **Note on `POST /v1/e2e/mint-token` (P5-owned).** The api image above serves the e2e-only mint endpoint `mobile-e2e.yml` calls. **That endpoint is owned by P5** (it lives in `apps/api/**`, gated on `E2E_MODE=1` so it never exists in prod, and authenticated via the `X-E2E-Token` header checked against `VPT_E2E_BACKEND_TOKEN`). It mints a fixed configured user (`e2e@vpt.test`) and ignores any request body. P4 owns only the compose file + the workflow that calls it; the endpoint implementation is P5's. The minted JWT authenticating the mobile client also depends on P5's Bearer-header support in `get_current_user`.
 
 - [ ] **Step 2: Validate the e2e compose file**
 
@@ -1823,11 +1825,11 @@ jobs:
 
       # Mint the e2e bearer from the isolated VPT e2e backend rather than from
       # hand-maintained secrets. The e2e API exposes the P5-owned token-mint
-      # endpoint POST /v1/e2e/mint-token (gated on ENVIRONMENT=e2e, guarded by
-      # VPT_E2E_BACKEND_TOKEN) that returns a JWT (same create_access_token path
-      # the app uses) for the synthetic e2e user. The mobile client attaches it
-      # as Authorization: Bearer — which requires P5's Bearer-header support in
-      # get_current_user. Token is short-lived and masked.
+      # endpoint POST /v1/e2e/mint-token (gated on E2E_MODE=1, authenticated via
+      # the X-E2E-Token header = VPT_E2E_BACKEND_TOKEN) that returns a JWT (same
+      # create_access_token path the app uses) for the fixed e2e user. The
+      # mobile client attaches it as Authorization: Bearer — which requires P5's
+      # Bearer-header support in get_current_user. Token is short-lived + masked.
       #
       # The vpt-e2e stack (infra/docker-compose.e2e.yml, authored by P4) must be
       # up on the box, listening on the loopback port the emulator reaches at
@@ -1846,15 +1848,17 @@ jobs:
           # The e2e backend is reachable from the runner host on loopback at the
           # same port the emulator maps to 10.0.2.2 (8010 here).
           BASE="http://127.0.0.1:8010"
-          EMAIL="maestro-e2e@vpt.test"
-          # The e2e-only mint endpoint upserts the synthetic user and returns
-          # { access_token, user: { id, email, ... } }. It exists only in the
-          # e2e backend image (gated by an env flag) and is bearer-auth'd with
-          # VPT_E2E_BACKEND_TOKEN. See docs/mobile-cicd.md.
+          # P5 mints a FIXED configured user (e2e@vpt.test) — it ignores any
+          # request body. This EMAIL is only used to build the local USER_JSON
+          # below and must match the user P5 upserts + the e2e sign-in allowlist.
+          EMAIL="e2e@vpt.test"
+          # The e2e-only mint endpoint (P5-owned) returns
+          # { access_token, user: { id, email, ... } }. It exists only when the
+          # e2e backend is started with E2E_MODE=1, and is authenticated with the
+          # X-E2E-Token header (NOT Authorization/Bearer). No request body. See
+          # docs/mobile-cicd.md.
           RESP=$(curl -sS -X POST "${BASE}/v1/e2e/mint-token" \
-            -H "Authorization: Bearer ${VPT_E2E_BACKEND_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"email\":\"${EMAIL}\"}")
+            -H "X-E2E-Token: ${VPT_E2E_BACKEND_TOKEN}")
           TOKEN=$(printf '%s' "$RESP" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(j.access_token||"")')
           USERID=$(printf '%s' "$RESP" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write((j.user&&j.user.id)||"")')
           if [ -z "${TOKEN:-}" ] || [ -z "${USERID:-}" ]; then
@@ -2363,7 +2367,7 @@ Settings → Secrets and variables → Actions → Secrets:
 | `ASC_APP_ID` | mobile-deploy (iOS submit) | Numeric Apple ID of the VPT app record. |
 | `RELEASE_DEPLOY_KEY` | mobile-deploy (version bump push) | Recommended. Write-access deploy key; check "Deploy keys" in the branch ruleset bypass list. |
 | `RELEASE_PUSH_TOKEN` | mobile-deploy (version bump push) | Alternative to the deploy key: a fine-grained PAT (Contents: read/write) from a bypass-listed actor. |
-| `VPT_E2E_BACKEND_TOKEN` | mobile-e2e (session mint) | Shared secret the e2e backend's `/v1/e2e/mint-token` endpoint checks. |
+| `VPT_E2E_BACKEND_TOKEN` | mobile-e2e (session mint) | Shared secret the e2e backend's `/v1/e2e/mint-token` endpoint checks against the `X-E2E-Token` request header. Same value set on the `vpt-e2e` api service. |
 | `RESEND_API_KEY` | mobile-deploy (failure email, optional) | Same value as `.env.prod`. |
 | `EMAIL_FROM` | mobile-deploy (failure email, optional) | Verified Resend sender. |
 | `ADMIN_EMAILS` | mobile-deploy (failure email, optional) | Comma-separated recipients. |
@@ -2412,9 +2416,9 @@ and `ANDROID_AVD_HOME`.
 `mobile-e2e.yml` mints its bearer session from an **isolated** VPT e2e backend,
 NOT prod. The compose file `infra/docker-compose.e2e.yml` is authored by P4
 (Task 5) — it defines the `vpt-e2e` stack (own database `vacation_tracker_e2e`,
-own `SECRET_KEY`, a sign-in allowlist pinned to `maestro-e2e@vpt.test`, the api
-on loopback `127.0.0.1:8010` which the emulator reaches at
-`http://10.0.2.2:8010`).
+own `SECRET_KEY`, `E2E_MODE=1` on the api, a sign-in allowlist pinned to
+`e2e@vpt.test`, the api on loopback `127.0.0.1:8010` which the emulator reaches
+at `http://10.0.2.2:8010`).
 
 **One-time operator bring-up on the prod box** (this is the human/ops step; the
 file itself is already in the repo):
@@ -2431,10 +2435,11 @@ Refresh the stack to a new image alongside prod deploys by pinning `IMAGE_TAG`
 and re-running `up -d`.
 
 **The `POST /v1/e2e/mint-token` endpoint is owned by P5.** It lives in
-`apps/api/**`, is gated on `ENVIRONMENT=e2e` so it never exists in prod, and is
-bearer-auth'd with `VPT_E2E_BACKEND_TOKEN`. It upserts the synthetic e2e user
-and returns `{ access_token, user }`. P4 owns the compose file + the workflow
-that calls it; the endpoint implementation is P5's.
+`apps/api/**`, is gated on `E2E_MODE=1` so it never exists in prod, and is
+authenticated via the `X-E2E-Token` header checked against
+`VPT_E2E_BACKEND_TOKEN`. It mints a fixed configured user (`e2e@vpt.test`),
+ignores any request body, and returns `{ access_token, user }`. P4 owns the
+compose file + the workflow that calls it; the endpoint implementation is P5's.
 
 **Dependency on P5:** the minted token is attached as `Authorization: Bearer`,
 which authenticates only once P5's Bearer-header support lands in
