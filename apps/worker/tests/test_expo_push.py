@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
 from worker.clients.expo_push import (
     EXPO_PUSH_URL,
     ExpoPushClient,

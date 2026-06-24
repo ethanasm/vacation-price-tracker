@@ -30,6 +30,7 @@ from app.models.user import User
 from app.services.email_render import DigestTrip, render_daily_digest
 from sqlmodel import select
 from temporalio import activity
+
 from worker.clients.expo_push import ExpoPushClient, ExpoPushError, ExpoPushMessage
 
 logger = logging.getLogger(__name__)

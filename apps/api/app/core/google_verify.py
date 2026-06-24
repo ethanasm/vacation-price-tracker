@@ -13,7 +13,8 @@ import logging
 from dataclasses import dataclass
 
 import httpx
-from authlib.jose import JsonWebKey, jwt as jose_jwt
+from authlib.jose import JsonWebKey
+from authlib.jose import jwt as jose_jwt
 from authlib.jose.errors import JoseError
 
 logger = logging.getLogger(__name__)

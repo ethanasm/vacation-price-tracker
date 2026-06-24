@@ -44,6 +44,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/mobile-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mobile Token
+         * @description Exchange a Google ID token (from the native app) for the same JWT pair the
+         *     web OAuth callback issues. Returns the pair in the body — the mobile client
+         *     stores it in expo-secure-store and sends `Authorization: Bearer`.
+         */
+        post: operations["mobile_token_v1_auth_mobile_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -55,7 +77,9 @@ export interface paths {
         put?: never;
         /**
          * Refresh Token
-         * @description Refreshes the access token using a valid refresh token.
+         * @description Refresh the access token. Web sends the refresh token in the
+         *     ``refresh_token_cookie`` cookie and gets new cookies back; mobile sends it in
+         *     a JSON body (``{"refresh_token": ...}``) and gets the new pair in the body.
          */
         post: operations["refresh_token_v1_auth_refresh_post"];
         delete?: never;
@@ -104,6 +128,31 @@ export interface paths {
          *     `TripLimitExceeded` even though the request itself is valid.
          */
         post: operations["test_login_v1_auth_test_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/e2e/mint-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * E2E Mint Token
+         * @description Mint a bearer JWT pair for the synthetic e2e user (P4 mobile-e2e harness).
+         *
+         *     Doubly gated: inert (404) unless `E2E_MODE` is on, and requires the shared
+         *     `X-E2E-Token` secret. Returns the pair in the body; the access_token then
+         *     authenticates via the Bearer path in get_current_user (Task 1). Only ever
+         *     enabled on the isolated vpt-e2e backend, never normal prod.
+         */
+        post: operations["e2e_mint_token_v1_e2e_mint_token_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -484,6 +533,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/device-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Device Token
+         * @description Register (or upsert) the caller's Expo push token for this device.
+         */
+        post: operations["register_device_token_v1_notifications_device_token_post"];
+        /**
+         * Unregister Device Token
+         * @description Unregister a device token on sign-out. Idempotent (no-op if absent).
+         */
+        delete: operations["unregister_device_token_v1_notifications_device_token_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -659,6 +732,26 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * DeviceTokenRegister
+         * @description Register/unregister payload: the Expo push token + originating platform.
+         */
+        DeviceTokenRegister: {
+            /** Expo Push Token */
+            expo_push_token: string;
+            /** Platform */
+            platform: string;
+        };
+        /**
+         * DeviceTokenResponse
+         * @description The registered token (echoed back to confirm the upsert).
+         */
+        DeviceTokenResponse: {
+            /** Expo Push Token */
+            expo_push_token: string;
+            /** Platform */
+            platform: string;
         };
         /**
          * ElicitationSubmissionRequest
@@ -853,6 +946,25 @@ export interface components {
              * @description Minimum hotel star rating (1-5). Hotels below this rating are filtered out.
              */
             min_star_rating?: number | null;
+        };
+        /**
+         * MobileTokenRequest
+         * @description Body the native app POSTs: a Google ID token obtained via Expo AuthSession.
+         */
+        MobileTokenRequest: {
+            /** Id Token */
+            id_token: string;
+        };
+        /**
+         * MobileTokenResponse
+         * @description The JWT pair + user, returned in the BODY (never Set-Cookie) for mobile.
+         */
+        MobileTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            user: components["schemas"]["UserResponse"];
         };
         /**
          * NotificationPrefs
@@ -1290,6 +1402,39 @@ export interface operations {
             };
         };
     };
+    mobile_token_v1_auth_mobile_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     refresh_token_v1_auth_refresh_post: {
         parameters: {
             query?: never;
@@ -1346,6 +1491,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    e2e_mint_token_v1_e2e_mint_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileTokenResponse"];
                 };
             };
         };
@@ -1881,6 +2046,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    register_device_token_v1_notifications_device_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTokenRegister"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unregister_device_token_v1_notifications_device_token_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTokenRegister"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

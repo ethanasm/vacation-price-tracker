@@ -5,7 +5,6 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from worker.activities import notifications as notif
 
 
