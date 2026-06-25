@@ -1,0 +1,42 @@
+# Trip-detail flow — Maestro
+#
+# Opens the seeded trip and verifies the detail screen renders its title and the
+# stat blocks. Depends on a `trip-card` row = "Maestro Test Trip" from
+# create-trip.yaml (Maestro taps the first `trip-card` match).
+appId: me.ethanasm.vacation_price_tracker
+name: trip-detail
+tags:
+  - critical
+  - read
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- scrollUntilVisible:
+    element:
+      id: "sign-in-google-button"
+    direction: DOWN
+    visibilityPercentage: 60
+    waitToSettleTimeoutMs: 500
+    timeout: 30000
+- tapOn:
+    id: "sign-in-google-button"
+
+- assertVisible:
+    text: "Trips"
+
+- tapOn:
+    id: "trip-card"
+
+# Detail screen mounted: the seeded trip's title plus the three Aurora stat
+# blocks (flight / hotel / total) confirm the detail screen and its price block
+# loaded.
+- assertVisible:
+    text: "Maestro Test Trip"
+- assertVisible:
+    id: "trip-detail-flight-stat"
+- assertVisible:
+    id: "trip-detail-hotel-stat"
+- assertVisible:
+    id: "trip-detail-total-stat"
