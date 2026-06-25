@@ -344,6 +344,7 @@ jobs:
             fi
             git fetch origin main
             git rebase origin/main
+            git tag -f "mobile-v${NEW}"
           done
 
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
