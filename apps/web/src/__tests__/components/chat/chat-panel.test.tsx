@@ -77,7 +77,7 @@ describe("ChatPanel", () => {
     it("renders header with title", () => {
       renderWithProvider(<ChatPanel />);
 
-      expect(screen.getByText("Travel Assistant")).toBeInTheDocument();
+      expect(screen.getByText("Assistant")).toBeInTheDocument();
     });
 
     it("renders chat input", () => {

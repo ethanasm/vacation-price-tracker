@@ -89,19 +89,38 @@ function mapApiTripToDisplayTrip(trip: TripResponse): DisplayTrip {
   };
 }
 
+/**
+ * Tracks whether a CSS media query currently matches.
+ * SSR/jsdom-safe: returns `false` when `window.matchMedia` is unavailable, so the
+ * default (desktop) table view renders on the server and in tests.
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}
+
 function getStatusVariant(
   status: DisplayStatus
-): "default" | "secondary" | "outline" {
+): "active" | "paused" | "stop" {
   switch (status) {
     case "ACTIVE":
-      return "default";
-    case "PAUSED":
-    case "EXPIRED":
-      return "secondary";
+      return "active";
     case "ERROR":
-      return "outline";
+      return "stop";
     default:
-      return "outline";
+      return "paused"; // PAUSED, EXPIRED
   }
 }
 
@@ -317,6 +336,9 @@ export default function DashboardPage() {
 
   // Chat panel state with localStorage persistence
   const { isExpanded: isChatExpanded, setExpanded: setChatExpanded, isHydrated } = useChatExpanded(true);
+
+  // Below 820px the table is swapped for a stacked card list.
+  const isCompact = useMediaQuery("(max-width: 820px)");
 
   // Handle SSE price updates - update trip table when new prices arrive
   const handlePriceUpdate = useCallback((update: PriceUpdateEvent) => {
@@ -691,6 +713,58 @@ export default function DashboardPage() {
             </div>
           ) : trips.length === 0 ? (
             <EmptyState />
+          ) : isCompact ? (
+            <div className={styles.tripCards}>
+              {trips.map((trip) => (
+                <Link
+                  key={trip.id}
+                  href={`/trips/${trip.id}`}
+                  className={styles.tripCard}
+                >
+                  <div className={styles.tripCardHead}>
+                    <span className={styles.tripCardName}>{trip.name}</span>
+                    <Badge variant={getStatusVariant(trip.status)}>
+                      {trip.status}
+                    </Badge>
+                  </div>
+                  <div className={styles.tripCardMeta}>
+                    <span className={styles.route}>
+                      <span>{trip.origin_airport}</span>
+                      <span className={styles.routeArrow}>
+                        {trip.is_round_trip ? "↔" : "→"}
+                      </span>
+                      <span>{trip.destination_code}</span>
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {formatShortDate(trip.depart_date)}
+                      {trip.return_date &&
+                        ` – ${formatShortDate(trip.return_date)}`}
+                    </span>
+                  </div>
+                  <div className={styles.tripCardStats}>
+                    <div className={styles.tripCardStat}>
+                      <span className={styles.tripCardStatLabel}>Flight</span>
+                      <span className={styles.price}>
+                        {formatPrice(trip.flight_price)}
+                      </span>
+                    </div>
+                    <div className={styles.tripCardStat}>
+                      <span className={styles.tripCardStatLabel}>Hotel</span>
+                      <span className={styles.price}>
+                        {formatPrice(trip.hotel_price)}
+                      </span>
+                    </div>
+                    <div className={styles.tripCardStat}>
+                      <span className={styles.tripCardStatLabel}>Total</span>
+                      <span className={`${styles.price} ${styles.priceTotal}`}>
+                        {formatPrice(trip.total_price)}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
           ) : (
             <div className={styles.tableWrapper}>
               <Table className={styles.tripTable} noWrapper>
@@ -771,6 +845,15 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!error && !isLoading && trips.length > 0 && (
+            <div className={styles.tableFooter}>
+              <span>
+                Showing {trips.length} of {trips.length} trip
+                {trips.length === 1 ? "" : "s"}
+              </span>
+              <span>Prices refresh daily at 6:00 AM</span>
             </div>
           )}
         </div>

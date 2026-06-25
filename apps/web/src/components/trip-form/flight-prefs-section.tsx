@@ -66,22 +66,23 @@ export function FlightPrefsSection({
         <div className={styles.gridTwo}>
           <div className={styles.field}>
             <Label className={styles.fieldLabel}>Cabin Class</Label>
-            <Select
-              value={cabin}
-              onValueChange={onCabinChange}
-              disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CABIN_CLASSES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
+            <div className={styles.cabinChips} role="group" aria-label="Cabin Class">
+              {CABIN_CLASSES.map((c) => {
+                const selected = c.value === cabin;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    className={`${styles.cabinChip} ${selected ? styles.cabinChipSelected : ""}`}
+                    aria-pressed={selected}
+                    disabled={disabled}
+                    onClick={() => onCabinChange(c.value)}
+                  >
                     {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className={styles.field}>
             <Label className={styles.fieldLabel}>Stops</Label>

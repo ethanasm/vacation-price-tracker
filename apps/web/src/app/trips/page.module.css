@@ -15,7 +15,7 @@
   justify-content: space-between;
   align-items: center;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid var(--aurora-hairline);
   margin-bottom: 0.5rem;
   flex-shrink: 0;
 }
@@ -29,13 +29,13 @@
 .brandIcon {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, hsl(262 83% 58%) 0%, hsl(340 75% 55%) 100%);
-  border-radius: 8px;
+  background: var(--aurora-grad-primary);
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+  box-shadow: var(--aurora-shadow-btn);
 }
 
 .brandIcon svg {
@@ -83,7 +83,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, hsl(262 83% 65%) 0%, hsl(262 83% 50%) 100%);
+  background: var(--aurora-grad-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,8 +143,9 @@
 .title {
   font-family: var(--font-display), "Space Grotesk", sans-serif;
   font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--aurora-ink);
   margin: 0;
 }
 
@@ -166,7 +167,7 @@
 
 @media (min-width: 1024px) {
   .columns {
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 360px;
     grid-template-rows: 1fr;
   }
 
@@ -177,7 +178,7 @@
 
 @media (min-width: 1280px) {
   .columns {
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: 1fr 360px;
   }
 
   .columns.chatCollapsed {
@@ -187,10 +188,10 @@
 
 /* Trip table panel */
 .tablePanel {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--aurora-card);
+  border: 1px solid var(--aurora-hairline);
+  border-radius: var(--aurora-radius-card);
+  box-shadow: var(--aurora-shadow-card);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -204,10 +205,10 @@
 
 /* Chat panel */
 .chatPanel {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--aurora-card);
+  border: 1px solid var(--aurora-hairline);
+  border-radius: var(--aurora-radius-card);
+  box-shadow: var(--aurora-shadow-card);
   display: flex;
   flex-direction: column;
   min-height: 300px;
@@ -285,10 +286,11 @@
 }
 
 .tripTable th {
-  background: hsl(var(--background));
-  font-size: 0.75rem;
+  background: var(--aurora-card);
+  color: var(--aurora-muted);
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
 
@@ -298,6 +300,10 @@
 
 .tripTable td {
   white-space: nowrap;
+}
+
+.tripTable tbody tr:first-child {
+  background: var(--aurora-row-tint);
 }
 
 .clickableRow {
@@ -342,8 +348,87 @@
 }
 
 .priceTotal {
-  font-weight: 600;
-  color: var(--ink);
+  font-weight: 800;
+  color: var(--aurora-violet-text);
+}
+
+/* Stacked card list (half-width / narrow viewports, <= 820px) */
+.tripCards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  overflow: auto;
+  flex: 1;
+}
+
+.tripCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  background: var(--aurora-card);
+  border: 1px solid var(--aurora-hairline);
+  border-radius: var(--aurora-radius-card);
+  box-shadow: var(--aurora-shadow-card);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.tripCard:hover {
+  border-color: var(--aurora-hairline-2);
+}
+
+.tripCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tripCardName {
+  font-weight: 700;
+  color: var(--aurora-ink);
+}
+
+.tripCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--aurora-muted);
+}
+
+.tripCardStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.tripCardStat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.tripCardStatLabel {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--aurora-muted);
+}
+
+/* Pinned table footer */
+.tableFooter {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid var(--aurora-hairline);
+  font-size: 12px;
+  color: var(--aurora-muted);
+  flex-shrink: 0;
 }
 
 /* Date display */
