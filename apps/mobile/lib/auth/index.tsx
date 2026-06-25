@@ -5,6 +5,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { API_URL, describeGoogleOAuthMisconfiguration, GOOGLE_OAUTH_CLIENT_ID_ANDROID, GOOGLE_OAUTH_CLIENT_ID_IOS, GOOGLE_OAUTH_CLIENT_ID_WEB } from '@/lib/env';
 import { exchangeGoogleIdTokenForSession, describeSignInError } from './exchange';
+import { buildE2ESession } from './e2e';
 import { saveSession, loadSession, clearSession } from './storage';
 import type { SessionData, SessionUser } from './contract';
 
@@ -113,6 +114,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
 
   const signIn = React.useCallback(async () => {
     setError(null);
+    // Maestro e2e bypass: the e2e build inlines a pre-baked VPT session, so the
+    // sign-in tap loads it directly instead of running real Google OAuth (which
+    // can't complete on the headless CI emulator). Dead code in store builds —
+    // EXPO_PUBLIC_E2E_MODE is unset there. The literal process.env reads let
+    // Metro inline the values at bundle time.
+    const e2eSession = buildE2ESession({
+      mode: process.env.EXPO_PUBLIC_E2E_MODE,
+      token: process.env.EXPO_PUBLIC_E2E_TEST_TOKEN,
+      userJson: process.env.EXPO_PUBLIC_E2E_TEST_USER_JSON,
+    });
+    if (e2eSession) {
+      setIsSigningIn(true);
+      try {
+        await persist(e2eSession);
+      } catch {
+        setError(describeSignInError(new Error('invalid_response')));
+      } finally {
+        setIsSigningIn(false);
+      }
+      return;
+    }
     const platform: 'ios' | 'android' | 'web' =
       Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
     const configError = describeGoogleOAuthMisconfiguration(platform);
@@ -137,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       setError(describeSignInError(err));
       setIsSigningIn(false);
     }
-  }, [promptAsync]);
+  }, [promptAsync, persist]);
 
   const signOut = React.useCallback(async () => {
     await clearSession(SecureStore).catch(() => undefined);
