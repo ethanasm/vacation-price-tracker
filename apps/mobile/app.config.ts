@@ -16,7 +16,7 @@ const IOS_BUNDLE_ID = 'me.ethanasm.vacation-price-tracker';
 
 const config: ExpoConfig = {
   name: 'Price Tracker',
-  slug: 'vpt',
+  slug: 'vacation-price-tracker',
   owner: 'ethanasm',
   // runtimeVersion below derives the expo-updates runtime from this string.
   // P4 owns version bumps; foundation ships 0.1.0.
