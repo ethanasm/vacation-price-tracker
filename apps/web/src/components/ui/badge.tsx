@@ -12,6 +12,10 @@ const badgeVariants = cva(
         secondary: "bg-secondary text-secondary-foreground",
         destructive: "bg-destructive text-destructive-foreground",
         outline: "text-foreground border-border",
+        active: "aurora-chip-active",
+        paused: "aurora-chip-paused",
+        nonstop: "aurora-chip-nonstop",
+        stop: "aurora-chip-stop",
       },
     },
     defaultVariants: {

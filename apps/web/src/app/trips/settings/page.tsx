@@ -63,7 +63,7 @@ export default function SettingsPage() {
         Back
       </Button>
 
-      <h1 className="mb-6 text-2xl font-semibold">Settings</h1>
+      <h1 className="mb-6 text-2xl font-extrabold">Settings</h1>
 
       <Card>
         <CardHeader>
@@ -86,6 +86,20 @@ export default function SettingsPage() {
               disabled={saving}
               onCheckedChange={handleToggleEmail}
               aria-label="Email notifications"
+            />
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="sms-notifications">SMS alerts</Label>
+              <p className="text-sm text-muted-foreground">
+                Instant text on a major price drop.
+              </p>
+            </div>
+            <Switch
+              id="sms-notifications"
+              checked={false}
+              disabled
+              aria-label="SMS alerts"
             />
           </div>
         </CardContent>

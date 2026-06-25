@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { use, useReducer, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -54,7 +54,64 @@ import {
   hotelStableKey,
   parsePrice,
 } from "@/lib/price-history";
+import {
+  airlineChip,
+  layoverLabel,
+  multiCarrierSubtitle,
+  operatingCarriers,
+  stopsBadge,
+} from "@/lib/aurora";
+import { AirlineChip } from "@/components/aurora/airline-chip";
+import { HotelPhoto } from "@/components/aurora/hotel-photo";
 import styles from "./page.module.css";
+
+/**
+ * Single source of truth for which flight/hotel are selected and which (if any)
+ * row is expanded. Selecting a row also toggles its expansion; selecting a
+ * different row moves the expansion. This keeps the interactive screen's state
+ * coherent so the selection -> total -> chart recompute stays consistent.
+ */
+type SelectionState = {
+  selectedFlightId: string | null;
+  expandedFlightId: string | null;
+  selectedHotelId: string | null;
+  expandedHotelId: string | null;
+};
+type SelectionAction =
+  | { type: "selectFlight"; id: string }
+  | { type: "selectHotel"; id: string }
+  | { type: "preselect"; flightId: string | null; hotelId: string | null };
+
+function selectionReducer(state: SelectionState, action: SelectionAction): SelectionState {
+  switch (action.type) {
+    case "selectFlight":
+      return {
+        ...state,
+        selectedFlightId: action.id,
+        expandedFlightId: state.expandedFlightId === action.id ? null : action.id,
+      };
+    case "selectHotel":
+      return {
+        ...state,
+        selectedHotelId: action.id,
+        expandedHotelId: state.expandedHotelId === action.id ? null : action.id,
+      };
+    case "preselect":
+      return {
+        selectedFlightId: action.flightId,
+        expandedFlightId: null,
+        selectedHotelId: action.hotelId,
+        expandedHotelId: null,
+      };
+  }
+}
+
+const INITIAL_SELECTION: SelectionState = {
+  selectedFlightId: null,
+  expandedFlightId: null,
+  selectedHotelId: null,
+  expandedHotelId: null,
+};
 
 /**
  * Display label for a flight: all flight numbers across both itineraries.
@@ -102,6 +159,7 @@ function PriceHistoryChart({
   selectedFlightKey,
   selectedFlightLabel,
   showHotel = true,
+  nowTotal,
 }: {
   priceHistory: PriceSnapshot[];
   selectedHotelKey: string | null;
@@ -109,6 +167,7 @@ function PriceHistoryChart({
   selectedFlightKey: string | null;
   selectedFlightLabel?: string;
   showHotel?: boolean;
+  nowTotal?: number | null;
 }) {
   // Collapse to one point per calendar day (cheapest total that day) so long
   // tracking windows stay readable. Carry-forward for selected offers is handled
@@ -124,6 +183,11 @@ function PriceHistoryChart({
       <div className={styles.emptyChart}>
         <TrendingUp className={styles.emptyChartIcon} />
         <p>No price history yet</p>
+        {nowTotal != null && (
+          <span data-testid="now-badge" className={styles.nowBadge}>
+            Now {formatPrice(nowTotal)}
+          </span>
+        )}
       </div>
     );
   }
@@ -141,95 +205,102 @@ function PriceHistoryChart({
   } satisfies ChartConfig;
 
   return (
-    <ChartContainer config={chartConfig} className={styles.chartContainer}>
-      <LineChart
-        accessibilityLayer
-        data={chartData}
-        margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis
-          dataKey="label"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          fontSize={11}
-          interval="preserveStartEnd"
-          minTickGap={32}
-        />
-        <YAxis
-          tickLine={false}
-          axisLine={false}
-          tickMargin={4}
-          tickFormatter={(v) => `$${v}`}
-          fontSize={11}
-          width={45}
-        />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              formatter={(value, name) => (
-                <span>
-                  {chartConfig[name as keyof typeof chartConfig]?.label}:{" "}
-                  <strong>${Number(value).toLocaleString()}</strong>
-                </span>
-              )}
-            />
-          }
-        />
-        {/* Total — bold solid line, stands out from the pairs */}
-        {showHotel && (
-          <Line
-            dataKey="total"
-            type="monotone"
-            stroke="var(--color-total)"
-            strokeWidth={2.5}
-            dot={{ r: 3 }}
+    <div className={styles.chartWrap}>
+      {nowTotal != null && (
+        <span data-testid="now-badge" className={styles.nowBadge}>
+          Now {formatPrice(nowTotal)}
+        </span>
+      )}
+      <ChartContainer config={chartConfig} className={styles.chartContainer}>
+        <LineChart
+          accessibilityLayer
+          data={chartData}
+          margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            fontSize={11}
+            interval="preserveStartEnd"
+            minTickGap={32}
           />
-        )}
-        {/* Mins (flight + hotel) — thin dashed lines, no dots */}
-        <Line
-          dataKey="minFlight"
-          type="monotone"
-          stroke="var(--color-minFlight)"
-          strokeWidth={1.5}
-          strokeDasharray="4 4"
-          dot={false}
-        />
-        {showHotel && (
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            tickMargin={4}
+            tickFormatter={(v) => `$${v}`}
+            fontSize={11}
+            width={45}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                formatter={(value, name) => (
+                  <span>
+                    {chartConfig[name as keyof typeof chartConfig]?.label}:{" "}
+                    <strong>${Number(value).toLocaleString()}</strong>
+                  </span>
+                )}
+              />
+            }
+          />
+          {/* Total — bold solid line, stands out from the pairs */}
+          {showHotel && (
+            <Line
+              dataKey="total"
+              type="monotone"
+              stroke="var(--color-total)"
+              strokeWidth={2.5}
+              dot={{ r: 3 }}
+            />
+          )}
+          {/* Mins (flight + hotel) — thin dashed lines, no dots */}
           <Line
-            dataKey="minHotel"
+            dataKey="minFlight"
             type="monotone"
-            stroke="var(--color-minHotel)"
+            stroke="var(--color-minFlight)"
             strokeWidth={1.5}
             strokeDasharray="4 4"
             dot={false}
           />
-        )}
-        {/* Selected (flight + hotel) — same color as min, but solid + dots */}
-        {selectedFlightKey && (
-          <Line
-            dataKey="selectedFlight"
-            type="monotone"
-            stroke="var(--color-selectedFlight)"
-            strokeWidth={1.5}
-            dot={{ r: 2.5 }}
-            connectNulls
-          />
-        )}
-        {showHotel && selectedHotelKey && (
-          <Line
-            dataKey="selectedHotel"
-            type="monotone"
-            stroke="var(--color-selectedHotel)"
-            strokeWidth={1.5}
-            dot={{ r: 2.5 }}
-            connectNulls
-          />
-        )}
-      </LineChart>
-    </ChartContainer>
+          {showHotel && (
+            <Line
+              dataKey="minHotel"
+              type="monotone"
+              stroke="var(--color-minHotel)"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+              dot={false}
+            />
+          )}
+          {/* Selected (flight + hotel) — same color as min, but solid + dots */}
+          {selectedFlightKey && (
+            <Line
+              dataKey="selectedFlight"
+              type="monotone"
+              stroke="var(--color-selectedFlight)"
+              strokeWidth={1.5}
+              dot={{ r: 2.5 }}
+              connectNulls
+            />
+          )}
+          {showHotel && selectedHotelKey && (
+            <Line
+              dataKey="selectedHotel"
+              type="monotone"
+              stroke="var(--color-selectedHotel)"
+              strokeWidth={1.5}
+              dot={{ r: 2.5 }}
+              connectNulls
+            />
+          )}
+        </LineChart>
+      </ChartContainer>
+    </div>
   );
 }
 
@@ -326,26 +397,13 @@ function ItinerarySection({
         {totalDuration && <span className={styles.itineraryDuration}>{totalDuration} total</span>}
       </div>
       {segments.map((segment, idx) => {
-        // Calculate layover time from previous segment
-        let layover: string | null = null;
-        if (idx > 0) {
-          const prevArrival = segments[idx - 1].arrival_time;
-          const curDeparture = segment.departure_time;
-          if (prevArrival && curDeparture) {
-            const arrDate = new Date(prevArrival);
-            const depDate = new Date(curDeparture);
-            const diffMs = depDate.getTime() - arrDate.getTime();
-            if (diffMs > 0 && !Number.isNaN(diffMs)) {
-              const diffMins = Math.round(diffMs / 60000);
-              layover = formatDuration(diffMins);
-            }
-          }
-        }
+        // Calculate layover label from previous segment (city + code + duration).
+        const layover = idx > 0 ? layoverLabel(segments[idx - 1], segment) : null;
         return (
           <React.Fragment key={`${segment.flight_number || idx}`}>
             {layover && (
               <div className={styles.layoverRow}>
-                <span className={styles.layoverText}>{layover} layover in {segments[idx - 1].arrival_airport || "—"}</span>
+                <span className={styles.auroraLayoverPill}>{layover}</span>
               </div>
             )}
             <SegmentRow segment={segment} />
@@ -370,28 +428,30 @@ function priceOrInfinity(value: string | null | undefined): number {
   return parsePrice(value) ?? Number.POSITIVE_INFINITY;
 }
 
-function preselectCheapest(
+/** Compute the cheapest flight/hotel stable keys from the latest snapshot. */
+function cheapestSelection(
   latest: PriceSnapshot | undefined,
-  setFlight: (key: string | null) => void,
-  setHotel: (key: string | null) => void,
-): void {
-  if (!latest) return;
+): { flightId: string | null; hotelId: string | null } {
+  if (!latest) return { flightId: null, hotelId: null };
+  let flightId: string | null = null;
   const flights = (latest.flight_offers ?? []) as ApiFlightOffer[];
   if (flights.length > 0) {
     const cheapest = flights.reduce(
       (best, f) => (priceOrInfinity(f.price) < priceOrInfinity(best.price) ? f : best),
       flights[0],
     );
-    setFlight(flightStableKey(cheapest));
+    flightId = flightStableKey(cheapest);
   }
+  let hotelId: string | null = null;
   const hotels = (latest.hotel_offers ?? []) as ApiHotelOffer[];
   if (hotels.length > 0) {
     const cheapest = hotels.reduce(
       (best, h) => (priceOrInfinity(h.price) < priceOrInfinity(best.price) ? h : best),
       hotels[0],
     );
-    setHotel(hotelStableKey(cheapest));
+    hotelId = hotelStableKey(cheapest);
   }
+  return { flightId, hotelId };
 }
 
 function resolveTripErrorMessage(err: unknown): string {
@@ -426,7 +486,7 @@ function extractFlightDisplayData(flight: ApiFlightOffer) {
     outboundLastSegment,
     airlineName: firstSegment?.carrier_code
       ? getAirlineName(firstSegment.carrier_code)
-      : (flight.airline_name ?? "Unknown"),
+      : (flight.airline_name ?? getAirlineName(flight.airline_code) ?? "Unknown"),
     outboundDepTime: (() => {
       const t = firstSegment?.departure_time ?? flight.departure_time;
       return t ? formatFlightTime(t) : null;
@@ -488,20 +548,122 @@ function SortHeader({ label, sortKey, activeKey, direction, align, onSort }: Sor
   );
 }
 
+/** Secondary carrier code for the layered AirlineChip when a flight is multi-carrier. */
+function secondaryCarrierCode(flight: ApiFlightOffer): string | null {
+  if (multiCarrierSubtitle(flight) === null) return null;
+  const segments = (flight.itineraries ?? []).flatMap((it) => it.segments ?? []);
+  const primary = segments[0]?.carrier_code ?? null;
+  for (const s of segments) {
+    if (s.carrier_code && s.carrier_code !== primary) return s.carrier_code;
+  }
+  return null;
+}
+
+function FlightRow({
+  flight,
+  isSelected,
+  isExpanded,
+  onSelect,
+}: {
+  flight: ApiFlightOffer;
+  isSelected: boolean;
+  isExpanded: boolean;
+  onSelect: (stableKey: string) => void;
+}) {
+  const stableKey = flightStableKey(flight);
+  const displayData = extractFlightDisplayData(flight);
+  const {
+    airlineName,
+    outboundDepTime,
+    outboundArrTime,
+    returnDepTime,
+    returnArrTime,
+    returnFirstSegment,
+    outbound,
+    returnItinerary,
+  } = displayData;
+
+  const outboundTimes = formatTimeRange(outboundDepTime, outboundArrTime);
+  const returnTimes = formatTimeRange(returnDepTime, returnArrTime);
+  const badge = stopsBadge(flight);
+  const subtitle = multiCarrierSubtitle(flight);
+  const secondary = secondaryCarrierCode(flight);
+  const primaryCode = outbound?.segments?.[0]?.carrier_code ?? flight.airline_code;
+
+  return (
+    <div
+      className={`${styles.flightCardExpandable} ${isSelected ? styles.flightCardBest : ""} ${subtitle ? styles.flightCardMulti : ""}`}
+    >
+      {/* Collapsed header — the whole row is one radio control that both selects
+          the offer and toggles its expanded itinerary. */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={isSelected}
+        aria-expanded={isExpanded}
+        className={styles.cardHeader}
+        onClick={() => onSelect(stableKey)}
+      >
+        <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowMain}`}>
+          <span className={styles.flightRadio} aria-hidden="true">
+            <span className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}>
+              {isSelected && <span className={styles.radioInner} />}
+            </span>
+          </span>
+          <span className={styles.headerAirlineCell}>
+            <AirlineChip carrierCode={primaryCode} secondaryCode={secondary} />
+            <span className={styles.headerAirlineText}>
+              <span className={styles.headerAirline}>{airlineName}</span>
+              {subtitle && <span className={styles.headerSubtitle}>{subtitle}</span>}
+            </span>
+          </span>
+          <span className={styles.headerTimes}>{outboundTimes}</span>
+          <Badge variant={badge.tone === "success" ? "nonstop" : "stop"} className={styles.stopsBadge}>
+            {badge.label}
+          </Badge>
+          <span className={`${styles.cardPrice} ${isSelected ? styles.cardPriceSelected : ""}`}>
+            {formatPrice(flight.price)}
+          </span>
+          <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
+        </div>
+        {returnFirstSegment && (
+          <div className={`${styles.cardHeaderRowMain} ${styles.cardHeaderRowReturn}`}>
+            <span />
+            <span className={styles.headerReturnLabel}>Return</span>
+            <span className={styles.headerTimes}>{returnTimes}</span>
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
+      </button>
+
+      {isExpanded && (
+        <div className={styles.cardContent}>
+          {outbound && <ItinerarySection itinerary={outbound} />}
+          {returnItinerary && (
+            <>
+              <div className={styles.itineraryDivider} />
+              <ItinerarySection itinerary={returnItinerary} isReturn />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FlightsList({
   flights,
-  departDate,
-  returnDate,
   selectedFlightKey,
+  expandedFlightKey,
   onSelectFlight,
 }: {
   flights: ApiFlightOffer[];
-  departDate: string;
-  returnDate?: string | null;
   selectedFlightKey: string | null;
+  expandedFlightKey: string | null;
   onSelectFlight: (stableKey: string) => void;
 }) {
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<FlightSortKey>("price");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -550,18 +712,6 @@ function FlightsList({
     );
   }
 
-  const toggleCard = (id: string) => {
-    setExpandedCards(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
   return (
     <div className={styles.flightsList}>
       <div className={styles.flightsHeaderRow}>
@@ -574,89 +724,14 @@ function FlightsList({
       </div>
       {sortedFlights.map((flight) => {
         const stableKey = flightStableKey(flight);
-        const isSelected = stableKey === selectedFlightKey;
-        const isExpanded = expandedCards.has(flight.id);
-        const isDirect = flight.stops === 0;
-        const displayData = extractFlightDisplayData(flight);
-        const {
-          airlineName,
-          outboundDepTime,
-          outboundArrTime,
-          returnDepTime,
-          returnArrTime,
-          returnFirstSegment,
-          outbound,
-          returnItinerary,
-        } = displayData;
-
-        const outboundTimes = formatTimeRange(outboundDepTime, outboundArrTime);
-        const returnTimes = formatTimeRange(returnDepTime, returnArrTime);
-        const stops = flight.stops ?? 0;
-        const stopsLabel = isDirect ? "Direct" : `${stops} ${stops === 1 ? "stop" : "stops"}`;
-
         return (
-          <div
+          <FlightRow
             key={flight.id}
-            className={`${styles.flightCardExpandable} ${isSelected ? styles.flightCardBest : ""}`}
-          >
-            {/* Collapsed Header - Two-row layout showing outbound + return */}
-            <button
-              type="button"
-              className={styles.cardHeader}
-              onClick={() => toggleCard(flight.id)}
-              aria-expanded={isExpanded}
-            >
-              {/* Row 1: Outbound */}
-              <div className={`${styles.cardHeaderRow} ${styles.cardHeaderRowMain}`}>
-                <div
-                  className={styles.flightRadio}
-                  onClick={(e) => { e.stopPropagation(); onSelectFlight(stableKey); }}
-                  onKeyDown={() => {}}
-                  role="radio"
-                  aria-checked={isSelected}
-                  tabIndex={-1}
-                >
-                  <div className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}>
-                    {isSelected && <div className={styles.radioInner} />}
-                  </div>
-                </div>
-                <span className={styles.headerAirline}>{airlineName}</span>
-                <span className={styles.headerTimes}>{outboundTimes}</span>
-                <span className={`${styles.directBadge} ${isDirect ? styles.directBadgeGreen : ""}`}>
-                  <Plane className="h-3 w-3" />
-                  {stopsLabel}
-                </span>
-                <span className={styles.cardPrice}>
-                  {formatPrice(flight.price)}
-                </span>
-                <ChevronDown className={`${styles.chevron} ${isExpanded ? styles.chevronUp : ""}`} />
-              </div>
-              {/* Row 2: Return (if round trip) — same grid as Row 1 */}
-              {returnFirstSegment && (
-                <div className={`${styles.cardHeaderRowMain} ${styles.cardHeaderRowReturn}`}>
-                  <span />
-                  <span className={styles.headerReturnLabel}>Return</span>
-                  <span className={styles.headerTimes}>{returnTimes}</span>
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              )}
-            </button>
-
-            {/* Expanded Content */}
-            {isExpanded && (
-              <div className={styles.cardContent}>
-                {outbound && <ItinerarySection itinerary={outbound} />}
-                {returnItinerary && (
-                  <>
-                    <div className={styles.itineraryDivider} />
-                    <ItinerarySection itinerary={returnItinerary} isReturn />
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+            flight={flight}
+            isSelected={stableKey === selectedFlightKey}
+            isExpanded={stableKey === expandedFlightKey}
+            onSelect={onSelectFlight}
+          />
         );
       })}
     </div>
@@ -692,16 +767,17 @@ function HotelsList({
           <button
             key={hotel.id}
             type="button"
+            role="radio"
+            aria-checked={isSelected}
             className={`${styles.hotelCardCompact} ${isSelected ? styles.hotelSelected : ""}`}
             onClick={() => onSelectHotel(stableKey)}
           >
-            <div className={styles.hotelRadioCompact}>
-              <div
-                className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}
-              >
-                {isSelected && <div className={styles.radioInner} />}
-              </div>
-            </div>
+            <span className={styles.hotelRadioCompact} aria-hidden="true">
+              <span className={`${styles.radioOuter} ${isSelected ? styles.radioSelected : ""}`}>
+                {isSelected && <span className={styles.radioInner} />}
+              </span>
+            </span>
+            <HotelPhoto alt={hotel.name} />
             <span className={styles.hotelNameCompact} title={hotel.name}>
               {hotel.name}
               {hotel.rating && (
@@ -711,7 +787,7 @@ function HotelsList({
                 </span>
               )}
             </span>
-            <span className={styles.hotelPriceCompact}>
+            <span className={`${styles.hotelPriceCompact} ${isSelected ? styles.hotelPriceSelected : ""}`}>
               {nights > 0 ? (
                 <>
                   <span className={styles.hotelPerNight}>{formatPrice((parsePrice(hotel.price) ?? 0) / nights)} / night</span>
@@ -794,8 +870,7 @@ export default function TripDetailPage({
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedHotelKey, setSelectedHotelKey] = useState<string | null>(null);
-  const [selectedFlightKey, setSelectedFlightKey] = useState<string | null>(null);
+  const [selection, dispatchSelection] = useReducer(selectionReducer, INITIAL_SELECTION);
   const [offersTab, setOffersTab] = useState<"flights" | "hotels">("flights");
 
   const fetchTripDetails = useCallback(async (showLoading = true) => {
@@ -807,7 +882,8 @@ export default function TripDetailPage({
       const response = await api.trips.getDetails(tripId);
       setTrip(response.data.trip);
       setPriceHistory(response.data.price_history);
-      preselectCheapest(response.data.price_history[0], setSelectedFlightKey, setSelectedHotelKey);
+      const { flightId, hotelId } = cheapestSelection(response.data.price_history[0]);
+      dispatchSelection({ type: "preselect", flightId, hotelId });
     } catch (err) {
       setError(resolveTripErrorMessage(err));
     } finally {
@@ -981,6 +1057,8 @@ export default function TripDetailPage({
   };
 
   // Derive effective prices from selections (fall back to aggregate minimum)
+  const selectedHotelKey = selection.selectedHotelId;
+  const selectedFlightKey = selection.selectedFlightId;
   const selectedHotel = selectedHotelKey
     ? latestOffers.hotels.find((h) => hotelStableKey(h) === selectedHotelKey)
     : null;
@@ -1010,7 +1088,7 @@ export default function TripDetailPage({
   return (
     <div className={styles.containerCompact}>
       {/* Header */}
-      <div className={styles.header}>
+      <div className={`${styles.header} ${styles.stickyRegion}`}>
         <div className={styles.headerRow1}>
           <Button
             variant="ghost"
@@ -1121,8 +1199,8 @@ export default function TripDetailPage({
               </span>
             </div>
             <span className={styles.priceEquals}>=</span>
-            <div className={styles.priceTotal}>
-              <span className={styles.priceTotalValue}>
+            <div className={`${styles.priceTotal} ${styles.auroraTotalCard}`}>
+              <span className={styles.priceTotalValue} data-testid="trip-total">
                 {formatPrice(effectiveTotalPrice)}
               </span>
               {hasTrend &&
@@ -1136,18 +1214,25 @@ export default function TripDetailPage({
             </div>
           </>
         )}
-        {!hasHotelTracking && hasTrend &&
-          previousTotal !== null &&
-          currentTotal !== previousTotal && (
-            <PriceTrend
-              currentPrice={currentTotal}
-              previousPrice={previousTotal}
-            />
-          )}
+        {!hasHotelTracking && (
+          <div className={`${styles.priceTotal} ${styles.auroraTotalCard}`}>
+            <span className={styles.priceTotalValue} data-testid="trip-total">
+              {formatPrice(effectiveTotalPrice)}
+            </span>
+            {hasTrend &&
+              previousTotal !== null &&
+              currentTotal !== previousTotal && (
+                <PriceTrend
+                  currentPrice={currentTotal}
+                  previousPrice={previousTotal}
+                />
+              )}
+          </div>
+        )}
       </div>
 
       {/* Main Content Grid — chart left, offers right */}
-      <div className={styles.gridCompactFlightsOnly}>
+      <div className={styles.offersGrid}>
         {/* Chart */}
         <Card className={styles.chartCard}>
           <CardContent className={styles.chartCardContent}>
@@ -1206,6 +1291,7 @@ export default function TripDetailPage({
               selectedFlightKey={selectedFlightKey}
               selectedFlightLabel={selectedFlightLabel}
               showHotel={hasHotelTracking}
+              nowTotal={effectiveTotalPrice}
             />
           </CardContent>
         </Card>
@@ -1236,16 +1322,15 @@ export default function TripDetailPage({
                 {offersTab === "flights" ? (
                   <FlightsList
                     flights={latestOffers.flights}
-                    departDate={trip.depart_date}
-                    returnDate={trip.return_date}
                     selectedFlightKey={selectedFlightKey}
-                    onSelectFlight={setSelectedFlightKey}
+                    expandedFlightKey={selection.expandedFlightId}
+                    onSelectFlight={(id) => dispatchSelection({ type: "selectFlight", id })}
                   />
                 ) : (
                   <HotelsList
                     hotels={latestOffers.hotels}
                     selectedHotelKey={selectedHotelKey}
-                    onSelectHotel={setSelectedHotelKey}
+                    onSelectHotel={(id) => dispatchSelection({ type: "selectHotel", id })}
                     nights={nights}
                   />
                 )}
@@ -1258,10 +1343,9 @@ export default function TripDetailPage({
                 </div>
                 <FlightsList
                   flights={latestOffers.flights}
-                  departDate={trip.depart_date}
-                  returnDate={trip.return_date}
                   selectedFlightKey={selectedFlightKey}
-                  onSelectFlight={setSelectedFlightKey}
+                  expandedFlightKey={selection.expandedFlightId}
+                  onSelectFlight={(id) => dispatchSelection({ type: "selectFlight", id })}
                 />
               </>
             )}

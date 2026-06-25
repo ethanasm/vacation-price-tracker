@@ -16,7 +16,7 @@ const display = Space_Grotesk({
 const body = Manrope({
   subsets: ["latin"],
   variable: "--font-body",
-  weight: ["400", "600"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useLayoutEffect } from "react";
-import { RefreshCw, X, AlertCircle, Plus } from "lucide-react";
+import { RefreshCw, X, AlertCircle, Plus, Sparkles } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { useChatContext } from "../../lib/chat-provider";
@@ -65,9 +65,20 @@ export function ChatPanel({
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--aurora-hairline)]">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-sm">Travel Assistant</h2>
+          <span
+            className="aurora-logo flex-shrink-0 w-7 h-7"
+            aria-hidden="true"
+          >
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <div className="flex flex-col leading-tight">
+            <h2 className="font-semibold text-sm">Assistant</h2>
+            <span className="text-[10px] text-muted-foreground">
+              Powered by Groq
+            </span>
+          </div>
           {isLoading && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <span className="relative flex h-2 w-2">

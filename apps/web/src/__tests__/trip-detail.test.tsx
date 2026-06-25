@@ -465,13 +465,15 @@ describe("TripDetailPage", () => {
         expect(screen.getAllByText("City Hotel").length).toBeGreaterThanOrEqual(1);
       });
 
-      // Click on a hotel to select it - this covers the onSelectHotel callback
-      const hotelButton = screen.getByRole("button", { name: /City Hotel/ });
+      // Click on a hotel to select it - this covers the onSelectHotel callback.
+      // Hotel rows are now radio controls (single-select).
+      const hotelButton = screen.getByRole("radio", { name: /City Hotel/ });
       await user.click(hotelButton);
 
-      // Verify the hotel button was clickable (the callback was called)
-      // The actual state change is internal, but we can verify no error occurred
-      expect(hotelButton).toBeInTheDocument();
+      // The selected hotel radio reflects the selection state.
+      await waitFor(() => {
+        expect(hotelButton).toHaveAttribute("aria-checked", "true");
+      });
     });
 
     it("displays flights list", async () => {
@@ -482,9 +484,9 @@ describe("TripDetailPage", () => {
       await waitFor(() => {
         // Flights section header
         expect(screen.getByText("Flights")).toBeInTheDocument();
-        // Collapsed card shows price and Direct badge (stops === 0 for basePriceHistory flight)
+        // Collapsed card shows price and a NON-STOP badge (stops === 0 for basePriceHistory flight)
         expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText("Direct")).toBeInTheDocument();
+        expect(screen.getByText("NON-STOP")).toBeInTheDocument();
       });
     });
 
@@ -690,13 +692,12 @@ describe("TripDetailPage", () => {
 
       // Wait for the flight card to render - collapsed view shows stops and price
       await waitFor(() => {
-        expect(screen.getByText("1 stop")).toBeInTheDocument();
+        expect(screen.getByText("1 STOP")).toBeInTheDocument();
         expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
       });
 
-      // Click on the element containing "1 stop" to expand the card
-      const stopsBadge = screen.getByText("1 stop");
-      const cardHeader = stopsBadge.closest("button");
+      // Clicking the flight row (a radio) selects it and toggles its expansion.
+      const cardHeader = screen.getByText("1 STOP").closest("button");
       expect(cardHeader).toBeTruthy();
       if (cardHeader) {
         await user.click(cardHeader);
@@ -766,8 +767,8 @@ describe("TripDetailPage", () => {
       });
 
       await waitFor(() => {
-        // The expandable card shows "2 stops" in the collapsed header
-        expect(screen.getByText("2 stops")).toBeInTheDocument();
+        // The expandable card shows "2 STOPS" in the collapsed header
+        expect(screen.getByText("2 STOPS")).toBeInTheDocument();
         // Duration is shown when expanded, price is shown in collapsed view
         expect(screen.getAllByText("$200").length).toBeGreaterThanOrEqual(1);
       });
@@ -833,23 +834,23 @@ describe("TripDetailPage", () => {
         render(<TestWrapper tripId="test-trip" />);
       });
 
-      // Wait for the card to render, then expand it
+      // Wait for the card to render, then expand it. With a 2-segment outbound
+      // the stops badge names the connecting airport: "1 STOP · DEN".
       await waitFor(() => {
-        expect(screen.getByText("1 stop")).toBeInTheDocument();
+        expect(screen.getByText("1 STOP · DEN")).toBeInTheDocument();
       });
 
-      const stopsBadge = screen.getByText("1 stop");
-      const cardHeader = stopsBadge.closest("button");
+      const cardHeader = screen.getByText("1 STOP · DEN").closest("button");
       expect(cardHeader).toBeTruthy();
       if (cardHeader) {
         await user.click(cardHeader);
       }
 
-      // Expanded view should show both segments and layover info
+      // Expanded view should show both segments and layover info (city + code).
       await waitFor(() => {
         expect(screen.getByText("UA100")).toBeInTheDocument();
         expect(screen.getByText("UA200")).toBeInTheDocument();
-        expect(screen.getByText(/layover in DEN/)).toBeInTheDocument();
+        expect(screen.getByText(/layover in Denver \(DEN\)/)).toBeInTheDocument();
       });
     });
 
@@ -922,9 +923,8 @@ describe("TripDetailPage", () => {
         expect(screen.getAllByText("$250").length).toBeGreaterThanOrEqual(1);
       });
 
-      // Find and click the card header to expand
-      const stopsBadge = screen.getByText("1 stop");
-      const cardHeader = stopsBadge.closest("button");
+      // Find and click the flight row (radio) to select + expand it.
+      const cardHeader = screen.getByText("1 STOP").closest("button");
       expect(cardHeader).toBeTruthy();
       if (cardHeader) {
         await user.click(cardHeader);
@@ -935,15 +935,16 @@ describe("TripDetailPage", () => {
         expect(screen.getByText("Outbound")).toBeInTheDocument();
       });
 
-      // Click again to collapse
+      // Click again to collapse — selection is retained, only expansion toggles.
       if (cardHeader) {
         await user.click(cardHeader);
       }
 
-      // Outbound label should disappear
+      // Outbound label should disappear, but the row stays selected.
       await waitFor(() => {
         expect(screen.queryByText("Outbound")).not.toBeInTheDocument();
       });
+      expect(cardHeader).toHaveAttribute("aria-checked", "true");
     });
 
     it("shows empty state when no hotel offers", async () => {
