@@ -2,7 +2,7 @@
 #
 # Runs alongside the dev and prod stacks on the same host without colliding:
 # distinct project name (vpt-e2e), distinct ports, distinct named volumes,
-# distinct database. The mobile e2e emulator (.github/workflows/mobile-e2e.yml)
+# distinct database. The mobile e2e emulator (.github/workflows/mobile.yml)
 # reaches this stack's api at http://10.0.2.2:8010 (the AVD host alias for the
 # runner's loopback). All published ports bind to loopback only.
 #
@@ -97,7 +97,7 @@ services:
       # E2E_MODE=1 is what gates P5's POST /v1/e2e/mint-token endpoint on (it
       # never exists in prod, where E2E_MODE is unset). VPT_E2E_BACKEND_TOKEN is
       # the shared secret the endpoint checks against the X-E2E-Token header
-      # (also the mobile-e2e.yml workflow secret).
+      # (also the mobile.yml workflow secret).
       E2E_MODE: "1"
       VPT_E2E_BACKEND_TOKEN: ${VPT_E2E_BACKEND_TOKEN:?VPT_E2E_BACKEND_TOKEN is required}
       # Don't call the live Skiplagged provider during create-trip.

@@ -363,6 +363,6 @@ in the PR body should be **before/after** rather than just "after".
   continuous **OTA** (JS-only) updates to the `preview` channel plus an
   approval-gated **native release** (EAS build → submit to TestFlight + Play
   internal) that auto-bumps the `mobile-v*` tag. Maestro e2e runs via
-  `mobile-e2e.yml` on the self-hosted runner against the isolated `vpt-e2e`
-  stack. Details: [`apps/mobile/CLAUDE.md`](apps/mobile/CLAUDE.md) and
+  `mobile.yml`'s **E2E Test** job on the self-hosted runner against the isolated
+  `vpt-e2e` stack. Details: [`apps/mobile/CLAUDE.md`](apps/mobile/CLAUDE.md) and
   `docs/mobile-cicd.md` (added by P4).
