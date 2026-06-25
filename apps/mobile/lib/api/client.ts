@@ -8,7 +8,7 @@
  * typed methods unwrap and return `data`.
  */
 import type { components } from './types';
-import { ApiError, AuthError } from './errors';
+import { ApiError, AuthError, NetworkError } from './errors';
 
 export type TripStatus = components['schemas']['TripStatus'];
 export type TripSummary = components['schemas']['TripResponse'];
@@ -47,6 +47,20 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     return headers;
   }
 
+  // Single-flight refresh: concurrent 401s (parallel requests) must share ONE
+  // refresh call. The backend rotates the refresh token on every use, so a
+  // second parallel refresh would send an already-rotated token and 401 →
+  // spurious sign-out. Coalesce them onto the same in-flight promise.
+  let refreshInFlight: Promise<boolean> | null = null;
+  function refreshOnce(): Promise<boolean> {
+    if (!refreshInFlight) {
+      refreshInFlight = Promise.resolve(opts.refresh()).finally(() => {
+        refreshInFlight = null;
+      });
+    }
+    return refreshInFlight;
+  }
+
   /** Fetch with refresh-on-401 + single retry. Returns the raw Response. */
   async function request(path: string, init: RequestInit): Promise<Response> {
     const url = `${base}${path}`;
@@ -56,11 +70,11 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     try {
       res = await fetchImpl(url, { ...init, headers: baseHeaders });
     } catch {
-      throw new AuthError('Unable to connect to server');
+      throw new NetworkError();
     }
 
     if (res.status === 401) {
-      const ok = await opts.refresh();
+      const ok = await refreshOnce();
       if (!ok) throw new AuthError('Session expired. Please sign in again.');
       // Rebuild headers so the refreshed bearer token is attached.
       const retryHeaders = buildHeaders();
@@ -70,7 +84,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       try {
         res = await fetchImpl(url, { ...init, headers: retryHeaders });
       } catch {
-        throw new AuthError('Unable to connect to server');
+        throw new NetworkError();
       }
       if (res.status === 401) throw new AuthError('Authentication failed after token refresh.');
     }

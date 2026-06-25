@@ -28,6 +28,16 @@ export interface MobileTokenResponse {
   user: SessionUser;
 }
 
+/**
+ * Request body the device POSTs to `POST /v1/auth/refresh`. The mobile client
+ * has no cookie, so it sends the refresh token in the body; P5 detects
+ * mobile-mode by the body's presence and returns a fresh `MobileTokenResponse`
+ * in the body (NOT `Set-Cookie`). The web client's cookie path is unchanged.
+ */
+export interface RefreshRequest {
+  refresh_token: string;
+}
+
 export function isMobileTokenResponse(value: unknown): value is MobileTokenResponse {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

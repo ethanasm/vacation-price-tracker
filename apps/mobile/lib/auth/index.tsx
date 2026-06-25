@@ -148,14 +148,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   }, []);
 
   // Refresh wired into the api client (Task 4). POSTs the refresh token in the
-  // Authorization header; the endpoint (P5) returns a fresh pair in the body.
+  // JSON body ({ refresh_token }); the endpoint (P5 /v1/auth/refresh) detects
+  // mobile-mode by the body's presence and returns a fresh pair in the body.
   const refresh = React.useCallback(async (): Promise<boolean> => {
     const rt = refreshRef.current;
     if (!rt) return false;
     try {
       const res = await fetch(`${API_URL.replace(/\/+$/, '')}/v1/auth/refresh`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${rt}`, 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
       });
       if (!res.ok) return false;
       const body = (await res.json().catch(() => null)) as

@@ -17,3 +17,15 @@ export class ApiError extends Error {
     this.detail = detail ?? message;
   }
 }
+
+/**
+ * A transport-level failure (offline, DNS, TLS, connection reset) — distinct
+ * from AuthError so a "signed-out on AuthError" handler doesn't force sign-out
+ * on a transient connectivity blip. The request never reached an auth verdict.
+ */
+export class NetworkError extends Error {
+  constructor(message = 'Unable to connect to server') {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
