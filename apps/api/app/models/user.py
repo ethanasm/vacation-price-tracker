@@ -16,6 +16,10 @@ class User(SQLModel, table=True):
         sa_column=Column(Boolean, server_default=text("true"), nullable=False),
         default=True,
     )
+    push_notifications_enabled: bool = Field(
+        sa_column=Column(Boolean, server_default=text("true"), nullable=False),
+        default=True,
+    )
 
     created_at: datetime = Field(
         sa_column=Column(

@@ -59,3 +59,35 @@ async def test_update_preferences_requires_auth(client_with_csrf):
         "/v1/users/preferences", json={"email_notifications_enabled": True}
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_disables_push(client_with_csrf, test_session):
+    user = await _create_user(test_session, enabled=True)
+    _authorize(client_with_csrf, user)
+
+    response = client_with_csrf.patch(
+        "/v1/users/preferences", json={"push_notifications_enabled": False}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["push_notifications_enabled"] is False
+    # Email channel untouched when only push is toggled.
+    assert body["email_notifications_enabled"] is True
+    await test_session.refresh(user)
+    assert user.push_notifications_enabled is False
+    assert user.email_notifications_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_empty_body_changes_nothing(client_with_csrf, test_session):
+    user = await _create_user(test_session, enabled=True)
+    _authorize(client_with_csrf, user)
+
+    response = client_with_csrf.patch("/v1/users/preferences", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email_notifications_enabled"] is True
+    assert body["push_notifications_enabled"] is True
