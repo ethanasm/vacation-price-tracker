@@ -236,6 +236,14 @@ files. **Heads-up:** a green `sonar:verify` only means coverage will map — a
 security finding (e.g. CWE-117 log injection: never log un-scrubbed client input)
 can still drop the gate. Use `--scan` to be sure.
 
+**CI invariant — both coverage workflows must run together.** The SonarQube
+workflow downloads web *and* python coverage **by commit SHA**; if only one of
+`nextjs.yml`/`python.yml` ran for a commit, the other language's report is absent
+and Sonar zero-coverages it (this is what tanked Coverage on New Code to 16.9%
+then 25.7%). The two workflows therefore share an **identical union `paths`
+filter** so any code change runs **both** (both-or-neither). When editing either
+trigger, keep them in lockstep.
+
 ## Verification Preference
 
 - After code changes, automatically run the most relevant tests/checks without
