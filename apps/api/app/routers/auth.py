@@ -1,3 +1,4 @@
+import hmac
 import logging
 import uuid
 
@@ -14,7 +15,14 @@ from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
-from app.core.errors import AuthenticationRequired, BadRequestError
+from app.core.errors import (
+    AccessDenied,
+    AppError,
+    AuthenticationRequired,
+    BadRequestError,
+    NotFoundError,
+)
+from app.core.google_verify import GoogleIdentity, GoogleTokenError, verify_google_id_token
 from app.core.security import create_access_token, create_refresh_token, get_cookie_params
 from app.db.deps import get_db
 from app.db.redis import redis_client
@@ -29,8 +37,32 @@ class UserResponse(BaseModel):
     email_notifications_enabled: bool = True
 
 
+class MobileTokenRequest(BaseModel):
+    """Body the native app POSTs: a Google ID token obtained via Expo AuthSession."""
+
+    id_token: str
+
+
+class MobileTokenResponse(BaseModel):
+    """The JWT pair + user, returned in the BODY (never Set-Cookie) for mobile."""
+
+    access_token: str
+    refresh_token: str
+    user: UserResponse
+
+
+class RefreshRequest(BaseModel):
+    """Optional body for the mobile refresh path (web sends the cookie instead)."""
+
+    refresh_token: str | None = None
+
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+E2E_SECRET_HEADER = "X-E2E-Token"
+E2E_SYNTHETIC_GOOGLE_SUB = "e2e-user-000"
+E2E_SYNTHETIC_EMAIL = "e2e@vpt.test"
 
 oauth = OAuth()
 oauth.register(
@@ -143,10 +175,104 @@ async def google_auth_callback(request: Request, db: AsyncSession = Depends(get_
     return response
 
 
+@router.post("/v1/auth/mobile-token", response_model=MobileTokenResponse)
+async def mobile_token(
+    payload: MobileTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Exchange a Google ID token (from the native app) for the same JWT pair the
+    web OAuth callback issues. Returns the pair in the body — the mobile client
+    stores it in expo-secure-store and sends `Authorization: Bearer`."""
+    audiences = settings.google_oauth_mobile_audiences_list
+    if not audiences:
+        # Missing config is an operator error, not a client error → 500. AppError
+        # is the 500-status base in app/core/errors.py.
+        logger.error(
+            "mobile-token called but GOOGLE_OAUTH_MOBILE_AUDIENCES is unset",
+            extra={"event": "auth.mobile.config_error"},
+        )
+        raise AppError("Mobile auth is not configured.")
+
+    try:
+        identity: GoogleIdentity = verify_google_id_token(payload.id_token, audiences)
+    except GoogleTokenError:
+        # Never log the raw token (CWE-117); the event name is enough to triage.
+        logger.warning(
+            "Mobile Google ID token verification failed",
+            extra={"event": "auth.mobile.token_invalid"},
+        )
+        raise AuthenticationRequired("invalid_google_token") from None
+
+    if not should_allow_sign_in(
+        email=identity.email,
+        email_verified=identity.email_verified,
+        emails=parse_allowlist(settings.auth_allowed_emails),
+        domains=parse_allowlist(settings.auth_allowed_domains),
+    ):
+        logger.info(
+            "Mobile sign-in denied by allowlist",
+            extra={"event": "auth.mobile.denied"},
+        )
+        raise AccessDenied("access_denied")
+
+    result = await db.execute(select(User).where(User.google_sub == identity.sub))
+    user = result.scalars().first()
+    if not user:
+        user = User(google_sub=identity.sub, email=identity.email)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_data = _build_jwt_data(user.id)
+    access_token = create_access_token(data=jwt_data)
+    refresh_token = create_refresh_token(data=jwt_data)
+    await _store_refresh_token(user.id, refresh_token)
+
+    logger.info(
+        "Mobile sign-in successful",
+        extra={"event": "auth.mobile.success", "user_id": str(user.id)},
+    )
+
+    return MobileTokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            email_notifications_enabled=user.email_notifications_enabled,
+        ),
+    )
+
+
+async def _extract_refresh_body_token(request: Request) -> str | None:
+    """Pull the refresh token from a mobile JSON body, or return None for the web
+    (cookie) path. A present-but-malformed ``refresh_token`` field (non-string or
+    empty) raises ``BadRequestError`` so the client gets a 400 instead of a
+    confusing 401 from falling through to the cookie path."""
+    try:
+        raw = await request.json()
+    except Exception:  # noqa: BLE001 - no/invalid body is the cookie (web) path
+        return None
+    if not isinstance(raw, dict) or "refresh_token" not in raw:
+        return None
+    candidate = raw["refresh_token"]
+    if isinstance(candidate, str) and candidate:
+        return candidate
+    raise BadRequestError("Invalid refresh token in request body.")
+
+
 @router.post("/v1/auth/refresh")
-async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
-    """Refreshes the access token using a valid refresh token."""
-    refresh_token_value = request.cookies.get(CookieNames.REFRESH_TOKEN)
+async def refresh_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh the access token. Web sends the refresh token in the
+    ``refresh_token_cookie`` cookie and gets new cookies back; mobile sends it in
+    a JSON body (``{"refresh_token": ...}``) and gets the new pair in the body."""
+    # Detect the mode: a JSON body with a refresh_token means the mobile path.
+    body_token = await _extract_refresh_body_token(request)
+    refresh_token_value = body_token or request.cookies.get(CookieNames.REFRESH_TOKEN)
+    body_mode = body_token is not None
 
     if not refresh_token_value:
         raise AuthenticationRequired("Refresh token not found.")
@@ -161,30 +287,38 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     except (jwt.PyJWTError, ValueError) as exc:
         raise AuthenticationRequired("Invalid refresh token.") from exc
 
-    # Verify refresh token is still valid in Redis
     stored_token = await redis_client.get(CacheKeys.refresh_token(str(user_id)))
     if stored_token != refresh_token_value:
         raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
 
-    # Issue new tokens
     jwt_data = _build_jwt_data(user_id)
     new_access_token = create_access_token(data=jwt_data)
     new_refresh_token = create_refresh_token(data=jwt_data)
     await _store_refresh_token(user_id, new_refresh_token)
 
-    response = Response("Tokens refreshed.", status_code=200)
-    _set_auth_cookies(response, new_access_token, new_refresh_token)
-
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user:
         logger.info(
-            "User token refreshed: id=%s email=%s",
-            user.id,
-            user.email,
+            "User token refreshed",
             extra={"event": "auth.token.refresh", "user_id": str(user.id)},
         )
 
+    if body_mode:
+        if user is None:  # pragma: no cover - the refresh token's user must exist
+            raise AuthenticationRequired("User not found")
+        return MobileTokenResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            user=UserResponse(
+                id=str(user.id),
+                email=user.email,
+                email_notifications_enabled=user.email_notifications_enabled,
+            ),
+        )
+
+    response = Response("Tokens refreshed.", status_code=200)
+    _set_auth_cookies(response, new_access_token, new_refresh_token)
     return response
 
 
@@ -269,10 +403,84 @@ async def test_login(
     return {"id": str(user.id), "email": user.email}
 
 
+@router.post("/v1/e2e/mint-token", response_model=MobileTokenResponse)
+async def e2e_mint_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Mint a bearer JWT pair for the synthetic e2e user (P4 mobile-e2e harness).
+
+    Doubly gated: inert (404) unless `E2E_MODE` is on, and requires the shared
+    `X-E2E-Token` secret. Returns the pair in the body; the access_token then
+    authenticates via the Bearer path in get_current_user (Task 1). Only ever
+    enabled on the isolated vpt-e2e backend, never normal prod.
+    """
+    if not settings.e2e_mode:
+        # Endpoint is inert outside e2e — behave as if it does not exist.
+        raise NotFoundError("Not found.")
+
+    if not settings.vpt_e2e_backend_token:
+        logger.error(
+            "e2e mint-token called but VPT_E2E_BACKEND_TOKEN is unset",
+            extra={"event": "auth.e2e.config_error"},
+        )
+        raise AppError("E2E token minting is not configured.")
+
+    provided = request.headers.get(E2E_SECRET_HEADER, "")
+    if not provided or not hmac.compare_digest(provided, settings.vpt_e2e_backend_token):
+        logger.warning(
+            "e2e mint-token rejected: bad or missing secret",
+            extra={"event": "auth.e2e.denied"},
+        )
+        raise AccessDenied("Invalid e2e token.")
+
+    result = await db.execute(select(User).where(User.google_sub == E2E_SYNTHETIC_GOOGLE_SUB))
+    user = result.scalars().first()
+    if not user:
+        user = User(google_sub=E2E_SYNTHETIC_GOOGLE_SUB, email=E2E_SYNTHETIC_EMAIL)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_data = _build_jwt_data(user.id)
+    access_token = create_access_token(data=jwt_data)
+    refresh_token = create_refresh_token(data=jwt_data)
+    await _store_refresh_token(user.id, refresh_token)
+
+    logger.info(
+        "Minted e2e bearer token",
+        extra={"event": "auth.e2e.minted", "user_id": str(user.id)},
+    )
+    return MobileTokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            email_notifications_enabled=user.email_notifications_enabled,
+        ),
+    )
+
+
+def _extract_access_token(request: Request) -> str | None:
+    """Resolve the access-token JWT from the cookie (web) or, failing that, an
+    ``Authorization: Bearer <jwt>`` header (mobile). The cookie wins so the web
+    flow is unchanged; the bearer path is additive and backwards-compatible."""
+    cookie_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    if cookie_token:
+        return cookie_token
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        scheme, _, credential = auth_header.partition(" ")
+        if scheme.lower() == "bearer" and credential:
+            return credential
+    return None
+
+
 @router.get("/v1/auth/me", response_model=UserResponse)
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     """Returns the current authenticated user's info."""
-    access_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    access_token = _extract_access_token(request)
 
     if not access_token:
         raise AuthenticationRequired("Not authenticated")
