@@ -4,9 +4,13 @@
  * The API streams `text/event-stream` where each event is a single
  * `data: <json>\n\n` line. The JSON is a serialized `ChatChunk`
  * (apps/api/app/schemas/chat.py):
- *   - text:       {"type":"content","content":"…"}
+ *   - text:       {"type":"content","content":"…","thread_id":"…"}
  *   - tool call:  {"type":"tool_call","tool_call":{"id","name","arguments"}}
  *   - terminal:   {"type":"done","thread_id":"…"}
+ *
+ * The backend stamps `thread_id` on the first content chunk and the terminal
+ * done chunk; the parser captures it into `SseState.threadId` so the caller can
+ * thread the next turn into the same server-side conversation.
  *
  * The parser is deliberately tolerant so it survives backend shape drift:
  *   - text deltas may arrive under `content` / `text` / `token` / `delta`;
@@ -28,11 +32,17 @@ export interface SseState {
   toolCalls: string[];
   /** True once the stream signals completion. */
   done: boolean;
+  /**
+   * Conversation/thread id surfaced by the backend (`thread_id` on the first
+   * content chunk and the terminal `done` chunk). Captured so the next turn can
+   * be threaded into the same server-side conversation. `undefined` until seen.
+   */
+  threadId?: string;
 }
 
 /** A fresh, empty parser state. */
 export function initSseState(): SseState {
-  return { buffer: '', text: '', toolCalls: [], done: false };
+  return { buffer: '', text: '', toolCalls: [], done: false, threadId: undefined };
 }
 
 type ChunkPayload = {
@@ -43,6 +53,7 @@ type ChunkPayload = {
   delta?: unknown;
   name?: unknown;
   tool_call?: { name?: unknown } | null;
+  thread_id?: unknown;
 };
 
 function asText(v: unknown): string {
@@ -63,7 +74,7 @@ export function parseSseChunk(state: SseState, chunk: string): SseState {
   // terminator) — keep it buffered until its terminator arrives.
   const nextBuffer = parts.pop() ?? '';
 
-  let { text, done } = state;
+  let { text, done, threadId } = state;
   const toolCalls = [...state.toolCalls];
 
   for (const rawEvent of parts) {
@@ -87,6 +98,11 @@ export function parseSseChunk(state: SseState, chunk: string): SseState {
       continue; // ignore malformed JSON
     }
 
+    // The backend stamps the conversation id on the first content chunk and
+    // the terminal done chunk; keep the latest non-empty value.
+    const tid = asText(payload.thread_id);
+    if (tid) threadId = tid;
+
     if (payload.type === 'done') {
       done = true;
       continue;
@@ -103,5 +119,5 @@ export function parseSseChunk(state: SseState, chunk: string): SseState {
     }
   }
 
-  return { buffer: nextBuffer, text, toolCalls, done };
+  return { buffer: nextBuffer, text, toolCalls, done, threadId };
 }

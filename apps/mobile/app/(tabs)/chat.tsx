@@ -110,6 +110,9 @@ export default function ChatScreen(): React.JSX.Element {
           // Platforms without a streaming body (web/test): read once.
           ingest(await res.text());
         }
+        // Persist the backend conversation id so the next turn threads into the
+        // same server-side conversation (multi-turn context).
+        if (state.threadId) threadIdRef.current = state.threadId;
         if (!state.text && state.toolCalls.length === 0) {
           setMessages((prev) =>
             prev.map((m) =>

@@ -16,6 +16,24 @@ test('accumulates assistant text across chunks and surfaces tool-call events (re
   assert.deepEqual(state.toolCalls, ['create_trip']);
   state = parseSseChunk(state, 'data: {"type":"done","thread_id":"abc"}\n\n');
   assert.equal(state.done, true);
+  // The terminal done chunk carries the conversation id; capturing it lets the
+  // next turn thread into the same server-side conversation.
+  assert.equal(state.threadId, 'abc');
+});
+
+test('captures thread_id from the first content chunk (backend stamps it on first + last)', () => {
+  // The backend includes thread_id on the very first content chunk, before the
+  // done chunk arrives — the parser must surface it as soon as it is seen.
+  let state: SseState = { buffer: '', text: '', toolCalls: [], done: false };
+  state = parseSseChunk(
+    state,
+    'data: {"type":"content","content":"Hi","thread_id":"conv-123"}\n\n',
+  );
+  assert.equal(state.text, 'Hi');
+  assert.equal(state.threadId, 'conv-123');
+  // A later chunk without thread_id must not clobber the captured id.
+  state = parseSseChunk(state, 'data: {"type":"content","content":"!"}\n\n');
+  assert.equal(state.threadId, 'conv-123');
 });
 
 test('keeps a partial trailing event in the buffer until its terminator arrives', () => {
