@@ -1,0 +1,7 @@
+.stack { display: inline-flex; align-items: center; }
+.chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  color: #fff; font-weight: 800; font-size: 11px; letter-spacing: .02em;
+}
+.behind { margin-right: -10px; box-shadow: 0 0 0 2px #fff; }

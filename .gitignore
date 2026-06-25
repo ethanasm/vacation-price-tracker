@@ -9,6 +9,8 @@
 /apps/web/node_modules
 /apps/web/.next
 /apps/web/.pnpm-store
+/apps/mobile/node_modules
+/apps/mobile/.expo
 # Python bytecode (anywhere in the tree)
 __pycache__/
 *.pyc
