@@ -56,6 +56,11 @@ const config: ExpoConfig = {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#7C3AED',
     },
+    // P4 (mobile-cicd): the e2e APK reaches the emulator-host VPT e2e backend
+    // over cleartext http://10.0.2.2:8010. Allow cleartext ONLY in e2e builds
+    // (EXPO_PUBLIC_E2E_MODE=1, set by the e2e build profile / mobile-e2e.yml);
+    // prod/preview builds keep cleartext disabled.
+    usesCleartextTraffic: process.env.EXPO_PUBLIC_E2E_MODE === '1',
   },
   plugins: [
     'expo-router',
