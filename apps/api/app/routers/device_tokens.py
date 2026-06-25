@@ -69,6 +69,18 @@ async def register_device_token(
                 await db.commit()
     else:
         # Re-registration: reassign to the current user and refresh the platform.
+        # A token legitimately moves between accounts on a shared device (user A
+        # signs out, user B signs in on the same phone), so reassignment is
+        # allowed — but log it so the ownership change is never silent.
+        if existing.user_id != user_id:
+            logger.warning(
+                "Reassigning device token to a different user",
+                extra={
+                    "event": "notifications.device_token.reassigned",
+                    "user_id": current_user.id,
+                    "previous_user_id": str(existing.user_id),
+                },
+            )
         existing.user_id = user_id
         existing.platform = payload.platform
         db.add(existing)

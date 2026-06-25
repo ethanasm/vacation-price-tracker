@@ -117,3 +117,33 @@ class TestDeviceTokenEndpoints:
             json={"expo_push_token": "ExponentPushToken[x]", "platform": "ios"},
         )
         assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_reassign_across_users_is_logged(self, client, test_session, caplog):
+        import logging as _logging
+
+        user_a = await _user(test_session)
+        user_b = await _user(test_session)
+        body = {"expo_push_token": "ExponentPushToken[shared-device]", "platform": "ios"}
+        # User A registers the device first.
+        first = client.post(
+            "/v1/notifications/device-token", headers=_auth(user_a), json=body
+        )
+        assert first.status_code == 200
+
+        # User B signs in on the same device and re-registers the same token.
+        with caplog.at_level(_logging.WARNING):
+            second = client.post(
+                "/v1/notifications/device-token", headers=_auth(user_b), json=body
+            )
+        assert second.status_code == 200
+
+        # The single row is reassigned to user B...
+        rows = (await test_session.execute(select(DeviceToken))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].user_id == user_b.id
+        # ...and the ownership change was logged (not silent).
+        assert any(
+            getattr(rec, "event", None) == "notifications.device_token.reassigned"
+            for rec in caplog.records
+        )
