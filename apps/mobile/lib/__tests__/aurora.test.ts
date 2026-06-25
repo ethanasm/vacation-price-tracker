@@ -193,6 +193,36 @@ test('makeIdempotencyKey uses the injected rand (fallback branch) and stays uniq
   assert.ok(a.length > 0);
 });
 
+test('makeIdempotencyKey falls back to timestamp+random when crypto is absent', () => {
+  // `crypto` is a getter-only global in Node, so swap its descriptor (save + restore).
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  try {
+    // (1) crypto entirely absent -> timestamp fallback
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+    const a = makeIdempotencyKey();
+    const b = makeIdempotencyKey();
+    assert.equal(typeof a, 'string');
+    assert.ok(a.length > 0);
+    assert.notEqual(a, b);
+
+    // (2) crypto present but randomUUID is not a function -> still timestamp fallback
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {},
+      configurable: true,
+      writable: true,
+    });
+    const c = makeIdempotencyKey();
+    assert.equal(typeof c, 'string');
+    assert.ok(c.length > 0);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'crypto', saved);
+  }
+});
+
 test('buildChartSeries gracefully handles malformed date keys (dayLabel fallback)', () => {
   // Snapshot where created_at produces a non-parseable date segment — dayLabel falls back to raw string
   const history = [
