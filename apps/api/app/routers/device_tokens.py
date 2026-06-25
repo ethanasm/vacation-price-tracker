@@ -11,6 +11,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -46,12 +47,32 @@ async def register_device_token(
                 platform=payload.platform,
             )
         )
+        try:
+            await db.commit()
+        except IntegrityError:  # pragma: no cover - concurrency-only path
+            # Lost a race: a concurrent request inserted the same token between
+            # our SELECT and this INSERT, tripping the unique constraint. Recover
+            # by reassigning the now-existing row instead of surfacing a 500. The
+            # single-threaded SQLite test DB can't reproduce the interleaving.
+            await db.rollback()
+            row = (
+                await db.execute(
+                    select(DeviceToken).where(
+                        DeviceToken.expo_push_token == payload.expo_push_token
+                    )
+                )
+            ).scalars().first()
+            if row is not None:
+                row.user_id = user_id
+                row.platform = payload.platform
+                db.add(row)
+                await db.commit()
     else:
         # Re-registration: reassign to the current user and refresh the platform.
         existing.user_id = user_id
         existing.platform = payload.platform
         db.add(existing)
-    await db.commit()
+        await db.commit()
 
     logger.info(
         "Registered device token",
