@@ -2,11 +2,12 @@ import type { ExpoConfig } from 'expo/config';
 
 // Google OAuth on native uses the *application id* as the redirect scheme.
 // expo-auth-session's Google provider builds
-// `me.ethanasm.vpt:/oauthredirect` from Application.applicationId. iOS appends
-// the bundle id to CFBundleURLSchemes automatically; Android does NOT, so the
-// package name must be listed in `scheme` explicitly or Chrome drops the
-// callback. (See the showbook app.config.ts header for the full rationale.)
-const ANDROID_PACKAGE = 'me.ethanasm.vpt';
+// `me.ethanasm.vacation_price_tracker:/oauthredirect` from
+// Application.applicationId. iOS appends the bundle id to CFBundleURLSchemes
+// automatically; Android does NOT, so the package name must be listed in
+// `scheme` explicitly or Chrome drops the callback. (See the showbook
+// app.config.ts header for the full rationale.)
+const ANDROID_PACKAGE = 'me.ethanasm.vacation_price_tracker';
 
 const config: ExpoConfig = {
   name: 'Price Tracker',
@@ -20,7 +21,7 @@ const config: ExpoConfig = {
   scheme: ['vpt', ANDROID_PACKAGE],
   userInterfaceStyle: 'light',
   ios: {
-    bundleIdentifier: 'me.ethanasm.vpt',
+    bundleIdentifier: 'me.ethanasm.vacation_price_tracker',
     supportsTablet: true,
     // ios.config must be a defined object — Expo's withUsesNonExemptEncryption
     // plugin does `'usesNonExemptEncryption' in config.ios.config`.
@@ -74,8 +75,14 @@ const config: ExpoConfig = {
   runtimeVersion: {
     policy: 'appVersion',
   },
-  // `updates.url` and `extra.eas.projectId` are intentionally absent — P4
-  // adds them when it provisions the EAS project (mobile-cicd plan).
+  extra: {
+    // Links this app to the EAS project (created via `eas init`). Required for
+    // `eas build`/`eas update` and Expo push tokens. `updates.url` is still
+    // intentionally absent — P4 (mobile-cicd) adds it with the OTA wiring.
+    eas: {
+      projectId: '6ab19d8f-51fd-4bce-b47f-4b2828209c04',
+    },
+  },
 };
 
 export default config;

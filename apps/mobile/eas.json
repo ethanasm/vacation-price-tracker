@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://vacation-price-tracker.ethanasm.me",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_IOS": "222563763412-ba4ejjpfgdvq3pl64hrnf0u09sap919q.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID": "222563763412-9qslaeisquai4hsi930c2bihcj3p34bk.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_WEB": "222563763412-fuonu9krvmvpvpf4dq4m2ggriu8gv113.apps.googleusercontent.com"
+      }
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "preview"
+    },
+    "production": {
+      "extends": "base",
+      "channel": "production"
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
