@@ -80,10 +80,15 @@ const config: ExpoConfig = {
   runtimeVersion: {
     policy: 'appVersion',
   },
+  // P4 (mobile-cicd): EAS Update wiring. expo-updates resolves OTA bundles from
+  // this URL; the runtime version is derived from `version` above via the
+  // runtimeVersion.policy='appVersion' setting.
+  updates: {
+    url: 'https://u.expo.dev/6ab19d8f-51fd-4bce-b47f-4b2828209c04',
+  },
   extra: {
     // Links this app to the EAS project (created via `eas init`). Required for
-    // `eas build`/`eas update` and Expo push tokens. `updates.url` is still
-    // intentionally absent — P4 (mobile-cicd) adds it with the OTA wiring.
+    // `eas build`/`eas update` and Expo push tokens.
     eas: {
       projectId: '6ab19d8f-51fd-4bce-b47f-4b2828209c04',
     },

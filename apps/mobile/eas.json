@@ -24,9 +24,48 @@
     "production": {
       "extends": "base",
       "channel": "production"
+    },
+    "preview-store": {
+      "extends": "base",
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
+    },
+    "e2e": {
+      "extends": "preview",
+      "distribution": "internal",
+      "channel": "e2e",
+      "env": {
+        "EXPO_PUBLIC_E2E_MODE": "1"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "track": "production",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      },
+      "ios": {
+        "ascApiKeyPath": "./asc-api-key.p8"
+      }
+    },
+    "preview-store": {
+      "android": {
+        "track": "internal",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      },
+      "ios": {
+        "ascApiKeyPath": "./asc-api-key.p8"
+      }
+    }
   }
 }
