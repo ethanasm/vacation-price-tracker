@@ -46,18 +46,32 @@ def _is_csrf_exempt(path: str) -> bool:
 
 
 def _is_bearer_authenticated(request: Request) -> bool:
-    """True when the request carries an ``Authorization: Bearer`` credential.
+    """True when the request carries an ``Authorization: Bearer <token>`` credential.
 
     Bearer-token clients (the mobile app) have no browser cookie session, so the
-    double-submit-cookie CSRF defense neither applies nor is forgeable: a browser
-    never auto-attaches a bearer header, and a cross-site request that tried to
-    set one would trip a CORS preflight the allowlist rejects. Exempting by auth
-    mechanism (not just by path) keeps every bearer-authed endpoint — POST
-    /v1/trips, the refresh/pause routes, etc. — reachable from mobile, while
-    cookie-authed (web) requests stay fully CSRF-protected.
+    double-submit-cookie CSRF defense neither applies nor is forgeable. The safety
+    of skipping CSRF here rests on the credentialed CORS allowlist
+    (``allow_credentials=True`` with an explicit single-origin list, see
+    ``app/main.py``): ``Authorization`` is not a CORS-safelisted header, so any
+    cross-origin request that sets it triggers a preflight an attacker origin
+    fails, and an HTML-form CSRF (the preflight-free vector) cannot set the header
+    at all. **If that CORS allowlist is ever loosened, this exemption re-opens CSRF
+    across the whole bearer surface.** Exempting by auth mechanism (not just by
+    path) keeps every bearer-authed endpoint — POST /v1/trips, the refresh/pause
+    routes, etc. — reachable from mobile, while cookie-authed (web) requests stay
+    fully CSRF-protected.
+
+    The scheme parse mirrors ``_extract_access_token`` in ``routers/auth.py``
+    (case-insensitive scheme, non-empty credential) so the set of CSRF-exempt
+    requests is exactly the set the authenticator treats as bearer-authed —
+    otherwise a ``bearer <jwt>`` request would authenticate but still be rejected
+    by CSRF, reproducing the opaque failure this guard exists to prevent.
     """
-    auth = request.headers.get("Authorization", "")
-    return auth.startswith("Bearer ")
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return False
+    scheme, _, credential = auth_header.partition(" ")
+    return scheme.lower() == "bearer" and bool(credential)
 
 
 def _ensure_csrf_cookie(response: Response, existing_token: str | None) -> None:
