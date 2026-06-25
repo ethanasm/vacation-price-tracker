@@ -1,0 +1,78 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'bump-mobile-version.mjs');
+
+function withConfig(version, run) {
+  const dir = mkdtempSync(join(tmpdir(), 'bump-'));
+  const path = join(dir, 'app.config.ts');
+  writeFileSync(path, `const config = {\n  name: 'Price Tracker',\n  version: '${version}',\n};\nexport default config;\n`);
+  try {
+    return run(path, dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function bump(path, args) {
+  return execFileSync('node', [SCRIPT, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, BUMP_MOBILE_CONFIG_PATH: path },
+  }).trim();
+}
+
+test('--print returns the current version without writing', () => {
+  withConfig('0.3.2', (path) => {
+    assert.equal(bump(path, ['--print']), '0.3.2');
+    assert.match(readFileSync(path, 'utf8'), /version: '0\.3\.2'/);
+  });
+});
+
+test('patch bump increments the patch component', () => {
+  withConfig('0.3.2', (path) => {
+    assert.equal(bump(path, ['--type', 'patch']), '0.3.3');
+    assert.match(readFileSync(path, 'utf8'), /version: '0\.3\.3'/);
+  });
+});
+
+test('minor bump increments minor and zeroes patch', () => {
+  withConfig('0.3.2', (path) => {
+    assert.equal(bump(path, ['--type', 'minor']), '0.4.0');
+  });
+});
+
+test('major bump maps to minor while pre-1.0', () => {
+  withConfig('0.3.2', (path) => {
+    assert.equal(bump(path, ['--type', 'major']), '0.4.0');
+  });
+});
+
+test('major bump increments major once at or above 1.0', () => {
+  withConfig('1.4.2', (path) => {
+    assert.equal(bump(path, ['--type', 'major']), '2.0.0');
+  });
+});
+
+test('--floor raises the base when the tag is ahead of the file', () => {
+  withConfig('0.3.2', (path) => {
+    // file says 0.3.2 but the last tag was 0.5.0 → patch off the floor → 0.5.1
+    assert.equal(bump(path, ['--type', 'patch', '--floor', '0.5.0']), '0.5.1');
+  });
+});
+
+test('--floor below the file version is ignored', () => {
+  withConfig('0.3.2', (path) => {
+    assert.equal(bump(path, ['--type', 'patch', '--floor', '0.1.0']), '0.3.3');
+  });
+});
+
+test('rejects an invalid --type', () => {
+  withConfig('0.3.2', (path) => {
+    assert.throws(() => bump(path, ['--type', 'bogus']));
+  });
+});
