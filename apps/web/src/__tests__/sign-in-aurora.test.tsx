@@ -8,8 +8,8 @@ describe("Sign-in (Aurora)", () => {
     render(<HomePage />);
     expect(screen.getByText("Date-Range Optimizer")).toBeInTheDocument();
     expect(screen.getByText(/vacation window/i)).toBeInTheDocument();
-    expect(screen.getByText(/Flight combinations/i)).toBeInTheDocument();
-    expect(screen.getByText(/Hotel matching/i)).toBeInTheDocument();
+    expect(screen.getByText("Flights")).toBeInTheDocument();
+    expect(screen.getByText("Hotels")).toBeInTheDocument();
     expect(screen.getByText(/Price alerts/i)).toBeInTheDocument();
     expect(screen.getByText("$186")).toBeInTheDocument();
     expect(screen.getByText("90+")).toBeInTheDocument();

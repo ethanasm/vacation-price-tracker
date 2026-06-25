@@ -124,8 +124,8 @@
 .title {
   font-family: var(--font-display), "Space Grotesk", "Helvetica Neue", sans-serif;
   font-weight: 800;
-  font-size: 28px;
-  line-height: 1.15;
+  font-size: clamp(2.25rem, 3vw, 2.5rem);
+  line-height: 1.1;
   margin: 0;
   letter-spacing: -0.02em;
   color: var(--aurora-ink);
@@ -153,7 +153,7 @@
   display: flex;
   align-items: center;
   gap: 1.25rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 1.25rem 1.5rem;
   background: var(--aurora-card);
   border: 1px solid var(--aurora-hairline);
@@ -228,9 +228,22 @@
   padding: 28px;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+  text-align: left;
+}
+
+.cardLogo {
+  display: inline-flex;
   align-items: center;
-  gap: 1rem;
-  text-align: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--aurora-grad-primary);
+  color: #fff;
+  box-shadow: var(--aurora-shadow-btn);
+  margin-bottom: 0.25rem;
 }
 
 .ctaCard h2 {
@@ -241,13 +254,14 @@
 
 .ctaCard p {
   color: var(--aurora-body);
-  margin-bottom: 0.5rem;
+  margin: 0;
 }
 
 .oauthNote {
   font-size: 12px;
   color: var(--aurora-muted);
-  margin-top: 0.5rem;
+  text-align: center;
+  margin-top: 0.35rem;
   margin-bottom: 0;
 }
 

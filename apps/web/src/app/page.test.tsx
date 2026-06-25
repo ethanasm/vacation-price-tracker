@@ -40,8 +40,8 @@ describe("HomePage", () => {
   it("renders the feature items", () => {
     render(<HomePage />);
 
-    expect(screen.getByText("Flight combinations")).toBeInTheDocument();
-    expect(screen.getByText("Hotel matching")).toBeInTheDocument();
+    expect(screen.getByText("Flights")).toBeInTheDocument();
+    expect(screen.getByText("Hotels")).toBeInTheDocument();
     expect(screen.getByText("Price alerts")).toBeInTheDocument();
   });
 

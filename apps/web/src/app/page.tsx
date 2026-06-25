@@ -45,14 +45,14 @@ export default function HomePage() {
                 <div className={styles.featureIcon}>
                   <Plane size={20} />
                 </div>
-                <span>Flight combinations</span>
+                <span>Flights</span>
               </div>
               <Separator orientation="vertical" className={styles.separator} />
               <div className={styles.featureItem}>
                 <div className={styles.featureIcon}>
                   <Building2 size={20} />
                 </div>
-                <span>Hotel matching</span>
+                <span>Hotels</span>
               </div>
               <Separator orientation="vertical" className={styles.separator} />
               <div className={styles.featureItem}>
@@ -81,9 +81,16 @@ export default function HomePage() {
           {/* Right column: Sign-in card */}
           <div className={styles.heroCard}>
             <div className={styles.ctaCard}>
+              <div className={styles.cardLogo} aria-hidden="true">
+                <Plane size={22} />
+              </div>
               <h2>Ready to get started?</h2>
               <p>Sign in to create your first trip and start tracking prices.</p>
-              <GoogleButton onClick={handleSignIn} />
+              <GoogleButton
+                type="light"
+                onClick={handleSignIn}
+                style={{ width: "100%", borderRadius: 10 }}
+              />
               <p className={styles.oauthNote}>
                 Google OAuth only. We never store passwords.
               </p>
