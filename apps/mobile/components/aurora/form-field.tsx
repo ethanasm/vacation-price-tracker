@@ -1,13 +1,14 @@
 import React from 'react';
-import { View, Text, TextInput, StyleSheet, type TextInputProps } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform, type TextInputProps } from 'react-native';
 import { useTheme } from '@/lib/theme';
 
 /**
- * Labelled text input on a `surface` background with `inner` radius. The label
- * is rendered with the Aurora `label` token; `right` paints an optional
- * adornment (e.g. the ⇄ swap button) beside the input. `testID` is forwarded to
- * the inner TextInput so screens can attach the canonical E2E ids, and
- * `accessibilityLabel` defaults to the field label.
+ * Labelled text input. On iOS it's a filled `surface` field with `inner` radius;
+ * on Android it's a Material text field — transparent with a violet bottom
+ * underline. The label is rendered with the Aurora `label` token; `right` paints
+ * an optional adornment (e.g. the ⇄ swap button) beside the input. `testID` is
+ * forwarded to the inner TextInput so screens can attach the canonical E2E ids,
+ * and `accessibilityLabel` defaults to the field label.
  */
 export function FormField({
   label,
@@ -35,6 +36,22 @@ export function FormField({
   maxLength?: number;
 }): React.JSX.Element {
   const { tokens } = useTheme();
+  const isAndroid = Platform.OS === 'android';
+  const inputStyle = isAndroid
+    ? {
+        backgroundColor: 'transparent',
+        borderBottomWidth: 2,
+        borderBottomColor: tokens.color.primary,
+        paddingHorizontal: 0,
+        color: tokens.color.textStrong,
+        fontFamily: tokens.font[600],
+      }
+    : {
+        backgroundColor: tokens.color.surface,
+        borderRadius: tokens.radius.inner,
+        color: tokens.color.textStrong,
+        fontFamily: tokens.font[600],
+      };
   return (
     <View style={styles.wrap}>
       <Text
@@ -61,15 +78,7 @@ export function FormField({
           autoCapitalize={autoCapitalize}
           autoCorrect={autoCorrect}
           maxLength={maxLength}
-          style={[
-            styles.input,
-            {
-              backgroundColor: tokens.color.surface,
-              borderRadius: tokens.radius.inner,
-              color: tokens.color.textStrong,
-              fontFamily: tokens.font[600],
-            },
-          ]}
+          style={[styles.input, inputStyle]}
         />
         {right ? <View style={styles.right}>{right}</View> : null}
       </View>

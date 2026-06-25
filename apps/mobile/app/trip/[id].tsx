@@ -6,12 +6,15 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Animated,
+  Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/provider';
-import { useTheme } from '@/lib/theme';
+import { useTheme, formatUsd } from '@/lib/theme';
 import { StatusChip, PriceChart, GradientButton } from '@/components/aurora';
 import { StatTrio } from '@/components/aurora/stat-trio';
 import { FlightRow } from '@/components/aurora/flight-row';
@@ -145,107 +148,206 @@ function TripDetailBody({
   const statusTone = trip.status === 'active' ? 'active' : 'paused';
   const route = `${trip.origin_airport} → ${trip.destination_code}`;
 
+  // The pinned-header content (shared by both platforms — Android collapses it).
+  const headerInner = (
+    <>
+      <Pressable onPress={() => router.back()} accessibilityRole="button">
+        <Text style={[styles.breadcrumb, { color: c.textMuted, fontFamily: tokens.font[600] }]}>
+          {`Your Trips  /  ${trip.name}`}
+        </Text>
+      </Pressable>
+
+      <View style={styles.titleRow}>
+        <Text numberOfLines={1} style={[styles.title, { color: c.textStrong, fontFamily: tokens.font[800] }]}>
+          {trip.name}
+        </Text>
+        <StatusChip tone={statusTone} label={trip.status === 'active' ? 'ACTIVE' : 'PAUSED'} />
+      </View>
+
+      <Text style={[styles.meta, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
+        {`${route} · ${formatDateRange(trip.depart_date, trip.return_date)} · ${nights} night${nights === 1 ? '' : 's'} · ${adults} adult${adults === 1 ? '' : 's'}`}
+      </Text>
+
+      <View style={styles.actions}>
+        <View style={styles.actionBtn}>
+          <GradientButton
+            label="Edit"
+            variant="secondary"
+            onPress={() => router.push(`/trip/${tripId}` as never)}
+          />
+        </View>
+        <View style={styles.actionBtn}>
+          <GradientButton
+            label={isRefreshing ? 'Refreshing…' : 'Refresh'}
+            loading={isRefreshing}
+            onPress={onRefresh}
+          />
+        </View>
+      </View>
+
+      <View style={styles.statTrioWrap}>
+        <StatTrio
+          flight={flightPrice}
+          hotelTotal={hotelTotal}
+          hotelPerNight={hotelPerNight}
+          tripTotal={tripTotal}
+        />
+      </View>
+
+      <View style={styles.chartWrap}>
+        <PriceChart points={chart.points} nowLabel={chart.nowLabel} />
+      </View>
+    </>
+  );
+
+  // The scrollable flight/hotel sections (shared by both platforms).
+  const sections = (
+    <>
+      {flights.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
+            Flights
+          </Text>
+          {visibleFlights.map((fl) => (
+            <FlightRow
+              key={fl.id}
+              offer={fl}
+              nights={nights}
+              selected={sel.selectedFlightId === fl.id}
+              expanded={sel.expandedFlightId === fl.id}
+              onPress={() => dispatch({ kind: 'flight', id: fl.id })}
+            />
+          ))}
+          {flights.length > MAX_VISIBLE && !showAllFlights ? (
+            <ShowMore count={flights.length - MAX_VISIBLE} onPress={() => setShowAllFlights(true)} />
+          ) : null}
+        </View>
+      ) : null}
+
+      {hotels.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
+            Hotels
+          </Text>
+          {visibleHotels.map((ho) => (
+            <HotelRow
+              key={ho.id}
+              offer={ho}
+              nights={nights}
+              selected={sel.selectedHotelId === ho.id}
+              expanded={sel.expandedHotelId === ho.id}
+              onPress={() => dispatch({ kind: 'hotel', id: ho.id })}
+            />
+          ))}
+          {hotels.length > MAX_VISIBLE && !showAllHotels ? (
+            <ShowMore count={hotels.length - MAX_VISIBLE} onPress={() => setShowAllHotels(true)} />
+          ) : null}
+        </View>
+      ) : null}
+
+      {flights.length === 0 && hotels.length === 0 ? (
+        <Text style={[styles.empty, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+          No price snapshots yet. Pull Refresh to fetch the latest offers.
+        </Text>
+      ) : null}
+    </>
+  );
+
+  // Android: a scroll-driven collapsing gradient app bar that surfaces the trip
+  // total when the title region scrolls away. iOS keeps the Task-4 sticky region.
+  if (Platform.OS === 'android') {
+    return (
+      <AndroidCollapsingDetail
+        trip={trip}
+        tripTotal={tripTotal}
+        onBack={() => router.back()}
+        headerInner={headerInner}
+        sections={sections}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.pageBg }]} edges={['top']}>
       {/* Sticky top region — stays pinned while the lists scroll beneath. */}
       <View style={[styles.header, { backgroundColor: c.pageBg, borderBottomColor: c.hairline }]}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button">
-          <Text style={[styles.breadcrumb, { color: c.textMuted, fontFamily: tokens.font[600] }]}>
-            {`Your Trips  /  ${trip.name}`}
-          </Text>
-        </Pressable>
-
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} style={[styles.title, { color: c.textStrong, fontFamily: tokens.font[800] }]}>
-            {trip.name}
-          </Text>
-          <StatusChip tone={statusTone} label={trip.status === 'active' ? 'ACTIVE' : 'PAUSED'} />
-        </View>
-
-        <Text style={[styles.meta, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
-          {`${route} · ${formatDateRange(trip.depart_date, trip.return_date)} · ${nights} night${nights === 1 ? '' : 's'} · ${adults} adult${adults === 1 ? '' : 's'}`}
-        </Text>
-
-        <View style={styles.actions}>
-          <View style={styles.actionBtn}>
-            <GradientButton
-              label="Edit"
-              variant="secondary"
-              onPress={() => router.push(`/trip/${tripId}` as never)}
-            />
-          </View>
-          <View style={styles.actionBtn}>
-            <GradientButton
-              label={isRefreshing ? 'Refreshing…' : 'Refresh'}
-              loading={isRefreshing}
-              onPress={onRefresh}
-            />
-          </View>
-        </View>
-
-        <View style={styles.statTrioWrap}>
-          <StatTrio
-            flight={flightPrice}
-            hotelTotal={hotelTotal}
-            hotelPerNight={hotelPerNight}
-            tripTotal={tripTotal}
-          />
-        </View>
-
-        <View style={styles.chartWrap}>
-          <PriceChart points={chart.points} nowLabel={chart.nowLabel} />
-        </View>
+        {headerInner}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
-        {flights.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
-              Flights
-            </Text>
-            {visibleFlights.map((fl) => (
-              <FlightRow
-                key={fl.id}
-                offer={fl}
-                nights={nights}
-                selected={sel.selectedFlightId === fl.id}
-                expanded={sel.expandedFlightId === fl.id}
-                onPress={() => dispatch({ kind: 'flight', id: fl.id })}
-              />
-            ))}
-            {flights.length > MAX_VISIBLE && !showAllFlights ? (
-              <ShowMore count={flights.length - MAX_VISIBLE} onPress={() => setShowAllFlights(true)} />
-            ) : null}
-          </View>
-        ) : null}
-
-        {hotels.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
-              Hotels
-            </Text>
-            {visibleHotels.map((ho) => (
-              <HotelRow
-                key={ho.id}
-                offer={ho}
-                nights={nights}
-                selected={sel.selectedHotelId === ho.id}
-                expanded={sel.expandedHotelId === ho.id}
-                onPress={() => dispatch({ kind: 'hotel', id: ho.id })}
-              />
-            ))}
-            {hotels.length > MAX_VISIBLE && !showAllHotels ? (
-              <ShowMore count={hotels.length - MAX_VISIBLE} onPress={() => setShowAllHotels(true)} />
-            ) : null}
-          </View>
-        ) : null}
-
-        {flights.length === 0 && hotels.length === 0 ? (
-          <Text style={[styles.empty, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
-            No price snapshots yet. Pull Refresh to fetch the latest offers.
-          </Text>
-        ) : null}
+        {sections}
       </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+/**
+ * Android Material collapsing detail: a gradient app bar pinned at top surfaces
+ * the trip total + status once the (scrollable) title/stat region collapses
+ * past a threshold. The full header scrolls with the content; a scroll-offset
+ * `Animated.Value` cross-fades the compact total chip into the app bar.
+ */
+function AndroidCollapsingDetail({
+  trip,
+  tripTotal,
+  onBack,
+  headerInner,
+  sections,
+}: {
+  trip: TripDetail;
+  tripTotal: number;
+  onBack: () => void;
+  headerInner: React.ReactNode;
+  sections: React.ReactNode;
+}): React.JSX.Element {
+  const { tokens } = useTheme();
+  const c = tokens.color;
+  // useState (not useRef) so the lint rule doesn't flag a ref read during render;
+  // the Animated.Value is created once and stays stable across renders.
+  const [scrollY] = React.useState(() => new Animated.Value(0));
+
+  // Surface the app-bar total once the header has scrolled most of the way out.
+  const totalOpacity = scrollY.interpolate({
+    inputRange: [120, 200],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <SafeAreaView style={[styles.fill, { backgroundColor: c.pageBg }]} edges={['top']}>
+      <LinearGradient
+        colors={tokens.gradient.totalCard}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.appBar}
+      >
+        <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" hitSlop={10}>
+          <Text style={[styles.appBarBack, { fontFamily: tokens.font[700] }]}>←</Text>
+        </Pressable>
+        <Text numberOfLines={1} style={[styles.appBarTitle, { fontFamily: tokens.font[800] }]}>
+          {trip.name}
+        </Text>
+        <Animated.View style={[styles.appBarTotal, { opacity: totalOpacity }]}>
+          <Text style={[styles.appBarTotalLabel, { fontFamily: tokens.font[700] }]}>
+            {trip.status === 'active' ? 'ACTIVE' : 'PAUSED'}
+          </Text>
+          <Text style={[styles.appBarTotalValue, { fontFamily: tokens.font[800] }]}>
+            {formatUsd(tripTotal)}
+          </Text>
+        </Animated.View>
+      </LinearGradient>
+
+      <Animated.ScrollView
+        contentContainerStyle={styles.scrollBody}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+      >
+        <View style={styles.androidHeaderInner}>{headerInner}</View>
+        {sections}
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
@@ -287,6 +389,20 @@ const styles = StyleSheet.create({
   statTrioWrap: { marginTop: 2 },
   chartWrap: { marginTop: 4 },
   scrollBody: { padding: 16, paddingBottom: 40, gap: 20 },
+  appBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    height: 56,
+    elevation: 4,
+  },
+  appBarBack: { color: '#FFFFFF', fontSize: 22 },
+  appBarTitle: { flex: 1, color: '#FFFFFF', fontSize: 18, letterSpacing: -0.3 },
+  appBarTotal: { alignItems: 'flex-end' },
+  appBarTotalLabel: { color: '#FFFFFF', fontSize: 9, letterSpacing: 0.5, opacity: 0.85 },
+  appBarTotalValue: { color: '#FFFFFF', fontSize: 16, letterSpacing: -0.3 },
+  androidHeaderInner: { gap: 10, marginBottom: 4 },
   section: { gap: 10 },
   sectionTitle: { fontSize: 16 },
   showMore: {

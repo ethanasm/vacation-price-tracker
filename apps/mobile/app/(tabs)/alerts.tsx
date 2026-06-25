@@ -39,7 +39,7 @@ export default function AlertsScreen(): React.JSX.Element {
     queryFn: () => api.listTrips({ limit: 50 }),
   });
 
-  const trips = tripsQuery.data ?? [];
+  const trips = React.useMemo(() => tripsQuery.data ?? [], [tripsQuery.data]);
 
   // Threshold lives on the trip detail, so fan out one detail fetch per trip.
   const detailQueries = useQueries({

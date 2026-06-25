@@ -18,7 +18,7 @@ import { ThemeProvider } from '@/lib/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { useAppFonts } from '@/lib/fonts';
 import { ApiClientProvider } from '@/lib/api/provider';
-import { configureNotificationHandler } from '@/lib/notifications';
+import { configureNotificationHandler, DISMISS_ACTION_ID } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -80,9 +80,11 @@ function AuthGate(): React.JSX.Element {
     }
   }, [user, isLoading, segments, router]);
 
-  // Tapping a price-drop notification deep-links into that trip.
+  // Tapping a price-drop notification (or its Android "View trip" action)
+  // deep-links into that trip; the "Dismiss" action just clears the card.
   React.useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response.actionIdentifier === DISMISS_ACTION_ID) return;
       const tripId = response.notification.request.content.data?.tripId;
       if (typeof tripId === 'string' && tripId) router.push(`/trip/${tripId}`);
     });

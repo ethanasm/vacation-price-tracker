@@ -40,6 +40,18 @@ export interface PriceDropContent {
 export const PRICE_DROP_CHANNEL_ID = 'price-drops';
 
 /**
+ * Notification category id carrying the Android heads-up action buttons
+ * (VIEW TRIP / DISMISS). Reused as the `categoryIdentifier` on scheduled
+ * price-drop notifications.
+ */
+export const PRICE_DROP_CATEGORY_ID = 'price-drop';
+
+/** Action id the deep-link listener (app/_layout.tsx) treats as "open the trip". */
+export const VIEW_TRIP_ACTION_ID = 'viewTrip';
+/** Action id that just dismisses the heads-up card. */
+export const DISMISS_ACTION_ID = 'dismiss';
+
+/**
  * Pure builder for the price-drop notification copy. Kept import-free of React
  * Native so it can be unit-tested directly with node:test.
  *
@@ -88,6 +100,22 @@ export function configureNotificationHandler(): void {
       importance: Notifications.AndroidImportance.MAX,
       sound: 'default',
     }).catch(() => undefined);
+
+    // Android heads-up actions: VIEW TRIP (deep-links via the data.tripId the
+    // _layout response listener reads) + DISMISS (clears the card). iOS keeps
+    // the plain lock-screen banner — no category attached.
+    void Notifications.setNotificationCategoryAsync(PRICE_DROP_CATEGORY_ID, [
+      {
+        identifier: VIEW_TRIP_ACTION_ID,
+        buttonTitle: 'View trip',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: DISMISS_ACTION_ID,
+        buttonTitle: 'Dismiss',
+        options: { opensAppToForeground: false, isDestructive: true },
+      },
+    ]).catch(() => undefined);
   }
 }
 
@@ -149,7 +177,11 @@ export async function presentLocalPriceDrop(args: PriceDropArgs): Promise<void> 
   await Notifications.scheduleNotificationAsync({
     content: {
       ...buildPriceDropNotification(args),
-      ...(Platform.OS === 'android' ? { channelId: PRICE_DROP_CHANNEL_ID } : null),
+      // Android: route to the heads-up channel and attach the VIEW TRIP /
+      // DISMISS action category. iOS keeps the plain lock-screen banner.
+      ...(Platform.OS === 'android'
+        ? { channelId: PRICE_DROP_CHANNEL_ID, categoryIdentifier: PRICE_DROP_CATEGORY_ID }
+        : null),
     },
     trigger: null,
   });

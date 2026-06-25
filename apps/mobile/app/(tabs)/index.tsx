@@ -6,6 +6,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -156,18 +157,22 @@ export default function TripsScreen(): React.JSX.Element {
 
       <View style={styles.fill}>{renderBody()}</View>
 
+      {/* Android: Material extended FAB (a "New trip" pill). iOS: circular FAB. */}
       <Pressable
         testID="new-trip-fab"
         accessibilityRole="button"
         accessibilityLabel="New trip"
         onPress={() => router.push('/trip/new')}
         style={({ pressed }) => [
-          styles.fab,
+          Platform.OS === 'android' ? styles.fabExtended : styles.fab,
           tokens.shadow.primaryButton,
           { backgroundColor: tokens.color.primary, opacity: pressed ? 0.85 : 1 },
         ]}
       >
-        <Plus color="#FFFFFF" size={26} strokeWidth={2.5} />
+        <Plus color="#FFFFFF" size={Platform.OS === 'android' ? 22 : 26} strokeWidth={2.5} />
+        {Platform.OS === 'android' ? (
+          <Text style={[styles.fabLabel, { fontFamily: tokens.font[700] }]}>New trip</Text>
+        ) : null}
       </Pressable>
     </SafeAreaView>
   );
@@ -193,4 +198,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  fabExtended: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    borderRadius: 16,
+  },
+  fabLabel: { color: '#FFFFFF', fontSize: 15, marginLeft: 8 },
 });
