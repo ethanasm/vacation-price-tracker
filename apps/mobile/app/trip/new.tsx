@@ -53,6 +53,7 @@ export default function NewTripScreen(): React.JSX.Element {
 
   const [hotelEnabled, setHotelEnabled] = React.useState(true);
   const [hotelExpanded, setHotelExpanded] = React.useState(false);
+  const [hotelCity, setHotelCity] = React.useState('');
 
   const [threshold, setThreshold] = React.useState('');
 
@@ -69,6 +70,7 @@ export default function NewTripScreen(): React.JSX.Element {
     if (!destination.trim()) return 'To (destination) is required.';
     if (!DATE_RE.test(departDate.trim())) return 'Depart date must be YYYY-MM-DD.';
     if (returnDate.trim() && !DATE_RE.test(returnDate.trim())) return 'Return date must be YYYY-MM-DD.';
+    if (hotelEnabled && !hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
     return null;
   }
 
@@ -90,7 +92,7 @@ export default function NewTripScreen(): React.JSX.Element {
           ? { stops_mode: nonStopOnly ? 'nonstop' : 'any', cabin }
           : null,
         hotel_prefs: hotelEnabled
-          ? { rooms: 1, adults_per_room: 2, room_selection_mode: 'cheapest' }
+          ? { rooms: 1, adults_per_room: 2, room_selection_mode: 'cheapest', city: hotelCity.trim() }
           : null,
         notification_prefs: {
           threshold_type: 'trip_total',
@@ -211,6 +213,20 @@ export default function NewTripScreen(): React.JSX.Element {
                 Cheapest room, 1 room for 2 adults. Tune room types and views from the trip after creating it.
               </Text>
             </CollapsibleSection>
+            {hotelEnabled ? (
+              <View style={styles.hotelCity}>
+                <FormField
+                  label="Hotel city"
+                  value={hotelCity}
+                  onChangeText={setHotelCity}
+                  placeholder="Maui"
+                  testID="create-trip-hotel-city-input"
+                  accessibilityLabel="Hotel city"
+                  autoCapitalize="words"
+                  maxLength={200}
+                />
+              </View>
+            ) : null}
           </AuroraCard>
 
           <AuroraCard style={styles.card}>
@@ -261,6 +277,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 14 },
   sectionTitle: { fontSize: 16, marginBottom: 12 },
   subLabel: { fontSize: 11, letterSpacing: 0.5, marginBottom: 6, textTransform: 'uppercase' },
+  hotelCity: { marginTop: 12 },
   dateRow: { flexDirection: 'row', gap: 12 },
   dateCol: { flex: 1 },
   swap: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

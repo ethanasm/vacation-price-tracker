@@ -59,6 +59,20 @@ tags:
 - tapOn:
     id: "create-trip-depart-input"
 - inputText: "2026-08-22"
+- hideKeyboard
+
+# Hotel city is REQUIRED by the API when track_hotels is on (it 422s otherwise:
+# "hotel_prefs.city is required") — mirrors the web create form. The field sits
+# in the Hotel preferences card below the fold, so scroll it into view first.
+- scrollUntilVisible:
+    element:
+      id: "create-trip-hotel-city-input"
+    direction: DOWN
+    visibilityPercentage: 80
+    timeout: 20000
+- tapOn:
+    id: "create-trip-hotel-city-input"
+- inputText: "Maui"
 
 # Dismiss the IME before submitting so Gboard's content-description elements
 # don't compete with the submit control.
