@@ -173,10 +173,10 @@ export default function NewTripScreen(): React.JSX.Element {
             />
             <View style={styles.dateRow}>
               <View style={styles.dateCol}>
-                <FormField label="Depart" value={departDate} onChangeText={setDepartDate} placeholder="2026-08-22" keyboardType="numbers-and-punctuation" maxLength={10} />
+                <FormField label="Depart" value={departDate} onChangeText={setDepartDate} placeholder="2026-08-22" testID="create-trip-depart-input" keyboardType="numbers-and-punctuation" maxLength={10} />
               </View>
               <View style={styles.dateCol}>
-                <FormField label="Return" value={returnDate} onChangeText={setReturnDate} placeholder="2026-08-26" keyboardType="numbers-and-punctuation" maxLength={10} />
+                <FormField label="Return" value={returnDate} onChangeText={setReturnDate} placeholder="2026-08-26" testID="create-trip-return-input" keyboardType="numbers-and-punctuation" maxLength={10} />
               </View>
             </View>
             <FormField label="Adults" value={adults} onChangeText={setAdults} placeholder="1" keyboardType="number-pad" maxLength={2} />
