@@ -1,13 +1,13 @@
 name: SonarQube
 
-# Coverage is computed once by the Next.js and Python workflows, which upload
+# Coverage is computed once by the Web and Server workflows, which upload
 # lcov.info / coverage.xml as artifacts. This workflow no longer re-runs any
 # tests — it waits for those workflows, downloads their coverage, and runs only
 # the scan. Triggering on both means it re-scans when the slower one finishes;
 # the concurrency group cancels the earlier, less-complete scan.
 on:
   workflow_run:
-    workflows: ["Next.js", "Python"]
+    workflows: ["Web", "Server"]
     types: [completed]
 
 concurrency:
@@ -32,7 +32,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v6
         with:
           name: web-coverage
-          workflow: nextjs.yml
+          workflow: web.yml
           commit: ${{ github.event.workflow_run.head_sha }}
           path: apps/web/coverage
           if_no_artifact_found: warn
@@ -41,7 +41,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v6
         with:
           name: python-coverage
-          workflow: python.yml
+          workflow: server.yml
           commit: ${{ github.event.workflow_run.head_sha }}
           path: apps
           if_no_artifact_found: warn
