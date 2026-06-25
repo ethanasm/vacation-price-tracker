@@ -115,6 +115,10 @@
   --aurora-on-chip: var(--aurora-violet-deep);
   --aurora-violet-text: var(--aurora-violet);
   --aurora-row-tint: #FBFAFF;
+  /* Soft, low-reach elevation for large viewport-filling panels — fits inside
+     the small gutter of their clipping container so it is never hard-clipped
+     (unlike the big floating-card shadow). */
+  --aurora-shadow-panel: 0 2px 12px rgba(60, 40, 120, 0.08);
 }
 
 /* Dark mode theme - active from 6pm to 8am */
@@ -625,6 +629,7 @@ button[role="combobox"] svg {
   --aurora-on-chip: #C9B6FF;
   --aurora-violet-text: #A78BFA;
   --aurora-row-tint: #211C30;
+  --aurora-shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.38);
   /* shadows read better as depth, not violet glow, on a dark canvas */
   --aurora-shadow-card: 0 16px 50px rgba(0, 0, 0, .45);
   --aurora-shadow-soft: 0 2px 10px rgba(0, 0, 0, .30);

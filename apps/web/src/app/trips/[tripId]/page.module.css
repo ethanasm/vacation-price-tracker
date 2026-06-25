@@ -5,6 +5,9 @@
   gap: 0.5rem;
   height: 100%;
   overflow: hidden;
+  /* Bottom gutter so the panels' soft shadow fully fades before this boundary
+     clips, instead of cutting off hard at the panel's bottom edge. */
+  padding-bottom: 0.75rem;
 }
 
 /* Header wrapper - single row that wraps below 50% viewport width */
@@ -358,6 +361,9 @@
 .chartCard {
   min-height: 0;
   overflow: hidden;
+  /* Override the Card component's heavy floating shadow with the contained
+     panel shadow so it fades fully within the gutter instead of hard-clipping. */
+  box-shadow: var(--aurora-shadow-panel) !important;
 }
 
 .chartCardContent {
@@ -447,6 +453,7 @@
 .listCard {
   min-height: 0;
   overflow: hidden;
+  box-shadow: var(--aurora-shadow-panel) !important;
 }
 
 .listCardContent {
