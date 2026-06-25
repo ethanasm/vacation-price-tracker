@@ -19,7 +19,7 @@ const IOS_BUNDLE_ID = "me.ethanasm.vacation-price-tracker";
 // http://10.0.2.2:8010 (see infra/docker-compose.e2e.yml). Android API 28+
 // release builds block cleartext by default, so the e2e build needs
 // android:usesCleartextTraffic="true" in its manifest. Gated on
-// EXPO_PUBLIC_E2E_MODE (set only by the e2e build profile / mobile-e2e.yml),
+// EXPO_PUBLIC_E2E_MODE (set only by the e2e build profile / mobile.yml),
 // so prod/preview builds keep the strict HTTPS-only policy.
 const IS_E2E_BUILD = process.env.EXPO_PUBLIC_E2E_MODE === "1";
 

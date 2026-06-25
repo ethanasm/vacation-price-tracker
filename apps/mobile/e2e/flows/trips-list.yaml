@@ -5,7 +5,7 @@
 # database across flows/runs, so a `trip-card` row renders here. If this
 # assertion fails while sign-in passes, suspect the backend: e2e stack down, or
 # P5's Bearer-header support not yet merged (the bearer token 401s → empty trips
-# list). See .github/workflows/mobile-e2e.yml § "Mint e2e session".
+# list). See .github/workflows/mobile.yml § "Mint e2e session".
 appId: me.ethanasm.vacation_price_tracker
 name: trips-list
 tags:
