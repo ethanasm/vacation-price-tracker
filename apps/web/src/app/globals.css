@@ -110,6 +110,11 @@
   --aurora-radius-card: 15px;
   --aurora-radius-inner: 12px;
   --aurora-radius-chip: 9px;
+  /* Theme-aware indirections (overridden under .dark): chip/selected text,
+     violet-as-text, and the dashboard first-row tint. Light = current values. */
+  --aurora-on-chip: var(--aurora-violet-deep);
+  --aurora-violet-text: var(--aurora-violet);
+  --aurora-row-tint: #FBFAFF;
 }
 
 /* Dark mode theme - active from 6pm to 8am */
@@ -567,7 +572,7 @@ button[role="combobox"] svg {
   letter-spacing: .06em;
   text-transform: uppercase;
 }
-.aurora-chip-active { background: var(--aurora-chip); color: var(--aurora-violet-deep); }
+.aurora-chip-active { background: var(--aurora-chip); color: var(--aurora-on-chip); }
 .aurora-chip-paused { background: var(--aurora-warn-bg); color: var(--aurora-warn); }
 .aurora-chip-nonstop { background: var(--aurora-success-bg); color: var(--aurora-success); }
 .aurora-chip-stop { background: var(--aurora-warn-bg); color: var(--aurora-warn); }
@@ -583,4 +588,42 @@ button[role="combobox"] svg {
   padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
+}
+
+/* ============================================
+   AURORA DARK THEME (issue #34)
+   Redefines the Aurora token set under .dark so every surface that reads
+   var(--aurora-*) inverts automatically. Values mirror the Aurora dark spec
+   (docs/design/aurora/Price Tracker - Aurora - Dark.html).
+   ============================================ */
+.dark {
+  --aurora-page: #15121E;
+  --aurora-surface: #211C30;
+  --aurora-surface-2: #2A2440;
+  --aurora-chip: #2F2552;
+  --aurora-card: #1A1A2E;
+  --aurora-hairline: #322B46;
+  --aurora-hairline-2: #272040;
+  --aurora-selected-border: #5B4D80;
+  --aurora-ink: #F2EEFB;
+  --aurora-body: #CDC7E0;
+  --aurora-body-2: #A8A1BD;
+  --aurora-muted: #8D86A3;
+  --aurora-faint: #7D7796;
+  --aurora-success: #34D399;
+  --aurora-success-bg: #11321F;
+  --aurora-warn: #E0B84A;
+  --aurora-warn-bg: #3A2F17;
+  --aurora-layover: #E0B84A;
+  --aurora-layover-bg: #3A2F17;
+  --aurora-layover-border: #5A4A28;
+  --aurora-star: #F5A623;
+  /* indirections */
+  --aurora-on-chip: #C9B6FF;
+  --aurora-violet-text: #A78BFA;
+  --aurora-row-tint: #211C30;
+  /* shadows read better as depth, not violet glow, on a dark canvas */
+  --aurora-shadow-card: 0 16px 50px rgba(0, 0, 0, .45);
+  --aurora-shadow-soft: 0 2px 10px rgba(0, 0, 0, .30);
+  --aurora-shadow-total: 0 8px 22px rgba(124, 58, 237, .40);
 }

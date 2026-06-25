@@ -52,3 +52,36 @@ describe("Aurora design tokens in globals.css", () => {
     expect(css).toContain(cls);
   });
 });
+
+describe("Aurora dark-theme token overrides (issue #34)", () => {
+  // The dark overrides live in a `.dark { ... }` block. Grab the block that
+  // redefines the Aurora token set so we assert against dark values, not the
+  // unrelated legacy `.dark` block.
+  const darkBlock =
+    css.slice(css.indexOf("AURORA DARK THEME")) || css;
+
+  it.each([
+    ["--aurora-page", "#15121E"],
+    ["--aurora-surface", "#211C30"],
+    ["--aurora-surface-2", "#2A2440"],
+    ["--aurora-chip", "#2F2552"],
+    ["--aurora-card", "#1A1A2E"],
+    ["--aurora-hairline", "#322B46"],
+    ["--aurora-ink", "#F2EEFB"],
+    ["--aurora-success", "#34D399"],
+    ["--aurora-warn", "#E0B84A"],
+    ["--aurora-on-chip", "#C9B6FF"],
+    ["--aurora-violet-text", "#A78BFA"],
+    ["--aurora-row-tint", "#211C30"],
+  ])("dark block redefines %s = %s", (name, hex) => {
+    expect(darkBlock).toMatch(new RegExp(`${name}:\\s*${hex}`, "i"));
+  });
+
+  it("keeps the light indirection defaults so light theme is unchanged", () => {
+    expect(css).toMatch(
+      /--aurora-on-chip:\s*var\(--aurora-violet-deep\)/i,
+    );
+    expect(css).toMatch(/--aurora-violet-text:\s*var\(--aurora-violet\)/i);
+    expect(css).toMatch(/--aurora-row-tint:\s*#FBFAFF/i);
+  });
+});
