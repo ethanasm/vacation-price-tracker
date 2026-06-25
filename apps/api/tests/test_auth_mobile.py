@@ -79,6 +79,22 @@ class TestSettingsAndCsrf:
         # The web cookie endpoints are NOT exempt.
         assert not _is_csrf_exempt("/v1/auth/logout")
 
+    def test_bearer_requests_are_csrf_exempt_by_mechanism(self):
+        """Any Authorization: Bearer request is CSRF-exempt regardless of path —
+        the mobile app reaches non-/v1/auth write endpoints (POST /v1/trips, the
+        refresh/pause routes) with a bearer token and no cookie session."""
+        from app.middleware.csrf import _is_bearer_authenticated
+        from starlette.requests import Request
+
+        def _req(headers: dict[str, str]) -> Request:
+            raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+            return Request({"type": "http", "headers": raw})
+
+        assert _is_bearer_authenticated(_req({"Authorization": "Bearer abc.def.ghi"}))
+        # Cookie-authed (web) and other schemes are NOT exempt by this path.
+        assert not _is_bearer_authenticated(_req({}))
+        assert not _is_bearer_authenticated(_req({"Authorization": "Basic abc123"}))
+
 
 class TestMobileToken:
     @pytest.mark.asyncio
