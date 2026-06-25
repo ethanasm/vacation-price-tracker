@@ -3,11 +3,16 @@ import type { ExpoConfig } from 'expo/config';
 // Google OAuth on native uses the *application id* as the redirect scheme.
 // expo-auth-session's Google provider builds
 // `me.ethanasm.vacation_price_tracker:/oauthredirect` from
-// Application.applicationId. iOS appends the bundle id to CFBundleURLSchemes
-// automatically; Android does NOT, so the package name must be listed in
-// `scheme` explicitly or Chrome drops the callback. (See the showbook
-// app.config.ts header for the full rationale.)
+// Application.applicationId (the Android package). iOS appends its bundle id to
+// CFBundleURLSchemes automatically; Android does NOT, so the package name must
+// be listed in `scheme` explicitly or Chrome drops the callback.
+//
+// The iOS bundle id uses HYPHENS (me.ethanasm.vacation-price-tracker) because
+// Apple disallows underscores in CFBundleIdentifier; Android keeps underscores
+// (valid there). The two ids therefore differ by design — make sure the iOS
+// vs Android Google OAuth clients are each registered with the matching id.
 const ANDROID_PACKAGE = 'me.ethanasm.vacation_price_tracker';
+const IOS_BUNDLE_ID = 'me.ethanasm.vacation-price-tracker';
 
 const config: ExpoConfig = {
   name: 'Price Tracker',
@@ -21,7 +26,7 @@ const config: ExpoConfig = {
   scheme: ['vpt', ANDROID_PACKAGE],
   userInterfaceStyle: 'light',
   ios: {
-    bundleIdentifier: 'me.ethanasm.vacation_price_tracker',
+    bundleIdentifier: IOS_BUNDLE_ID,
     supportsTablet: true,
     // ios.config must be a defined object — Expo's withUsesNonExemptEncryption
     // plugin does `'usesNonExemptEncryption' in config.ios.config`.
