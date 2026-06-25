@@ -14,6 +14,7 @@ import {
   buildChartSeries,
   flightSummaryLine,
   clockLabel,
+  makeIdempotencyKey,
   type Selection,
   type FlightOffer,
   type HotelOffer,
@@ -171,6 +172,25 @@ test('buildChartSeries skips snapshots without a created_at date', () => {
   const { points } = buildChartSeries(history, 789, 612);
   // only 1 historical point + Now
   assert.equal(points.length, 2);
+});
+
+test('makeIdempotencyKey returns a non-empty string and two calls differ (default crypto branch)', () => {
+  const a = makeIdempotencyKey();
+  const b = makeIdempotencyKey();
+  assert.equal(typeof a, 'string');
+  assert.ok(a.length > 0);
+  assert.notEqual(a, b);
+});
+
+test('makeIdempotencyKey uses the injected rand (fallback branch) and stays unique', () => {
+  let n = 0;
+  const rand = (): string => `r${(n += 1)}`;
+  const a = makeIdempotencyKey(rand);
+  const b = makeIdempotencyKey(rand);
+  assert.equal(a, 'r1');
+  assert.equal(b, 'r2');
+  assert.notEqual(a, b);
+  assert.ok(a.length > 0);
 });
 
 test('buildChartSeries gracefully handles malformed date keys (dayLabel fallback)', () => {

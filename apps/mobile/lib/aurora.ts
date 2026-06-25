@@ -98,6 +98,19 @@ export function flightSummaryLine(offer: FlightOffer): string {
   return `${depT} ${dep} → ${arrT} ${arr} · ${stops}`.trim();
 }
 
+/**
+ * A unique idempotency key for `POST /v1/trips` (sent as `X-Idempotency-Key`).
+ * Prefers `crypto.randomUUID()` when available; otherwise falls back to a
+ * timestamp + random suffix. `rand` is injectable for deterministic testing of
+ * the fallback branch.
+ */
+export function makeIdempotencyKey(rand?: () => string): string {
+  if (rand) return rand();
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 // --- Trip-detail selection state (same shape as P1) ---
 
 export interface Selection {
