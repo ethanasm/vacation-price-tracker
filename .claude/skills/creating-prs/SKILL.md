@@ -158,7 +158,7 @@ in step 3) before continuing. Surface anything you're deliberately not fixing
     mcp__github__subscribe_pr_activity { owner: "ethanasm", repo: "vacation-price-tracker", pullNumber: <n> }
 
 Events arrive wrapped in `<github-webhook-activity>` tags. CI for this repo runs
-`nextjs.yml` (web build/lint/test), `python.yml` (api + worker), and
+`web.yml` (web build/lint/test), `server.yml` (api + worker), `mobile.yml` (mobile lint/typecheck/test), and
 `sonarqube.yml`. While CI runs you can move on to other work.
 
 ### 7. React to events

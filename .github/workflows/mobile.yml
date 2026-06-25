@@ -1,0 +1,74 @@
+name: Mobile
+
+# Lint / typecheck / unit-test gate for the Expo app (apps/mobile) + the mobile
+# release tooling. VPT's web/server CI workflows are scoped to their own
+# projects, so without this workflow the mobile Nx project (and the version-bump
+# script + Maestro flows) get no CI coverage. Kept OUT of the Sonar coverage flow
+# on purpose: sonarqube.yml downloads web + server coverage by commit SHA, and
+# adding a third source reintroduces the cross-workflow zero-coverage fragility
+# documented in CLAUDE.md. The mobile 80% gate is enforced in-job here instead.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "scripts/bump-mobile-version.mjs"
+      - "scripts/__tests__/bump-mobile-version.test.mjs"
+      - "infra/docker-compose.e2e.yml"
+      - ".github/workflows/mobile.yml"
+      - ".github/workflows/mobile-deploy.yml"
+      - ".github/workflows/mobile-e2e.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "scripts/bump-mobile-version.mjs"
+      - "scripts/__tests__/bump-mobile-version.test.mjs"
+      - "infra/docker-compose.e2e.yml"
+      - ".github/workflows/mobile.yml"
+      - ".github/workflows/mobile-deploy.yml"
+      - ".github/workflows/mobile-e2e.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Lint / typecheck / test (mobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint / typecheck / test (mobile, enforces 80% lib/** gate)
+        run: pnpm nx run-many -t lint typecheck test:coverage --projects=mobile
+      - name: Version-bump script unit test
+        run: node --test scripts/__tests__/bump-mobile-version.test.mjs
+      - name: Validate Maestro flow YAML
+        working-directory: apps/mobile
+        run: node e2e/scripts/dry-run.mjs e2e/flows
+      - name: Lint mobile workflows (actionlint)
+        run: |
+          docker run --rm -v "$PWD":/repo --workdir /repo rhysd/actionlint:latest -color \
+            .github/workflows/mobile.yml \
+            .github/workflows/mobile-deploy.yml \
+            .github/workflows/mobile-e2e.yml

@@ -1,0 +1,146 @@
+# Isolated end-to-end stack for the mobile Maestro pipeline.
+#
+# Runs alongside the dev and prod stacks on the same host without colliding:
+# distinct project name (vpt-e2e), distinct ports, distinct named volumes,
+# distinct database. The mobile e2e emulator (.github/workflows/mobile-e2e.yml)
+# reaches this stack's api at http://10.0.2.2:8010 (the AVD host alias for the
+# runner's loopback). All published ports bind to loopback only.
+#
+# Brought up once on the prod box by the operator (see docs/mobile-cicd.md
+# § "VPT e2e backend stack"):
+#   # create infra/.env.e2e (mirror .env.prod) with POSTGRES_PASSWORD, SECRET_KEY,
+#   #   VPT_E2E_BACKEND_TOKEN, AUTH_ALLOWED_EMAILS=e2e@vpt.test
+#   docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d
+#   docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml \
+#     run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'
+#
+# Image tag is selected by IMAGE_TAG (defaults to latest); the operator pins it
+# to the deployed commit SHA when refreshing the stack alongside a prod deploy.
+
+name: vpt-e2e
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: vpt-e2e-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: vacation_tracker_e2e
+    ports:
+      - "127.0.0.1:5437:5432"
+    volumes:
+      - vpt_e2e_postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vacation_tracker_e2e"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vpt-e2e-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6382:6379"
+    volumes:
+      - vpt_e2e_redis_data:/data
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: vpt-e2e-temporal
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: db
+    ports:
+      - "127.0.0.1:7236:7233"
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  api:
+    image: ghcr.io/ethanasm/vpt-api:${IMAGE_TAG:-latest}
+    container_name: vpt-e2e-api
+    restart: unless-stopped
+    env_file: ../.env.e2e
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/vacation_tracker_e2e}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: default
+      ENVIRONMENT: e2e
+      # E2E_MODE=1 is what gates P5's POST /v1/e2e/mint-token endpoint on (it
+      # never exists in prod, where E2E_MODE is unset). VPT_E2E_BACKEND_TOKEN is
+      # the shared secret the endpoint checks against the X-E2E-Token header
+      # (also the mobile-e2e.yml workflow secret).
+      E2E_MODE: "1"
+      VPT_E2E_BACKEND_TOKEN: ${VPT_E2E_BACKEND_TOKEN:?VPT_E2E_BACKEND_TOKEN is required}
+      # Don't call the live Skiplagged provider during create-trip.
+      MOCK_SKIPLAGGED_API: "true"
+    ports:
+      # The emulator reaches this at http://10.0.2.2:8010.
+      - "127.0.0.1:8010:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/ethanasm/vpt-worker:${IMAGE_TAG:-latest}
+    container_name: vpt-e2e-worker
+    restart: unless-stopped
+    env_file: ../.env.e2e
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/vacation_tracker_e2e}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-vacation-price-tracker-tasks}
+      MOCK_SKIPLAGGED_API: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    logging: *default-logging
+
+volumes:
+  vpt_e2e_postgres_data:
+  vpt_e2e_redis_data:

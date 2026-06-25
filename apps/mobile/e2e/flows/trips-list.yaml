@@ -1,0 +1,40 @@
+# Trips-list flow — Maestro
+#
+# Verifies the trips list loads from the e2e backend. The seeded e2e trip
+# ("Maestro Test Trip") is created by create-trip.yaml and persists in the e2e
+# database across flows/runs, so a `trip-card` row renders here. If this
+# assertion fails while sign-in passes, suspect the backend: e2e stack down, or
+# P5's Bearer-header support not yet merged (the bearer token 401s → empty trips
+# list). See .github/workflows/mobile-e2e.yml § "Mint e2e session".
+appId: me.ethanasm.vacation_price_tracker
+name: trips-list
+tags:
+  - critical
+  - read
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- scrollUntilVisible:
+    element:
+      id: "sign-in-google-button"
+    direction: DOWN
+    visibilityPercentage: 60
+    waitToSettleTimeoutMs: 500
+    timeout: 30000
+- tapOn:
+    id: "sign-in-google-button"
+
+- assertVisible:
+    text: "Trips"
+
+# The trips list is server-fed; the seeded trip appearing proves the bearer
+# round-trip and a real refetch, not just an optimistic cache. `trip-card` is
+# the bare row testID — Maestro matches the first one.
+- assertVisible:
+    id: "trips-list"
+- assertVisible:
+    id: "trip-card"
+- assertVisible:
+    text: "Maestro Test Trip"

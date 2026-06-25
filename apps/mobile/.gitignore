@@ -11,3 +11,8 @@ coverage/
 
 # Metro / Babel caches
 .metro-health-check*
+
+# P4 (mobile-cicd): store-submit credentials written to apps/mobile/ at CI
+# time by mobile-deploy.yml. Never commit them.
+play-service-account.json
+asc-api-key.p8

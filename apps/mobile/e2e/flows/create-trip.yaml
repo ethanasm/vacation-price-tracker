@@ -1,0 +1,72 @@
+# Create-trip flow — Maestro
+#
+# End-to-end create path: sign-in, open the create-trip form, fill required
+# fields, submit, verify the backend round-trip. The create call hits the e2e
+# backend (infra/docker-compose.e2e.yml) which the emulator reaches at
+# EXPO_PUBLIC_API_URL=http://10.0.2.2:8010 — the emulator NAT alias for the
+# runner host's loopback.
+#
+# The created trip ("Maestro Test Trip") persists in the e2e database across
+# flows/runs and is the `trip-card` target for trips-list / trip-detail. The
+# create contract has NO saved-confirmation testID — the proof is the new name
+# appearing back in `trips-list` after navigating to Trips. If that final
+# assertion fails while the form steps pass, suspect the backend: stack down,
+# P5 Bearer-header support not merged, or allowlist drift in .env.e2e.
+appId: me.ethanasm.vacation_price_tracker
+name: create-trip
+tags:
+  - critical
+  - write
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- scrollUntilVisible:
+    element:
+      id: "sign-in-google-button"
+    direction: DOWN
+    visibilityPercentage: 60
+    waitToSettleTimeoutMs: 500
+    timeout: 30000
+- tapOn:
+    id: "sign-in-google-button"
+
+- assertVisible:
+    text: "Trips"
+
+# Open the create-trip form via the FAB.
+- tapOn:
+    id: "new-trip-fab"
+
+- assertVisible:
+    id: "create-trip-name-input"
+
+- tapOn:
+    id: "create-trip-name-input"
+- inputText: "Maestro Test Trip"
+
+- tapOn:
+    id: "create-trip-origin-input"
+- inputText: "SEA"
+
+- tapOn:
+    id: "create-trip-destination-input"
+- inputText: "Maui"
+
+# Dismiss the IME before submitting so Gboard's content-description elements
+# don't compete with the submit control.
+- hideKeyboard
+
+- tapOn:
+    id: "create-trip-submit"
+
+# Create contract: no saved-confirmation card. Navigate back to Trips and assert
+# the new trip's NAME is visible inside `trips-list` — the server-fed list
+# showing the row proves the create committed and survives a refetch.
+- tapOn:
+    text: "Trips"
+- assertVisible:
+    id: "trips-list"
+- assertVisible:
+    text: "Maestro Test Trip"

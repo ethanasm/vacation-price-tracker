@@ -1,0 +1,24 @@
+# Maestro project-level config for the VPT mobile app.
+#
+# Discovery: every YAML under flows/ is a flow file Maestro executes when this
+# directory is passed to `maestro test`. .github/workflows/mobile-e2e.yml runs
+# the whole directory against a self-hosted Android emulator nightly + on
+# push-to-main + on PRs labeled `mobile-visual`.
+#
+# Bundle id: must match ios.bundleIdentifier (me.ethanasm.vacation-price-tracker)
+# and android.package (me.ethanasm.vacation_price_tracker) in
+# apps/mobile/app.config.ts. Kept in sync manually — if either id changes,
+# update this file too.
+#
+# `e2e` builds set EXPO_PUBLIC_E2E_MODE=1 (see apps/mobile/eas.json), which
+# flips apps/mobile/lib/auth.ts into the Maestro bypass branch: the sign-in tap
+# loads a pre-baked VPT JWT instead of running real Google OAuth. Production
+# builds ship with the var unset, so this branch is dead code there.
+flows:
+  - flows/
+
+appId: me.ethanasm.vacation_price_tracker
+
+# Wider implicit waitFor budget — first launch warms the REST client and
+# restores the SecureStore session, both of which take a few seconds cold in CI.
+defaultTimeout: 30000
