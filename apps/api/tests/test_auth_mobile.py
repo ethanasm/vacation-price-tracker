@@ -213,6 +213,17 @@ class TestRefresh:
         resp = client.post("/v1/auth/refresh")
         assert resp.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_malformed_body_refresh_token_400(self, client, mock_redis):
+        # A present-but-non-string refresh_token is a client error, not a 401.
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": 12345})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_empty_body_refresh_token_400(self, client, mock_redis):
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": ""})
+        assert resp.status_code == 400
+
 
 class TestE2eMintToken:
     SYNTHETIC_EMAIL = "e2e@vpt.test"

@@ -244,6 +244,23 @@ async def mobile_token(
     )
 
 
+async def _extract_refresh_body_token(request: Request) -> str | None:
+    """Pull the refresh token from a mobile JSON body, or return None for the web
+    (cookie) path. A present-but-malformed ``refresh_token`` field (non-string or
+    empty) raises ``BadRequestError`` so the client gets a 400 instead of a
+    confusing 401 from falling through to the cookie path."""
+    try:
+        raw = await request.json()
+    except Exception:  # noqa: BLE001 - no/invalid body is the cookie (web) path
+        return None
+    if not isinstance(raw, dict) or "refresh_token" not in raw:
+        return None
+    candidate = raw["refresh_token"]
+    if isinstance(candidate, str) and candidate:
+        return candidate
+    raise BadRequestError("Invalid refresh token in request body.")
+
+
 @router.post("/v1/auth/refresh")
 async def refresh_token(
     request: Request,
@@ -253,14 +270,7 @@ async def refresh_token(
     ``refresh_token_cookie`` cookie and gets new cookies back; mobile sends it in
     a JSON body (``{"refresh_token": ...}``) and gets the new pair in the body."""
     # Detect the mode: a JSON body with a refresh_token means the mobile path.
-    body_token: str | None = None
-    try:
-        raw = await request.json()
-        if isinstance(raw, dict) and isinstance(raw.get("refresh_token"), str):
-            body_token = raw["refresh_token"]
-    except Exception:  # noqa: BLE001 - no/invalid body is the cookie (web) path
-        body_token = None
-
+    body_token = await _extract_refresh_body_token(request)
     refresh_token_value = body_token or request.cookies.get(CookieNames.REFRESH_TOKEN)
     body_mode = body_token is not None
 
