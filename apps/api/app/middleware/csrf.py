@@ -19,7 +19,17 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 # from an email client / one-click List-Unsubscribe POST), so they're exempt too.
 # /v1/telemetry/ is a best-effort, fire-and-forget client-log sink that must work
 # pre-auth (no CSRF cookie yet); it only writes logs and is rate-limited.
-CSRF_EXEMPT_PREFIXES = ("/v1/admin/", "/v1/notifications/unsubscribe", "/v1/telemetry/")
+CSRF_EXEMPT_PREFIXES = (
+    "/v1/admin/",
+    "/v1/notifications/unsubscribe",
+    "/v1/notifications/device-token",
+    "/v1/telemetry/",
+    "/v1/e2e/",
+    # Bearer/token machine endpoints for the mobile app — no browser cookie
+    # session, so the double-submit-cookie CSRF defense does not apply.
+    "/v1/auth/mobile-token",
+    "/v1/auth/refresh",
+)
 
 
 class CsrfTokenInvalid(ForbiddenError):

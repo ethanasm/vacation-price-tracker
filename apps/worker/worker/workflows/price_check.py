@@ -18,7 +18,10 @@ from worker.types import FetchResult, PriceCheckResult
 with workflow.unsafe.imports_passed_through():
     # Pulls in the email render/client stack (jinja2/httpx); keep it passed
     # through so the workflow sandbox doesn't re-import those modules.
-    from worker.activities.notifications import evaluate_notifications_activity
+    from worker.activities.notifications import (
+        evaluate_notifications_activity,
+        send_push_notification_activity,
+    )
 
 
 @workflow.defn
@@ -131,6 +134,16 @@ class PriceCheckWorkflow:
                 evaluate_notifications_activity,
                 snapshot_id,
                 start_to_close_timeout=timedelta(seconds=15),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+            # Fire OS push notifications for the same crossing. Runs after the
+            # eval activity (which commits the outbox row push reads from);
+            # delivery failures are swallowed inside the activity so push never
+            # fails the price-check run.
+            await workflow.execute_activity(
+                send_push_notification_activity,
+                snapshot_id,
+                start_to_close_timeout=timedelta(seconds=20),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
 

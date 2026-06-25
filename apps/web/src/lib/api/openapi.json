@@ -45,13 +45,55 @@
         }
       }
     },
+    "/v1/auth/mobile-token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Mobile Token",
+        "description": "Exchange a Google ID token (from the native app) for the same JWT pair the\nweb OAuth callback issues. Returns the pair in the body \u2014 the mobile client\nstores it in expo-secure-store and sends `Authorization: Bearer`.",
+        "operationId": "mobile_token_v1_auth_mobile_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/refresh": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "Refresh Token",
-        "description": "Refreshes the access token using a valid refresh token.",
+        "description": "Refresh the access token. Web sends the refresh token in the\n``refresh_token_cookie`` cookie and gets new cookies back; mobile sends it in\na JSON body (``{\"refresh_token\": ...}``) and gets the new pair in the body.",
         "operationId": "refresh_token_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -99,6 +141,28 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/e2e/mint-token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "E2E Mint Token",
+        "description": "Mint a bearer JWT pair for the synthetic e2e user (P4 mobile-e2e harness).\n\nDoubly gated: inert (404) unless `E2E_MODE` is on, and requires the shared\n`X-E2E-Token` secret. Returns the pair in the body; the access_token then\nauthenticates via the Bearer path in get_current_user (Task 1). Only ever\nenabled on the isolated vpt-e2e backend, never normal prod.",
+        "operationId": "e2e_mint_token_v1_e2e_mint_token_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTokenResponse"
+                }
               }
             }
           }
@@ -892,6 +956,83 @@
           }
         }
       }
+    },
+    "/v1/notifications/device-token": {
+      "post": {
+        "tags": [
+          "notifications",
+          "notifications"
+        ],
+        "summary": "Register Device Token",
+        "description": "Register (or upsert) the caller's Expo push token for this device.",
+        "operationId": "register_device_token_v1_notifications_device_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTokenRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "notifications",
+          "notifications"
+        ],
+        "summary": "Unregister Device Token",
+        "description": "Unregister a device token on sign-out. Idempotent (no-op if absent).",
+        "operationId": "unregister_device_token_v1_notifications_device_token_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTokenRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1300,6 +1441,44 @@
         ],
         "title": "ConversationResponse",
         "description": "Response model for conversation metadata."
+      },
+      "DeviceTokenRegister": {
+        "properties": {
+          "expo_push_token": {
+            "type": "string",
+            "title": "Expo Push Token"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expo_push_token",
+          "platform"
+        ],
+        "title": "DeviceTokenRegister",
+        "description": "Register/unregister payload: the Expo push token + originating platform."
+      },
+      "DeviceTokenResponse": {
+        "properties": {
+          "expo_push_token": {
+            "type": "string",
+            "title": "Expo Push Token"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expo_push_token",
+          "platform"
+        ],
+        "title": "DeviceTokenResponse",
+        "description": "The registered token (echoed back to confirm the upsert)."
       },
       "ElicitationSubmissionRequest": {
         "properties": {
@@ -1743,6 +1922,43 @@
         "type": "object",
         "title": "HotelPrefs",
         "description": "Hotel preferences for a trip."
+      },
+      "MobileTokenRequest": {
+        "properties": {
+          "id_token": {
+            "type": "string",
+            "title": "Id Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_token"
+        ],
+        "title": "MobileTokenRequest",
+        "description": "Body the native app POSTs: a Google ID token obtained via Expo AuthSession."
+      },
+      "MobileTokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user"
+        ],
+        "title": "MobileTokenResponse",
+        "description": "The JWT pair + user, returned in the BODY (never Set-Cookie) for mobile."
       },
       "NotificationPrefs-Input": {
         "properties": {

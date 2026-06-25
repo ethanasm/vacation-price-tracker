@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     auth_allowed_emails: str = ""
     auth_allowed_domains: str = ""
 
+    # Mobile auth bridge: comma-separated Google OAuth client IDs (iOS + Android)
+    # that may mint a session via POST /v1/auth/mobile-token. The native app's
+    # ID token's `aud` claim must match one of these.
+    google_oauth_mobile_audiences: str = ""
+
     # Database
     database_url: str
 
@@ -104,6 +109,14 @@ class Settings(BaseSettings):
     admin_query_token: str = ""
     admin_query_database_url: str = ""
 
+    # End-to-end test harness (P4 mobile-e2e). When `e2e_mode` is on (set ONLY on
+    # the isolated vpt-e2e deployment), POST /v1/e2e/mint-token issues a bearer
+    # JWT for a synthetic user so Maestro can authenticate without real Google
+    # OAuth. Guarded by a shared secret matched against vpt_e2e_backend_token.
+    # Both default off/blank so the endpoint is inert in normal prod.
+    e2e_mode: bool = False
+    vpt_e2e_backend_token: str = ""
+
     # Langfuse (LLM/MCP tracing) — leave keys blank to disable
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
@@ -157,6 +170,12 @@ class Settings(BaseSettings):
         if not self.cors_allowed_origins:
             return []
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def google_oauth_mobile_audiences_list(self) -> list[str]:
+        """Allowed mobile OAuth client IDs (aud) for the mobile-token bridge."""
+        raw = self.google_oauth_mobile_audiences
+        return [a.strip() for a in raw.split(",") if a.strip()]
 
 
 settings = Settings()

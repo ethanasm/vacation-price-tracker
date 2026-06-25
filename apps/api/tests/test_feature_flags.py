@@ -58,3 +58,12 @@ async def test_ensure_feature_flags_is_idempotent(test_session):
     rows = (await test_session.execute(select(FeatureFlag))).scalars().all()
     assert len(rows) == len(KNOWN_FLAGS)
     assert await is_feature_enabled(test_session, FeatureFlags.EMAIL_NOTIFICATIONS) is True
+
+
+@pytest.mark.asyncio
+async def test_push_notifications_flag_registered(test_session):
+    from app.core.feature_flags import FeatureFlags, list_feature_flags
+
+    names = {f["name"] for f in await list_feature_flags(test_session)}
+    assert FeatureFlags.PUSH_NOTIFICATIONS in names
+    assert FeatureFlags.PUSH_NOTIFICATIONS == "push_notifications"

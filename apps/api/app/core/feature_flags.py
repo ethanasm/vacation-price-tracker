@@ -20,6 +20,7 @@ class FeatureFlags:
 
     EMAIL_NOTIFICATIONS = "email_notifications"
     SMS_NOTIFICATIONS = "sms_notifications"
+    PUSH_NOTIFICATIONS = "push_notifications"
     BETA_OPTIMIZER = "beta_optimizer"
 
 
@@ -39,6 +40,11 @@ KNOWN_FLAGS: tuple[FeatureFlagSpec, ...] = (
     FeatureFlagSpec(
         FeatureFlags.SMS_NOTIFICATIONS,
         "Send SMS price alerts (requires an SMS provider).",
+        False,
+    ),
+    FeatureFlagSpec(
+        FeatureFlags.PUSH_NOTIFICATIONS,
+        "Send Expo push notifications to mobile devices on price drops.",
         False,
     ),
     FeatureFlagSpec(

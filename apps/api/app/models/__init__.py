@@ -1,6 +1,7 @@
 """Database models for the Vacation Price Tracker API."""
 
 from app.models.conversation import Conversation
+from app.models.device_token import DeviceToken
 from app.models.feature_flag import FeatureFlag
 from app.models.message import Message
 from app.models.notification_outbox import NotificationOutbox
@@ -12,6 +13,7 @@ from app.models.user import User
 
 __all__ = [
     "Conversation",
+    "DeviceToken",
     "FeatureFlag",
     "Message",
     "NotificationOutbox",

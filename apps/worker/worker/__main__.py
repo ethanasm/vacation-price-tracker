@@ -18,6 +18,7 @@ from worker.activities.health_check import run_health_check_activity
 from worker.activities.notifications import (
     evaluate_notifications_activity,
     get_pending_digest_user_ids,
+    send_push_notification_activity,
     send_user_digest_activity,
 )
 from worker.activities.price_check import (
@@ -81,6 +82,7 @@ async def main() -> None:
             filter_results_activity,
             save_snapshot_activity,
             evaluate_notifications_activity,
+            send_push_notification_activity,
             get_pending_digest_user_ids,
             send_user_digest_activity,
             run_health_check_activity,
