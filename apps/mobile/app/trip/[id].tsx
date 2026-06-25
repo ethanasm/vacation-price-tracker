@@ -93,7 +93,6 @@ export default function TripDetailScreen(): React.JSX.Element {
   return (
     <TripDetailBody
       key={seedKey}
-      tripId={id as string}
       trip={query.data.trip}
       history={history}
       flights={flights}
@@ -105,7 +104,6 @@ export default function TripDetailScreen(): React.JSX.Element {
 }
 
 function TripDetailBody({
-  tripId,
   trip,
   history,
   flights,
@@ -113,7 +111,6 @@ function TripDetailBody({
   onRefresh,
   isRefreshing,
 }: {
-  tripId: string;
   trip: TripDetail;
   history: PriceSnapshot[];
   flights: FlightOffer[];
@@ -169,13 +166,6 @@ function TripDetailBody({
       </Text>
 
       <View style={styles.actions}>
-        <View style={styles.actionBtn}>
-          <GradientButton
-            label="Edit"
-            variant="secondary"
-            onPress={() => router.push(`/trip/${tripId}` as never)}
-          />
-        </View>
         <View style={styles.actionBtn}>
           <GradientButton
             label={isRefreshing ? 'Refreshing…' : 'Refresh'}
