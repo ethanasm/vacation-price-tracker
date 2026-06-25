@@ -1,0 +1,48 @@
+# Sign-in flow — Maestro
+#
+# The `e2e` build profile (apps/mobile/eas.json) + the mobile-e2e workflow set:
+#   EXPO_PUBLIC_E2E_MODE=1            — flip lib/auth.ts into bypass mode
+#   EXPO_PUBLIC_E2E_TEST_TOKEN        — pre-baked VPT JWT
+#   EXPO_PUBLIC_E2E_TEST_USER_JSON    — pre-baked user JSON
+#
+# These are inlined at build time, so the auth helper returns the bundled
+# session as soon as the user taps "Sign in with Google" — no deeplink seeding.
+# The bypass guards on EXPO_PUBLIC_E2E_MODE === '1' so it's dead code in store
+# builds.
+appId: me.ethanasm.vacation_price_tracker
+name: sign-in
+tags:
+  - critical
+  - auth
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+# The CTA can sit below the fold on Pixel-6-sized AVDs; scroll it into view
+# before tapping. Accept partial visibility + let each scroll settle so a cold
+# launch where the CTA lands under the gesture nav doesn't time out at 100%.
+- scrollUntilVisible:
+    element:
+      id: "sign-in-google-button"
+    direction: DOWN
+    visibilityPercentage: 60
+    waitToSettleTimeoutMs: 500
+    timeout: 30000
+
+- assertVisible:
+    id: "sign-in-google-button"
+
+- tapOn:
+    id: "sign-in-google-button"
+
+# After the bypass writes the cached session and re-renders, the auth gate
+# routes to the tab shell. Assert the three Aurora tabs + the create-trip FAB.
+- assertVisible:
+    text: "Trips"
+- assertVisible:
+    text: "Alerts"
+- assertVisible:
+    text: "Chat"
+- assertVisible:
+    id: "new-trip-fab"

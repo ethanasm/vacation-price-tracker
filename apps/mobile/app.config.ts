@@ -1,4 +1,5 @@
-import type { ExpoConfig } from 'expo/config';
+import type { ExpoConfig } from "expo/config";
+import { type ConfigPlugin, withAndroidManifest } from "expo/config-plugins";
 
 // Google OAuth on native uses the *application id* as the redirect scheme.
 // expo-auth-session's Google provider builds
@@ -11,83 +12,105 @@ import type { ExpoConfig } from 'expo/config';
 // Apple disallows underscores in CFBundleIdentifier; Android keeps underscores
 // (valid there). The two ids therefore differ by design — make sure the iOS
 // vs Android Google OAuth clients are each registered with the matching id.
-const ANDROID_PACKAGE = 'me.ethanasm.vacation_price_tracker';
-const IOS_BUNDLE_ID = 'me.ethanasm.vacation-price-tracker';
+const ANDROID_PACKAGE = "me.ethanasm.vacation_price_tracker";
+const IOS_BUNDLE_ID = "me.ethanasm.vacation-price-tracker";
+
+// The e2e APK reaches the loopback VPT e2e backend over cleartext
+// http://10.0.2.2:8010 (see infra/docker-compose.e2e.yml). Android API 28+
+// release builds block cleartext by default, so the e2e build needs
+// android:usesCleartextTraffic="true" in its manifest. Gated on
+// EXPO_PUBLIC_E2E_MODE (set only by the e2e build profile / mobile-e2e.yml),
+// so prod/preview builds keep the strict HTTPS-only policy.
+const IS_E2E_BUILD = process.env.EXPO_PUBLIC_E2E_MODE === "1";
+
+const withE2EAndroidCleartext: ConfigPlugin = (cfg) =>
+	withAndroidManifest(cfg, (manifestCfg) => {
+		const application = manifestCfg.modResults.manifest.application?.[0];
+		if (application) {
+			application.$["android:usesCleartextTraffic"] = "true";
+		}
+		return manifestCfg;
+	});
 
 const config: ExpoConfig = {
-  name: 'Price Tracker',
-  slug: 'vacation-price-tracker',
-  owner: 'ethanasm',
-  // runtimeVersion below derives the expo-updates runtime from this string.
-  // P4 owns version bumps; foundation ships 0.1.0.
-  version: '0.1.0',
-  orientation: 'portrait',
-  icon: './assets/icon.png',
-  scheme: ['vpt', ANDROID_PACKAGE],
-  userInterfaceStyle: 'light',
-  ios: {
-    bundleIdentifier: IOS_BUNDLE_ID,
-    supportsTablet: true,
-    // ios.config must be a defined object — Expo's withUsesNonExemptEncryption
-    // plugin does `'usesNonExemptEncryption' in config.ios.config`.
-    config: {
-      usesNonExemptEncryption: false,
-    },
-    infoPlist: {
-      UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
-      ITSAppUsesNonExemptEncryption: false,
-      // The iOS simulator hits the FastAPI dev server on localhost over the
-      // dev cert; scope the insecure exception to localhost so prod policy
-      // stays strict.
-      NSAppTransportSecurity: {
-        NSAllowsLocalNetworking: true,
-        NSExceptionDomains: {
-          localhost: {
-            NSIncludesSubdomains: true,
-            NSExceptionAllowsInsecureHTTPLoads: true,
-          },
-        },
-      },
-    },
-  },
-  android: {
-    package: ANDROID_PACKAGE,
-    adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#7C3AED',
-    },
-  },
-  plugins: [
-    'expo-router',
-    'expo-font',
-    'expo-secure-store',
-    'expo-notifications',
-    [
-      'expo-splash-screen',
-      {
-        // image MUST stay set or the release Android build fails at
-        // processReleaseResources ("drawable/splashscreen_logo not found").
-        image: './assets/splash.png',
-        imageWidth: 200,
-        backgroundColor: '#FAF8FF',
-        resizeMode: 'contain',
-      },
-    ],
-  ],
-  experiments: {
-    typedRoutes: true,
-  },
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
-  extra: {
-    // Links this app to the EAS project (created via `eas init`). Required for
-    // `eas build`/`eas update` and Expo push tokens. `updates.url` is still
-    // intentionally absent — P4 (mobile-cicd) adds it with the OTA wiring.
-    eas: {
-      projectId: '6ab19d8f-51fd-4bce-b47f-4b2828209c04',
-    },
-  },
+	name: "Price Tracker",
+	slug: "vacation-price-tracker",
+	owner: "ethanasm",
+	// runtimeVersion below derives the expo-updates runtime from this string.
+	// P4 owns version bumps; foundation ships 0.1.0.
+	version: "0.1.0",
+	orientation: "portrait",
+	icon: "./assets/icon.png",
+	scheme: ["vpt", ANDROID_PACKAGE],
+	userInterfaceStyle: "light",
+	ios: {
+		bundleIdentifier: IOS_BUNDLE_ID,
+		supportsTablet: true,
+		// ios.config must be a defined object — Expo's withUsesNonExemptEncryption
+		// plugin does `'usesNonExemptEncryption' in config.ios.config`.
+		config: {
+			usesNonExemptEncryption: false,
+		},
+		infoPlist: {
+			UISupportedInterfaceOrientations: ["UIInterfaceOrientationPortrait"],
+			ITSAppUsesNonExemptEncryption: false,
+			// The iOS simulator hits the FastAPI dev server on localhost over the
+			// dev cert; scope the insecure exception to localhost so prod policy
+			// stays strict.
+			NSAppTransportSecurity: {
+				NSAllowsLocalNetworking: true,
+				NSExceptionDomains: {
+					localhost: {
+						NSIncludesSubdomains: true,
+						NSExceptionAllowsInsecureHTTPLoads: true,
+					},
+				},
+			},
+		},
+	},
+	android: {
+		package: ANDROID_PACKAGE,
+		adaptiveIcon: {
+			foregroundImage: "./assets/adaptive-icon.png",
+			backgroundColor: "#7C3AED",
+		},
+	},
+	plugins: [
+		"expo-router",
+		"expo-font",
+		"expo-secure-store",
+		"expo-notifications",
+		[
+			"expo-splash-screen",
+			{
+				// image MUST stay set or the release Android build fails at
+				// processReleaseResources ("drawable/splashscreen_logo not found").
+				image: "./assets/splash.png",
+				imageWidth: 200,
+				backgroundColor: "#FAF8FF",
+				resizeMode: "contain",
+			},
+		],
+	],
+	experiments: {
+		typedRoutes: true,
+	},
+	runtimeVersion: {
+		policy: "appVersion",
+	},
+	// P4 (mobile-cicd): EAS Update wiring. expo-updates resolves OTA bundles from
+	// this URL; the runtime version is derived from `version` above via the
+	// runtimeVersion.policy='appVersion' setting.
+	updates: {
+		url: "https://u.expo.dev/6ab19d8f-51fd-4bce-b47f-4b2828209c04",
+	},
+	extra: {
+		// Links this app to the EAS project (created via `eas init`). Required for
+		// `eas build`/`eas update` and Expo push tokens.
+		eas: {
+			projectId: "6ab19d8f-51fd-4bce-b47f-4b2828209c04",
+		},
+	},
 };
 
-export default config;
+export default IS_E2E_BUILD ? withE2EAndroidCleartext(config) : config;

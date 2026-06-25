@@ -179,7 +179,7 @@ No high-priority security actions required.
 ## Recommended Security Tools
 
 ### For CI/CD Pipeline
-Already wired in `.github/workflows/python.yml` and `.github/workflows/nextjs.yml`:
+Already wired in `.github/workflows/server.yml` and `.github/workflows/web.yml`:
 - `uv run pip-audit` (Python deps)
 - `pnpm audit --prod --ignore-registry-errors` (npm deps)
 

@@ -1,6 +1,7 @@
 /.idea
 .env
 .env.prod
+.env.e2e
 .env.*.local
 /backups
 /node_modules

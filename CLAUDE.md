@@ -223,7 +223,7 @@ scoped to `apps/mobile/lib/**` only (screen/layout code under
 
 ### SonarCloud quality gate (run locally before a PR)
 
-CI computes coverage in the Next.js + Python workflows, then a **separate**
+CI computes coverage in the Web + Server workflows, then a **separate**
 SonarQube workflow downloads those reports and scans (`sonar-project.properties`).
 The gate has **several conditions** — Coverage, **Security Rating**, Reliability,
 Maintainability, Duplications — and a PR can fail on any of them.
@@ -256,7 +256,7 @@ can still drop the gate. Use `--scan` to be sure.
 
 **CI invariant — both coverage workflows must run together.** The SonarQube
 workflow downloads web *and* python coverage **by commit SHA**; if only one of
-`nextjs.yml`/`python.yml` ran for a commit, the other language's report is absent
+`web.yml`/`server.yml` ran for a commit, the other language's report is absent
 and Sonar zero-coverages it (this is what tanked Coverage on New Code to 16.9%
 then 25.7%). The two workflows therefore share an **identical union `paths`
 filter** so any code change runs **both** (both-or-neither). When editing either
