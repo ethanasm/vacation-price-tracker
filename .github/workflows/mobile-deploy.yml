@@ -290,7 +290,7 @@ jobs:
           BUMP="$BUMP_INPUT"
 
           # Respect a manual bump in the triggering commit.
-          if git diff HEAD~1 HEAD -- apps/mobile/app.config.ts | grep -E "^[+-][[:space:]]*version: '" >/dev/null; then
+          if git diff HEAD~1 HEAD -- apps/mobile/app.config.ts | grep -E "^[+-][[:space:]]*version: [\"']" >/dev/null; then
             echo "Version line changed in the triggering commit — respecting the manual bump."
             BUMP="none"
           fi

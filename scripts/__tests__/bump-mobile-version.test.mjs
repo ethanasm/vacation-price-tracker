@@ -12,12 +12,13 @@ const SCRIPT = join(
 	"bump-mobile-version.mjs",
 );
 
-function withConfig(version, run) {
+function withConfig(version, run, { quotes = "double" } = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "bump-"));
 	const path = join(dir, "app.config.ts");
+	const q = quotes === "single" ? "'" : '"';
 	writeFileSync(
 		path,
-		`const config = {\n  name: 'Price Tracker',\n  version: '${version}',\n};\nexport default config;\n`,
+		`const config = {\n  name: ${q}Price Tracker${q},\n  version: ${q}${version}${q},\n};\nexport default config;\n`,
 	);
 	try {
 		return run(path, dir);
@@ -33,18 +34,27 @@ function bump(path, args) {
 	}).trim();
 }
 
-test("--print returns the current version without writing", () => {
+test("--print returns the current version without writing (double quotes)", () => {
 	withConfig("0.3.2", (path) => {
 		assert.equal(bump(path, ["--print"]), "0.3.2");
-		assert.match(readFileSync(path, "utf8"), /version: '0\.3\.2'/);
+		assert.match(readFileSync(path, "utf8"), /version: "0\.3\.2"/);
 	});
 });
 
-test("patch bump increments the patch component", () => {
+test("patch bump increments the patch component (double quotes)", () => {
 	withConfig("0.3.2", (path) => {
 		assert.equal(bump(path, ["--type", "patch"]), "0.3.3");
-		assert.match(readFileSync(path, "utf8"), /version: '0\.3\.3'/);
+		assert.match(readFileSync(path, "utf8"), /version: "0\.3\.3"/);
 	});
+});
+
+test("--print and patch bump work with single-quote fixture (quote-agnostic)", () => {
+	withConfig("0.3.2", (path) => {
+		assert.equal(bump(path, ["--print"]), "0.3.2");
+		assert.match(readFileSync(path, "utf8"), /version: '0\.3\.2'/);
+		assert.equal(bump(path, ["--type", "patch"]), "0.3.3");
+		assert.match(readFileSync(path, "utf8"), /version: '0\.3\.3'/);
+	}, { quotes: "single" });
 });
 
 test("minor bump increments minor and zeroes patch", () => {

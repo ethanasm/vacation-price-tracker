@@ -32,8 +32,8 @@ const CONFIG_PATH =
 		"apps/mobile/app.config.ts",
 	);
 
-// Matches exactly the `version: '0.1.0',` line in the ExpoConfig literal.
-const VERSION_RE = /(\n\s*version:\s*')(\d+\.\d+\.\d+)(',)/g;
+// Matches the `version: '0.1.0',` or `version: "0.1.0",` line in the ExpoConfig literal.
+const VERSION_RE = /(\n\s*version:\s*["'])(\d+\.\d+\.\d+)(["'],)/g;
 
 function fail(msg) {
 	console.error(`[bump-mobile-version] ${msg}`);

@@ -129,7 +129,7 @@ Create `.env.e2e` directly (no example template exists; mirror the structure of
 POSTGRES_PASSWORD=<strong-random-password>
 SECRET_KEY=<strong-random-secret>
 VPT_E2E_BACKEND_TOKEN=<shared-secret-matching-the-GitHub-repo-secret>
-E2E_ALLOWED_EMAILS=e2e@vpt.test
+AUTH_ALLOWED_EMAILS=e2e@vpt.test
 ```
 
 `.env.e2e` is gitignored — do not commit it.
