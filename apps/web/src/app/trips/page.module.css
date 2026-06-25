@@ -303,7 +303,7 @@
 }
 
 .tripTable tbody tr:first-child {
-  background: #fbfaff;
+  background: var(--aurora-row-tint);
 }
 
 .clickableRow {
@@ -349,7 +349,7 @@
 
 .priceTotal {
   font-weight: 800;
-  color: var(--aurora-violet);
+  color: var(--aurora-violet-text);
 }
 
 /* Stacked card list (half-width / narrow viewports, <= 820px) */

@@ -109,7 +109,7 @@
 .sectionIcon {
   width: 20px;
   height: 20px;
-  color: var(--aurora-violet);
+  color: var(--aurora-violet-text);
 }
 
 .sectionTitleText {
@@ -245,7 +245,7 @@
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
   background: var(--aurora-chip);
-  color: var(--aurora-violet-deep);
+  color: var(--aurora-on-chip);
   border-radius: 0.375rem;
   font-size: 0.8125rem;
   font-weight: 500;

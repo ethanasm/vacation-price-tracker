@@ -54,7 +54,7 @@
 
 .cabinChipSelected {
   background: var(--aurora-chip);
-  color: var(--aurora-violet-deep);
+  color: var(--aurora-on-chip);
   border: 1px solid var(--aurora-selected-border);
 }
 

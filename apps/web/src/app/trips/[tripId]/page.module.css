@@ -319,7 +319,7 @@
 
 .cardPriceSelected,
 .hotelPriceSelected .hotelPerNight {
-  color: var(--aurora-violet);
+  color: var(--aurora-violet-text);
   font-weight: 800;
 }
 

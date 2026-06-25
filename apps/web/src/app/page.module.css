@@ -179,7 +179,7 @@
   height: 40px;
   border-radius: 10px;
   background: var(--aurora-surface);
-  color: var(--aurora-violet);
+  color: var(--aurora-violet-text);
 }
 
 .separator {
