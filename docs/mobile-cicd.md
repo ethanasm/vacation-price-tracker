@@ -2,9 +2,9 @@
 
 This is the operator runbook for the mobile pipeline added in plan P4
 (`docs/superpowers/plans/2026-06-23-mobile-cicd.md`). The two workflows are
-`mobile-deploy.yml` (EAS OTA + gated store release) and `mobile-e2e.yml`
-(self-hosted Android Maestro). None of this runs until the prerequisites below
-are provisioned.
+`mobile-deploy.yml` (EAS OTA + gated store release) and `mobile.yml`
+(lint / typecheck / test + audit, plus the self-hosted Android Maestro **E2E
+Test** job). None of this runs until the prerequisites below are provisioned.
 
 ## 1. One-time EAS project setup
 
@@ -99,7 +99,7 @@ cannot be bypass-listed, so either:
 
 ## 6. Self-hosted Android runner (mobile-e2e)
 
-`mobile-e2e.yml` runs on the existing self-hosted `vpt-prod` runner (the one
+`mobile.yml` runs on the existing self-hosted `vpt-prod` runner (the one
 `deploy.yml` uses). Add Android tooling once:
 
 ```bash
@@ -112,7 +112,7 @@ and `ANDROID_AVD_HOME`.
 
 ## 7. VPT e2e backend stack (one-time bring-up)
 
-`mobile-e2e.yml` mints its bearer session from an **isolated** VPT e2e backend,
+`mobile.yml` mints its bearer session from an **isolated** VPT e2e backend,
 NOT prod. The compose file `infra/docker-compose.e2e.yml` is authored by P4
 (Task 5) — it defines the `vpt-e2e` stack (own database `vacation_tracker_e2e`,
 own `SECRET_KEY`, `E2E_MODE=1` on the api, a sign-in allowlist pinned to

@@ -1,7 +1,7 @@
 # Maestro project-level config for the VPT mobile app.
 #
 # Discovery: every YAML under flows/ is a flow file Maestro executes when this
-# directory is passed to `maestro test`. .github/workflows/mobile-e2e.yml runs
+# directory is passed to `maestro test`. .github/workflows/mobile.yml runs
 # the whole directory against a self-hosted Android emulator nightly + on
 # push-to-main + on PRs labeled `mobile-visual`.
 #

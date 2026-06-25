@@ -1,74 +1,554 @@
 name: Mobile
 
-# Lint / typecheck / unit-test gate for the Expo app (apps/mobile) + the mobile
-# release tooling. VPT's web/server CI workflows are scoped to their own
-# projects, so without this workflow the mobile Nx project (and the version-bump
-# script + Maestro flows) get no CI coverage. Kept OUT of the Sonar coverage flow
-# on purpose: sonarqube.yml downloads web + server coverage by commit SHA, and
-# adding a third source reintroduces the cross-workflow zero-coverage fragility
-# documented in CLAUDE.md. The mobile 80% gate is enforced in-job here instead.
+# All CI for the Expo app (apps/mobile) + the mobile release tooling, in one
+# workflow with three jobs so the checks group under "Mobile" on a PR:
+#   - build      → "Mobile / build"        (lint / typecheck / test:coverage + bump test + Maestro dry-run)
+#   - audit      → "Mobile / audit"        (pnpm audit)
+#   - e2e        → "Mobile / E2E Test"     (self-hosted Android emulator + Maestro)
+#
+# VPT's web/server CI workflows are scoped to their own projects, so without this
+# the mobile Nx project gets no CI coverage. Kept OUT of the Sonar coverage flow
+# on purpose: sonarqube.yml downloads web + server coverage by commit SHA, and a
+# third source reintroduces the cross-workflow zero-coverage fragility documented
+# in CLAUDE.md. The mobile 80% lib/** gate is enforced in-job here instead.
 on:
   push:
     branches: [main]
-    paths:
+    paths: &mobile_paths
       - "apps/mobile/**"
       - "scripts/bump-mobile-version.mjs"
       - "scripts/__tests__/bump-mobile-version.test.mjs"
       - "infra/docker-compose.e2e.yml"
       - ".github/workflows/mobile.yml"
       - ".github/workflows/mobile-deploy.yml"
-      - ".github/workflows/mobile-e2e.yml"
       - "package.json"
       - "pnpm-lock.yaml"
       - "nx.json"
       - "tsconfig*.json"
   pull_request:
-    paths:
-      - "apps/mobile/**"
-      - "scripts/bump-mobile-version.mjs"
-      - "scripts/__tests__/bump-mobile-version.test.mjs"
-      - "infra/docker-compose.e2e.yml"
-      - ".github/workflows/mobile.yml"
-      - ".github/workflows/mobile-deploy.yml"
-      - ".github/workflows/mobile-e2e.yml"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "nx.json"
-      - "tsconfig*.json"
+    # `labeled` so adding the `mobile-visual` label arms the E2E job. The other
+    # types keep build/audit current as the PR evolves.
+    types: [opened, synchronize, reopened, labeled]
+    paths: *mobile_paths
+  schedule:
+    # 09:00 UTC — nightly E2E (build/audit are guarded off for this trigger).
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-ci-${{ github.ref }}
+  group: mobile-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  checks:
-    name: Lint / typecheck / test (mobile)
+  build:
+    # Lint/typecheck/test aren't worth running on the nightly cron (that trigger
+    # exists for the E2E job); they run on push, PR, and manual dispatch.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9.12.1
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Cache Nx
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: ${{ runner.os }}-nx-mobile-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-nx-mobile-
+            ${{ runner.os }}-nx-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
       - name: Lint / typecheck / test (mobile, enforces 80% lib/** gate)
         run: pnpm nx run-many -t lint typecheck test:coverage --projects=mobile
+
       - name: Version-bump script unit test
         run: node --test scripts/__tests__/bump-mobile-version.test.mjs
+
       - name: Validate Maestro flow YAML
         working-directory: apps/mobile
         run: node e2e/scripts/dry-run.mjs e2e/flows
+
       - name: Lint mobile workflows (actionlint)
         run: |
           docker run --rm -v "$PWD":/repo --workdir /repo rhysd/actionlint:latest -color \
             .github/workflows/mobile.yml \
-            .github/workflows/mobile-deploy.yml \
-            .github/workflows/mobile-e2e.yml
+            .github/workflows/mobile-deploy.yml
+
+  audit:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `--ignore-registry-errors` exits 0 when the audit endpoint itself errors
+      # (the legacy npm audit endpoint pnpm uses returns 410 since npm retired
+      # it) so CI is not permanently red on a registry outage.
+      - name: Run pnpm audit
+        working-directory: apps/mobile
+        run: pnpm audit --audit-level=moderate --ignore-registry-errors
+        continue-on-error: true
+
+      - name: Run pnpm audit (production only)
+        working-directory: apps/mobile
+        run: pnpm audit --prod --ignore-registry-errors
+
+  e2e:
+    name: E2E Test
+    # Android-only e2e on a self-hosted runner inside the prod box. iOS coverage
+    # is manual via `maestro test e2e/flows` on the dev Mac. Android catches ~90%
+    # of regressions because the surface (auth gate, navigation, optimistic
+    # mutations) is platform-shared in RN.
+    #
+    # PR runs require the `mobile-visual` label so opt-in stays explicit; non-PR
+    # triggers (push/schedule/dispatch) always run. The in-step secret checks
+    # below fail loudly if VPT_E2E_BACKEND_TOKEN / the e2e stack aren't
+    # configured, so no silent-skip repo-variable gate is used.
+    #
+    # One-time runner setup (see docs/mobile-cicd.md):
+    #   1. Bring up the isolated VPT e2e backend stack (project vpt-e2e) on the
+    #      prod box from infra/docker-compose.e2e.yml — the loopback-only API the
+    #      emulator reaches at http://10.0.2.2:8010. One-time operator step.
+    #   2. Optional repo variable ANDROID_SDK_ROOT (default /opt/android-sdk).
+    #   3. Run scripts/setup-runner-android.sh once on the prod box (Android SDK
+    #      + build-tools + NDK, the vpt_e2e AVD, Maestro).
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'mobile-visual')
+    runs-on: [self-hosted, vpt-prod]
+    timeout-minutes: 60
+    # E2E publishes Maestro screenshots to the pr-screenshots orphan branch and
+    # comments on the PR, so this job needs write where the workflow default is
+    # read-only.
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      ANDROID_SDK_ROOT: ${{ vars.ANDROID_SDK_ROOT || '/opt/android-sdk' }}
+      ANDROID_AVD_NAME: vpt_e2e
+      ANDROID_AVD_HOME: ${{ vars.ANDROID_AVD_HOME || '/home/ethan/.android-avd' }}
+      # Gradle in CI: no daemon, single worker, 2 GB heap — the WSL runner OOMs
+      # at higher caps when the 2 GB AVD + Metro run alongside.
+      GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m"'
+      # The isolated VPT e2e API, reached from the emulator via the AVD's host
+      # alias. Deterministic for the self-hosted setup, so hardcoded.
+      VPT_E2E_API_URL: http://10.0.2.2:8010
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Diagnose runner
+        shell: bash
+        run: |
+          set -u
+          echo "::group::Runner diagnostics"
+          uname -a
+          free -h || true
+          df -h /
+          df -h "$HOME" || true
+          echo "JAVA: $(java -version 2>&1 | head -1)"
+          if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM accessible"
+          else
+            echo "KVM missing or not r/w — emulator falls back to software CPU (slow)"
+          fi
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          [ -d "$ANDROID_SDK_ROOT" ] && ls -la "$ANDROID_SDK_ROOT" || echo "  SDK root missing — run scripts/setup-runner-android.sh"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
+          [ -x "$ANDROID_SDK_ROOT/emulator/emulator" ] && "$ANDROID_SDK_ROOT/emulator/emulator" -list-avds || true
+          echo "::endgroup::"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize AVD on disk
+        shell: bash
+        env:
+          ANDROID_AVD_SYSTEM_IMAGE: ${{ vars.ANDROID_AVD_SYSTEM_IMAGE || 'system-images;android-34;google_apis;x86_64' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME"
+          if [ -d "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd" ]; then
+            echo "AVD already present at $ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"
+          else
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+            AVDMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
+            if [ ! -x "$SDKMANAGER" ] || [ ! -x "$AVDMANAGER" ]; then
+              echo "::error::cmdline-tools missing — run scripts/setup-runner-android.sh on the runner"
+              exit 1
+            fi
+            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" --install "$ANDROID_AVD_SYSTEM_IMAGE" >/dev/null
+            echo "no" | "$AVDMANAGER" create avd \
+              --name "$ANDROID_AVD_NAME" \
+              --package "$ANDROID_AVD_SYSTEM_IMAGE" \
+              --device "pixel_6" \
+              --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd" \
+              --force
+            CFG="$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
+            if [ -f "$CFG" ]; then
+              {
+                echo "hw.ramSize=2048"
+                echo "vm.heapSize=512"
+                echo "disk.dataPartition.size=4096M"
+                echo "hw.gpu.enabled=yes"
+                echo "hw.gpu.mode=swiftshader_indirect"
+              } >> "$CFG"
+            fi
+          fi
+          ls -la "$ANDROID_AVD_HOME"
+
+      - name: Install Maestro CLI
+        shell: bash
+        run: |
+          if ! command -v maestro >/dev/null 2>&1; then
+            curl -fsSL "https://get.maestro.mobile.dev" | bash
+          fi
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Maestro flow YAML
+        working-directory: apps/mobile
+        run: node e2e/scripts/dry-run.mjs e2e/flows
+
+      # Mint the e2e bearer from the isolated VPT e2e backend rather than from
+      # hand-maintained secrets. The e2e API exposes the P5-owned token-mint
+      # endpoint POST /v1/e2e/mint-token (gated on E2E_MODE=1, authenticated via
+      # the X-E2E-Token header = VPT_E2E_BACKEND_TOKEN) that returns a JWT (same
+      # create_access_token path the app uses) for the fixed e2e user. The
+      # mobile client attaches it as Authorization: Bearer — which requires P5's
+      # Bearer-header support in get_current_user. Token is short-lived + masked.
+      #
+      # The vpt-e2e stack (infra/docker-compose.e2e.yml) must be up on the box,
+      # listening on the loopback port the emulator reaches at
+      # http://10.0.2.2:8010. One-time operator bring-up: docs/mobile-cicd.md
+      # § "VPT e2e backend stack".
+      - name: Mint e2e session from the running backend
+        shell: bash
+        env:
+          VPT_E2E_BACKEND_TOKEN: ${{ secrets.VPT_E2E_BACKEND_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VPT_E2E_BACKEND_TOKEN:-}" ]; then
+            echo "::error::VPT_E2E_BACKEND_TOKEN secret is not set — cannot mint an e2e session. See docs/mobile-cicd.md."
+            exit 1
+          fi
+          # The e2e backend is reachable from the runner host on loopback at the
+          # same port the emulator maps to 10.0.2.2 (8010 here).
+          BASE="http://127.0.0.1:8010"
+          # P5 mints a FIXED configured user (e2e@vpt.test) — it ignores any
+          # request body. This EMAIL is only used to build the local USER_JSON
+          # below and must match the user P5 upserts + the e2e sign-in allowlist.
+          EMAIL="e2e@vpt.test"
+          # The e2e-only mint endpoint (P5-owned) returns
+          # { access_token, user: { id, email, ... } }. It exists only when the
+          # e2e backend is started with E2E_MODE=1, and is authenticated with the
+          # X-E2E-Token header (NOT Authorization/Bearer). No request body. See
+          # docs/mobile-cicd.md.
+          RESP=$(curl -sS -X POST "${BASE}/v1/e2e/mint-token" \
+            -H "X-E2E-Token: ${VPT_E2E_BACKEND_TOKEN}")
+          TOKEN=$(printf '%s' "$RESP" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(j.access_token||"")')
+          USERID=$(printf '%s' "$RESP" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write((j.user&&j.user.id)||"")')
+          if [ -z "${TOKEN:-}" ] || [ -z "${USERID:-}" ]; then
+            echo "::error::failed to mint e2e token — response was: ${RESP}"
+            exit 1
+          fi
+          USERJSON=$(printf '{"id":"%s","email":"%s"}' "$USERID" "$EMAIL")
+          echo "::add-mask::$TOKEN"
+          {
+            echo "E2E_TEST_TOKEN<<__E2E_EOF__"
+            echo "$TOKEN"
+            echo "__E2E_EOF__"
+            echo "E2E_TEST_USER_JSON=$USERJSON"
+          } >> "$GITHUB_ENV"
+          echo "Minted e2e session for ${EMAIL} (user ${USERID})"
+
+      # Build the RELEASE APK locally (not debug — assembleDebug needs Metro,
+      # which CI doesn't run). The E2E_MODE bypass reads the inlined token, so
+      # the Maestro YAML needs no deeplink seeding step.
+      - name: Build Android APK locally
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_E2E_MODE: '1'
+          EXPO_PUBLIC_E2E_TEST_TOKEN: ${{ env.E2E_TEST_TOKEN }}
+          EXPO_PUBLIC_E2E_TEST_USER_JSON: ${{ env.E2E_TEST_USER_JSON }}
+          # The emulator reaches the loopback-only VPT e2e API via 10.0.2.2.
+          # Cleartext for this http:// host is allowed only in e2e builds via
+          # the usesCleartextTraffic toggle in app.config.ts.
+          EXPO_PUBLIC_API_URL: ${{ env.VPT_E2E_API_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_PUBLIC_E2E_TEST_TOKEN:-}" ] || [ -z "${EXPO_PUBLIC_E2E_TEST_USER_JSON:-}" ]; then
+            echo "::error::e2e session env is empty — the 'Mint e2e session' step did not run or failed"
+            exit 1
+          fi
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          pnpm exec expo prebuild --platform android --non-interactive --no-install
+          # EXPO_PUBLIC_* values are inlined by Metro at bundle time; a changed
+          # env var does NOT invalidate Gradle/Metro caches. On the persistent
+          # self-hosted workspace, clear Metro caches + force the bundle task to
+          # re-run so the current env is inlined.
+          rm -rf "${TMPDIR:-/tmp}"/metro-* "${TMPDIR:-/tmp}"/haste-map-* node_modules/.cache 2>/dev/null || true
+          cd android
+          ./gradlew :app:createBundleReleaseJsAndAssets \
+            --rerun-tasks --no-daemon --console=plain
+          ./gradlew :app:assembleRelease \
+            -x lintVitalAnalyzeRelease -x lintVitalRelease \
+            --no-daemon --console=plain \
+            --build-cache
+          APK="app/build/outputs/apk/release/app-release.apk"
+          ls -lh "$APK"
+          cp "$APK" /tmp/vpt-e2e.apk
+          # Fail fast if the backend URL didn't get inlined into the JS bundle.
+          if ! unzip -p /tmp/vpt-e2e.apk assets/index.android.bundle 2>/dev/null \
+               | strings | grep -aq 'http://10.0.2.2:8010'; then
+            echo "::error::APK bundle is missing http://10.0.2.2:8010 — EXPO_PUBLIC_API_URL was not inlined"
+            exit 1
+          fi
+          echo "APK backend URL verified: http://10.0.2.2:8010"
+
+      - name: Start Android emulator (background)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
+          adb kill-server || true
+          adb start-server
+          nohup env ANDROID_AVD_HOME="$ANDROID_AVD_HOME" \
+            emulator -avd "$ANDROID_AVD_NAME" \
+              -no-window -no-audio -no-boot-anim -no-snapshot-save \
+              -accel auto \
+              -gpu swiftshader_indirect \
+            > /tmp/emulator.log 2>&1 &
+          echo "emulator pid: $!"
+
+      - name: Wait for emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          adb wait-for-device
+          for i in $(seq 1 60); do
+            BOOTED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            ANIM_DONE=$(adb shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r' || true)
+            if [ "$BOOTED" = "1" ] && [ "$ANIM_DONE" != "running" ]; then
+              echo "emulator booted after $((i * 10))s"
+              adb shell input keyevent 82 || true
+              adb shell settings put global window_animation_scale 0 || true
+              adb shell settings put global transition_animation_scale 0 || true
+              adb shell settings put global animator_duration_scale 0 || true
+              exit 0
+            fi
+            if [ $((i % 3)) -eq 0 ]; then
+              echo "  $((i * 10))s — boot_completed=${BOOTED:-?} bootanim=${ANIM_DONE:-?}"
+            fi
+            sleep 10
+          done
+          echo "::error::emulator failed to boot in 10 minutes"
+          tail -100 /tmp/emulator.log || true
+          exit 1
+
+      - name: Install APK
+        shell: bash
+        run: |
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          adb install -r /tmp/vpt-e2e.apk
+
+      - name: Capture cold-launch state
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          mkdir -p /tmp/maestro-debug
+          adb shell pm clear me.ethanasm.vacation_price_tracker || true
+          adb shell am start -W -n me.ethanasm.vacation_price_tracker/.MainActivity || true
+          sleep 8
+          adb exec-out screencap -p > /tmp/maestro-debug/cold-launch.png || true
+          adb shell uiautomator dump /sdcard/cold-launch.xml >/dev/null 2>&1 || true
+          adb pull /sdcard/cold-launch.xml /tmp/maestro-debug/cold-launch.xml || true
+          echo "::group::Cold-launch UI hierarchy (text nodes only)"
+          if [ -f /tmp/maestro-debug/cold-launch.xml ]; then
+            grep -oE 'text="[^"]*"' /tmp/maestro-debug/cold-launch.xml \
+              | grep -v 'text=""' | sort -u | head -50 || true
+          else
+            echo "no UI dump captured"
+          fi
+          echo "::endgroup::"
+          adb shell am force-stop me.ethanasm.vacation_price_tracker || true
+
+      - name: Run Maestro flows
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$HOME/.maestro/bin:$PATH"
+          rm -rf /tmp/maestro-debug/.maestro
+          mkdir -p /tmp/maestro-debug
+          # Invoke maestro once per flow with an explicit pm clear between, so
+          # SecureStore values from one flow don't survive into the next on the
+          # AOSP system image (clearState alone proved unreliable in showbook CI).
+          RC=0
+          for flow in apps/mobile/e2e/flows/*.yaml; do
+            echo "::group::pm clear before $(basename "$flow")"
+            adb shell pm clear me.ethanasm.vacation_price_tracker || true
+            sleep 2
+            echo "::endgroup::"
+            maestro test --debug-output /tmp/maestro-debug "$flow" || {
+              status=$?
+              echo "::warning::$(basename "$flow") failed with status $status"
+              RC=$status
+            }
+          done
+          exit $RC
+
+      - name: Summarise Maestro debug output
+        if: failure()
+        shell: bash
+        run: |
+          set -u
+          echo "::group::Maestro debug dir contents"
+          ls -la /tmp/maestro-debug/ 2>/dev/null || echo "no debug dir"
+          echo "::endgroup::"
+          shopt -s nullglob
+          for f in /tmp/maestro-debug/**/*.txt /tmp/maestro-debug/**/*.json /tmp/maestro-debug/**/*.log /tmp/maestro-debug/*.txt /tmp/maestro-debug/*.json /tmp/maestro-debug/*.log; do
+            echo "::group::$f"
+            tail -200 "$f" 2>/dev/null || true
+            echo "::endgroup::"
+          done
+          echo "::group::Screenshots captured"
+          find /tmp/maestro-debug -name '*.png' -printf '%p\n' 2>/dev/null | sort || true
+          echo "::endgroup::"
+
+      - name: Upload Maestro debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-debug-${{ github.run_id }}
+          path: |
+            /tmp/maestro-debug/**
+            /tmp/emulator.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Post failure comment on PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          BODY_FILE=$(mktemp)
+          {
+            printf '## Mobile e2e (Android) — failed\n\n'
+            printf '[Workflow run](%s) — see the run log for the failing step.\n\n' "$RUN_URL"
+            printf 'Maestro debug screenshots (if any) are uploaded as the maestro-debug-%s artifact.\n' "$RUN_ID"
+          } > "$BODY_FILE"
+          set +e
+          gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+          echo "gh pr comment exit: $?"
+
+      - name: Publish maestro debug to pr-screenshots branch
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ ! -d /tmp/maestro-debug ]; then
+            echo "no /tmp/maestro-debug — nothing to publish"
+            exit 0
+          fi
+          FLAT=/tmp/maestro-debug-flat
+          rm -rf "$FLAT"; mkdir -p "$FLAT"
+          [ -f /tmp/maestro-debug/cold-launch.png ] && cp /tmp/maestro-debug/cold-launch.png "$FLAT/cold-launch.png"
+          n=1
+          while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            flow="$(echo "$base" | sed -E 's/.*\(([^)]+)\)\.png$/\1/' | tr -c '[:alnum:]-' '-')"
+            [ -z "$flow" ] && flow="unknown"
+            cp "$f" "$FLAT/maestro-${flow}-${n}.png"
+            n=$((n + 1))
+          done < <(find /tmp/maestro-debug -name '*.png' -path '*tests*' -print0)
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Push the PNGs to an orphan pr-screenshots branch under
+          # mobile-e2e/run-<id>/ using git plumbing (no external uploader
+          # script — VPT has none). Repo is public so raw URLs are fetchable.
+          RUN_DIR="mobile-e2e/run-${RUN_ID}"
+          WT=$(mktemp -d)
+          git fetch origin pr-screenshots:pr-screenshots 2>/dev/null || true
+          if git show-ref --verify --quiet refs/heads/pr-screenshots; then
+            git worktree add "$WT" pr-screenshots
+          else
+            git worktree add --detach "$WT"
+            ( cd "$WT" && git checkout --orphan pr-screenshots && git rm -rf . >/dev/null 2>&1 || true )
+          fi
+          mkdir -p "$WT/$RUN_DIR"
+          cp "$FLAT"/*.png "$WT/$RUN_DIR/" 2>/dev/null || true
+          ( cd "$WT" && git add "$RUN_DIR" && git commit -m "ci: mobile-e2e screenshots run ${RUN_ID}" && git push origin pr-screenshots ) || echo "::warning::screenshot push failed"
+          git worktree remove --force "$WT" || true
+          RAW_BASE="https://raw.githubusercontent.com/${GH_REPO}/pr-screenshots/${RUN_DIR}"
+          BODY_FILE=$(mktemp)
+          {
+            printf '## Mobile e2e debug — %s\n\n' "$RUN_DIR"
+            printf '[Workflow run](%s) failed.\n\n' "$RUN_URL"
+            for img in "$FLAT"/*.png; do
+              [ -e "$img" ] || continue
+              bn=$(basename "$img")
+              printf '![%s](%s/%s)\n' "$bn" "$RAW_BASE" "$bn"
+            done
+          } > "$BODY_FILE"
+          gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE" || echo "::warning::gh pr comment failed"
+
+      - name: Shut down emulator
+        if: always()
+        shell: bash
+        run: |
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          adb emu kill || true
+          adb kill-server || true
+          for _ in $(seq 1 30); do
+            pgrep -f "emulator -avd ${ANDROID_AVD_NAME}" >/dev/null || break
+            sleep 1
+          done
+          rm -f "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"/*.lock 2>/dev/null || true

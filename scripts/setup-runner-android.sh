@@ -3,7 +3,7 @@
 #
 # Run on the prod box AFTER the GitHub Actions runner itself is online (the same
 # runner deploy.yml uses, label vpt-prod). Installs Android command-line tools +
-# the packages Maestro/Gradle need and creates the AVD mobile-e2e.yml looks for.
+# the packages Maestro/Gradle need and creates the AVD mobile.yml looks for.
 #
 # Re-running is safe — every step checks for the artifact it would create.
 
