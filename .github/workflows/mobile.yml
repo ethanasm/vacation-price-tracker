@@ -4,7 +4,7 @@ name: Mobile
 # workflow with three jobs so the checks group under "Mobile" on a PR:
 #   - build      → "Mobile / build"        (lint / typecheck / test:coverage + bump test + Maestro dry-run)
 #   - audit      → "Mobile / audit"        (pnpm audit)
-#   - e2e        → "Mobile / E2E Test"     (self-hosted Android emulator + Maestro)
+#   - e2e        → "Mobile / e2e test"     (self-hosted Android emulator + Maestro)
 #
 # VPT's web/server CI workflows are scoped to their own projects, so without this
 # the mobile Nx project gets no CI coverage. Kept OUT of the Sonar coverage flow
@@ -120,7 +120,7 @@ jobs:
         run: pnpm audit --prod --ignore-registry-errors
 
   e2e:
-    name: E2E Test
+    name: e2e test
     # Android-only e2e on a self-hosted runner inside the prod box. iOS coverage
     # is manual via `maestro test e2e/flows` on the dev Mac. Android catches ~90%
     # of regressions because the surface (auth gate, navigation, optimistic
