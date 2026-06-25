@@ -105,6 +105,32 @@ async def test_create_trip_success(client_with_csrf, test_session, mock_redis, m
 
 
 @pytest.mark.asyncio
+async def test_create_trip_via_bearer_skips_csrf(client, test_session, mock_redis, monkeypatch):
+    """Mobile clients authenticate with `Authorization: Bearer` and carry no CSRF
+    cookie/header. Regression: every mobile write 500'd at the CSRF middleware
+    before reaching the endpoint; a bearer request must be CSRF-exempt and create
+    the trip."""
+    user = await _create_user(test_session, email="bearer-create@example.com")
+    token = create_access_token(data={JWTClaims.SUBJECT: str(user.id)})
+
+    monkeypatch.setattr(trips_module, "redis_client", mock_redis)
+    monkeypatch.setattr(trips_module, "trigger_price_check_workflow", AsyncMock())
+
+    # No CSRF cookie/header anywhere — only the bearer credential the mobile sends.
+    response = client.post(
+        "/v1/trips",
+        json=_build_trip_payload(name="Bearer Trip"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Idempotency-Key": "trip-bearer-csrf-1",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["name"] == "Bearer Trip"
+
+
+@pytest.mark.asyncio
 async def test_create_trip_one_way_success(client_with_csrf, test_session, mock_redis, monkeypatch):
     user = await _create_user(test_session, email="oneway@example.com")
     _authorize_client(client_with_csrf, user)

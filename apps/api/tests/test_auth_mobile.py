@@ -79,6 +79,32 @@ class TestSettingsAndCsrf:
         # The web cookie endpoints are NOT exempt.
         assert not _is_csrf_exempt("/v1/auth/logout")
 
+    def test_bearer_requests_are_csrf_exempt_by_mechanism(self):
+        """Any Authorization: Bearer request is CSRF-exempt regardless of path —
+        the mobile app reaches non-/v1/auth write endpoints (POST /v1/trips, the
+        refresh/pause routes) with a bearer token and no cookie session."""
+        from app.middleware.csrf import _is_bearer_authenticated
+        from starlette.requests import Request
+
+        def _req(headers: dict[str, str]) -> Request:
+            raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+            return Request({"type": "http", "headers": raw})
+
+        assert _is_bearer_authenticated(_req({"Authorization": "Bearer abc.def.ghi"}))
+        # Scheme parse mirrors routers/auth.py: case-insensitive, non-empty credential.
+        assert _is_bearer_authenticated(_req({"Authorization": "bearer abc.def.ghi"}))
+        assert not _is_bearer_authenticated(_req({"Authorization": "Bearer "}))
+        assert not _is_bearer_authenticated(_req({"Authorization": "Bearer"}))
+        # Cookie-authed (web) and other schemes are NOT exempt by this path.
+        assert not _is_bearer_authenticated(_req({}))
+        assert not _is_bearer_authenticated(_req({"Authorization": "Basic abc123"}))
+        # A cookie alongside a bearer is still exempt — the bearer presence wins
+        # here; cross-site forgery of that header is blocked by the credentialed
+        # CORS allowlist, not by CSRF (see csrf.py).
+        assert _is_bearer_authenticated(
+            _req({"Authorization": "Bearer abc.def.ghi", "Cookie": "csrf_token=x"})
+        )
+
 
 class TestMobileToken:
     @pytest.mark.asyncio

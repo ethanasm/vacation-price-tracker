@@ -45,6 +45,35 @@ def _is_csrf_exempt(path: str) -> bool:
     return path.startswith(CSRF_EXEMPT_PREFIXES)
 
 
+def _is_bearer_authenticated(request: Request) -> bool:
+    """True when the request carries an ``Authorization: Bearer <token>`` credential.
+
+    Bearer-token clients (the mobile app) have no browser cookie session, so the
+    double-submit-cookie CSRF defense neither applies nor is forgeable. The safety
+    of skipping CSRF here rests on the credentialed CORS allowlist
+    (``allow_credentials=True`` with an explicit single-origin list, see
+    ``app/main.py``): ``Authorization`` is not a CORS-safelisted header, so any
+    cross-origin request that sets it triggers a preflight an attacker origin
+    fails, and an HTML-form CSRF (the preflight-free vector) cannot set the header
+    at all. **If that CORS allowlist is ever loosened, this exemption re-opens CSRF
+    across the whole bearer surface.** Exempting by auth mechanism (not just by
+    path) keeps every bearer-authed endpoint — POST /v1/trips, the refresh/pause
+    routes, etc. — reachable from mobile, while cookie-authed (web) requests stay
+    fully CSRF-protected.
+
+    The scheme parse mirrors ``_extract_access_token`` in ``routers/auth.py``
+    (case-insensitive scheme, non-empty credential) so the set of CSRF-exempt
+    requests is exactly the set the authenticator treats as bearer-authed —
+    otherwise a ``bearer <jwt>`` request would authenticate but still be rejected
+    by CSRF, reproducing the opaque failure this guard exists to prevent.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return False
+    scheme, _, credential = auth_header.partition(" ")
+    return scheme.lower() == "bearer" and bool(credential)
+
+
 def _ensure_csrf_cookie(response: Response, existing_token: str | None) -> None:
     if existing_token:
         return
@@ -58,7 +87,11 @@ def _ensure_csrf_cookie(response: Response, existing_token: str | None) -> None:
 
 async def csrf_middleware(request: Request, call_next):
     """Validate CSRF token for unsafe methods and set cookie on safe methods."""
-    if _needs_csrf_validation(request.method) and not _is_csrf_exempt(request.url.path):
+    if (
+        _needs_csrf_validation(request.method)
+        and not _is_csrf_exempt(request.url.path)
+        and not _is_bearer_authenticated(request)
+    ):
         csrf_cookie = request.cookies.get(CookieNames.CSRF_TOKEN)
         csrf_header = request.headers.get(HeaderNames.CSRF_TOKEN)
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
