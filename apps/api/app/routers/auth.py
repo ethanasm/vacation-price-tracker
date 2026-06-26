@@ -434,6 +434,8 @@ async def e2e_mint_token(
         )
         raise AccessDenied("Invalid e2e token.")
 
+    from app.models.trip import Trip
+
     result = await db.execute(select(User).where(User.google_sub == E2E_SYNTHETIC_GOOGLE_SUB))
     user = result.scalars().first()
     if not user:
@@ -441,6 +443,15 @@ async def e2e_mint_token(
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+    # Reset the synthetic user's trip state so each e2e run starts from zero
+    # (mirrors the test-login wipe). Without it the mobile create-trip flow's
+    # fixed-name "Maestro Test Trip" collides on re-run (409 DuplicateTripName),
+    # and the per-user MAX_TRIPS_PER_USER cap is eventually hit. The mint step
+    # runs once per run before any flow, so trip-detail / trips-list still read
+    # the trip create-trip seeds within the same run.
+    await db.execute(delete(Trip).where(Trip.user_id == user.id))
+    await db.commit()
 
     jwt_data = _build_jwt_data(user.id)
     access_token = create_access_token(data=jwt_data)
