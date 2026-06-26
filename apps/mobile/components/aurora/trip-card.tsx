@@ -88,7 +88,12 @@ export function TripCard({
 
   return (
     <Pressable
-      testID={`trip-card-${trip.id}`}
+      // Bare canonical row testID the Maestro flows match (they tap/assert the
+      // first `trip-card`). A `trip-card-${id}` form would NOT full-match Maestro's
+      // bare `id: "trip-card"`, and a `trip-card.*` regex would collide with the
+      // always-present `trip-card-total` stat below — so the row stays bare and
+      // per-trip targeting uses accessibilityLabel.
+      testID="trip-card"
       accessibilityRole="button"
       accessibilityLabel={`Trip ${trip.name}`}
       onPress={onPress}
