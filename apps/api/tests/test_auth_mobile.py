@@ -298,6 +298,39 @@ class TestE2eMintToken:
         assert len(rows) == 1
 
     @pytest.mark.asyncio
+    async def test_mint_wipes_existing_trips(self, client, test_session, monkeypatch):
+        """Each mint resets the synthetic user's trips so the create-trip e2e flow's
+        fixed-name "Maestro Test Trip" never collides (409 DuplicateTripName) on
+        re-run, and the MAX_TRIPS_PER_USER cap is never reached."""
+        import datetime as dt
+
+        from app.models.trip import Trip
+
+        monkeypatch.setattr(settings, "e2e_mode", True)
+        monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
+
+        # First mint upserts the synthetic user.
+        first = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        uid = uuid.UUID(first.json()["user"]["id"])
+
+        # Seed a trip for that user (simulating a prior run's create-trip).
+        trip = Trip(
+            user_id=uid, name="Maestro Test Trip", origin_airport="SEA",
+            destination_code="OGG", is_round_trip=False, depart_date=dt.date(2026, 8, 22),
+            return_date=None, adults=1, track_flights=True, track_hotels=True,
+        )
+        set_test_timestamps(trip)
+        test_session.add(trip)
+        await test_session.commit()
+
+        # A second mint must wipe it, leaving the create-trip flow a clean slate.
+        client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "s3cret-e2e-token"})
+        remaining = (
+            await test_session.execute(select(Trip).where(Trip.user_id == uid))
+        ).scalars().all()
+        assert remaining == []
+
+    @pytest.mark.asyncio
     async def test_missing_secret_header_403(self, client, monkeypatch):
         monkeypatch.setattr(settings, "e2e_mode", True)
         monkeypatch.setattr(settings, "vpt_e2e_backend_token", "s3cret-e2e-token")
