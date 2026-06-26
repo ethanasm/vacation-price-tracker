@@ -52,21 +52,50 @@ tags:
 
 - tapOn:
     id: "create-trip-destination-input"
+- inputText: "OGG"
+
+# Depart date is REQUIRED by the form's client-side validation (must match
+# YYYY-MM-DD); without it, submit short-circuits and never creates the trip.
+- tapOn:
+    id: "create-trip-depart-input"
+- inputText: "2026-08-22"
+- hideKeyboard
+
+# Hotel city is REQUIRED by the API when track_hotels is on (it 422s otherwise:
+# "hotel_prefs.city is required") — mirrors the web create form. The field sits
+# in the Hotel preferences card below the fold, so scroll it into view first.
+- scrollUntilVisible:
+    element:
+      id: "create-trip-hotel-city-input"
+    direction: DOWN
+    visibilityPercentage: 80
+    timeout: 20000
+- tapOn:
+    id: "create-trip-hotel-city-input"
 - inputText: "Maui"
 
 # Dismiss the IME before submitting so Gboard's content-description elements
 # don't compete with the submit control.
 - hideKeyboard
 
+# The submit button lives at the bottom of the form's scroll view, beneath the
+# flight/hotel preference + threshold cards — scroll it into view before tapping.
+- scrollUntilVisible:
+    element:
+      id: "create-trip-submit"
+    direction: DOWN
+    visibilityPercentage: 80
+    timeout: 20000
 - tapOn:
     id: "create-trip-submit"
 
-# Create contract: no saved-confirmation card. Navigate back to Trips and assert
-# the new trip's NAME is visible inside `trips-list` — the server-fed list
-# showing the row proves the create committed and survives a refetch.
-- tapOn:
-    text: "Trips"
+# Create contract: no saved-confirmation card. A successful create commits to
+# the e2e backend and replaces into the new trip's detail screen, which fetches
+# the trip back and renders its stat blocks + name — proof the create round-trip
+# persisted. The form stays put on a validation/API error, so a detail-only stat
+# block is the unambiguous success signal. trips-list.yaml / trip-detail.yaml
+# separately verify the row from fresh launches reading the server-fed list.
 - assertVisible:
-    id: "trips-list"
+    id: "trip-detail-total-stat"
 - assertVisible:
     text: "Maestro Test Trip"

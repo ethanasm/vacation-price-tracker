@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plane, Bell, MessageCircle } from 'lucide-react-native';
@@ -9,6 +9,7 @@ export default function TabsLayout(): React.JSX.Element {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 4);
+  const isAndroid = Platform.OS === 'android';
 
   return (
     <Tabs
@@ -16,12 +17,22 @@ export default function TabsLayout(): React.JSX.Element {
         headerShown: false,
         tabBarActiveTintColor: tokens.color.primary,
         tabBarInactiveTintColor: tokens.color.textMuted,
+        // Android reads as a Material pill nav bar: surface elevation + an
+        // active-pill indicator behind the selected tab. iOS keeps the flat
+        // hairline-topped bar.
+        ...(isAndroid
+          ? {
+              tabBarActiveBackgroundColor: tokens.color.chipBg,
+              tabBarItemStyle: { marginHorizontal: 8, marginVertical: 6, borderRadius: tokens.radius.badge },
+            }
+          : null),
         tabBarStyle: {
           backgroundColor: tokens.color.card,
           borderTopColor: tokens.color.hairline,
-          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopWidth: isAndroid ? 0 : StyleSheet.hairlineWidth,
           paddingBottom: bottomPad,
-          height: 50 + bottomPad,
+          height: (isAndroid ? 60 : 50) + bottomPad,
+          ...(isAndroid ? { elevation: 8 } : null),
         },
         tabBarLabelStyle: { fontFamily: tokens.font[600], fontSize: 11, letterSpacing: 0.2 },
       }}

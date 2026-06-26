@@ -434,6 +434,25 @@ jobs:
           done
           exit $RC
 
+      - name: Capture vpt-e2e backend logs
+        if: failure()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/maestro-debug
+          # On a failure, dump the isolated e2e backend container logs so the
+          # actual server-side traceback behind a 500 (the client only ever sees
+          # the masked "An unexpected error occurred") is visible in-job AND
+          # rides along in the maestro-debug artifact uploaded below. Container
+          # names are pinned in infra/docker-compose.e2e.yml.
+          for c in vpt-e2e-api vpt-e2e-worker; do
+            echo "::group::docker logs $c (tail 200 of 1000)"
+            docker logs --tail 1000 "$c" > "/tmp/maestro-debug/${c}.log" 2>&1 \
+              || echo "::warning::could not read logs for $c"
+            tail -200 "/tmp/maestro-debug/${c}.log" 2>/dev/null || true
+            echo "::endgroup::"
+          done
+
       - name: Summarise Maestro debug output
         if: failure()
         shell: bash

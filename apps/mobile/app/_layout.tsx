@@ -12,11 +12,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 
 import { ThemeProvider } from '@/lib/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { useAppFonts } from '@/lib/fonts';
 import { ApiClientProvider } from '@/lib/api/provider';
+import { configureNotificationHandler, DISMISS_ACTION_ID } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -26,6 +28,11 @@ export default function RootLayout(): React.JSX.Element | null {
   React.useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => undefined);
   }, [fontsLoaded]);
+
+  // Configure the foreground banner / Android heads-up channel once at start.
+  React.useEffect(() => {
+    configureNotificationHandler();
+  }, []);
 
   if (!fontsLoaded) return null;
 
@@ -72,6 +79,17 @@ function AuthGate(): React.JSX.Element {
       router.replace('/(tabs)');
     }
   }, [user, isLoading, segments, router]);
+
+  // Tapping a price-drop notification (or its Android "View trip" action)
+  // deep-links into that trip; the "Dismiss" action just clears the card.
+  React.useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response.actionIdentifier === DISMISS_ACTION_ID) return;
+      const tripId = response.notification.request.content.data?.tripId;
+      if (typeof tripId === 'string' && tripId) router.push(`/trip/${tripId}`);
+    });
+    return () => sub.remove();
+  }, [router]);
 
   return (
     <Stack screenOptions={{ headerShown: false, gestureEnabled: true }}>
