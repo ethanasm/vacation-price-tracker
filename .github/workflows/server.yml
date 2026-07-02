@@ -1,10 +1,11 @@
 name: Server
 
 on:
-  # Union path filter shared with web.yml so ANY code change runs BOTH
-  # coverage workflows. SonarCloud downloads web + python coverage by commit
-  # SHA; if only one workflow ran, the other language's report is missing and
-  # Sonar zero-coverages it (tanking Coverage on New Code). Both-or-neither.
+  # Union path filter shared with web.yml and sonarqube.yml so ANY code
+  # change runs BOTH coverage workflows plus the Sonar scan. The scan waits
+  # for both runs and downloads their coverage by commit SHA; if only one
+  # workflow ran, the other language's report is missing and Sonar
+  # zero-coverages it (tanking Coverage on New Code). All-or-neither.
   push:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - "sonar-project.properties"
       - ".github/workflows/web.yml"
       - ".github/workflows/server.yml"
+      - ".github/workflows/sonarqube.yml"
   pull_request:
     branches: [main]
     paths:
@@ -37,6 +39,7 @@ on:
       - "sonar-project.properties"
       - ".github/workflows/web.yml"
       - ".github/workflows/server.yml"
+      - ".github/workflows/sonarqube.yml"
 concurrency:
   group: python-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

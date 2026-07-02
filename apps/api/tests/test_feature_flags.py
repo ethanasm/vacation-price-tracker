@@ -4,6 +4,7 @@ import pytest
 from app.core.feature_flags import (
     KNOWN_FLAGS,
     FeatureFlags,
+    canonical_flag_name,
     ensure_feature_flags,
     is_feature_enabled,
     list_feature_flags,
@@ -58,6 +59,20 @@ async def test_ensure_feature_flags_is_idempotent(test_session):
     rows = (await test_session.execute(select(FeatureFlag))).scalars().all()
     assert len(rows) == len(KNOWN_FLAGS)
     assert await is_feature_enabled(test_session, FeatureFlags.EMAIL_NOTIFICATIONS) is True
+
+
+def test_canonical_flag_name_returns_registry_constant():
+    # Build the lookup key at runtime so it's a distinct string object; the
+    # resolved value must be the registry's own constant, never the input —
+    # that's what lets callers log it without touching request-supplied text.
+    request_value = "".join(["kiwi", "_", "flights"])
+    resolved = canonical_flag_name(request_value)
+    assert resolved == FeatureFlags.KIWI_FLIGHTS
+    assert resolved is not request_value
+
+
+def test_canonical_flag_name_unknown_is_none():
+    assert canonical_flag_name("does_not_exist") is None
 
 
 @pytest.mark.asyncio
