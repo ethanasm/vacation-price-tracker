@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admins import is_admin_email
 from app.core.errors import AccessDenied, NotFoundError
-from app.core.feature_flags import is_known_flag, list_feature_flags, set_feature_flag
+from app.core.feature_flags import canonical_flag_name, list_feature_flags, set_feature_flag
 from app.db.deps import get_db
 from app.routers.auth import UserResponse, get_current_user
 
@@ -71,20 +71,23 @@ async def update_feature_flag(
     CORS method allowlist (GET/POST/PATCH/DELETE — see app.main).
     """
     _require_admin(current_user)
-    if not is_known_flag(name):
-        raise NotFoundError(f"Unknown feature flag: {name}")
+    # Log/echo only the registry's own constant, never the raw path parameter
+    # (client-controlled text must not reach logs or responses — CWE-117).
+    flag_name = canonical_flag_name(name)
+    if flag_name is None:
+        raise NotFoundError("Unknown feature flag.")
 
-    await set_feature_flag(db, name, payload.enabled)
+    await set_feature_flag(db, flag_name, payload.enabled)
     logger.info(
         "Feature flag %s set to %s by admin user",
-        name,
+        flag_name,
         payload.enabled,
         extra={
             "event": "feature_flags.set",
-            "flag": name,
+            "flag": flag_name,
             "enabled": payload.enabled,
             "user_id": current_user.id,
         },
     )
     flags = {flag["name"]: flag for flag in await list_feature_flags(db)}
-    return FeatureFlagItem(**flags[name])
+    return FeatureFlagItem(**flags[flag_name])

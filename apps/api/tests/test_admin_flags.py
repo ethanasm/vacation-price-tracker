@@ -75,6 +75,29 @@ class TestFlagsEndpoints:
         )
         assert resp.status_code == 404
         assert resp.json()["error"] == "unknown_flag"
+        # The raw path parameter is client-controlled — it must not be echoed.
+        assert "nonexistent" not in resp.json()["details"]
+
+    def test_set_flag_logs_canonical_name_not_request_input(self, flags_client, caplog):
+        """The set-flag log line must only ever carry registry constants and a
+        validated IP — a spoofed proxy header (CWE-117 vector) never lands in
+        the log output."""
+        import logging
+
+        payload = "1.2.3.4\nERROR forged log entry"
+        with caplog.at_level(logging.INFO, logger="app.routers.admin"):
+            resp = flags_client.put(
+                "/v1/admin/flags/kiwi_flights",
+                headers={**_auth(), "X-Forwarded-For": payload},
+                json={"enabled": True},
+            )
+        assert resp.status_code == 200
+        set_records = [r for r in caplog.records if getattr(r, "event", "") == "admin.flags.set"]
+        assert len(set_records) == 1
+        record = set_records[0]
+        assert record.flag == "kiwi_flights"
+        assert "forged log entry" not in record.getMessage()
+        assert "forged log entry" not in record.ip
 
     def test_invalid_json_body_400(self, flags_client):
         resp = flags_client.put(

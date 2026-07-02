@@ -64,9 +64,14 @@ KNOWN_FLAGS: tuple[FeatureFlagSpec, ...] = (
 _SPECS: dict[str, FeatureFlagSpec] = {spec.name: spec for spec in KNOWN_FLAGS}
 
 
-def is_known_flag(name: str) -> bool:
-    """Whether ``name`` is a registered feature flag."""
-    return name in _SPECS
+def canonical_flag_name(name: str) -> str | None:
+    """Resolve ``name`` to the registry's own name constant, or ``None`` if unknown.
+
+    Handlers log/echo the returned registry constant instead of the raw request
+    value, so client-controlled text never reaches the logs (CWE-117).
+    """
+    spec = _SPECS.get(name)
+    return spec.name if spec else None
 
 
 async def is_feature_enabled(session: AsyncSession, name: str) -> bool:
