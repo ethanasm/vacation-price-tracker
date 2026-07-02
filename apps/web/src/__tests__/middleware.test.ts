@@ -374,6 +374,25 @@ describe("Auth Middleware", () => {
       expect(response.status).toBe(307);
     });
 
+    it("does not redirect a self-heal exit (?signedout=1) even with valid-looking cookies", async () => {
+      // The trips layout lands here after a server-revoked session; logout()
+      // may have failed to clear the httpOnly cookies, so they still verify.
+      // Redirecting would bounce straight back to /trips and loop.
+      const validRefresh = buildToken({
+        type: "refresh",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      const request = createMockRequest("/?signedout=1", {
+        refresh_token_cookie: validRefresh,
+      });
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+    });
+
     it("renders the landing page when both tokens are expired", async () => {
       const expiredAccess = buildToken({
         type: "access",

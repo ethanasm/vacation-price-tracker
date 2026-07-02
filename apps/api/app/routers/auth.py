@@ -306,6 +306,11 @@ async def refresh_token(
     except (jwt.PyJWTError, ValueError) as exc:
         raise AuthenticationRequired("Invalid refresh token.") from exc
 
+    # An access token presented here would only fail incidentally (its key is
+    # never in Redis); reject it explicitly, mirroring get_current_user.
+    if payload.get(JWTClaims.TYPE) != TokenType.REFRESH.value:
+        raise AuthenticationRequired("Invalid refresh token.")
+
     presented_key = _refresh_token_key(user_id, payload)
     stored_token = await redis_client.get(presented_key)
     if stored_token != refresh_token_value:

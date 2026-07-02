@@ -56,7 +56,9 @@ export default function DashboardLayout({
   // the cookies — a refresh token the server has revoked (rotated elsewhere,
   // Redis lost the session) still looks valid to it. When auth then resolves
   // to signed-out here, clear the dead cookies and return to the landing page
-  // instead of rendering a broken shell.
+  // instead of rendering a broken shell. The ?signedout=1 marker tells the
+  // middleware not to redirect back to /trips if logout() failed to clear the
+  // httpOnly cookies (API unreachable) — without it this would loop.
   useEffect(() => {
     if (isLoading || user) {
       return;
@@ -65,7 +67,7 @@ export default function DashboardLayout({
       .catch(() => {
         // Best effort — the cookies may already be gone.
       })
-      .finally(() => router.replace("/"));
+      .finally(() => router.replace("/?signedout=1"));
   }, [isLoading, user, logout, router]);
 
   // Show header shell while auth is loading - loading.tsx handles the content area

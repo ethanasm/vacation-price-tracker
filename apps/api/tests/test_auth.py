@@ -260,6 +260,17 @@ class TestTokenRefresh:
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid refresh token."
 
+    def test_refresh_returns_401_for_access_token(self, client_with_csrf, csrf_headers):
+        """An access token in the refresh cookie is rejected by type, not by luck."""
+        access_token = create_access_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, access_token)
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid refresh token."
+
     def test_refresh_returns_401_when_token_rotated(self, client_with_csrf, mock_redis, csrf_headers):
         """Test refresh returns 401 when token doesn't match Redis."""
         refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"})

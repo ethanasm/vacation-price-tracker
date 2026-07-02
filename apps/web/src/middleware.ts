@@ -146,6 +146,14 @@ export async function middleware(request: NextRequest) {
 
   // Landing page: a signed-in user skips the marketing hero entirely.
   if (pathname === "/") {
+    // The trips layout's self-heal lands here with ?signedout=1 when the
+    // session is server-revoked. Its logout() may have failed to clear the
+    // httpOnly cookies (API unreachable), leaving cookies that still look
+    // valid — redirecting on them would bounce the visitor straight back to
+    // /trips and loop forever. Honor the marker and show the landing page.
+    if (request.nextUrl.searchParams.has("signedout")) {
+      return NextResponse.next();
+    }
     if (await hasLiveSession(request)) {
       return NextResponse.redirect(new URL("/trips", request.url));
     }

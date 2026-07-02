@@ -180,7 +180,7 @@ describe("DashboardLayout", () => {
     // revoked; the layout clears it and sends the visitor back to landing.
     await waitFor(() => {
       expect(mockLogout).toHaveBeenCalledTimes(1);
-      expect(mockReplace).toHaveBeenCalledWith("/");
+      expect(mockReplace).toHaveBeenCalledWith("/?signedout=1");
     });
   });
 
@@ -199,7 +199,7 @@ describe("DashboardLayout", () => {
     );
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/");
+      expect(mockReplace).toHaveBeenCalledWith("/?signedout=1");
     });
   });
 
