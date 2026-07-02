@@ -10,6 +10,7 @@
 // =============================================================================
 export type {
   UserResponse as User,
+  FeatureFlagItem,
   TripStatus,
   TripCreate,
   TripResponse,
@@ -39,6 +40,8 @@ export type {
 
 import type {
   UserResponse,
+  FeatureFlagItem as GeneratedFeatureFlagItem,
+  FeatureFlagsResponse as GeneratedFeatureFlagsResponse,
   TripDetail as GeneratedTripDetail,
   TripCreate,
   TripResponse,
@@ -404,6 +407,50 @@ export const api = {
         throw new ApiError(
           response.status,
           error.title || "Failed to update preferences",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+  },
+
+  featureFlags: {
+    /**
+     * List operator feature flags (admin users only — 403 otherwise).
+     */
+    async list(): Promise<GeneratedFeatureFlagsResponse> {
+      const response = await fetchWithAuth("/v1/feature-flags");
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to load feature flags",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Set a feature flag's enabled state (admin users only).
+     */
+    async set(name: string, enabled: boolean): Promise<GeneratedFeatureFlagItem> {
+      const response = await fetchWithAuth(`/v1/feature-flags/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enabled }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to update feature flag",
           error.detail
         );
       }

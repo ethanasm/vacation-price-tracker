@@ -34,7 +34,18 @@ from app.middleware.csrf import csrf_middleware
 from app.middleware.idempotency import idempotency_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.security_headers import security_headers_middleware
-from app.routers import admin, auth, chat, device_tokens, notifications, sse, telemetry, trips, users
+from app.routers import (
+    admin,
+    auth,
+    chat,
+    device_tokens,
+    feature_flags,
+    notifications,
+    sse,
+    telemetry,
+    trips,
+    users,
+)
 
 init_observability("vpt-api")
 logger = logging.getLogger(__name__)
@@ -133,6 +144,7 @@ app.include_router(device_tokens.router)
 app.include_router(users.router)
 app.include_router(telemetry.router)
 app.include_router(admin.router)
+app.include_router(feature_flags.router)
 
 
 @app.exception_handler(AppError)

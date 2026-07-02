@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -15,7 +15,93 @@ import { Switch } from "../../../components/ui/switch";
 import { Label } from "../../../components/ui/label";
 import { Button } from "../../../components/ui/button";
 import { useAuth } from "../../../context/AuthContext";
-import { api } from "../../../lib/api";
+import { api, type FeatureFlagItem } from "../../../lib/api";
+
+/** Humanize a snake_case flag name for display ("kiwi_flights" → "Kiwi flights"). */
+function flagLabel(name: string): string {
+  const spaced = name.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function AdminFlagsCard() {
+  const [flags, setFlags] = useState<FeatureFlagItem[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [savingFlag, setSavingFlag] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.featureFlags
+      .list()
+      .then((response) => {
+        if (!cancelled) setFlags(response.flags);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggle = async (name: string, next: boolean) => {
+    setSavingFlag(name);
+    try {
+      const updated = await api.featureFlags.set(name, next);
+      setFlags((current) =>
+        (current ?? []).map((flag) => (flag.name === name ? updated : flag)),
+      );
+      toast.success(`${flagLabel(name)} ${next ? "enabled" : "disabled"}`);
+    } catch {
+      toast.error("Failed to update flag", { description: "Please try again." });
+    } finally {
+      setSavingFlag(null);
+    }
+  };
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5" aria-hidden />
+          Admin
+        </CardTitle>
+        <CardDescription>
+          Operator feature flags — these change behavior for every user, instantly.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loadFailed ? (
+          <p className="text-sm text-muted-foreground">Failed to load feature flags.</p>
+        ) : flags === null ? (
+          <p className="text-sm text-muted-foreground">Loading flags…</p>
+        ) : (
+          flags.map((flag, index) => (
+            <div
+              key={flag.name}
+              className={
+                index === 0
+                  ? "flex items-center justify-between gap-4"
+                  : "mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4"
+              }
+            >
+              <div className="space-y-0.5">
+                <Label htmlFor={`flag-${flag.name}`}>{flagLabel(flag.name)}</Label>
+                <p className="text-sm text-muted-foreground">{flag.description}</p>
+              </div>
+              <Switch
+                id={`flag-${flag.name}`}
+                checked={flag.enabled}
+                disabled={savingFlag !== null}
+                onCheckedChange={(next) => handleToggle(flag.name, next)}
+                aria-label={`${flagLabel(flag.name)} flag`}
+              />
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const { user, isLoading, refreshUser } = useAuth();
@@ -104,6 +190,8 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {user.is_admin && <AdminFlagsCard />}
     </div>
   );
 }
