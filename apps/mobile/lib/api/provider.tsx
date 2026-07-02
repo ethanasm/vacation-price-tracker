@@ -6,6 +6,7 @@
 import React from 'react';
 import { API_URL } from '@/lib/env';
 import { useAuth } from '@/lib/auth';
+import { configureTelemetry } from '@/lib/telemetry';
 import { createApiClient, type ApiClient } from './client';
 
 const ApiClientContext = React.createContext<ApiClient | null>(null);
@@ -21,13 +22,15 @@ export function ApiClientProvider({ children }: { children: React.ReactNode }): 
     refreshRef.current = refresh;
   }, [refresh]);
 
-  const [client] = React.useState<ApiClient>(() =>
-    createApiClient({
+  const [client] = React.useState<ApiClient>(() => {
+    // Bind telemetry to the same session so relayed events carry the user.
+    configureTelemetry({ getToken: () => tokenRef.current });
+    return createApiClient({
       baseUrl: API_URL,
       getToken: () => tokenRef.current,
       refresh: () => refreshRef.current(),
-    }),
-  );
+    });
+  });
 
   return <ApiClientContext.Provider value={client}>{children}</ApiClientContext.Provider>;
 }

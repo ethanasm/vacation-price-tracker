@@ -73,6 +73,11 @@ async def load_trip_details(trip_id: str) -> TripDetails:
             (await session.execute(select(TripHotelPrefs).where(TripHotelPrefs.trip_id == trip.id))).scalars().first()
         )
 
+        logger.info(
+            "Loaded trip details for trip_id=%s",
+            trip_id,
+            extra={"event": "activity.load_trip.ok", "trip_id": trip_id},
+        )
         return {
             "trip_id": str(trip.id),
             "origin_airport": trip.origin_airport,

@@ -94,7 +94,11 @@ async def main() -> None:
     stop_event = asyncio.Event()
 
     def _request_shutdown(signal_name: str) -> None:
-        logging.getLogger(__name__).info("Received %s, shutting down worker.", signal_name)
+        logging.getLogger(__name__).info(
+            "Received %s, shutting down worker.",
+            signal_name,
+            extra={"event": "worker.shutdown.requested", "reason": signal_name},
+        )
         stop_event.set()
 
     loop = asyncio.get_running_loop()

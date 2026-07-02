@@ -124,6 +124,15 @@ def _make_record(msg="hi", level=logging.INFO, **extra):
     return record
 
 
+def test_record_to_event_maps_pino_level_names():
+    # WARNING/CRITICAL ship pino-style so the documented
+    # `level in ("warn","error")` APL queries (shared with showbook) match.
+    assert obs._record_to_event(_make_record(level=logging.WARNING), "vpt-api")["level"] == "warn"
+    assert obs._record_to_event(_make_record(level=logging.CRITICAL), "vpt-api")["level"] == "fatal"
+    assert obs._record_to_event(_make_record(level=logging.ERROR), "vpt-api")["level"] == "error"
+    assert obs._record_to_event(_make_record(level=logging.INFO), "vpt-api")["level"] == "info"
+
+
 def test_record_to_event_includes_base_and_extras():
     record = _make_record(event="test.event", trip_id="t1", foo="bar")
     event = obs._record_to_event(record, "vpt-api")
@@ -232,6 +241,92 @@ def test_axiom_handler_emit_flushes_inline_when_interval_elapsed():
         assert client.ingested
     finally:
         handler.close()
+
+
+def test_axiom_handler_emit_is_reentrancy_safe():
+    """A log record emitted from inside emit() must be dropped, not recurse.
+
+    This is the guard against the prod incident where emit() transitively
+    triggered a Temporal sandbox-restriction warning, which re-entered emit()
+    until RecursionError failed the workflow task.
+    """
+    client = _FakeClient()
+    handler = obs.VptAxiomHandler(client, "vpt-test", "vpt-api", interval=999)
+    reentered = []
+
+    original = obs.reshape_for_axiom
+
+    def reshaping_logs(record_dict):
+        # Simulate emit() transitively logging (as the sandbox restriction
+        # checker does): re-enter the handler on the same thread.
+        if not reentered:
+            reentered.append(True)
+            handler.emit(_make_record(event="inner.event"))
+        return original(record_dict)
+
+    import unittest.mock as mock
+
+    with mock.patch.object(obs, "reshape_for_axiom", reshaping_logs):
+        handler.emit(_make_record(event="outer.event"))
+    try:
+        assert reentered  # the re-entrant call happened...
+        assert len(handler.buffer) == 1  # ...and was dropped, not buffered
+        assert handler.buffer[0]["event"] == "outer.event"
+    finally:
+        handler.close()
+
+
+def test_axiom_ship_filter_event_and_error_records_ship():
+    f = obs.AxiomShipFilter()
+    assert f.filter(_make_record(event="app.event")) is True  # structured app log
+    assert f.filter(_make_record(level=logging.ERROR)) is True  # third-party error
+    err = logging.LogRecord("sqlalchemy.pool", logging.ERROR, "f.py", 1, "boom", None, None)
+    assert f.filter(err) is True
+
+
+def test_axiom_ship_filter_drops_third_party_noise():
+    f = obs.AxiomShipFilter()
+    # No `event` attr and below ERROR → not ours, don't ship.
+    noise = logging.LogRecord("urllib3.connectionpool", logging.WARNING, "f.py", 1, "retry", None, None)
+    assert f.filter(noise) is False
+    # Sandbox restriction chatter never ships, even at ERROR.
+    sandbox = logging.LogRecord(
+        "temporalio.worker.workflow_sandbox._restrictions",
+        logging.ERROR,
+        "f.py",
+        1,
+        "restricted",
+        None,
+        None,
+    )
+    assert f.filter(sandbox) is False
+
+
+def test_build_axiom_handler_attaches_ship_filter(monkeypatch):
+    monkeypatch.setattr(settings, "axiom_token", "xaat-test")
+    monkeypatch.setattr(settings, "axiom_dataset", "vpt-test")
+    monkeypatch.setattr(obs.axiom_py, "Client", lambda token: _FakeClient())
+    handler = obs._build_axiom_handler("vpt-api")
+    try:
+        assert any(isinstance(f, obs.AxiomShipFilter) for f in handler.filters)
+        # End-to-end: a noise record is filtered by handle(), an app event isn't.
+        handler.handle(
+            logging.LogRecord("urllib3.connectionpool", logging.WARNING, "f.py", 1, "retry", None, None)
+        )
+        assert len(handler.buffer) == 0
+        handler.handle(_make_record(event="app.event"))
+        assert len(handler.buffer) == 1
+    finally:
+        handler.close()
+
+
+def test_monotonic_is_bound_at_import_time():
+    # The clock must be captured at module import (outside any Temporal
+    # sandbox), never lazily imported inside emit() — a lazy import inside a
+    # sandboxed workflow thread resolves to a restricted proxy and recurses.
+    import time as _time
+
+    assert obs._monotonic is _time.monotonic
 
 
 def test_axiom_handler_emit_swallows_bad_record():

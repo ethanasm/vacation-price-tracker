@@ -235,8 +235,6 @@ function ChatPanelWithElicitation({
       return;
     }
 
-    console.log("[ChatPanelWithElicitation] Submitting elicitation:", toolCallId, threadId, pendingElicitation.tool_name);
-
     try {
       // Submit the elicitation to the backend
       // The backend will execute the tool and return a streaming response
@@ -265,7 +263,6 @@ function ChatPanelWithElicitation({
       // Trigger price refresh if we got a trip_id
       if (tripId) {
         try {
-          console.log("[ChatPanelWithElicitation] Triggering price refresh for trip:", tripId);
           await api.trips.refresh(tripId);
         } catch (refreshErr) {
           console.error("[ChatPanelWithElicitation] Failed to trigger price refresh:", refreshErr);
@@ -293,7 +290,6 @@ function ChatPanelWithElicitation({
 
   // Handle elicitation cancellation
   const handleElicitationCancel = useCallback(() => {
-    console.log("[ChatPanelWithElicitation] Elicitation cancelled");
     setPendingElicitation(null);
   }, [setPendingElicitation]);
 
@@ -373,13 +369,11 @@ export default function DashboardPage() {
   });
 
   const fetchTrips = useCallback(async () => {
-    console.log("[trips/page] fetchTrips() called");
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await api.trips.list();
-      console.log("[trips/page] fetchTrips() received", response.data.length, "trips");
       const displayTrips = response.data.map(mapApiTripToDisplayTrip);
       setTrips(displayTrips);
     } catch (err) {
@@ -568,8 +562,6 @@ export default function DashboardPage() {
 
   // Handle tool results from chat - only refetch for tools that modify trip data
   const handleToolResult = useCallback((result: ToolResult) => {
-    console.log("[trips/page] handleToolResult called:", result.name, result);
-
     // For refresh_all_trip_prices (all trips), start polling for completion instead of immediate refetch
     if (result.name === "refresh_all_trip_prices" && !result.isError) {
       const workflowId = (result.result as { workflow_id?: string })?.workflow_id;
@@ -596,7 +588,6 @@ export default function DashboardPage() {
     if (result.name === "refresh_trip_prices" && !result.isError) {
       const tripId = (result.result as { trip_id?: string })?.trip_id;
       if (tripId) {
-        console.log("[trips/page] Adding pending refresh for trip:", tripId, "toolCallId:", result.toolCallId);
         setPendingRefreshes((prev) => [...prev, { toolCallId: result.toolCallId, tripId }]);
       }
       return;
@@ -611,7 +602,6 @@ export default function DashboardPage() {
       "set_notification",
     ];
     if (mutatingTools.includes(result.name)) {
-      console.log("[trips/page] Mutating tool detected, calling fetchTrips()");
       // Show a toast for create_trip to indicate the trip was created
       if (result.name === "create_trip" && !result.isError) {
         const tripName = (result.result as { name?: string })?.name;

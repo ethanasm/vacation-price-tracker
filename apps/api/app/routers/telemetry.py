@@ -1,15 +1,18 @@
-"""Client-side telemetry sink — browser logs relayed to Axiom.
+"""Client-side telemetry sink — browser and mobile logs relayed to Axiom.
 
-The web app has no direct path to Axiom (showbook's rule: clients never write to
-Axiom directly). The browser fires best-effort ``fetch(keepalive)`` events here;
-this endpoint validates + bounds them and logs through ``app.core.observability``
-so they land in the shared dataset under the ``web.<event>`` namespace, tagged
-``component=web.telemetry`` (mirrors showbook's ``mobile.telemetry`` relay).
+Clients have no direct path to Axiom (showbook's rule: clients never write to
+Axiom directly). The browser (``apps/web/src/lib/telemetry.ts``) and the Expo app
+(``apps/mobile/lib/telemetry.ts``) fire best-effort events here; this endpoint
+validates + bounds them and logs through ``app.core.observability`` so they land
+in the shared dataset under the ``web.<event>`` / ``mobile.<event>`` namespace
+(per the validated ``platform`` field), tagged ``component=<platform>.telemetry``
+(mirrors showbook's ``mobile.telemetry`` relay).
 
 Unauthenticated by design — pre-sign-in failures (expired tokens, the 401s we'd
 most want to see) must still reach Axiom. We attach the caller's ``user_id`` from
-the auth cookie when present, but never trust the client for ``event``/``user_id``.
-The general rate-limit middleware already throttles this path per IP/user.
+the auth cookie (web) or bearer header (mobile) when present, but never trust the
+client for ``event``/``user_id``. The general rate-limit middleware already
+throttles this path per IP/user.
 """
 
 from __future__ import annotations
@@ -68,6 +71,9 @@ class ClientEvent(BaseModel):
     event: str = Field(min_length=1, max_length=80)
     message: str = Field(min_length=1, max_length=2000)
     level: str = Field(default="error", pattern="^(warn|error)$")
+    # Which client relayed the event: the browser (web.<event>, default) or the
+    # Expo app (mobile.<event>). Constrained so a caller can't invent a namespace.
+    platform: str = Field(default="web", pattern="^(web|mobile)$")
     context: dict | None = None
 
 
@@ -92,9 +98,14 @@ def _sanitize_context(context: dict | None) -> dict:
     return picked
 
 
-def _user_id_from_cookie(request: Request) -> str | None:
-    """Best-effort user id from the access-token cookie (None if absent/invalid)."""
+def _user_id_from_request(request: Request) -> str | None:
+    """Best-effort user id from the access-token cookie (web) or the bearer
+    Authorization header (mobile). None if absent/invalid — events still land."""
     token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    if not token:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:]
     if not token:
         return None
     try:
@@ -113,11 +124,12 @@ async def log_client_event(payload: ClientEvent, request: Request) -> dict:
     # into a structured field — both originate from the untrusted request body.
     safe_message = _scrub_for_log(payload.message)
     # Server-controlled fields win — a client must not forge event/user_id.
+    # `platform` is validated against ^(web|mobile)$ so the namespace is bounded.
     extra = {
         **safe,
-        "event": f"web.{_scrub_for_log(payload.event)}",
-        "component": "web.telemetry",
-        "user_id": _user_id_from_cookie(request),
+        "event": f"{payload.platform}.{_scrub_for_log(payload.event)}",
+        "component": f"{payload.platform}.telemetry",
+        "user_id": _user_id_from_request(request),
     }
     if payload.level == "warn":
         logger.warning(safe_message, extra=extra)

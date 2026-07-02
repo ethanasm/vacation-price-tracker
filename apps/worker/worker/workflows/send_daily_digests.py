@@ -6,6 +6,8 @@ from typing import TypedDict
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
+from worker.wf_logging import wf_logger
+
 with workflow.unsafe.imports_passed_through():
     # Activity imports pull in the email render/client stack (jinja2/httpx);
     # keep them passed through so the workflow sandbox doesn't re-import them.
@@ -35,6 +37,16 @@ class SendDailyDigestsWorkflow:
         )
 
         if not user_ids:
+            # Still emit the summary so "did the digest run today" is queryable.
+            wf_logger(logger).info(
+                "Daily digests complete (no pending users)",
+                extra={
+                    "event": "workflow.send_daily_digests.summary",
+                    "users_total": 0,
+                    "sent": 0,
+                    "skipped": 0,
+                },
+            )
             return {"users_total": 0, "sent": 0, "skipped": 0}
 
         sent = 0
@@ -53,6 +65,18 @@ class SendDailyDigestsWorkflow:
                 else:
                     skipped += 1
 
+        wf_logger(logger).info(
+            "Daily digests complete (%d sent, %d skipped of %d users)",
+            sent,
+            skipped,
+            len(user_ids),
+            extra={
+                "event": "workflow.send_daily_digests.summary",
+                "users_total": len(user_ids),
+                "sent": sent,
+                "skipped": skipped,
+            },
+        )
         return {"users_total": len(user_ids), "sent": sent, "skipped": skipped}
 
     async def _send(self, user_id: str) -> dict:

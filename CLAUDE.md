@@ -182,6 +182,13 @@ logger.error("Fetch failed", exc_info=exc, extra={"event": "skiplagged.request.f
   exceptions, non-retryable); `warning` = transient/retryable (5xx/429/connection
   blips that are retried, partial results, degraded `/ready`); `info` =
   lifecycle/outcomes; `debug` = dev detail (stdout-only, not shipped).
+  Python's `WARNING`/`CRITICAL` ship to Axiom as **`warn`/`fatal`** (pino-style,
+  matching showbook's dataset), so `level in ("warn","error")` works on both.
+- **What ships:** stdout gets every record; the Axiom handler additionally
+  filters (`AxiomShipFilter`): only records carrying an `event` field or at
+  ERROR+ ship, and Temporal sandbox restriction chatter never ships — so
+  third-party library noise (urllib3/langfuse/temporalio warnings) stays in
+  `docker logs` instead of the dataset.
 - **Field columns:** Axiom caps a dataset at 256 columns. A small `CORE_FIELDS`
   allowlist stays as real columns; **every other `extra` key folds into one
   `fields` map field** (`reshape_for_axiom`), so the schema is bounded (~40
@@ -189,8 +196,11 @@ logger.error("Fetch failed", exc_info=exc, extra={"event": "skiplagged.request.f
   `['fields']['key']`. Errors go through an allowlist `serialize_err` so a wild
   error shape can't blow up `err.*`. See
   `docs/specs/operations/axiom-map-fields.md`.
-- The browser never writes to Axiom directly — it relays best-effort events to
-  `POST /v1/telemetry/client` (see `apps/web/src/lib/telemetry.ts`).
+- Clients never write to Axiom directly — the browser
+  (`apps/web/src/lib/telemetry.ts`) and the Expo app
+  (`apps/mobile/lib/telemetry.ts`) relay best-effort events to
+  `POST /v1/telemetry/client`, which namespaces them `web.<event>` /
+  `mobile.<event>` (`component=<platform>.telemetry`).
 
 **Querying Axiom (read).** The repo's ingest `AXIOM_TOKEN` cannot read; use a
 Personal Access Token (Query capability) with the `X-AXIOM-ORG-ID` header:
