@@ -36,7 +36,12 @@ EXPO_TOKEN=… pnpm dlx eas-cli config --profile preview-store --platform ios
 pnpm dlx eas-cli build --profile preview-store --platform ios
 ```
 
-Let EAS generate the App Store distribution cert + provisioning profile.
+Let EAS generate the App Store distribution cert + provisioning profile. With
+`appVersionSource: "remote"`, this first interactive build also prompts once to
+initialize the remote iOS build number — accept the default. Android needs no
+equivalent step: the remote `versionCode` auto-initializes on CI's first
+non-interactive build. To seed either explicitly, use
+`pnpm dlx eas-cli build:version:set`.
 
 ## 2. Confirm bundle ids match store records
 
