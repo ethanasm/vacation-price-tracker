@@ -26,10 +26,13 @@ const IOS_BUNDLE_ID = "me.ethanasm.vacation-price-tracker";
 
 const withAndroidOAuthRedirectScheme: ConfigPlugin = (cfg) =>
 	withAndroidManifest(cfg, (manifestCfg) => {
-		manifestCfg.modResults = AndroidConfig.Scheme.appendScheme(
-			ANDROID_PACKAGE,
-			manifestCfg.modResults,
-		);
+		// appendScheme doesn't dedupe, so guard for non-clean prebuild reruns.
+		if (!AndroidConfig.Scheme.hasScheme(ANDROID_PACKAGE, manifestCfg.modResults)) {
+			manifestCfg.modResults = AndroidConfig.Scheme.appendScheme(
+				ANDROID_PACKAGE,
+				manifestCfg.modResults,
+			);
+		}
 		return manifestCfg;
 	});
 
