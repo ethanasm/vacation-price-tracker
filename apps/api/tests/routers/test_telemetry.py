@@ -87,6 +87,45 @@ def test_invalid_cookie_yields_no_user(client, caplog):
     client.cookies.delete("access_token_cookie")
 
 
+def test_mobile_platform_prefixes_and_tags(client, caplog):
+    with caplog.at_level(logging.ERROR, logger="app.web.telemetry"):
+        resp = client.post(
+            URL,
+            json={"event": "api.request.failed", "message": "boom", "platform": "mobile"},
+        )
+    assert resp.status_code == 200
+    record = caplog.records[-1]
+    assert record.event == "mobile.api.request.failed"
+    assert record.component == "mobile.telemetry"
+
+
+def test_platform_rejects_unknown_namespace(client):
+    resp = client.post(URL, json={"event": "x", "message": "m", "platform": "backend"})
+    assert resp.status_code == 422
+
+
+def test_user_id_from_bearer_header(client, caplog):
+    token = create_access_token({"sub": "user-456"})
+    with caplog.at_level(logging.ERROR, logger="app.web.telemetry"):
+        resp = client.post(
+            URL,
+            json={"event": "api.auth_expired", "message": "m", "platform": "mobile"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200
+    assert caplog.records[-1].user_id == "user-456"
+
+
+def test_invalid_bearer_yields_no_user(client, caplog):
+    with caplog.at_level(logging.ERROR, logger="app.web.telemetry"):
+        client.post(
+            URL,
+            json={"event": "x", "message": "m", "platform": "mobile"},
+            headers={"Authorization": "Bearer not-a-jwt"},
+        )
+    assert caplog.records[-1].user_id is None
+
+
 def test_validation_rejects_bad_payload(client):
     # Missing message
     assert client.post(URL, json={"event": "x"}).status_code == 422

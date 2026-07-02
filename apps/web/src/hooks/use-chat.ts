@@ -193,7 +193,6 @@ function handleToolResultChunk(chunk: ChatChunk, ctx: ChunkProcessingContext): v
     result: tr.result,
     isError: !tr.success,
   };
-  console.log("[use-chat] tool_result received:", result.name, "calling onToolResult:", !!ctx.onToolResult);
   ctx.onToolResult?.(result);
 
   const toolMessage: ChatMessage = {
@@ -280,7 +279,6 @@ function processStreamLines(
     const data = line.slice(6);
     const chunk = parseSSEData(data);
     if (chunk) {
-      console.log("[use-chat] SSE chunk received:", chunk.type, chunk);
       processChunk(chunk, accumulatedContent, ctx);
     }
   }
@@ -610,7 +608,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
             continue;
           }
 
-          console.log("[use-chat] Elicitation SSE chunk:", chunk.type, chunk);
 
           switch (chunk.type) {
             case "tool_result": {

@@ -19,6 +19,13 @@ Usage (stdlib logging, structured via ``extra``):
 
 Everything degrades to stdout-only when ``AXIOM_TOKEN`` / ``AXIOM_DATASET`` are
 unset (dev, tests, CI never ship), mirroring ``telemetry.py``.
+
+What ships to Axiom vs stdout:
+    stdout gets every record (root logger). The Axiom handler additionally
+    applies ``AxiomShipFilter``: only records carrying an ``event`` attr (our
+    structured call-sites) or at ERROR+ ship; Temporal sandbox restriction
+    chatter never ships. Level names ship pino-style (``warn``/``fatal``, not
+    Python's ``warning``/``critical``) so queries match showbook's dataset.
 """
 
 from __future__ import annotations
@@ -27,11 +34,12 @@ import json
 import logging
 import socket
 import sys
+import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from datetime import UTC, datetime
-from threading import Timer
+from threading import Timer, local
 from typing import Any
 
 from app.core.config import settings
@@ -50,6 +58,19 @@ except ImportError:  # pragma: no cover - exercised only when the dep is absent
 _HOSTNAME = socket.gethostname()
 _DEFAULT_SERVICE = "vpt-api"
 _MAX_CAUSE_DEPTH = 5
+
+# Bind the clock at import time. The handler can run on a Temporal workflow
+# thread (workflow code and temporalio internals propagate to the root logger),
+# where a lazy ``import time`` resolves through the workflow sandbox's import
+# hook into a restricted proxy. Calling that proxy logs a
+# ``workflow_sandbox._restrictions`` warning, which re-enters the handler →
+# unbounded recursion → RecursionError failing the workflow task. A reference
+# bound here, outside the sandbox, is the real function and sandbox-safe.
+_monotonic = time.monotonic
+
+# pino → Axiom level names (match showbook's dataset so shared dashboards and
+# the documented ``level in ("warn","error")`` queries work on both).
+_LEVEL_NAMES = {"WARNING": "warn", "CRITICAL": "fatal"}
 
 # ---------------------------------------------------------------------------
 # Field schema (port of CORE_FIELDS / ALLOWED_ERROR_FIELDS from logger.ts)
@@ -202,7 +223,7 @@ def _record_to_event(record: logging.LogRecord, service: str) -> dict[str, Any]:
     """Build a flat, JSON-safe event dict from a LogRecord (pre-reshape)."""
     event: dict[str, Any] = {
         "_time": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
-        "level": record.levelname.lower(),
+        "level": _LEVEL_NAMES.get(record.levelname, record.levelname.lower()),
         "msg": record.getMessage(),
         "logger": record.name,
         "service": service,
@@ -226,6 +247,40 @@ def _record_to_event(record: logging.LogRecord, service: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
+
+
+class AxiomShipFilter(logging.Filter):
+    """Decide which records ship to Axiom (stdout is unaffected — it keeps
+    everything, so ``docker logs`` remains the full record).
+
+    The handler hangs off the ROOT logger so intentional app events need no
+    per-logger wiring, but that also exposes it to every third-party logger in
+    the process. Ship only:
+
+    - records a call-site marked with an ``event`` attr (our structured logs), or
+    - any ERROR+ record (third-party errors are real triage signal — a
+      temporalio workflow-task failure is how the 2026-06 RefreshAll outage was
+      diagnosed),
+
+    and never the Temporal sandbox restriction chatter, which is import-time
+    noise with no operational content (239k rows/week in prod before this
+    filter).
+    """
+
+    _DROP_PREFIX = "temporalio.worker.workflow_sandbox"
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - stdlib API
+        if record.name.startswith(self._DROP_PREFIX):
+            return False
+        if record.levelno >= logging.ERROR:
+            return True
+        return getattr(record, "event", None) is not None
+
+
+# Re-entrancy guard: emit() must never (transitively) log. If anything inside
+# the handler triggers a log record on the same thread, drop it instead of
+# recursing (belt-and-braces alongside the import-time ``_monotonic`` binding).
+_emit_guard = local()
 
 
 class _JsonFormatter(logging.Formatter):
@@ -272,19 +327,26 @@ if _HAS_AXIOM:
             self._pending: set[Future] = set()
 
         def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
+            if getattr(_emit_guard, "active", False):
+                return  # re-entered from within emit() on this thread — drop
+            _emit_guard.active = True
             try:
                 event = reshape_for_axiom(_record_to_event(record, self._service))
+                with self.lock:
+                    self.buffer.append(event)
+                    should_flush = (
+                        len(self.buffer) >= 1000 or _monotonic() - self.last_flush > self.interval
+                    )
+                if should_flush:
+                    self.flush()
+                # Re-arm the periodic flush (mirrors the SDK's emit tail).
+                self.timer.cancel()
+                self.timer = Timer(self.interval, self.flush)
+                self.timer.start()
             except Exception:  # never let logging raise
                 return
-            with self.lock:
-                self.buffer.append(event)
-                should_flush = len(self.buffer) >= 1000 or _monotonic() - self.last_flush > self.interval
-            if should_flush:
-                self.flush()
-            # Re-arm the periodic flush (mirrors the SDK's emit tail).
-            self.timer.cancel()
-            self.timer = Timer(self.interval, self.flush)
-            self.timer.start()
+            finally:
+                _emit_guard.active = False
 
         def flush(self) -> None:
             """Swap the buffer and ship it on the background thread (non-blocking)."""
@@ -318,12 +380,6 @@ if _HAS_AXIOM:
                 super().close()
 
 
-def _monotonic() -> float:
-    import time
-
-    return time.monotonic()
-
-
 _axiom_handler: Any = None
 
 
@@ -335,6 +391,8 @@ def _build_axiom_handler(service: str) -> Any:
         handler = VptAxiomHandler(client, settings.axiom_dataset, service)
         # Ship INFO+ to Axiom; DEBUG stays stdout-only (volume/cost).
         handler.setLevel(logging.INFO)
+        # Only intentional app events + third-party ERRORs ship (see AxiomShipFilter).
+        handler.addFilter(AxiomShipFilter())
         return handler
     except Exception as exc:  # pragma: no cover - defensive init guard
         logger.warning("Axiom handler init failed; shipping disabled: %s", exc)
@@ -408,6 +466,7 @@ def bind(base: logging.Logger | logging.LoggerAdapter, **context: Any) -> _Bound
 __all__ = [
     "ALLOWED_ERROR_FIELDS",
     "CORE_FIELDS",
+    "AxiomShipFilter",
     "bind",
     "flush",
     "get_logger",

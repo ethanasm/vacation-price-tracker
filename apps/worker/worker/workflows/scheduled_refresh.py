@@ -7,6 +7,8 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.workflow import ParentClosePolicy
 
+from worker.wf_logging import wf_logger
+
 with workflow.unsafe.imports_passed_through():
     from worker.activities.trips import (
         expire_past_trips,
@@ -60,6 +62,17 @@ class ScheduledRefreshAllUsersWorkflow:
         # snapshot + outbox enqueue) has completed, so digests are never partial.
         await self._send_daily_digests()
 
+        wf_logger(logger).info(
+            "Scheduled refresh complete (%d/%d users ok)",
+            successful,
+            len(user_ids),
+            extra={
+                "event": "workflow.scheduled_refresh.summary",
+                "users_total": len(user_ids),
+                "users_successful": successful,
+                "users_failed": failed,
+            },
+        )
         return {
             "users_total": len(user_ids),
             "users_successful": successful,
@@ -74,7 +87,11 @@ class ScheduledRefreshAllUsersWorkflow:
                 id=f"daily-digest-{run_id}",
             )
         except Exception as exc:
-            logger.exception("Daily digest dispatch failed", exc_info=exc)
+            wf_logger(logger).error(
+                "Daily digest dispatch failed",
+                exc_info=exc,
+                extra={"event": "workflow.scheduled_refresh.digest_dispatch_failed"},
+            )
 
     async def _run_child(self, user_id: str) -> None:
         run_id = workflow.info().run_id
@@ -86,7 +103,7 @@ class ScheduledRefreshAllUsersWorkflow:
                 parent_close_policy=ParentClosePolicy.ABANDON,
             )
         except Exception as exc:
-            logger.exception(
+            wf_logger(logger).error(
                 "Scheduled child RefreshAllTripsWorkflow failed for user_id=%s",
                 user_id,
                 exc_info=exc,

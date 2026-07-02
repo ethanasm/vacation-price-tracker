@@ -5,6 +5,8 @@ from typing import TypedDict
 
 from temporalio import workflow
 
+from worker.wf_logging import wf_logger
+
 with workflow.unsafe.imports_passed_through():
     from worker.activities.trips import clear_refresh_lock, get_active_trips
 
@@ -61,6 +63,19 @@ class RefreshAllTripsWorkflow:
                 batch = trip_ids[start : start + MAX_PARALLEL_PRICE_CHECKS]
                 await asyncio.gather(*(self._run_child(trip_id) for trip_id in batch))
 
+            wf_logger(logger).info(
+                "Refresh-all complete for user_id=%s (%d/%d ok)",
+                user_id,
+                self._successful,
+                self._total,
+                extra={
+                    "event": "workflow.refresh_all.summary",
+                    "user_id": user_id,
+                    "total": self._total,
+                    "successful": self._successful,
+                    "failed": self._failed,
+                },
+            )
             return {
                 "total": self._total,
                 "successful": self._successful,
@@ -84,7 +99,10 @@ class RefreshAllTripsWorkflow:
             )
             self._successful += 1
         except Exception as exc:
-            logger.exception(
+            # workflow.logger (not a module logger) so replays don't re-fire the
+            # event — a retried workflow task was re-logging every prior child
+            # failure, inflating this event's Axiom counts ~10x.
+            wf_logger(logger).error(
                 "Child workflow failed for trip_id=%s",
                 trip_id,
                 exc_info=exc,
