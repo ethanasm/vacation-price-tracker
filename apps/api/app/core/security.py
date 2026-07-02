@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -36,10 +37,21 @@ def create_access_token(data: dict) -> str:
 
 
 def create_refresh_token(data: dict) -> str:
-    """Creates a new refresh token."""
+    """Creates a new refresh token.
+
+    Each token carries a unique ``jti`` so it can be stored and revoked
+    per-session — web and mobile sessions for the same user coexist instead of
+    evicting each other's stored refresh token.
+    """
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({JWTClaims.EXPIRATION: expire, JWTClaims.TYPE: TokenType.REFRESH.value})
+    to_encode.update(
+        {
+            JWTClaims.EXPIRATION: expire,
+            JWTClaims.TYPE: TokenType.REFRESH.value,
+            JWTClaims.JWT_ID: uuid.uuid4().hex,
+        }
+    )
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 

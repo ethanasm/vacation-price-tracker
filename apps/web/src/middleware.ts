@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Cookie name for access token (must match backend).
+ * Cookie names for auth tokens (must match backend).
  */
 const ACCESS_TOKEN_COOKIE = "access_token_cookie";
+const REFRESH_TOKEN_COOKIE = "refresh_token_cookie";
 const ACCESS_TOKEN_TYPE = "access";
+const REFRESH_TOKEN_TYPE = "refresh";
 const JWT_ALG = "HS256";
 const IDEMPOTENCY_HEADER = "x-idempotency-key";
 const IDEMPOTENT_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -74,9 +76,9 @@ async function verifyJwtSignature(
 }
 
 /**
- * Validate an access token (type, exp, signature when possible).
+ * Validate a JWT (expected type, exp, signature when possible).
  */
-async function isAccessTokenValid(token: string): Promise<boolean> {
+async function isTokenValid(token: string, expectedType: string): Promise<boolean> {
   const parts = token.split(".");
   if (parts.length !== 3) {
     return false;
@@ -90,7 +92,7 @@ async function isAccessTokenValid(token: string): Promise<boolean> {
     return false;
   }
 
-  if (payload?.type !== ACCESS_TOKEN_TYPE) {
+  if (payload?.type !== expectedType) {
     return false;
   }
 
@@ -108,6 +110,25 @@ async function isAccessTokenValid(token: string): Promise<boolean> {
 }
 
 /**
+ * A session is live when either token is still valid. The access token only
+ * lasts 15 minutes; a valid refresh token means the API client will silently
+ * mint a new pair on the first 401 (fetchWithAuth), so the user should not be
+ * treated as signed out.
+ */
+async function hasLiveSession(request: NextRequest): Promise<boolean> {
+  const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
+  if (accessToken && (await isTokenValid(accessToken, ACCESS_TOKEN_TYPE))) {
+    return true;
+  }
+
+  const refreshToken = request.cookies.get(REFRESH_TOKEN_COOKIE)?.value;
+  if (!refreshToken) {
+    return false;
+  }
+  return isTokenValid(refreshToken, REFRESH_TOKEN_TYPE);
+}
+
+/**
  * Check if the path matches a protected route.
  */
 function isProtectedRoute(pathname: string): boolean {
@@ -117,11 +138,19 @@ function isProtectedRoute(pathname: string): boolean {
 }
 
 /**
- * Middleware that protects routes requiring authentication.
- * Redirects to home page if access token cookie is missing.
+ * Middleware that protects routes requiring authentication and sends
+ * signed-in users who land on the marketing page straight to the app.
  */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Landing page: a signed-in user skips the marketing hero entirely.
+  if (pathname === "/") {
+    if (await hasLiveSession(request)) {
+      return NextResponse.redirect(new URL("/trips", request.url));
+    }
+    return NextResponse.next();
+  }
 
   // Only check protected routes
   if (!isProtectedRoute(pathname)) {
@@ -138,16 +167,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Check for access token cookie
-  const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
-
-  if (!accessToken || !(await isAccessTokenValid(accessToken))) {
+  if (!(await hasLiveSession(request))) {
     // Redirect to home page
     const homeUrl = new URL("/", request.url);
     return NextResponse.redirect(homeUrl);
   }
 
-  // Token exists, allow access
+  // Session is live, allow access
   return NextResponse.next();
 }
 
@@ -155,5 +181,5 @@ export async function middleware(request: NextRequest) {
  * Configure which routes the middleware applies to.
  */
 export const config = {
-  matcher: ["/trips/:path*"],
+  matcher: ["/", "/trips/:path*"],
 };

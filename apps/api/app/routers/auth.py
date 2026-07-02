@@ -13,7 +13,7 @@ from sqlalchemy.future import select
 
 from app.core.admins import is_admin_email
 from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
-from app.core.cache_keys import CacheKeys, CacheTTL
+from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.errors import (
@@ -101,16 +101,27 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
     response.set_cookie(
         key=CookieNames.REFRESH_TOKEN,
         value=refresh_token,
-        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        max_age=settings.refresh_token_expire_seconds,
         **cookie_params,
     )
 
 
+def _refresh_token_key(user_id: uuid.UUID, payload: dict) -> str:
+    """Redis key for a refresh token: per-session (jti) when the token carries
+    one, else the legacy per-user key (tokens minted before jti existed)."""
+    return CacheKeys.refresh_token(str(user_id), payload.get(JWTClaims.JWT_ID))
+
+
 async def _store_refresh_token(user_id: uuid.UUID, refresh_token: str) -> None:
-    await redis_client.set(
-        CacheKeys.refresh_token(str(user_id)),
+    payload = jwt.decode(
         refresh_token,
-        ex=CacheTTL.REFRESH_TOKEN,
+        settings.secret_key,
+        algorithms=[settings.jwt_algorithm],
+    )
+    await redis_client.set(
+        _refresh_token_key(user_id, payload),
+        refresh_token,
+        ex=settings.refresh_token_expire_seconds,
     )
 
 
@@ -295,13 +306,17 @@ async def refresh_token(
     except (jwt.PyJWTError, ValueError) as exc:
         raise AuthenticationRequired("Invalid refresh token.") from exc
 
-    stored_token = await redis_client.get(CacheKeys.refresh_token(str(user_id)))
+    presented_key = _refresh_token_key(user_id, payload)
+    stored_token = await redis_client.get(presented_key)
     if stored_token != refresh_token_value:
         raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
 
     jwt_data = _build_jwt_data(user_id)
     new_access_token = create_access_token(data=jwt_data)
     new_refresh_token = create_refresh_token(data=jwt_data)
+    # Rotate within this session only: drop the presented token's key, store
+    # the replacement under its own jti. Other sessions' tokens are untouched.
+    await redis_client.delete(presented_key)
     await _store_refresh_token(user_id, new_refresh_token)
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -342,7 +357,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
                 algorithms=[settings.jwt_algorithm],
             )
             user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
-            await redis_client.delete(CacheKeys.refresh_token(str(user_id)))
+            # Revoke only this session's refresh token; other devices stay in.
+            await redis_client.delete(_refresh_token_key(user_id, payload))
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalars().first()
             if user:

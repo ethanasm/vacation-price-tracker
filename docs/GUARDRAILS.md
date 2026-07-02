@@ -17,7 +17,7 @@ or per-IP where noted.
 | Gate | Where | Behaviour |
 |------|-------|-----------|
 | Google OAuth only | `apps/api/app/routers/auth.py` | No local passwords. Users are keyed by `google_sub`; the callback is `<BACKEND_URL>/v1/auth/google/callback`. |
-| JWT session | `apps/api/app/core/config.py` | Access token 15 min (`access_token_expire_minutes`), refresh 7 days (`refresh_token_expire_days`), HS256 signed with `SECRET_KEY`. |
+| JWT session | `apps/api/app/core/config.py` | Access token 15 min (`access_token_expire_minutes`), refresh 30 days (`refresh_token_expire_days`), HS256 signed with `SECRET_KEY`. Refresh tokens are stored per-session in Redis (keyed by `jti`) and rotate on every use, so web and mobile sessions coexist; 30 days idle signs a session out. |
 | CORS allowlist | `core/config.py` (`cors_allowed_origins_list`) | Empty by default; in prod set `CORS_ALLOWED_ORIGINS` to the single web origin. |
 | CSRF | `apps/api/app/middleware/csrf.py` | State-changing requests require a CSRF token. `/v1/admin/` is exempt (it uses a bearer token instead). |
 

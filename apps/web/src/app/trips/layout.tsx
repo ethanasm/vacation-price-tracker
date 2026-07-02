@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Plane, LogOut, Settings } from "lucide-react";
 import {
@@ -51,7 +52,22 @@ export default function DashboardLayout({
     router.push("/");
   };
 
-  // Middleware handles redirecting unauthenticated users to home page
+  // Middleware redirects visitors with no live session, but it only inspects
+  // the cookies — a refresh token the server has revoked (rotated elsewhere,
+  // Redis lost the session) still looks valid to it. When auth then resolves
+  // to signed-out here, clear the dead cookies and return to the landing page
+  // instead of rendering a broken shell.
+  useEffect(() => {
+    if (isLoading || user) {
+      return;
+    }
+    void logout()
+      .catch(() => {
+        // Best effort — the cookies may already be gone.
+      })
+      .finally(() => router.replace("/"));
+  }, [isLoading, user, logout, router]);
+
   // Show header shell while auth is loading - loading.tsx handles the content area
   return (
     <main className={styles.main}>
