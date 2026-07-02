@@ -59,7 +59,7 @@ const config: ExpoConfig = {
 	owner: "ethanasm",
 	// runtimeVersion below derives the expo-updates runtime from this string.
 	// P4 owns version bumps; foundation ships 0.1.0.
-	version: "0.1.1",
+	version: "0.2.0",
 	orientation: "portrait",
 	icon: "./assets/icon.png",
 	scheme: "vpt",
