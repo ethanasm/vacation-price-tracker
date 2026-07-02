@@ -513,6 +513,7 @@ type SortHeaderProps = Readonly<{
   activeKey: FlightSortKey;
   direction: SortDir;
   align?: "left" | "right" | "center";
+  className?: string;
   onSort: (key: FlightSortKey) => void;
 }>;
 
@@ -533,13 +534,16 @@ function SortArrow({ isActive, direction }: Readonly<{ isActive: boolean; direct
   );
 }
 
-function SortHeader({ label, sortKey, activeKey, direction, align, onSort }: SortHeaderProps) {
+function SortHeader({ label, sortKey, activeKey, direction, align, className, onSort }: SortHeaderProps) {
   const isActive = activeKey === sortKey;
   const alignClass = getSortAlignClass(align);
+  const buttonClass = [styles.sortButton, alignClass, isActive ? styles.sortButtonActive : "", className]
+    .filter(Boolean)
+    .join(" ");
   return (
     <button
       type="button"
-      className={`${styles.sortButton} ${alignClass} ${isActive ? styles.sortButtonActive : ""}`}
+      className={buttonClass}
       onClick={() => onSort(sortKey)}
     >
       <span>{label}</span>
@@ -717,7 +721,7 @@ function FlightsList({
       <div className={styles.flightsHeaderRow}>
         <span aria-hidden /> {/* radio column */}
         <SortHeader label="Airline" sortKey="airline" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
-        <SortHeader label="Time" sortKey="time" activeKey={sortKey} direction={sortDir} align="center" onSort={handleSort} />
+        <SortHeader label="Time" sortKey="time" activeKey={sortKey} direction={sortDir} align="center" className={styles.timeSortHeader} onSort={handleSort} />
         <SortHeader label="Stops" sortKey="stops" activeKey={sortKey} direction={sortDir} align="center" onSort={handleSort} />
         <SortHeader label="Price" sortKey="price" activeKey={sortKey} direction={sortDir} align="right" onSort={handleSort} />
         <span aria-hidden /> {/* chevron column */}

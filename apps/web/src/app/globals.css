@@ -218,6 +218,22 @@ body {
   overflow: hidden;
 }
 
+/* Phone / half-width: drop the pinned app-shell viewport so the document
+   itself scrolls and the footer follows the content instead of floating
+   below dead space. */
+@media (max-width: 820px) {
+  html,
+  body {
+    height: auto;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+}
+
 /* Modern button styles */
 .btn-modern {
   display: inline-flex;
