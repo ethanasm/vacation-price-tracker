@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     skiplagged_mcp_url: str = "https://mcp.skiplagged.com/mcp"
     mock_skiplagged_api: bool = False  # Return mock data instead of calling Skiplagged MCP
 
+    # Kiwi.com MCP (no auth required) — alternative flight provider, selected at
+    # runtime via the `kiwi_flights` feature flag (DB `feature_flags` table).
+    kiwi_mcp_url: str = "https://mcp.kiwi.com/"
+
     # SearchAPI (Phase 4)
     searchapi_key: str = ""
     optimizer_max_date_range_days: int = 90

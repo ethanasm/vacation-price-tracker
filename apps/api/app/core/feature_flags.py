@@ -22,6 +22,7 @@ class FeatureFlags:
     SMS_NOTIFICATIONS = "sms_notifications"
     PUSH_NOTIFICATIONS = "push_notifications"
     BETA_OPTIMIZER = "beta_optimizer"
+    KIWI_FLIGHTS = "kiwi_flights"
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,20 @@ KNOWN_FLAGS: tuple[FeatureFlagSpec, ...] = (
         "Enable the flexible-date optimizer (beta).",
         False,
     ),
+    FeatureFlagSpec(
+        FeatureFlags.KIWI_FLIGHTS,
+        "Use Kiwi.com as the flight search provider instead of Skiplagged "
+        "(hotels stay on Skiplagged).",
+        False,
+    ),
 )
 
 _SPECS: dict[str, FeatureFlagSpec] = {spec.name: spec for spec in KNOWN_FLAGS}
+
+
+def is_known_flag(name: str) -> bool:
+    """Whether ``name`` is a registered feature flag."""
+    return name in _SPECS
 
 
 async def is_feature_enabled(session: AsyncSession, name: str) -> bool:

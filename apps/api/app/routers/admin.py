@@ -50,6 +50,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.admin_query import validate_admin_query
 from app.core.config import settings
+from app.core.feature_flags import is_known_flag, list_feature_flags, set_feature_flag
+from app.db.deps import get_db
 from app.db.redis import redis_client
 
 logger = logging.getLogger(__name__)
@@ -303,3 +305,68 @@ async def admin_sql(request: Request, session: AsyncSession = Depends(get_admin_
     return _RowsJSONResponse(
         {"rows": out, "rowCount": len(out), "truncated": truncated, "elapsedMs": elapsed}
     )
+
+
+# ---------------------------------------------------------------------------
+# Feature-flag admin endpoints (runtime operator toggles, e.g. `kiwi_flights`)
+# ---------------------------------------------------------------------------
+#
+# Same bearer token and per-IP rate limit as /sql, but these WRITE the
+# `feature_flags` table, so they use the app's normal engine (`get_db`) rather
+# than the admin engine — prod points the admin engine at a read-only role.
+
+
+@router.get("/flags")
+async def admin_list_flags(request: Request, session: AsyncSession = Depends(get_db)):
+    """List every known feature flag with its live state."""
+    if not _authorized(request):
+        return _unauthorized()
+    ip = _client_ip(request)
+    if await _is_rate_limited(ip):
+        return JSONResponse(
+            {"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"}
+        )
+    return JSONResponse({"flags": await list_feature_flags(session)})
+
+
+@router.put("/flags/{name}")
+async def admin_set_flag(
+    name: str, request: Request, session: AsyncSession = Depends(get_db)
+):
+    """Set a known feature flag's enabled state. Body: {"enabled": true|false}."""
+    if not _authorized(request):
+        return _unauthorized()
+    ip = _client_ip(request)
+    if await _is_rate_limited(ip):
+        return JSONResponse(
+            {"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"}
+        )
+
+    if not is_known_flag(name):
+        return JSONResponse(
+            {"error": "unknown_flag", "details": f"unknown feature flag: {name}"},
+            status_code=404,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse(
+            {"error": "bad_request", "details": "invalid JSON body"}, status_code=400
+        )
+    enabled = body.get("enabled") if isinstance(body, dict) else None
+    if not isinstance(enabled, bool):
+        return JSONResponse(
+            {"error": "bad_request", "details": "body must be {\"enabled\": true|false}"},
+            status_code=400,
+        )
+
+    await set_feature_flag(session, name, enabled)
+    logger.info(
+        "admin.flags set %s=%s ip=%s",
+        name,
+        enabled,
+        ip,
+        extra={"event": "admin.flags.set", "flag": name, "enabled": enabled, "ip": ip},
+    )
+    return JSONResponse({"name": name, "enabled": enabled})

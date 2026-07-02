@@ -1674,3 +1674,166 @@ async def test_create_trip_neither_flag_rejected(
     response = _create_trip(client_with_csrf, payload, "trip-neither-1")
 
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Kiwi-shaped flight offers (structured outbound/inbound legs)
+# ---------------------------------------------------------------------------
+
+
+def _kiwi_offer(**overrides):
+    offer = {
+        "provider": "kiwi",
+        "id": "0f9c218f_0|0f9c218f_1",
+        "price": 187,
+        "priceFormatted": "187 USD",
+        "bookingUrl": "https://kiwi.com/u/test",
+        "outbound": {
+            "from": "SFO",
+            "to": "RDM",
+            "departureTime": "2026-08-22T16:28:00",
+            "arrivalTime": "2026-08-22T18:07:00",
+            "durationSeconds": 5940,
+            "stops": 0,
+            "segments": [
+                {
+                    "from": "SFO",
+                    "to": "RDM",
+                    "departureTime": "2026-08-22T16:28:00",
+                    "arrivalTime": "2026-08-22T18:07:00",
+                    "durationSeconds": 5940,
+                    "carrier": "AS",
+                    "flightNumber": "AS3361",
+                }
+            ],
+        },
+        "inbound": {
+            "from": "RDM",
+            "to": "SFO",
+            "departureTime": "2026-08-29T07:07:00",
+            "arrivalTime": "2026-08-29T13:00:00",
+            "durationSeconds": 21180,
+            "stops": 1,
+            "segments": [
+                {
+                    "from": "RDM",
+                    "to": "SAN",
+                    "departureTime": "2026-08-29T07:07:00",
+                    "arrivalTime": "2026-08-29T09:32:00",
+                    "durationSeconds": 8700,
+                    "carrier": "AS",
+                    "flightNumber": "AS2128",
+                },
+                {
+                    "from": "SAN",
+                    "to": "SFO",
+                    "departureTime": "2026-08-29T11:11:00",
+                    "arrivalTime": "2026-08-29T13:00:00",
+                    "durationSeconds": 6540,
+                    "carrier": "AS",
+                    "flightNumber": "AS3347",
+                },
+            ],
+        },
+    }
+    offer.update(overrides)
+    return offer
+
+
+def test_parse_kiwi_flight_offer_round_trip():
+    offer = trips_module._parse_flight_offer(_kiwi_offer(), 0, {})
+    assert offer is not None
+    assert offer.id == "0f9c218f_0|0f9c218f_1"
+    assert offer.airline_code == "AS"
+    assert offer.flight_number == "AS3361"
+    assert offer.airline_name == "Alaska Airlines"
+    assert str(offer.price) == "187"
+    assert offer.departure_time == "2026-08-22T16:28:00"
+    assert offer.duration_minutes == 99
+    assert offer.stops == 0
+
+    assert [it.direction for it in offer.itineraries] == ["outbound", "return"]
+    outbound = offer.itineraries[0]
+    assert outbound.stops == 0
+    assert outbound.total_duration_minutes == 99
+    seg = outbound.segments[0]
+    assert seg.carrier_code == "AS"
+    assert seg.flight_number == "AS3361"
+    assert seg.departure_airport == "SFO"
+    assert seg.departure_time == "2026-08-22T16:28:00"
+    assert seg.duration_minutes == 99
+
+    ret = offer.itineraries[1]
+    assert ret.stops == 1
+    assert len(ret.segments) == 2
+    # Every Kiwi segment carries real timestamps (unlike Skiplagged middles)
+    assert ret.segments[1].departure_time == "2026-08-29T11:11:00"
+
+    assert offer.return_flight == {
+        "flight_number": "AS2128",
+        "departure_time": "2026-08-29T07:07:00",
+        "arrival_time": "2026-08-29T13:00:00",
+        "duration_minutes": 353,
+        "stops": 1,
+    }
+
+
+def test_parse_kiwi_flight_offer_one_way():
+    offer_dict = _kiwi_offer()
+    del offer_dict["inbound"]
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.return_flight is None
+    assert [it.direction for it in offer.itineraries] == ["outbound"]
+
+
+def test_parse_kiwi_flight_offer_unpriced_returns_none():
+    assert trips_module._parse_flight_offer(_kiwi_offer(price=0), 0, {}) is None
+    assert trips_module._parse_flight_offer(_kiwi_offer(price=None), 0, {}) is None
+
+
+def test_parse_kiwi_flight_offer_detected_without_provider_key():
+    offer_dict = _kiwi_offer()
+    del offer_dict["provider"]
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.itineraries[0].segments[0].flight_number == "AS3361"
+
+
+def test_parse_kiwi_flight_offer_degenerate_shapes():
+    # No outbound at all: parses (price present) with empty itineraries
+    offer = trips_module._parse_flight_offer(
+        {"provider": "kiwi", "id": "x", "price": 50}, 3, {}
+    )
+    assert offer is not None
+    assert offer.itineraries == []
+    assert offer.airline_code is None
+    # Malformed segments list entries are skipped
+    bad = _kiwi_offer()
+    bad["outbound"]["segments"] = ["junk"]
+    bad["outbound"]["stops"] = None
+    del bad["inbound"]
+    offer = trips_module._parse_flight_offer(bad, 0, {})
+    assert offer is not None
+    assert offer.itineraries[0].segments == []
+    assert offer.itineraries[0].stops == 0
+
+
+def test_parse_kiwi_flight_offer_coerces_non_string_fields():
+    """Provider-native numeric fields must not fail str-typed validation."""
+    offer_dict = _kiwi_offer()
+    offer_dict["outbound"]["segments"][0]["flightNumber"] = 3361
+    offer_dict["outbound"]["segments"][0]["carrier"] = 33
+    del offer_dict["inbound"]
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.itineraries[0].segments[0].flight_number == "3361"
+    assert offer.itineraries[0].segments[0].carrier_code == "33"
+    assert offer.flight_number == "3361"
+
+
+def test_parse_kiwi_flight_offer_unparseable_is_dropped_not_raised():
+    """A poisoned stored offer drops that offer instead of 500ing the response."""
+    poisoned = _kiwi_offer()
+    poisoned["outbound"]["segments"] = 42  # truthy non-iterable → TypeError inside
+    assert trips_module._parse_flight_offer(poisoned, 0, {}) is None
