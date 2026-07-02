@@ -1,53 +1,136 @@
 name: SonarQube
 
-# Coverage is computed once by the Web and Server workflows, which upload
-# lcov.info / coverage.xml as artifacts. This workflow no longer re-runs any
-# tests — it waits for those workflows, downloads their coverage, and runs only
-# the scan. Triggering on both means it re-scans when the slower one finishes;
-# the concurrency group cancels the earlier, less-complete scan.
+# The scan runs in the PR / push context (NOT via workflow_run) so that:
+#   1. SonarCloud analyzes PRs *as PRs* — the scanner auto-detects
+#      sonar.pullrequest.* from the pull_request event, so the gate verdict
+#      lands on the PR instead of polluting main's branch analysis. (Under the
+#      old workflow_run trigger every scan ran in main's context, so a failing
+#      gate on a PR was invisible until after merge.)
+#   2. This workflow is a real PR check that FAILS when the quality gate fails
+#      (sonar.qualitygate.wait=true blocks until SonarCloud returns the
+#      verdict — any condition: Coverage, Security, Reliability,
+#      Maintainability, Duplications).
+#
+# Coverage is still computed once by the Web and Server workflows, which
+# upload lcov.info / coverage.xml as artifacts; this workflow waits for both
+# runs on the same head SHA, downloads their coverage, and only scans.
+#
+# The paths filter below is the SAME union filter as web.yml / server.yml
+# (both-or-neither invariant): whenever this workflow triggers, both coverage
+# workflows have also triggered, so both artifacts must exist — a missing one
+# is an error, not a warning.
 on:
-  workflow_run:
-    workflows: ["Web", "Server"]
-    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+      - "sonar-project.properties"
+      - ".github/workflows/web.yml"
+      - ".github/workflows/server.yml"
+      - ".github/workflows/sonarqube.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "nx.json"
+      - "tsconfig*.json"
+      - "sonar-project.properties"
+      - ".github/workflows/web.yml"
+      - ".github/workflows/server.yml"
+      - ".github/workflows/sonarqube.yml"
 
 concurrency:
-  group: sonar-${{ github.event.workflow_run.head_branch }}
+  group: sonar-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Shallow clones disabled for better analysis
-          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Web and Server run concurrently with this workflow; poll until both
+      # runs for this head SHA finish (they produce the coverage artifacts).
+      - name: Wait for Web and Server coverage workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          for wf in web.yml server.yml; do
+            deadline=$(( $(date +%s) + 1800 ))  # 30 min per workflow
+            while true; do
+              # Tolerate transient API errors: treat a failed poll like an
+              # in-progress run and retry until the deadline.
+              run=$(gh api "repos/${{ github.repository }}/actions/workflows/$wf/runs?head_sha=$HEAD_SHA&per_page=1" \
+                --jq '.workflow_runs[0] | if . == null then "absent absent" else "\(.status) \(.conclusion)" end' \
+                || echo "poll-error poll-error")
+              read -r status conclusion <<< "$run"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" != "success" ]; then
+                  echo "::error::$wf concluded '$conclusion' for $HEAD_SHA — its coverage artifact can't be trusted, so the scan is skipped. Fix that workflow first; its failure is the real blocker."
+                  exit 1
+                fi
+                echo "$wf completed successfully."
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::Timed out waiting for $wf on $HEAD_SHA (status: $status)."
+                exit 1
+              fi
+              echo "$wf status: $status — waiting..."
+              sleep 20
+            done
+          done
 
       # Coverage artifacts may come from a different workflow run for the same
-      # commit, so fetch by commit SHA. `warn` (not fail) handles the case where
-      # one language's workflow was path-filtered out for this change.
+      # commit, so fetch by commit SHA. The wait step above guarantees both
+      # workflows succeeded, so a missing artifact is a hard error (it would
+      # silently zero-coverage that language's files).
       - name: Download web coverage
         uses: dawidd6/action-download-artifact@v6
         with:
           name: web-coverage
           workflow: web.yml
-          commit: ${{ github.event.workflow_run.head_sha }}
+          commit: ${{ github.event.pull_request.head.sha || github.sha }}
           path: apps/web/coverage
-          if_no_artifact_found: warn
+          if_no_artifact_found: fail
 
       - name: Download Python coverage
         uses: dawidd6/action-download-artifact@v6
         with:
           name: python-coverage
           workflow: server.yml
-          commit: ${{ github.event.workflow_run.head_sha }}
+          commit: ${{ github.event.pull_request.head.sha || github.sha }}
           path: apps
-          if_no_artifact_found: warn
+          if_no_artifact_found: fail
 
+      # qualitygate.wait makes the scanner poll SonarCloud until the gate
+      # verdict is in and exit non-zero on failure — this step (and so the PR
+      # check) goes red on ANY failing gate condition, security included.
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v7
+        with:
+          args: -Dsonar.qualitygate.wait=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

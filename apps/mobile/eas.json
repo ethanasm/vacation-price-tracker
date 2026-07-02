@@ -1,6 +1,6 @@
 {
 	"cli": {
-		"appVersionSource": "local"
+		"appVersionSource": "remote"
 	},
 	"build": {
 		"base": {
@@ -23,11 +23,13 @@
 		},
 		"production": {
 			"extends": "base",
-			"channel": "production"
+			"channel": "production",
+			"autoIncrement": true
 		},
 		"preview-store": {
 			"extends": "base",
 			"distribution": "store",
+			"channel": "preview",
 			"autoIncrement": true,
 			"android": {
 				"buildType": "app-bundle"

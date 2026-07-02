@@ -246,10 +246,15 @@ scoped to `apps/mobile/lib/**` only (screen/layout code under
 
 ### SonarCloud quality gate (run locally before a PR)
 
-CI computes coverage in the Web + Server workflows, then a **separate**
-SonarQube workflow downloads those reports and scans (`sonar-project.properties`).
-The gate has **several conditions** — Coverage, **Security Rating**, Reliability,
-Maintainability, Duplications — and a PR can fail on any of them.
+CI computes coverage in the Web + Server workflows; the SonarQube workflow runs
+on the **same PR / main-push triggers**, waits for both coverage runs on the head
+SHA, downloads their reports, and scans (`sonar-project.properties`) with
+`sonar.qualitygate.wait=true` — so it's a **real PR check that fails when the
+gate fails**. The gate has **several conditions** — Coverage, **Security
+Rating**, Reliability, Maintainability, Duplications — and a PR can fail on any
+of them. (It used to run via `workflow_run` in main's branch context, which
+meant no PR check and a never-failing scan step — a gate-dropping finding only
+surfaced on main after merge.)
 
 **Two levels of local check** (`scripts/sonar-local.sh`):
 
@@ -277,13 +282,15 @@ files. **Heads-up:** a green `sonar:verify` only means coverage will map — a
 security finding (e.g. CWE-117 log injection: never log un-scrubbed client input)
 can still drop the gate. Use `--scan` to be sure.
 
-**CI invariant — both coverage workflows must run together.** The SonarQube
-workflow downloads web *and* python coverage **by commit SHA**; if only one of
-`web.yml`/`server.yml` ran for a commit, the other language's report is absent
-and Sonar zero-coverages it (this is what tanked Coverage on New Code to 16.9%
-then 25.7%). The two workflows therefore share an **identical union `paths`
-filter** so any code change runs **both** (both-or-neither). When editing either
-trigger, keep them in lockstep.
+**CI invariant — the coverage workflows and the Sonar scan must run together.**
+The SonarQube workflow downloads web *and* python coverage **by commit SHA**; if
+only one of `web.yml`/`server.yml` ran for a commit, the other language's report
+is absent and Sonar zero-coverages it (this is what tanked Coverage on New Code
+to 16.9% then 25.7%). All three workflows (`web.yml`, `server.yml`,
+`sonarqube.yml`) therefore share an **identical union `paths` filter** so any
+change that triggers one triggers all (all-or-neither) — the scan's wait step
+depends on both coverage runs existing for its SHA. When editing any of the
+three triggers, keep them in lockstep.
 
 ## Verification Preference
 
