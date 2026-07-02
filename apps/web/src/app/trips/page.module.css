@@ -12,6 +12,23 @@
   padding-bottom: 1rem;
 }
 
+/* Tighter side gutters on phones so content isn't squeezed. */
+@media (max-width: 640px) {
+  .main {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Phone / half-width: the page scrolls as one document instead of pinning
+   panels to the viewport and scrolling inside them. */
+@media (max-width: 820px) {
+  .main {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
 /* Header bar with user info and sign out */
 .header {
   display: flex;
@@ -139,6 +156,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
   margin-bottom: 0.75rem;
   flex-shrink: 0;
 }
@@ -150,12 +169,21 @@
   letter-spacing: -0.02em;
   color: var(--aurora-ink);
   margin: 0;
+  white-space: nowrap;
 }
 
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 1.5rem;
+  }
 }
 
 /* Two-column layout */
@@ -166,6 +194,15 @@
   gap: 1rem;
   flex: 1;
   min-height: 0;
+}
+
+/* Stacked panels flow naturally when the page itself scrolls (≤820px). */
+@media (max-width: 820px) {
+  .columns {
+    grid-template-rows: auto auto;
+    flex: none;
+    align-content: start;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -199,6 +236,12 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+@media (max-width: 820px) {
+  .tablePanel {
+    min-height: 200px;
+  }
 }
 
 .tableWrapper {
@@ -361,8 +404,8 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 0.75rem;
-  overflow: auto;
-  flex: 1;
+  overflow: visible;
+  flex: none;
 }
 
 .tripCard {

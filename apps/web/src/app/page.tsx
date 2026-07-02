@@ -38,7 +38,11 @@ export default function HomePage() {
               We scan every flight and hotel combination across your flexible
               dates to find when your entire trip costs the least.
             </p>
+          </div>
 
+          {/* Features + stats — placed after the sign-in card on mobile so the
+              CTA stays above the fold. */}
+          <div className={styles.heroExtras}>
             {/* Feature icons row */}
             <div className={styles.featuresRow}>
               <div className={styles.featureItem}>
