@@ -112,8 +112,8 @@ there is no on/off flag — set a limit very high to effectively disable it.
   middleware / manual-refresh trigger reject new work (503 `GlobalBudgetExceeded`)
   and the provider clients raise `GlobalBudgetExceeded` so in-flight chat (SSE
   error chunk) and worker activities (non-retriable Temporal error) fail
-  gracefully. Keys: `global_budget:{metric}:{day}`. The trip is logged at WARNING
-  (stdout — there is no Axiom).
+  gracefully. Keys: `global_budget:{metric}:{day}`. The trip is logged at WARNING as
+  `budget.breaker_tripped` (stdout + Axiom).
 - **Residual risk:** all three limiters are Redis-backed and fail open, so a
   Redis outage disables the per-minute limiter, the per-user daily quota, and the
   global breaker simultaneously. Defense-in-depth (process-local fallback, or a

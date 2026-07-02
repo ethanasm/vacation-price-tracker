@@ -235,7 +235,6 @@ function ChatPanelWithElicitation({
       return;
     }
 
-
     try {
       // Submit the elicitation to the backend
       // The backend will execute the tool and return a streaming response
@@ -563,7 +562,6 @@ export default function DashboardPage() {
 
   // Handle tool results from chat - only refetch for tools that modify trip data
   const handleToolResult = useCallback((result: ToolResult) => {
-
     // For refresh_all_trip_prices (all trips), start polling for completion instead of immediate refetch
     if (result.name === "refresh_all_trip_prices" && !result.isError) {
       const workflowId = (result.result as { workflow_id?: string })?.workflow_id;

@@ -608,7 +608,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
             continue;
           }
 
-
           switch (chunk.type) {
             case "tool_result": {
               // Extract trip_id from create_trip result

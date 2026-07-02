@@ -129,7 +129,12 @@ async def check_and_incr_daily_quota(
         )
         return bool(allowed), int(remaining), int(retry_after)
     except Exception as exc:  # pragma: no cover - exercised via monkeypatched eval
-        logger.warning("Daily quota check failed, allowing request: %s", exc)
+        logger.warning(
+            "Daily quota check failed, allowing request: %s",
+            exc,
+            exc_info=exc,
+            extra={"event": "quota.check_failed"},
+        )
         return True, limit, 0
 
 
@@ -143,8 +148,9 @@ async def incr_and_check_global_budget(
     """Atomically add ``amount`` to the global per-UTC-day counter for ``metric``.
 
     Returns ``(within_budget, total_after_increment)``. Fails open as
-    ``(True, 0)`` on a Redis error. Logs a warning on the increment that trips the
-    breaker so the operator has a signal in stdout (there is no Axiom).
+    ``(True, 0)`` on a Redis error. Logs ``budget.breaker_tripped`` on the
+    increment that trips the breaker so the operator has a signal in stdout and
+    Axiom.
     """
     moment = _now(now)
     key = CacheKeys.global_budget(metric, _day_bucket(moment))
@@ -154,7 +160,12 @@ async def incr_and_check_global_budget(
             _GLOBAL_BUDGET_LUA, 1, key, str(amount), str(limit), str(ttl)
         )
     except Exception as exc:  # pragma: no cover - exercised via monkeypatched eval
-        logger.warning("Global budget increment failed, allowing request: %s", exc)
+        logger.warning(
+            "Global budget increment failed, allowing request: %s",
+            exc,
+            exc_info=exc,
+            extra={"event": "budget.incr_failed", "metric": metric},
+        )
         return True, 0
 
     within, total = bool(within), int(total)
@@ -165,6 +176,7 @@ async def incr_and_check_global_budget(
             metric,
             total,
             limit,
+            extra={"event": "budget.breaker_tripped", "metric": metric, "total": total, "limit": limit},
         )
     return within, total
 
@@ -184,7 +196,12 @@ async def is_global_budget_tripped(
     try:
         raw = await redis_client.get(key)
     except Exception as exc:  # pragma: no cover - exercised via monkeypatched get
-        logger.warning("Global budget read failed, treating as not tripped: %s", exc)
+        logger.warning(
+            "Global budget read failed, treating as not tripped: %s",
+            exc,
+            exc_info=exc,
+            extra={"event": "budget.read_failed", "metric": metric},
+        )
         return False
     if raw is None:
         return False
