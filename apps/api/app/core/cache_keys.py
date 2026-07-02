@@ -61,7 +61,7 @@ class CacheKeys:
 
     @staticmethod
     def global_budget(metric: str, day: str) -> str:
-        """Global per-UTC-day spend counter. metric in {'groq_tokens', 'skiplagged_calls'}."""
+        """Global per-UTC-day spend counter. metric in {'groq_tokens', 'skiplagged_calls', 'kiwi_calls'}."""
         return f"global_budget:{metric}:{day}"
 
 

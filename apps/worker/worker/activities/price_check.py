@@ -5,11 +5,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.clients.kiwi import KiwiClient, KiwiMCPError
 from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
 from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
 from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
 from app.core.errors import GlobalBudgetExceeded
+from app.core.feature_flags import FeatureFlags, is_feature_enabled
 from app.core.telemetry import langfuse_context, observe
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
@@ -148,47 +150,81 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
+    # Provider selection is an operator-level runtime toggle (`kiwi_flights`
+    # feature flag in the DB) — read per-fetch so a flip applies to the very
+    # next refresh, no worker restart.
+    async with AsyncSessionLocal() as session:
+        use_kiwi = await is_feature_enabled(session, FeatureFlags.KIWI_FLIGHTS)
+    provider = "kiwi" if use_kiwi else "skiplagged"
+
     logger.info(
-        "Fetching flights for trip_id=%s via Skiplagged MCP",
+        "Fetching flights for trip_id=%s via %s MCP",
         trip["trip_id"],
-        extra={"event": "activity.fetch_flights.start", "trip_id": trip["trip_id"], "mock": False},
+        provider,
+        extra={
+            "event": "activity.fetch_flights.start",
+            "trip_id": trip["trip_id"],
+            "mock": False,
+            "provider": provider,
+        },
     )
     non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
     max_stops = "none" if non_stop else None
 
     try:
-        client = SkiplaggedClient()
-        result = await client.search_flights_all(
-            origin=trip["origin_airport"],
-            destination=trip["destination_code"],
-            departure_date=trip["depart_date"],
-            return_date=trip["return_date"] if trip["is_round_trip"] else None,
-            adults=trip["adults"],
-            max_stops=max_stops,
-            max_pages=4,
-        )
+        if use_kiwi:
+            result = await KiwiClient().search_flights_all(
+                origin=trip["origin_airport"],
+                destination=trip["destination_code"],
+                departure_date=trip["depart_date"],
+                return_date=trip["return_date"] if trip["is_round_trip"] else None,
+                adults=trip["adults"],
+                max_stops=max_stops,
+                cabin=trip["flight_prefs"].get("cabin"),
+            )
+        else:
+            result = await SkiplaggedClient().search_flights_all(
+                origin=trip["origin_airport"],
+                destination=trip["destination_code"],
+                departure_date=trip["depart_date"],
+                return_date=trip["return_date"] if trip["is_round_trip"] else None,
+                adults=trip["adults"],
+                max_stops=max_stops,
+                max_pages=4,
+            )
     except GlobalBudgetExceeded as exc:
         raise _budget_application_error(exc) from exc
-    except SkiplaggedMCPError as exc:
+    except (SkiplaggedMCPError, KiwiMCPError) as exc:
         logger.warning(
-            "Flight fetch failed for trip_id=%s",
+            "Flight fetch failed for trip_id=%s via %s",
             trip["trip_id"],
+            provider,
             exc_info=exc,
-            extra={"event": "activity.fetch_flights.failed", "trip_id": trip["trip_id"]},
+            extra={
+                "event": "activity.fetch_flights.failed",
+                "trip_id": trip["trip_id"],
+                "provider": provider,
+            },
         )
         raise
 
     # Normalize FlightSearchResult to list of offer dicts
     offers = [_flight_to_offer_dict(flight) for flight in result.flights]
     logger.info(
-        "Fetched %d flight offers for trip_id=%s via Skiplagged",
+        "Fetched %d flight offers for trip_id=%s via %s",
         len(offers),
         trip["trip_id"],
-        extra={"event": "activity.fetch_flights.ok", "trip_id": trip["trip_id"], "count": len(offers)},
+        provider,
+        extra={
+            "event": "activity.fetch_flights.ok",
+            "trip_id": trip["trip_id"],
+            "count": len(offers),
+            "provider": provider,
+        },
     )
     return {
         "offers": offers,
-        "raw": {"provider": "skiplagged", "total_results": result.total_results},
+        "raw": {"provider": provider, "total_results": result.total_results},
         "error": None,
     }
 
@@ -208,8 +244,9 @@ def _flight_to_offer_dict(flight: Any) -> dict[str, Any]:
         "price": str(flight.price_amount) if flight.price_amount is not None else None,
         "price_currency": flight.price_currency,
         "booking_link": flight.booking_link,
-        "provider": "skiplagged",
-        # Keep raw for downstream use
+        "provider": flight.provider,
+        # Keep raw for downstream use (a raw `provider` key, when present,
+        # matches flight.provider — the Kiwi client stamps it in raw_data)
         **(flight.raw_data or {}),
     }
 
@@ -603,6 +640,11 @@ def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
     Supports Skiplagged format (flight id field with trip= segments)
     and legacy formats (carrier, operating_carrier, airline).
     """
+    # Kiwi format: structured outbound/inbound legs with per-segment carriers
+    kiwi_codes = _extract_kiwi_carrier_codes(flight)
+    if kiwi_codes:
+        return kiwi_codes
+
     carrier_codes: list[str] = []
 
     # Skiplagged format: parse from flight id field
@@ -629,6 +671,24 @@ def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
             carrier_codes = [str(carrier).upper()]
 
     return carrier_codes
+
+
+def _extract_kiwi_carrier_codes(flight: dict[str, Any]) -> list[str]:
+    """Collect carrier codes from Kiwi's structured outbound/inbound legs."""
+    codes: list[str] = []
+    for leg_key in ("outbound", "inbound"):
+        leg = flight.get(leg_key)
+        if not isinstance(leg, dict):
+            continue
+        for seg in leg.get("segments") or []:
+            if not isinstance(seg, dict):
+                continue
+            carrier = seg.get("carrier")
+            if carrier:
+                code = str(carrier).upper()
+                if code not in codes:
+                    codes.append(code)
+    return codes
 
 
 def _filter_flights(flights: list[dict[str, Any]], prefs: dict[str, Any]) -> list[dict[str, Any]]:

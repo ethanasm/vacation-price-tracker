@@ -273,6 +273,12 @@ async def run_health_check_activity() -> dict:
                 settings.global_daily_skiplagged_call_budget,
                 "Skiplagged calls",
             ),
+            _check_budget(
+                "kiwi_budget",
+                "kiwi_calls",
+                settings.global_daily_skiplagged_call_budget,
+                "Kiwi calls",
+            ),
             _check_refresh_run(temporal_client),
             _check_error_volume(),
         )

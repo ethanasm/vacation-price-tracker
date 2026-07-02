@@ -137,6 +137,24 @@ surfaced in `.env.example` (they're the only knobs).
 
 Set `MOCK_SKIPLAGGED_API=true` to use `skiplagged_mock.py` in development.
 
+## Kiwi MCP client (alternative flight provider)
+
+`app/clients/kiwi.py` speaks the same JSON-RPC 2.0 Streamable HTTP dialect to
+`https://mcp.kiwi.com/` (no auth), but the server is **stateless** — no
+`initialize` handshake, no session header. One tool: `search-flight`
+(dd/mm/yyyy dates, `cabinClass` M/W/C/F). Responses carry **structured
+per-segment data** (carrier, flight number, airports, ISO times, durations,
+stops, cabin), so no id-string parsing; the full itinerary rides along in
+`raw_data` for the worker's airline filter and the trips router's itinerary
+builder (`_parse_kiwi_flight_offer`). No server-side pagination/sort/stop
+filtering — applied client-side (~15 itineraries per search). Airline display
+names come from the static map in `app/core/airlines.py`.
+
+Which provider serves flights is the `kiwi_flights` feature flag
+(`app/services/flight_provider.py` dispatches; hotels always Skiplagged).
+Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
+`GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
+
 **Flight numbers are not structured** — they are encoded in the Skiplagged `id`
 field (e.g. `SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741`)
 and parsed by `parse_flight_segments()` in `clients/skiplagged_parser.py` (split on
@@ -200,6 +218,22 @@ endpoint depends on `get_admin_session` (override it in tests). Postgres-only
 guards (`SET TRANSACTION READ ONLY`, `statement_timeout`) can't run on SQLite —
 they're covered via `_classify_db_error` unit tests that map SQLSTATEs
 (`57014`→timeout, `25006`/`42501`→read_only).
+
+## `GET`/`PUT /v1/admin/flags` — runtime feature-flag toggles
+
+Same bearer token (`ADMIN_QUERY_TOKEN`) and per-IP rate limit as `/sql`, but
+these **write** the `feature_flags` table, so they use the app's normal engine
+(`get_db`), not the (possibly read-only) admin engine.
+
+```
+GET  /v1/admin/flags                    → {"flags": [{name, description, enabled}, …]}
+PUT  /v1/admin/flags/{name}             body {"enabled": true|false}
+```
+
+Unknown flag → 404; non-boolean body → 400. The flag registry lives in
+`app/core/feature_flags.py` (`KNOWN_FLAGS`); rows are seeded with defaults at
+API startup. The `kiwi_flights` flag selects the flight provider (see the Kiwi
+MCP client section above).
 
 ## Commit scope
 

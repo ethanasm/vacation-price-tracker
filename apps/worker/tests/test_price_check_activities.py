@@ -56,6 +56,28 @@ class DummySessionManager:
         return None
 
 
+class _FlagSession:
+    """Session double for the provider-flag read in fetch_flights_activity.
+
+    Returns a row with the given ``enabled`` state, or None (registry default:
+    Skiplagged) when ``enabled`` is None.
+    """
+
+    def __init__(self, enabled: bool | None = None) -> None:
+        self._enabled = enabled
+
+    async def get(self, _model, _name):
+        if self._enabled is None:
+            return None
+        return SimpleNamespace(enabled=self._enabled)
+
+
+def _patch_flag_session(monkeypatch, enabled: bool | None = None) -> None:
+    """Point the activity's AsyncSessionLocal at a flag-only session double."""
+    session = _FlagSession(enabled)
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))
+
+
 def _trip_details() -> dict:
     return {
         "trip_id": str(uuid.uuid4()),
@@ -265,6 +287,7 @@ async def test_fetch_flights_activity_success(monkeypatch):
     mock_client.search_flights_all = AsyncMock(return_value=mock_result)
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
         result = await pc.fetch_flights_activity(_trip_details())
 
@@ -284,6 +307,7 @@ async def test_fetch_flights_activity_error(monkeypatch):
     mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("API error"))
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
         with pytest.raises(SkiplaggedConnectionError, match="API error"):
             await pc.fetch_flights_activity(_trip_details())
@@ -664,6 +688,7 @@ async def test_fetch_flights_uses_skiplagged(monkeypatch):
     mock_client = AsyncMock()
     mock_client.search_flights_all = AsyncMock(return_value=mock_result)
 
+    _patch_flag_session(monkeypatch)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
         await pc.fetch_flights_activity(sample_trip_details)
 
@@ -684,6 +709,7 @@ async def test_fetch_flights_skiplagged_error(monkeypatch):
     mock_client = AsyncMock()
     mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("connection refused"))
 
+    _patch_flag_session(monkeypatch)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
         with pytest.raises(SkiplaggedConnectionError, match="connection refused"):
             await pc.fetch_flights_activity(sample_trip_details)
@@ -914,6 +940,7 @@ async def test_fetch_flights_generic_exception_propagates(monkeypatch):
     from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch)
 
     mock_client = AsyncMock()
     mock_client.search_flights_all = AsyncMock(side_effect=RuntimeError("boom"))
@@ -1109,6 +1136,7 @@ async def test_fetch_flights_budget_exceeded_is_non_retryable(monkeypatch):
     )
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch)
     with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
         with pytest.raises(ApplicationError) as exc_info:
             await pc.fetch_flights_activity(_trip_details())
@@ -1193,3 +1221,148 @@ async def test_fetch_hotels_budget_trip_during_details_is_non_retryable(monkeypa
 
     assert exc_info.value.non_retryable is True
     assert exc_info.value.type == "GlobalBudgetExceeded"
+
+
+# ---------------------------------------------------------------------------
+# Kiwi flight provider (kiwi_flights feature flag)
+# ---------------------------------------------------------------------------
+
+
+def _kiwi_search_result():
+    from decimal import Decimal
+
+    from app.schemas.flight_search import FlightSearchFlight, FlightSearchResult
+
+    flight = FlightSearchFlight(
+        departure_airport="SFO",
+        arrival_airport="MCO",
+        airline_name="United",
+        carrier_code="UA",
+        duration_minutes=99,
+        stops=0,
+        price_amount=Decimal("187"),
+        price_currency="USD",
+        provider="kiwi",
+        raw_data={
+            "id": "kiwi-itin-1",
+            "provider": "kiwi",
+            "price": 187,
+            "outbound": {"segments": [{"carrier": "UA", "flightNumber": "UA200"}]},
+            "inbound": {"segments": [{"carrier": "DL", "flightNumber": "DL42"}]},
+        },
+    )
+    return FlightSearchResult(
+        flights=[flight],
+        origin="SFO",
+        destination="MCO",
+        departure_date="2026-02-01",
+        return_date="2026-02-08",
+        is_round_trip=True,
+        provider="kiwi",
+        total_results=1,
+        currency="USD",
+        success=True,
+        error=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_flag_on_uses_kiwi(monkeypatch):
+    """kiwi_flights enabled routes the fetch to KiwiClient with the trip cabin."""
+    from unittest.mock import AsyncMock, patch
+
+    mock_kiwi = AsyncMock()
+    mock_kiwi.search_flights_all = AsyncMock(return_value=_kiwi_search_result())
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, enabled=True)
+    with (
+        patch("worker.activities.price_check.KiwiClient", return_value=mock_kiwi),
+        patch("worker.activities.price_check.SkiplaggedClient") as mock_sk,
+    ):
+        result = await pc.fetch_flights_activity(_trip_details())
+
+    mock_kiwi.search_flights_all.assert_awaited_once()
+    mock_sk.assert_not_called()
+    assert mock_kiwi.search_flights_all.call_args.kwargs["cabin"] == "economy"
+    assert result["raw"]["provider"] == "kiwi"
+    offer = result["offers"][0]
+    assert offer["provider"] == "kiwi"
+    assert offer["id"] == "kiwi-itin-1"
+    # Structured legs ride along for downstream filtering/rendering
+    assert offer["outbound"]["segments"][0]["flightNumber"] == "UA200"
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_flag_off_uses_skiplagged(monkeypatch):
+    """kiwi_flights disabled (explicit row) keeps the Skiplagged path."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.flight_search import FlightSearchResult
+
+    mock_result = FlightSearchResult(
+        flights=[],
+        origin="SFO",
+        destination="MCO",
+        departure_date="2026-02-01",
+        return_date="2026-02-08",
+        is_round_trip=True,
+        provider="skiplagged",
+        total_results=0,
+        currency="USD",
+        success=True,
+        error=None,
+    )
+    mock_sk = AsyncMock()
+    mock_sk.search_flights_all = AsyncMock(return_value=mock_result)
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, enabled=False)
+    with (
+        patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_sk),
+        patch("worker.activities.price_check.KiwiClient") as mock_kiwi,
+    ):
+        result = await pc.fetch_flights_activity(_trip_details())
+
+    mock_sk.search_flights_all.assert_awaited_once()
+    mock_kiwi.assert_not_called()
+    assert result["raw"]["provider"] == "skiplagged"
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_kiwi_error_propagates(monkeypatch):
+    """KiwiMCPError propagates so Temporal can retry the activity."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.clients.kiwi import KiwiConnectionError
+
+    mock_kiwi = AsyncMock()
+    mock_kiwi.search_flights_all = AsyncMock(side_effect=KiwiConnectionError("kiwi down"))
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, enabled=True)
+    with patch("worker.activities.price_check.KiwiClient", return_value=mock_kiwi):
+        with pytest.raises(KiwiConnectionError, match="kiwi down"):
+            await pc.fetch_flights_activity(_trip_details())
+
+
+def test_extract_carrier_codes_kiwi_structured_legs():
+    offer = {
+        "id": "kiwi-itin-1",  # no "trip=" — must not fall into Skiplagged parsing
+        "outbound": {"segments": [{"carrier": "AS"}, {"carrier": "as"}]},
+        "inbound": {"segments": [{"carrier": "DL"}, "junk", {"noCarrier": True}]},
+    }
+    assert pc._extract_carrier_codes(offer) == ["AS", "DL"]
+
+
+def test_extract_carrier_codes_kiwi_ignores_malformed_legs():
+    offer = {"outbound": "junk", "inbound": {"segments": None}, "carrier_code": "UA"}
+    assert pc._extract_carrier_codes(offer) == ["UA"]
+
+
+def test_filter_flights_matches_kiwi_offers():
+    offers = [
+        {"outbound": {"segments": [{"carrier": "AS"}]}},
+        {"outbound": {"segments": [{"carrier": "UA"}]}},
+    ]
+    assert pc._filter_flights(offers, {"airlines": ["ua"]}) == [offers[1]]

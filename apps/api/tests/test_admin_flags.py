@@ -1,0 +1,101 @@
+"""Tests for the feature-flag admin endpoints (GET/PUT /v1/admin/flags)."""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+TOKEN = "b" * 40
+
+
+@pytest.fixture
+def flags_app(app, mock_redis, monkeypatch):
+    """The shared `app` fixture with the admin token set (flags endpoints use
+    the normal `get_db` dependency, already overridden by the `app` fixture)."""
+    import app.routers.admin as admin_module
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "admin_query_token", TOKEN)
+    admin_module.redis_client = mock_redis
+    return app
+
+
+@pytest.fixture
+def flags_client(flags_app):
+    return TestClient(flags_app)
+
+
+def _auth(token=TOKEN):
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestFlagsAuth:
+    def test_list_requires_token(self, flags_client):
+        assert flags_client.get("/v1/admin/flags").status_code == 401
+
+    def test_set_requires_token(self, flags_client):
+        resp = flags_client.put("/v1/admin/flags/kiwi_flights", json={"enabled": True})
+        assert resp.status_code == 401
+
+    def test_wrong_token_rejected(self, flags_client):
+        resp = flags_client.get("/v1/admin/flags", headers=_auth("c" * 40))
+        assert resp.status_code == 401
+
+
+class TestFlagsEndpoints:
+    def test_list_includes_known_flags_with_defaults(self, flags_client):
+        resp = flags_client.get("/v1/admin/flags", headers=_auth())
+        assert resp.status_code == 200
+        flags = {f["name"]: f for f in resp.json()["flags"]}
+        assert "kiwi_flights" in flags
+        assert flags["kiwi_flights"]["enabled"] is False
+        assert "Kiwi.com" in flags["kiwi_flights"]["description"]
+
+    def test_set_flag_toggles_and_persists(self, flags_client):
+        resp = flags_client.put(
+            "/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": True}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"name": "kiwi_flights", "enabled": True}
+
+        listed = flags_client.get("/v1/admin/flags", headers=_auth()).json()["flags"]
+        assert {f["name"]: f["enabled"] for f in listed}["kiwi_flights"] is True
+
+        # And back off again
+        resp = flags_client.put(
+            "/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": False}
+        )
+        assert resp.status_code == 200
+        listed = flags_client.get("/v1/admin/flags", headers=_auth()).json()["flags"]
+        assert {f["name"]: f["enabled"] for f in listed}["kiwi_flights"] is False
+
+    def test_unknown_flag_404(self, flags_client):
+        resp = flags_client.put(
+            "/v1/admin/flags/nonexistent", headers=_auth(), json={"enabled": True}
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error"] == "unknown_flag"
+
+    def test_invalid_json_body_400(self, flags_client):
+        resp = flags_client.put(
+            "/v1/admin/flags/kiwi_flights",
+            headers={**_auth(), "Content-Type": "application/json"},
+            content="not-json",
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.parametrize("body", [{"enabled": "yes"}, {"enabled": 1}, {}, ["enabled"]])
+    def test_non_boolean_enabled_400(self, flags_client, body):
+        resp = flags_client.put("/v1/admin/flags/kiwi_flights", headers=_auth(), json=body)
+        assert resp.status_code == 400
+
+    def test_rate_limited(self, flags_app, mock_redis):
+        from unittest.mock import AsyncMock
+
+        mock_redis.incr = AsyncMock(return_value=999)
+        mock_redis.expire = AsyncMock(return_value=True)
+        client = TestClient(flags_app)
+        resp = client.get("/v1/admin/flags", headers=_auth())
+        assert resp.status_code == 429
+        resp = client.put("/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": True})
+        assert resp.status_code == 429

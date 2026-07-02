@@ -1,4 +1,10 @@
-"""MCP tool for searching flights via Skiplagged."""
+"""MCP tool for searching flights (Skiplagged or Kiwi, selected at runtime).
+
+The active provider is the ``kiwi_flights`` feature flag (DB ``feature_flags``
+table): enabled -> Kiwi.com MCP, disabled -> Skiplagged MCP. The module keeps
+its historical name because the tool registry and tests import it from here;
+the LLM-facing tool name stays ``search_flights`` either way.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.kiwi import KiwiClient, KiwiMCPError, kiwi_client
 from app.clients.skiplagged import (
     SkiplaggedClient,
     SkiplaggedMCPError,
@@ -14,16 +21,17 @@ from app.clients.skiplagged import (
 )
 from app.schemas.flight_search import FlightSearchResult
 from app.schemas.mcp import ToolResult
+from app.services.flight_provider import PROVIDER_KIWI, get_flight_provider_name
 from app.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
 class SearchFlightsSkiplaggedTool(BaseTool):
-    """Search for flights using the Skiplagged MCP server.
+    """Search for flights using the active flight-provider MCP server.
 
-    Returns airline names, flight numbers (parsed from ID), prices,
-    durations, stops, and booking links.
+    Returns airline names, flight numbers, prices, durations, stops, and
+    booking links.
     """
 
     name = "search_flights"
@@ -32,8 +40,13 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         "prices, durations, stops, and booking links."
     )
 
-    def __init__(self, client: SkiplaggedClient | None = None) -> None:
+    def __init__(
+        self,
+        client: SkiplaggedClient | None = None,
+        kiwi: KiwiClient | None = None,
+    ) -> None:
         self._client = client or skiplagged_client
+        self._kiwi = kiwi or kiwi_client
 
     async def execute(
         self,
@@ -41,7 +54,7 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         user_id: str,
         db: AsyncSession,
     ) -> ToolResult:
-        """Execute flight search via Skiplagged."""
+        """Execute flight search via the active provider."""
         origin = args.get("origin")
         destination = args.get("destination")
         departure_date = args.get("departure_date")
@@ -61,8 +74,11 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         limit = args.get("limit", 75)
         offset = args.get("offset", 0)
 
+        provider = await get_flight_provider_name(db)
+        client = self._kiwi if provider == PROVIDER_KIWI else self._client
+
         try:
-            result = await self._client.search_flights(
+            result = await client.search_flights(
                 origin=origin,
                 destination=destination,
                 departure_date=departure_date,
@@ -79,23 +95,26 @@ class SearchFlightsSkiplaggedTool(BaseTool):
 
             formatted = self._format_results(result)
             return self.success(formatted)
-        except SkiplaggedMCPError as e:
+        except (SkiplaggedMCPError, KiwiMCPError) as e:
             logger.warning(
-                "Skiplagged flight search failed: %s",
+                "Flight search failed via %s: %s",
+                provider,
                 e,
                 extra={
                     "event": "tool.search_flights.failed",
                     "tool_name": self.name,
+                    "provider": provider,
                 },
             )
             return self.error(f"Flight search failed: {e}")
         except Exception as e:
             logger.exception(
-                "Unexpected error in Skiplagged flight search",
+                "Unexpected error in flight search",
                 exc_info=e,
                 extra={
                     "event": "tool.search_flights.error",
                     "tool_name": self.name,
+                    "provider": provider,
                 },
             )
             return self.error(f"An unexpected error occurred: {e}")
@@ -129,6 +148,6 @@ class SearchFlightsSkiplaggedTool(BaseTool):
             "departure_date": result.departure_date,
             "return_date": result.return_date,
             "is_round_trip": result.is_round_trip,
-            "provider": "skiplagged",
+            "provider": result.provider,
             "currency": result.currency,
         }
