@@ -198,6 +198,25 @@ class TestClientIp:
 
         assert _client_ip(self._request({}, client_host=None)) == "anonymous"
 
+    def test_non_ip_forwarded_value_is_ignored(self):
+        """A log-injection payload in the proxy header must never come back."""
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-forwarded-for": "evil\nINFO fake-entry"})
+        assert _client_ip(req) == "1.2.3.4"
+
+    def test_invalid_forwarded_falls_through_to_real_ip(self):
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-forwarded-for": "not-an-ip", "x-real-ip": "7.7.7.7"})
+        assert _client_ip(req) == "7.7.7.7"
+
+    def test_ipv6_accepted(self):
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-forwarded-for": "2001:db8::1"})
+        assert _client_ip(req) == "2001:db8::1"
+
 
 # ---------------------------------------------------------------------------
 # Admin session factory (lazy engine creation)

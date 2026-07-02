@@ -33,6 +33,7 @@ Defense in depth (deepest-first):
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -50,7 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.admin_query import validate_admin_query
 from app.core.config import settings
-from app.core.feature_flags import is_known_flag, list_feature_flags, set_feature_flag
+from app.core.feature_flags import canonical_flag_name, list_feature_flags, set_feature_flag
 from app.db.deps import get_db
 from app.db.redis import redis_client
 
@@ -166,12 +167,21 @@ def _classify_db_error(exc: Exception) -> str:
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    real = request.headers.get("x-real-ip")
-    if real:
-        return real.strip()
+    """Best-effort client IP for rate-limit keys and log fields.
+
+    Proxy headers are client-controlled, so a candidate is only used if it
+    parses as a real IP address — anything else (e.g. a log-injection payload
+    in ``X-Forwarded-For``, CWE-117) falls through to the socket peer.
+    """
+    for header in ("x-forwarded-for", "x-real-ip"):
+        value = request.headers.get(header)
+        if not value:
+            continue
+        candidate = value.split(",")[0].strip()
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            continue
     return request.client.host if request.client else "anonymous"
 
 
@@ -342,9 +352,12 @@ async def admin_set_flag(
             {"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"}
         )
 
-    if not is_known_flag(name):
+    # Resolve to the registry's own constant so everything logged/echoed below
+    # is a code-defined string, never the raw path parameter (CWE-117).
+    flag = canonical_flag_name(name)
+    if flag is None:
         return JSONResponse(
-            {"error": "unknown_flag", "details": f"unknown feature flag: {name}"},
+            {"error": "unknown_flag", "details": "unknown feature flag"},
             status_code=404,
         )
 
@@ -361,12 +374,12 @@ async def admin_set_flag(
             status_code=400,
         )
 
-    await set_feature_flag(session, name, enabled)
+    await set_feature_flag(session, flag, enabled)
     logger.info(
         "admin.flags set %s=%s ip=%s",
-        name,
+        flag,
         enabled,
         ip,
-        extra={"event": "admin.flags.set", "flag": name, "enabled": enabled, "ip": ip},
+        extra={"event": "admin.flags.set", "flag": flag, "enabled": enabled, "ip": ip},
     )
-    return JSONResponse({"name": name, "enabled": enabled})
+    return JSONResponse({"name": flag, "enabled": enabled})
