@@ -537,10 +537,13 @@ function SortArrow({ isActive, direction }: Readonly<{ isActive: boolean; direct
 function SortHeader({ label, sortKey, activeKey, direction, align, className, onSort }: SortHeaderProps) {
   const isActive = activeKey === sortKey;
   const alignClass = getSortAlignClass(align);
+  const buttonClass = [styles.sortButton, alignClass, isActive ? styles.sortButtonActive : "", className]
+    .filter(Boolean)
+    .join(" ");
   return (
     <button
       type="button"
-      className={`${styles.sortButton} ${alignClass} ${isActive ? styles.sortButtonActive : ""} ${className ?? ""}`}
+      className={buttonClass}
       onClick={() => onSort(sortKey)}
     >
       <span>{label}</span>
