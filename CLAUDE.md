@@ -52,15 +52,28 @@ If you intentionally scope work to one surface (e.g. ship web first, mobile foll
 
 ## Data Provider Strategy
 
-All flights and hotels come from a single provider: the **Skiplagged MCP**
-(`https://mcp.skiplagged.com/mcp`) — a public endpoint, no API key, no documented
-rate limit. Chat tools use single-page `search_flights`/`search_hotels` for speed;
-the tracking worker uses `search_flights_all`/`search_hotels_all` (up to 300 results
-across `max_pages=4`) plus `get_hotel_details`. Client details:
-[`apps/api/CLAUDE.md`](apps/api/CLAUDE.md).
+**Hotels** come from the **Skiplagged MCP** (`https://mcp.skiplagged.com/mcp`) —
+a public endpoint, no API key, no documented rate limit
+(`search_hotels`/`search_hotels_all` + `get_hotel_details`).
+
+**Flights** come from one of two MCP providers, selected at runtime by the
+`kiwi_flights` feature flag (DB `feature_flags` table, toggled via
+`PUT /v1/admin/flags/kiwi_flights` — no redeploy):
+
+- **Skiplagged MCP** (flag off, default): chat tools use single-page
+  `search_flights`; the tracking worker uses `search_flights_all` (up to 300
+  results across `max_pages=4`). Flight numbers are parsed from the `id` string.
+- **Kiwi.com MCP** (flag on): `https://mcp.kiwi.com/` — public, stateless, no
+  API key. Returns structured per-segment data (carrier, flight number, times,
+  durations, stops, cabin class) but no server-side pagination (~15 itineraries
+  per search; stops/sort/limit applied client-side). Added when Skiplagged's
+  flight-search backend began returning sustained 429s (July 2026).
+
+Client details: [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md).
 
 A 24-hour Redis cache for identical route/date queries stays in place as a courtesy
-and for performance. `MOCK_SKIPLAGGED_API=true` returns mock data in dev.
+and for performance. `MOCK_SKIPLAGGED_API=true` returns mock data in dev (takes
+precedence over the provider flag).
 
 ## Core Architectural Patterns
 

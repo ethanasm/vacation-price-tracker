@@ -28,8 +28,15 @@ def mock_skiplagged_client():
 
 @pytest.fixture
 def mock_db():
-    """Create a mock database session."""
-    return AsyncMock()
+    """Create a mock database session.
+
+    `session.get(FeatureFlag, name)` must return None so the provider flag
+    falls back to its registry default (Skiplagged) — a bare AsyncMock would
+    return a truthy mock and silently flip the tool to the Kiwi client.
+    """
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    return db
 
 
 def _make_flight(
@@ -58,7 +65,7 @@ def _make_flight(
     )
 
 
-def _make_result(flights=None, success=True, error=None) -> FlightSearchResult:
+def _make_result(flights=None, success=True, error=None, provider="skiplagged") -> FlightSearchResult:
     return FlightSearchResult(
         flights=flights or [],
         origin="SFO",
@@ -66,7 +73,7 @@ def _make_result(flights=None, success=True, error=None) -> FlightSearchResult:
         departure_date="2026-06-15",
         return_date=None,
         is_round_trip=False,
-        provider="skiplagged",
+        provider=provider,
         total_results=len(flights) if flights else 0,
         currency="USD",
         success=success,
@@ -340,3 +347,78 @@ class TestSearchFlightsSkiplaggedTool:
 
         assert result.success is False
         assert "Flight search failed" in result.error
+
+
+# =============================================================================
+# Provider dispatch (kiwi_flights feature flag)
+# =============================================================================
+
+
+class TestProviderDispatch:
+    """The tool routes to the Kiwi client when the kiwi_flights flag is on."""
+
+    @pytest.fixture
+    def kiwi_flag_db(self):
+        """Mock DB session whose feature-flag row has enabled=True."""
+        db = AsyncMock()
+        flag_row = MagicMock()
+        flag_row.enabled = True
+        db.get = AsyncMock(return_value=flag_row)
+        return db
+
+    @pytest.mark.asyncio
+    async def test_flag_on_routes_to_kiwi_client(self, mock_skiplagged_client, kiwi_flag_db):
+        kiwi = MagicMock()
+        kiwi.search_flights = AsyncMock(
+            return_value=_make_result(flights=[_make_flight()], provider="kiwi")
+        )
+        mock_skiplagged_client.search_flights = AsyncMock()
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client, kiwi=kiwi)
+        result = await tool.execute(
+            args={"origin": "SFO", "destination": "RDM", "departure_date": "2026-08-22"},
+            user_id="test-user",
+            db=kiwi_flag_db,
+        )
+
+        assert result.success is True
+        kiwi.search_flights.assert_awaited_once()
+        mock_skiplagged_client.search_flights.assert_not_called()
+        assert result.data["provider"] == "kiwi"
+
+    @pytest.mark.asyncio
+    async def test_flag_off_routes_to_skiplagged_client(self, mock_skiplagged_client, mock_db):
+        kiwi = MagicMock()
+        kiwi.search_flights = AsyncMock()
+        mock_skiplagged_client.search_flights = AsyncMock(
+            return_value=_make_result(flights=[_make_flight()])
+        )
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client, kiwi=kiwi)
+        result = await tool.execute(
+            args={"origin": "SFO", "destination": "CDG", "departure_date": "2026-06-15"},
+            user_id="test-user",
+            db=mock_db,
+        )
+
+        assert result.success is True
+        mock_skiplagged_client.search_flights.assert_awaited_once()
+        kiwi.search_flights.assert_not_called()
+        assert result.data["provider"] == "skiplagged"
+
+    @pytest.mark.asyncio
+    async def test_kiwi_mcp_error_returns_tool_error(self, mock_skiplagged_client, kiwi_flag_db):
+        from app.clients.kiwi import KiwiMCPError
+
+        kiwi = MagicMock()
+        kiwi.search_flights = AsyncMock(side_effect=KiwiMCPError("kiwi down"))
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client, kiwi=kiwi)
+        result = await tool.execute(
+            args={"origin": "SFO", "destination": "RDM", "departure_date": "2026-08-22"},
+            user_id="test-user",
+            db=kiwi_flag_db,
+        )
+
+        assert result.success is False
+        assert "kiwi down" in result.error

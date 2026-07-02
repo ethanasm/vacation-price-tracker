@@ -63,7 +63,11 @@ usage, last refresh-run outcome (Temporal history), and Axiom error volume
 
 ### PriceCheckWorkflow
 Single trip, saga-style (Temporal handles retries/compensation):
-1. `search_flights_all` (up to `max_pages=4`, ~300 results).
+1. `search_flights_all` via the active flight provider — Skiplagged (up to
+   `max_pages=4`, ~300 results) or Kiwi (single call, ~15 structured
+   itineraries), selected per-fetch by the `kiwi_flights` feature flag
+   (`fetch_flights_activity` reads the DB flag, so a flip applies to the next
+   refresh with no worker restart).
 2. `search_hotels_all(max_pages=4)`, then `get_hotel_details` for the top 20
    cheapest hotels (parallel) for room-level data.
 3. `filter_results_activity` applies post-fetch filters (see below).
@@ -81,11 +85,12 @@ top 5 against live data. Gated behind the `beta_optimizer` feature flag (DB
 
 ## Post-fetch filtering (`activities/price_check.py`)
 
-Skiplagged supports neither filter natively, so both are applied in-memory after
-fetching:
+Neither provider supports these filters natively, so both are applied in-memory
+after fetching:
 
-1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes parsed
-   from the Skiplagged `id` field via `parse_flight_segments()`.
+1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes:
+   Kiwi offers carry structured `outbound`/`inbound` segments (read directly);
+   Skiplagged codes are parsed from the `id` field via `parse_flight_segments()`.
 2. **Room types / views** — match `preferred_room_types` and `preferred_views`
    against each room's `title` (from `get_hotel_details`) and the hotel's
    `amenityNames`.
