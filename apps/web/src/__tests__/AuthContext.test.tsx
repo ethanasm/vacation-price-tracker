@@ -48,7 +48,7 @@ describe("AuthContext", () => {
 
   describe("AuthProvider", () => {
     it("fetches user on mount", async () => {
-      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true };
+      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true, is_admin: false };
       mockAuthMe.mockResolvedValueOnce(mockUser);
 
       render(
@@ -64,8 +64,8 @@ describe("AuthContext", () => {
 
     it("sets isLoading true during fetch", async () => {
       // Create a promise we can control
-      let resolveMe: ((value: { id: string; email: string; email_notifications_enabled: boolean }) => void) | undefined;
-      const mePromise = new Promise<{ id: string; email: string; email_notifications_enabled: boolean }>((resolve) => {
+      let resolveMe: ((value: { id: string; email: string; email_notifications_enabled: boolean; is_admin: boolean }) => void) | undefined;
+      const mePromise = new Promise<{ id: string; email: string; email_notifications_enabled: boolean; is_admin: boolean }>((resolve) => {
         resolveMe = resolve;
       });
       mockAuthMe.mockReturnValueOnce(mePromise);
@@ -81,7 +81,7 @@ describe("AuthContext", () => {
 
       // Resolve the promise
       await act(async () => {
-        resolveMe?.({ id: "123", email: "test@example.com", email_notifications_enabled: true });
+        resolveMe?.({ id: "123", email: "test@example.com", email_notifications_enabled: true, is_admin: false });
       });
 
       // No longer loading
@@ -91,7 +91,7 @@ describe("AuthContext", () => {
     });
 
     it("sets isAuthenticated true when user exists", async () => {
-      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true };
+      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true, is_admin: false };
       mockAuthMe.mockResolvedValueOnce(mockUser);
 
       render(
@@ -157,7 +157,7 @@ describe("AuthContext", () => {
     });
 
     it("returns auth context values", async () => {
-      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true };
+      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true, is_admin: false };
       mockAuthMe.mockResolvedValueOnce(mockUser);
 
       render(
@@ -177,7 +177,7 @@ describe("AuthContext", () => {
   describe("logout", () => {
     it("calls api.auth.logout and clears user", async () => {
       const user = userEvent.setup();
-      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true };
+      const mockUser = { id: "123", email: "test@example.com", email_notifications_enabled: true, is_admin: false };
       mockAuthMe.mockResolvedValueOnce(mockUser);
       mockAuthLogout.mockResolvedValueOnce(undefined);
 
@@ -206,8 +206,8 @@ describe("AuthContext", () => {
   describe("refreshUser", () => {
     it("refetches user data", async () => {
       const user = userEvent.setup();
-      const mockUser1 = { id: "123", email: "old@example.com", email_notifications_enabled: true };
-      const mockUser2 = { id: "123", email: "new@example.com", email_notifications_enabled: true };
+      const mockUser1 = { id: "123", email: "old@example.com", email_notifications_enabled: true, is_admin: false };
+      const mockUser2 = { id: "123", email: "new@example.com", email_notifications_enabled: true, is_admin: false };
 
       mockAuthMe.mockResolvedValueOnce(mockUser1);
 

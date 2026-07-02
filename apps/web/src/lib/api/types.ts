@@ -557,6 +557,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/feature-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Feature Flags
+         * @description List every known feature flag with its live state (admin users only).
+         */
+        get: operations["get_feature_flags_v1_feature_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feature-flags/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Feature Flag
+         * @description Set a known feature flag's enabled state (admin users only).
+         *
+         *     PATCH (not PUT) so the browser call passes the API's deliberately pinned
+         *     CORS method allowlist (GET/POST/PATCH/DELETE — see app.main).
+         */
+        patch: operations["update_feature_flag_v1_feature_flags__name__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -784,6 +827,25 @@ export interface components {
             data: {
                 [key: string]: unknown;
             };
+        };
+        /** FeatureFlagItem */
+        FeatureFlagItem: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** FeatureFlagUpdate */
+        FeatureFlagUpdate: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** FeatureFlagsResponse */
+        FeatureFlagsResponse: {
+            /** Flags */
+            flags: components["schemas"]["FeatureFlagItem"][];
         };
         /**
          * FlightItinerary
@@ -1339,6 +1401,11 @@ export interface components {
              * @default true
              */
             email_notifications_enabled: boolean;
+            /**
+             * Is Admin
+             * @default false
+             */
+            is_admin: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -2102,6 +2169,61 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_feature_flags_v1_feature_flags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsResponse"];
+                };
+            };
+        };
+    };
+    update_feature_flag_v1_feature_flags__name__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureFlagUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagItem"];
+                };
             };
             /** @description Validation Error */
             422: {

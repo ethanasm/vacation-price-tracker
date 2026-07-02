@@ -11,6 +11,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.admins import is_admin_email
 from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
@@ -35,6 +36,17 @@ class UserResponse(BaseModel):
     id: str
     email: str
     email_notifications_enabled: bool = True
+    is_admin: bool = False
+
+
+def _user_response(user: "User") -> UserResponse:
+    """Build the shared user payload (admin status derived from ADMIN_EMAILS)."""
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        email_notifications_enabled=user.email_notifications_enabled,
+        is_admin=is_admin_email(user.email),
+    )
 
 
 class MobileTokenRequest(BaseModel):
@@ -236,11 +248,7 @@ async def mobile_token(
     return MobileTokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        user=UserResponse(
-            id=str(user.id),
-            email=user.email,
-            email_notifications_enabled=user.email_notifications_enabled,
-        ),
+        user=_user_response(user),
     )
 
 
@@ -465,11 +473,7 @@ async def e2e_mint_token(
     return MobileTokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        user=UserResponse(
-            id=str(user.id),
-            email=user.email,
-            email_notifications_enabled=user.email_notifications_enabled,
-        ),
+        user=_user_response(user),
     )
 
 
@@ -522,8 +526,4 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     if not user:
         raise AuthenticationRequired("User not found")
 
-    return UserResponse(
-        id=str(user.id),
-        email=user.email,
-        email_notifications_enabled=user.email_notifications_enabled,
-    )
+    return _user_response(user)

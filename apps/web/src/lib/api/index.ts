@@ -16,6 +16,10 @@ import type { components, operations } from "./types";
 // User
 export type UserResponse = components["schemas"]["UserResponse"];
 
+// Feature flags (admin users)
+export type FeatureFlagItem = components["schemas"]["FeatureFlagItem"];
+export type FeatureFlagsResponse = components["schemas"]["FeatureFlagsResponse"];
+
 // Trip types
 export type TripStatus = components["schemas"]["TripStatus"];
 export type TripCreate = components["schemas"]["TripCreate"];

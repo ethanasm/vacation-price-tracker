@@ -1033,6 +1033,81 @@
           }
         }
       }
+    },
+    "/v1/feature-flags": {
+      "get": {
+        "tags": [
+          "feature-flags"
+        ],
+        "summary": "Get Feature Flags",
+        "description": "List every known feature flag with its live state (admin users only).",
+        "operationId": "get_feature_flags_v1_feature_flags_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlagsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feature-flags/{name}": {
+      "patch": {
+        "tags": [
+          "feature-flags"
+        ],
+        "summary": "Update Feature Flag",
+        "description": "Set a known feature flag's enabled state (admin users only).\n\nPATCH (not PUT) so the browser call passes the API's deliberately pinned\nCORS method allowlist (GET/POST/PATCH/DELETE \u2014 see app.main).",
+        "operationId": "update_feature_flag_v1_feature_flags__name__patch",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureFlagUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlagItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1510,6 +1585,58 @@
         ],
         "title": "ElicitationSubmissionRequest",
         "description": "Request body for submitting elicitation form data.\n\nUsed with POST /v1/chat/elicitation/{tool_call_id} to submit\nuser-provided form data and complete a pending tool execution.\n\nAttributes:\n    thread_id: The conversation thread ID where elicitation occurred.\n    tool_name: Name of the tool being executed (for validation).\n    data: The form data submitted by the user."
+      },
+      "FeatureFlagItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "enabled"
+        ],
+        "title": "FeatureFlagItem"
+      },
+      "FeatureFlagUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "FeatureFlagUpdate"
+      },
+      "FeatureFlagsResponse": {
+        "properties": {
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureFlagItem"
+            },
+            "type": "array",
+            "title": "Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "flags"
+        ],
+        "title": "FeatureFlagsResponse"
       },
       "FlightItinerary": {
         "properties": {
@@ -2795,6 +2922,11 @@
             "type": "boolean",
             "title": "Email Notifications Enabled",
             "default": true
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
           }
         },
         "type": "object",
