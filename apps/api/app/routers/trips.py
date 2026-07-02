@@ -1,3 +1,4 @@
+import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -57,6 +58,8 @@ from app.services.temporal import (
     start_refresh_all_workflow,
     trigger_price_check_workflow,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -205,6 +208,16 @@ def _parse_skiplagged_trip_segments(flight_id: str) -> tuple[list[tuple[str, str
     )
 
 
+def _opt_str(value: object) -> str | None:
+    """Coerce a provider-native value to str, preserving None.
+
+    Kiwi raw payloads are stored in snapshots as-is; a field that arrives as a
+    number (e.g. a bare flight number) must not fail FlightSegment's str-typed
+    validation and 500 the whole trip-detail response.
+    """
+    return None if value is None else str(value)
+
+
 def _parse_kiwi_itinerary(direction: str, leg: dict) -> FlightItinerary:
     """Build a FlightItinerary from a Kiwi structured leg (outbound/inbound).
 
@@ -217,12 +230,12 @@ def _parse_kiwi_itinerary(direction: str, leg: dict) -> FlightItinerary:
             continue
         duration_seconds = seg.get("durationSeconds")
         segments.append(FlightSegment(
-            carrier_code=seg.get("carrier"),
-            flight_number=seg.get("flightNumber"),
-            departure_airport=seg.get("from"),
-            arrival_airport=seg.get("to"),
-            departure_time=seg.get("departureTime"),
-            arrival_time=seg.get("arrivalTime"),
+            carrier_code=_opt_str(seg.get("carrier")),
+            flight_number=_opt_str(seg.get("flightNumber")),
+            departure_airport=_opt_str(seg.get("from")),
+            arrival_airport=_opt_str(seg.get("to")),
+            departure_time=_opt_str(seg.get("departureTime")),
+            arrival_time=_opt_str(seg.get("arrivalTime")),
             duration_minutes=int(duration_seconds) // 60
             if isinstance(duration_seconds, (int, float))
             else None,
@@ -255,18 +268,18 @@ def _parse_kiwi_flight_offer(item: dict, index: int) -> FlightOffer | None:
         itineraries.append(_parse_kiwi_itinerary("return", inbound))
 
     out_segments = outbound.get("segments") or []
-    first_seg = out_segments[0] if out_segments and isinstance(out_segments[0], dict) else {}
-    carrier_code = item.get("carrier_code") or first_seg.get("carrier")
+    first_seg = out_segments[0] if isinstance(out_segments, list) and out_segments and isinstance(out_segments[0], dict) else {}
+    carrier_code = _opt_str(item.get("carrier_code") or first_seg.get("carrier"))
 
     return_flight_payload = None
     if inbound:
         in_segments = inbound.get("segments") or []
-        in_first = in_segments[0] if in_segments and isinstance(in_segments[0], dict) else {}
+        in_first = in_segments[0] if isinstance(in_segments, list) and in_segments and isinstance(in_segments[0], dict) else {}
         in_duration = inbound.get("durationSeconds")
         return_flight_payload = {
-            "flight_number": in_first.get("flightNumber"),
-            "departure_time": inbound.get("departureTime"),
-            "arrival_time": inbound.get("arrivalTime"),
+            "flight_number": _opt_str(in_first.get("flightNumber")),
+            "departure_time": _opt_str(inbound.get("departureTime")),
+            "arrival_time": _opt_str(inbound.get("arrivalTime")),
             "duration_minutes": int(in_duration) // 60
             if isinstance(in_duration, (int, float))
             else None,
@@ -277,17 +290,34 @@ def _parse_kiwi_flight_offer(item: dict, index: int) -> FlightOffer | None:
     return FlightOffer(
         id=str(item.get("id") or index),
         airline_code=carrier_code,
-        flight_number=first_seg.get("flightNumber") or item.get("flight_number"),
-        airline_name=item.get("airlines") or airline_display_name(carrier_code),
+        flight_number=_opt_str(first_seg.get("flightNumber") or item.get("flight_number")),
+        airline_name=_opt_str(item.get("airlines")) or airline_display_name(carrier_code),
         price=price,
-        departure_time=item.get("departure_time") or outbound.get("departureTime"),
-        arrival_time=item.get("arrival_time") or outbound.get("arrivalTime"),
+        departure_time=_opt_str(item.get("departure_time") or outbound.get("departureTime")),
+        arrival_time=_opt_str(item.get("arrival_time") or outbound.get("arrivalTime")),
         duration_minutes=item.get("duration_minutes")
         or (int(out_duration) // 60 if isinstance(out_duration, (int, float)) else None),
         stops=item.get("stops", outbound.get("stops", 0) or 0),
         return_flight=return_flight_payload,
         itineraries=itineraries,
     )
+
+
+def _parse_kiwi_flight_offer_safe(item: dict, index: int) -> FlightOffer | None:
+    """Parse a Kiwi offer, dropping (not raising on) malformed stored data.
+
+    Snapshots persist provider payloads as-is; one bad offer must drop just
+    that offer, never 500 the whole trip-detail response.
+    """
+    try:
+        return _parse_kiwi_flight_offer(item, index)
+    except Exception:  # noqa: BLE001 - one bad snapshot offer must not sink the response
+        logger.warning(
+            "Skipping unparseable Kiwi flight offer at index %d",
+            index,
+            extra={"event": "trips.kiwi_offer.unparseable", "offer_index": index},
+        )
+        return None
 
 
 def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOffer | None:
@@ -306,7 +336,7 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
     # Kiwi offers carry structured outbound/inbound legs with full segment
     # data — no flight-id string parsing needed.
     if item.get("provider") == "kiwi" or isinstance(item.get("outbound"), dict):
-        return _parse_kiwi_flight_offer(item, index)
+        return _parse_kiwi_flight_offer_safe(item, index)
 
     price = _coerce_positive_price(_extract_price(item))
     if price is None:

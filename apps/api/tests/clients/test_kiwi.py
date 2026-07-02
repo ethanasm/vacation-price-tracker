@@ -553,3 +553,18 @@ class TestKiwiTransportErrors:
     def test_custom_mcp_url_normalized(self):
         client = KiwiClient(mcp_url="https://example.test/mcp")
         assert client._mcp_url == "https://example.test/mcp/"
+
+
+class TestTotalResults:
+    @pytest.mark.anyio
+    async def test_total_results_reports_pre_slice_count(self):
+        itins = [_itinerary(price=100 + i, itinerary_id=f"itin-{i}") for i in range(5)]
+        client = KiwiClient()
+        mock_post = AsyncMock(return_value=_search_response(itins))
+        patcher = _patched_client(mock_post)
+        try:
+            result = await client.search_flights("SFO", "RDM", "2026-08-22", limit=2)
+        finally:
+            patcher.stop()
+        assert len(result.flights) == 2
+        assert result.total_results == 5

@@ -434,6 +434,7 @@ class KiwiClient:
         flights = self._parse_flights_response(response, currency)
         flights = _apply_max_stops(flights, max_stops)
         flights = _apply_sort(flights, sort)
+        total_results = len(flights)  # full post-filter count, before the page slice
         flights = flights[offset : offset + limit]
 
         return FlightSearchResult(
@@ -444,7 +445,7 @@ class KiwiClient:
             return_date=return_date,
             is_round_trip=return_date is not None,
             provider="kiwi",
-            total_results=len(flights),
+            total_results=total_results,
             currency=currency,
             success=True,
             error=None,

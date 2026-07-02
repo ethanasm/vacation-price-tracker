@@ -1817,3 +1817,23 @@ def test_parse_kiwi_flight_offer_degenerate_shapes():
     assert offer is not None
     assert offer.itineraries[0].segments == []
     assert offer.itineraries[0].stops == 0
+
+
+def test_parse_kiwi_flight_offer_coerces_non_string_fields():
+    """Provider-native numeric fields must not fail str-typed validation."""
+    offer_dict = _kiwi_offer()
+    offer_dict["outbound"]["segments"][0]["flightNumber"] = 3361
+    offer_dict["outbound"]["segments"][0]["carrier"] = 33
+    del offer_dict["inbound"]
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.itineraries[0].segments[0].flight_number == "3361"
+    assert offer.itineraries[0].segments[0].carrier_code == "33"
+    assert offer.flight_number == "3361"
+
+
+def test_parse_kiwi_flight_offer_unparseable_is_dropped_not_raised():
+    """A poisoned stored offer drops that offer instead of 500ing the response."""
+    poisoned = _kiwi_offer()
+    poisoned["outbound"]["segments"] = 42  # truthy non-iterable → TypeError inside
+    assert trips_module._parse_flight_offer(poisoned, 0, {}) is None
