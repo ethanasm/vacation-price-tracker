@@ -76,15 +76,18 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          deadline=$(( $(date +%s) + 1800 ))  # 30 min
           for wf in web.yml server.yml; do
+            deadline=$(( $(date +%s) + 1800 ))  # 30 min per workflow
             while true; do
+              # Tolerate transient API errors: treat a failed poll like an
+              # in-progress run and retry until the deadline.
               run=$(gh api "repos/${{ github.repository }}/actions/workflows/$wf/runs?head_sha=$HEAD_SHA&per_page=1" \
-                --jq '.workflow_runs[0] | if . == null then "absent absent" else "\(.status) \(.conclusion)" end')
+                --jq '.workflow_runs[0] | if . == null then "absent absent" else "\(.status) \(.conclusion)" end' \
+                || echo "poll-error poll-error")
               read -r status conclusion <<< "$run"
               if [ "$status" = "completed" ]; then
                 if [ "$conclusion" != "success" ]; then
-                  echo "::error::$wf concluded '$conclusion' for $HEAD_SHA — no trustworthy coverage; failing the scan."
+                  echo "::error::$wf concluded '$conclusion' for $HEAD_SHA — its coverage artifact can't be trusted, so the scan is skipped. Fix that workflow first; its failure is the real blocker."
                   exit 1
                 fi
                 echo "$wf completed successfully."
