@@ -130,6 +130,25 @@ state — these are the ways it goes wrong:
   real data, not a skeleton / spinner / empty state / error / blank page). If it
   doesn't, fix the wait/seed/selector and re-capture before posting. Posting a
   capture you never opened is the most common way this ships misleading material.
+- **Critique each frame like a designer, not just a validator.** "Nothing
+  overflows and nothing is clipped" is the *floor*, not the bar — an "after"
+  shot that merely renders is not automatically shippable. For every capture
+  (and at every viewport width you're claiming works), also ask:
+  - **Dead space:** is there a large empty region — especially at the bottom of
+    tall/mobile frames, or inside a stretched panel — where content should end
+    or the footer should sit? Pinned/stretched containers that made sense on
+    desktop often need to *flow* on mobile.
+  - **Avoidable wrapping:** did a row wrap onto two lines that could fit on one
+    by dropping a redundant label (keep the icon), tightening gaps, or shrinking
+    a font a step at that width?
+  - **Unused width:** do rows bunch to one side leaving a wide blank gutter?
+    Content on narrow screens should generally distribute across the line
+    (space-between) or fill it.
+  - **General polish:** inconsistent gutters, misaligned columns, orphaned
+    dividers at line starts/ends, text truncated where there was room.
+
+  If a reasonable designer would object to the frame, fix the layout and
+  re-shoot *before* posting — don't ship it and wait for the human to catch it.
 
 ## Debugging prod instead?
 

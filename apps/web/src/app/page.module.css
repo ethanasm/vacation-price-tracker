@@ -98,15 +98,29 @@
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
-  gap: 48px;
+  grid-template-areas:
+    "content card"
+    "extras card";
+  gap: 1.75rem 48px;
   align-items: center;
 }
 
 .heroContent {
+  grid-area: content;
+  align-self: end;
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
   min-width: 0; /* Allow shrinking below content size */
+}
+
+.heroExtras {
+  grid-area: extras;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
 }
 
 .badge {
@@ -217,6 +231,7 @@
 
 /* Sign-in card */
 .heroCard {
+  grid-area: card;
   justify-self: center;
   width: min(100%, 360px);
 }
@@ -275,15 +290,23 @@
   padding: 1.25rem 2rem 1.75rem;
 }
 
-/* Responsive: half-width reflow */
+/* Responsive: half-width reflow — sign-in card moves directly under the
+   tagline so it stays above the fold on small screens. */
 @media (max-width: 820px) {
   .heroGrid {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "content"
+      "card"
+      "extras";
+    gap: 2rem;
   }
 
-  .heroContent {
+  .heroContent,
+  .heroExtras {
     align-items: center;
     text-align: center;
+    align-self: auto;
   }
 
   .badge {
@@ -302,7 +325,8 @@
 
 @media (max-width: 719px) {
   .hero {
-    padding: 3.25rem 1.5rem 2rem;
+    padding: 2.5rem 1.25rem 2rem;
+    align-items: flex-start;
   }
 
   .featuresRow {
