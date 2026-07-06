@@ -50,6 +50,15 @@ class _BoomResend:
         raise EmailSendError("resend down")
 
 
+class _DuplicateKeyResend:
+    """Resend rejecting an idempotency-key reuse with a different payload."""
+
+    async def send(self, **_kwargs):
+        from app.clients.email import EmailSendError
+
+        raise EmailSendError("Resend rejected send: 409 conflict", status_code=409)
+
+
 class _BoomSession:
     async def __aenter__(self):
         raise RuntimeError("db down")
@@ -195,6 +204,26 @@ async def test_email_failure_is_swallowed(configured, monkeypatch):
 
     assert result["sent"] == 0
     assert result["skipped"] is False  # attempted, but failed gracefully
+
+
+@pytest.mark.asyncio
+async def test_email_idempotency_conflict_is_benign(configured, monkeypatch, caplog):
+    """The cron fallback re-sends today's key with a different payload; the
+    409 Resend answers with must log as info, not a daily ERROR."""
+    import logging
+
+    monkeypatch.setattr(hc, "ResendClient", lambda: _DuplicateKeyResend())
+    await _seed(configured)
+
+    with caplog.at_level(logging.INFO):
+        result = await hc.run_health_check_activity()
+
+    assert result["sent"] == 0
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any(
+        getattr(r, "event", None) == "health.check.email.duplicate_skipped"
+        for r in caplog.records
+    )
 
 
 @pytest.mark.asyncio

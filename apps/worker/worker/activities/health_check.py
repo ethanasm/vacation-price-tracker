@@ -14,7 +14,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app.clients.axiom_query import query_count
-from app.clients.email import ResendClient
+from app.clients.email import EmailSendError, ResendClient
 from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.constants import NotificationStatus, TripStatus
@@ -415,6 +415,21 @@ async def run_health_check_activity(refresh_summary: dict | None = None) -> dict
             idempotency_key=f"health-summary-{now.strftime('%Y%m%d')}",
         )
         sent = len(recipients)
+    except EmailSendError as exc:
+        if exc.status_code == 409:
+            # Today's digest was already sent (the chained run beat the cron
+            # fallback); the fallback's payload differs (fresh run_at), so
+            # Resend rejects the key reuse with 409. Benign by design.
+            logger.info(
+                "Health digest already sent today; duplicate send skipped",
+                extra={"event": "health.check.email.duplicate_skipped"},
+            )
+        else:
+            logger.error(
+                "Health digest send failed",
+                exc_info=exc,
+                extra={"event": "health.check.email.failed"},
+            )
     except Exception as exc:
         logger.error(
             "Health digest render/send failed",
