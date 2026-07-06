@@ -8,6 +8,7 @@
 import type { components } from './api/types';
 
 export type FlightOffer = components['schemas']['FlightOffer'];
+export type FlightItinerary = components['schemas']['FlightItinerary'];
 export type FlightSegment = components['schemas']['FlightSegment'];
 export type HotelOffer = components['schemas']['HotelOffer'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
@@ -86,6 +87,10 @@ export function clockLabel(iso?: string | null): string {
   return `${h}:${min}${ampm}`;
 }
 
+function stopsWord(stops: number): string {
+  return stops <= 0 ? 'nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`;
+}
+
 export function flightSummaryLine(offer: FlightOffer): string {
   const segs = (offer.itineraries ?? [])[0]?.segments ?? [];
   const first = segs[0];
@@ -94,8 +99,25 @@ export function flightSummaryLine(offer: FlightOffer): string {
   const arr = last?.arrival_airport ?? '';
   const depT = clockLabel(first?.departure_time ?? offer.departure_time);
   const arrT = clockLabel(last?.arrival_time ?? offer.arrival_time);
-  const stops = offer.stops <= 0 ? 'nonstop' : `${offer.stops} stop${offer.stops > 1 ? 's' : ''}`;
-  return `${depT} ${dep} → ${arrT} ${arr} · ${stops}`.trim();
+  return `${depT} ${dep} → ${arrT} ${arr} · ${stopsWord(offer.stops)}`.trim();
+}
+
+/**
+ * Summary line for the return itinerary of a round trip (`itineraries[1]`), or
+ * `null` for a one-way offer with no return leg. Mirrors {@link flightSummaryLine}
+ * so the collapsed card can show both legs, matching the web trip detail.
+ */
+export function returnSummaryLine(offer: FlightOffer): string | null {
+  const ret = (offer.itineraries ?? [])[1];
+  const segs = ret?.segments ?? [];
+  if (segs.length === 0) return null;
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const dep = first?.departure_airport ?? '';
+  const arr = last?.arrival_airport ?? '';
+  const depT = clockLabel(first?.departure_time);
+  const arrT = clockLabel(last?.arrival_time);
+  return `${depT} ${dep} → ${arrT} ${arr} · ${stopsWord(ret?.stops ?? 0)}`.trim();
 }
 
 /**
