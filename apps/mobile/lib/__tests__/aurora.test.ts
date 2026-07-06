@@ -13,6 +13,8 @@ import {
   computeTripTotal,
   buildChartSeries,
   flightSummaryLine,
+  returnSummaryLine,
+  displayLegs,
   clockLabel,
   makeIdempotencyKey,
   isAwaitingInitialFetch,
@@ -114,6 +116,85 @@ test('flightSummaryLine builds a departure→arrival + stop count label', () => 
   assert.equal(flightSummaryLine(nonstop), '7:05a SFO → 9:00a RDM · nonstop');
   const oneStop = (flights as FlightOffer[])[1]; // f-ua: 1 stop
   assert.ok(flightSummaryLine(oneStop).includes('1 stop'));
+});
+
+test('returnSummaryLine summarizes the return itinerary, or null for one-way', () => {
+  // One-way offers (no itineraries[1]) return null.
+  assert.equal(returnSummaryLine((flights as FlightOffer[])[0]), null);
+
+  const roundTrip = {
+    id: 'f-rt',
+    airline_code: 'AS',
+    airline_name: 'Alaska',
+    price: '185.00',
+    stops: 0,
+    itineraries: [
+      { direction: 'outbound', stops: 0, segments: [
+        { carrier_code: 'AS', flight_number: '3361', departure_airport: 'SFO', arrival_airport: 'RDM', departure_time: '2025-08-22T16:28:00', arrival_time: '2025-08-22T18:07:00' }] },
+      { direction: 'return', stops: 0, segments: [
+        { carrier_code: 'AS', flight_number: '3360', departure_airport: 'RDM', arrival_airport: 'SFO', departure_time: '2025-08-26T18:47:00', arrival_time: '2025-08-26T20:33:00' }] },
+    ],
+  } as unknown as FlightOffer;
+  assert.equal(returnSummaryLine(roundTrip), '6:47p RDM → 8:33p SFO · nonstop');
+
+  // A connecting return leg reports its stop count from the itinerary, not the offer.
+  const connectingReturn = {
+    id: 'f-rt2',
+    price: '200.00',
+    stops: 0,
+    itineraries: [
+      { direction: 'outbound', stops: 0, segments: [
+        { carrier_code: 'UA', flight_number: '1', departure_airport: 'SFO', arrival_airport: 'RDM', departure_time: '2025-08-22T08:00:00', arrival_time: '2025-08-22T10:00:00' }] },
+      { direction: 'return', stops: 1, segments: [
+        { carrier_code: 'UA', flight_number: '2', departure_airport: 'RDM', arrival_airport: 'DEN', departure_time: '2025-08-26T11:00:00', arrival_time: '2025-08-26T13:00:00' },
+        { carrier_code: 'UA', flight_number: '3', departure_airport: 'DEN', arrival_airport: 'SFO', departure_time: '2025-08-26T14:00:00', arrival_time: '2025-08-26T16:00:00' }] },
+    ],
+  } as unknown as FlightOffer;
+  assert.equal(returnSummaryLine(connectingReturn), '11:00a RDM → 4:00p SFO · 1 stop');
+});
+
+test('displayLegs labels legs by original position and skips empty ones', () => {
+  // One-way: a single OUTBOUND leg, stops/duration carried through.
+  const oneWay = displayLegs((flights as FlightOffer[])[1]); // f-ua: 1 stop, 2 segments
+  assert.equal(oneWay.length, 1);
+  assert.equal(oneWay[0].label, 'OUTBOUND');
+  assert.equal(oneWay[0].stops, 1);
+  assert.equal(oneWay[0].segments.length, 2);
+
+  // Round trip: outbound then return, labeled positionally.
+  const roundTrip = {
+    id: 'f-rt',
+    price: '185.00',
+    stops: 0,
+    itineraries: [
+      { direction: 'outbound', stops: 0, total_duration_minutes: 99, segments: [
+        { carrier_code: 'AS', flight_number: '3361', departure_airport: 'SFO', arrival_airport: 'RDM', departure_time: '2025-08-22T16:28:00', arrival_time: '2025-08-22T18:07:00' }] },
+      { direction: 'return', stops: 0, segments: [
+        { carrier_code: 'AS', flight_number: '3360', departure_airport: 'RDM', arrival_airport: 'SFO', departure_time: '2025-08-26T18:47:00', arrival_time: '2025-08-26T20:33:00' }] },
+    ],
+  } as unknown as FlightOffer;
+  const rt = displayLegs(roundTrip);
+  assert.deepEqual(rt.map((l) => l.label), ['OUTBOUND', 'RETURN']);
+  assert.equal(rt[0].totalMinutes, 99);
+  assert.equal(rt[1].totalMinutes, null);
+
+  // An empty outbound leg is dropped WITHOUT relabeling the return as outbound.
+  const emptyOutbound = {
+    id: 'f-eo',
+    price: '150.00',
+    stops: 0,
+    itineraries: [
+      { direction: 'outbound', stops: 0, segments: [] },
+      { direction: 'return', stops: 0, segments: [
+        { carrier_code: 'AS', flight_number: '9', departure_airport: 'RDM', arrival_airport: 'SFO', departure_time: '2025-08-26T18:47:00', arrival_time: '2025-08-26T20:33:00' }] },
+    ],
+  } as unknown as FlightOffer;
+  const eo = displayLegs(emptyOutbound);
+  assert.equal(eo.length, 1);
+  assert.equal(eo[0].label, 'RETURN');
+
+  // No itineraries → no legs.
+  assert.deepEqual(displayLegs({ id: 'x', price: '1', stops: 0 } as unknown as FlightOffer), []);
 });
 
 test('clockLabel handles noon, midnight, and empty input', () => {

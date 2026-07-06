@@ -9,18 +9,15 @@ import {
   layoverLabel,
   multiCarrierSubtitle,
   flightSummaryLine,
+  returnSummaryLine,
+  displayLegs,
   formatMoneyString,
   clockLabel,
   type FlightOffer,
   type FlightSegment,
 } from '@/lib/aurora';
 
-/** Outbound itinerary (first) of an offer. */
-function outboundSegments(offer: FlightOffer): FlightSegment[] {
-  return (offer.itineraries ?? [])[0]?.segments ?? [];
-}
-
-/** Unique carrier codes across the outbound segments (for the multi-carrier pair). */
+/** Unique carrier codes across every segment of every leg (for the multi-carrier pair). */
 function carrierCodes(segs: FlightSegment[]): string[] {
   return [...new Set(segs.map((s) => (s.carrier_code ?? '').toUpperCase()).filter(Boolean))];
 }
@@ -43,7 +40,8 @@ function durationLabel(minutes?: number | null): string {
   if (m <= 0) return '';
   const h = Math.floor(m / 60);
   const min = m % 60;
-  return h > 0 ? `${h}h ${min}m` : `${min}m`;
+  if (h <= 0) return `${min}m`;
+  return min > 0 ? `${h}h ${min}m` : `${h}h`;
 }
 
 /** Collapsed: radio + airline chip + name + stops badge + price + chevron, with a
@@ -63,12 +61,15 @@ export function FlightRow({
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const c = tokens.color;
-  const segs = outboundSegments(offer);
-  const codes = carrierCodes(segs);
+  const legs = displayLegs(offer);
+  const outbound = legs.find((l) => l.label === 'OUTBOUND')?.segments ?? [];
+  // Carrier codes span every leg so a return-only codeshare still reads as multi-carrier.
+  const codes = carrierCodes(legs.flatMap((l) => l.segments));
   const multiCarrier = codes.length > 1;
-  const viaCode = offer.stops > 0 ? segs[0]?.arrival_airport ?? null : null;
+  const viaCode = offer.stops > 0 ? outbound[0]?.arrival_airport ?? null : null;
   const badge = stopsBadge(offer.stops, viaCode);
   const price = formatMoneyString(offer.price);
+  const returnLine = returnSummaryLine(offer);
 
   return (
     <AuroraCard
@@ -126,41 +127,66 @@ export function FlightRow({
       <Text numberOfLines={1} style={[styles.summary, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
         {flightSummaryLine(offer)}
       </Text>
+      {returnLine ? (
+        <Text numberOfLines={1} style={[styles.summary, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
+          {`Return · ${returnLine}`}
+        </Text>
+      ) : null}
 
       {expanded ? (
         <View testID={`flight-detail-${offer.id}`} style={[styles.detail, { borderTopColor: c.hairline }]}>
-          <Text style={[styles.detailHeading, { color: c.textMuted, fontFamily: tokens.font[700] }]}>OUTBOUND</Text>
-          {segs.map((seg, i) => {
-            const next = segs[i + 1];
-            const layMin = next ? minutesBetween(seg.arrival_time, next.departure_time) : 0;
+          {legs.map((leg, legIdx) => {
+            const total = durationLabel(leg.totalMinutes);
             return (
-              <View key={`${seg.carrier_code}-${seg.flight_number}-${i}`}>
-                <View style={styles.legRow}>
-                  <AirlineChip code={seg.carrier_code} size={24} />
-                  <View style={styles.legTimes}>
-                    <Text style={[styles.legPort, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
-                      {`${clockLabel(seg.departure_time)} ${seg.departure_airport ?? ''}`}
-                    </Text>
-                    <View style={styles.progress}>
-                      <View style={[styles.progressLine, { backgroundColor: c.hairlineAlt }]} />
-                      <Plane size={12} color={c.primary} strokeWidth={2} />
-                    </View>
-                    <Text style={[styles.legPort, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
-                      {`${clockLabel(seg.arrival_time)} ${seg.arrival_airport ?? ''}`}
-                    </Text>
-                  </View>
-                  <Text style={[styles.legMeta, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
-                    {`${durationLabel(seg.duration_minutes)} · ${(seg.carrier_code ?? '').toUpperCase()} ${seg.flight_number ?? ''}`.trim()}
+              <View
+                key={`leg-${legIdx}`}
+                testID={`flight-itinerary-${offer.id}-${legIdx}`}
+                style={legIdx > 0 ? [styles.itinerary, { borderTopColor: c.hairline }] : null}
+              >
+                <View style={styles.itineraryHeadingRow}>
+                  <Text style={[styles.detailHeading, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
+                    {leg.label}
                   </Text>
+                  {total ? (
+                    <Text style={[styles.itineraryTotal, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+                      {`${total} total`}
+                    </Text>
+                  ) : null}
                 </View>
-                {next ? (
-                  <View style={styles.layoverRow}>
-                    <StatusChip
-                      tone="layover"
-                      label={layoverLabel(layMin, seg.arrival_airport ?? '', seg.arrival_airport ?? '')}
-                    />
-                  </View>
-                ) : null}
+                {leg.segments.map((seg, i) => {
+                  const next = leg.segments[i + 1];
+                  const layMin = next ? minutesBetween(seg.arrival_time, next.departure_time) : 0;
+                  return (
+                    <View key={`${seg.carrier_code}-${seg.flight_number}-${i}`}>
+                      <View style={styles.legRow}>
+                        <AirlineChip code={seg.carrier_code} size={24} />
+                        <View style={styles.legTimes}>
+                          <Text style={[styles.legPort, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
+                            {`${clockLabel(seg.departure_time)} ${seg.departure_airport ?? ''}`}
+                          </Text>
+                          <View style={styles.progress}>
+                            <View style={[styles.progressLine, { backgroundColor: c.hairlineAlt }]} />
+                            <Plane size={12} color={c.primary} strokeWidth={2} />
+                          </View>
+                          <Text style={[styles.legPort, { color: c.textStrong, fontFamily: tokens.font[700] }]}>
+                            {`${clockLabel(seg.arrival_time)} ${seg.arrival_airport ?? ''}`}
+                          </Text>
+                        </View>
+                        <Text style={[styles.legMeta, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+                          {`${durationLabel(seg.duration_minutes)} · ${(seg.carrier_code ?? '').toUpperCase()} ${seg.flight_number ?? ''}`.trim()}
+                        </Text>
+                      </View>
+                      {next ? (
+                        <View style={styles.layoverRow}>
+                          <StatusChip
+                            tone="layover"
+                            label={layoverLabel(layMin, seg.arrival_airport ?? '', seg.arrival_airport ?? '')}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             );
           })}
@@ -186,6 +212,9 @@ const styles = StyleSheet.create({
   price: { fontSize: 16, letterSpacing: -0.3 },
   summary: { fontSize: 12 },
   detail: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 8 },
+  itinerary: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 8, marginTop: 2 },
+  itineraryHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  itineraryTotal: { fontSize: 10, letterSpacing: 0.3 },
   detailHeading: { fontSize: 10, letterSpacing: 0.6 },
   legRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   legTimes: { flex: 1, gap: 2 },

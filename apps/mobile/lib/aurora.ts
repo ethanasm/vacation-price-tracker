@@ -8,6 +8,7 @@
 import type { components } from './api/types';
 
 export type FlightOffer = components['schemas']['FlightOffer'];
+export type FlightItinerary = components['schemas']['FlightItinerary'];
 export type FlightSegment = components['schemas']['FlightSegment'];
 export type HotelOffer = components['schemas']['HotelOffer'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
@@ -86,16 +87,73 @@ export function clockLabel(iso?: string | null): string {
   return `${h}:${min}${ampm}`;
 }
 
+function stopsWord(stops: number): string {
+  return stops <= 0 ? 'nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`;
+}
+
+/** A renderable flight leg with a stable OUTBOUND/RETURN label. */
+export interface FlightLeg {
+  label: 'OUTBOUND' | 'RETURN';
+  segments: FlightSegment[];
+  stops: number;
+  totalMinutes: number | null;
+}
+
+/**
+ * Renderable legs of an offer, labeled by their **original** itinerary position
+ * (index 0 = outbound, any later itinerary = return) and skipping legs that
+ * carry no segments. Both the collapsed summary and the expanded detail read
+ * from this single source, so a leg can never be labeled OUTBOUND in one place
+ * and RETURN in the other, and dropping an empty outbound leg never relabels
+ * the return as outbound. Mirrors the web trip detail, which renders itinerary 0
+ * as "Outbound" and itinerary 1 as "Return" positionally.
+ */
+export function displayLegs(offer: FlightOffer): FlightLeg[] {
+  const legs: FlightLeg[] = [];
+  (offer.itineraries ?? []).forEach((itin, i) => {
+    const segments = itin.segments ?? [];
+    if (segments.length === 0) return;
+    legs.push({
+      label: i === 0 ? 'OUTBOUND' : 'RETURN',
+      segments,
+      stops: itin.stops ?? Math.max(segments.length - 1, 0),
+      totalMinutes: itin.total_duration_minutes ?? null,
+    });
+  });
+  return legs;
+}
+
+function legSummary(segs: FlightSegment[], stops: number): string {
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const dep = first?.departure_airport ?? '';
+  const arr = last?.arrival_airport ?? '';
+  const depT = clockLabel(first?.departure_time);
+  const arrT = clockLabel(last?.arrival_time);
+  return `${depT} ${dep} → ${arrT} ${arr} · ${stopsWord(stops)}`.trim();
+}
+
 export function flightSummaryLine(offer: FlightOffer): string {
-  const segs = (offer.itineraries ?? [])[0]?.segments ?? [];
+  const outbound = displayLegs(offer).find((l) => l.label === 'OUTBOUND');
+  const segs = outbound?.segments ?? [];
   const first = segs[0];
   const last = segs[segs.length - 1];
   const dep = first?.departure_airport ?? '';
   const arr = last?.arrival_airport ?? '';
   const depT = clockLabel(first?.departure_time ?? offer.departure_time);
   const arrT = clockLabel(last?.arrival_time ?? offer.arrival_time);
-  const stops = offer.stops <= 0 ? 'nonstop' : `${offer.stops} stop${offer.stops > 1 ? 's' : ''}`;
-  return `${depT} ${dep} → ${arrT} ${arr} · ${stops}`.trim();
+  return `${depT} ${dep} → ${arrT} ${arr} · ${stopsWord(offer.stops)}`.trim();
+}
+
+/**
+ * Summary line for the return leg of a round trip, or `null` for a one-way
+ * offer. Reads the RETURN leg from {@link displayLegs} so it stays consistent
+ * with the expanded detail's labeling.
+ */
+export function returnSummaryLine(offer: FlightOffer): string | null {
+  const ret = displayLegs(offer).find((l) => l.label === 'RETURN');
+  if (!ret) return null;
+  return legSummary(ret.segments, ret.stops);
 }
 
 /**
