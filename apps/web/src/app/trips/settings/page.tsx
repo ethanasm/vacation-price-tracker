@@ -111,7 +111,9 @@ export default function SettingsPage() {
   // Middleware redirects unauthenticated users; show a shell while auth loads.
   if (isLoading || !user) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-8 text-muted-foreground">Loading…</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-4 py-8 text-muted-foreground">Loading…</div>
+      </div>
     );
   }
 
@@ -138,8 +140,13 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <Button
+    // The app body is height:100vh + overflow:hidden (Aurora canvas), so every
+    // route must scroll internally — without this wrapper the page clips at
+    // the viewport and content below the fold (e.g. the Admin card's last
+    // rows) is unreachable.
+    <div data-testid="settings-scroll-region" className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <Button
         variant="ghost"
         size="sm"
         className="mb-4"
@@ -191,7 +198,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {user.is_admin && <AdminFlagsCard />}
+        {user.is_admin && <AdminFlagsCard />}
+      </div>
     </div>
   );
 }
