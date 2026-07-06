@@ -87,9 +87,16 @@ async def get_refresh_progress(refresh_group_id: str) -> dict:
         if exc.status is None:
             raise
         return await _status_from_execution(handle, exc.status)
+    except temporal_client.WorkflowQueryFailedError:
+        # PriceCheckWorkflow registers no refresh_progress query handler, so the
+        # server fails the query ("Query handler ... expected but not found").
+        # The SDK surfaces that as WorkflowQueryFailedError (a TemporalError,
+        # NOT an RPCError) — fall back to describe().
+        description = await handle.describe()
+        return await _status_from_execution(handle, description.status)
     except temporal_client.RPCError as exc:
-        # PriceCheckWorkflow rejects unknown queries with a generic RPC error
-        # rather than WorkflowQueryRejectedError; fall back to describe().
+        # Older servers reject unknown queries with a generic RPC error
+        # rather than WorkflowQueryFailedError; fall back to describe().
         if exc.status != temporal_client.RPCStatusCode.INVALID_ARGUMENT:
             raise
         description = await handle.describe()

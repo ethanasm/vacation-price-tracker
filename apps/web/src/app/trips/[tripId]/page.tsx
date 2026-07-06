@@ -106,6 +106,11 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
   }
 }
 
+// Window after creation during which a snapshot-less trip is assumed to have
+// its initial server-side price fetch still in flight (creation starts a
+// PriceCheckWorkflow). Mirrors apps/mobile/lib/aurora.ts.
+const INITIAL_FETCH_WINDOW_MS = 15 * 60_000;
+
 const INITIAL_SELECTION: SelectionState = {
   selectedFlightId: null,
   expandedFlightId: null,
@@ -662,11 +667,13 @@ function FlightsList({
   selectedFlightKey,
   expandedFlightKey,
   onSelectFlight,
+  isFetching = false,
 }: {
   flights: ApiFlightOffer[];
   selectedFlightKey: string | null;
   expandedFlightKey: string | null;
   onSelectFlight: (stableKey: string) => void;
+  isFetching?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<FlightSortKey>("price");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -708,6 +715,14 @@ function FlightsList({
   }, [flights, sortKey, sortDir]);
 
   if (flights.length === 0) {
+    if (isFetching) {
+      return (
+        <div className={styles.emptyChart} data-testid="flights-fetching">
+          <Loader2 className={`${styles.emptyChartIcon} animate-spin`} />
+          <p>Fetching latest flight prices…</p>
+        </div>
+      );
+    }
     return (
       <div className={styles.emptyChart}>
         <Plane className={styles.emptyChartIcon} />
@@ -747,13 +762,23 @@ function HotelsList({
   selectedHotelKey,
   onSelectHotel,
   nights,
+  isFetching = false,
 }: {
   hotels: ApiHotelOffer[];
   selectedHotelKey: string | null;
   onSelectHotel: (stableKey: string) => void;
   nights: number;
+  isFetching?: boolean;
 }) {
   if (hotels.length === 0) {
+    if (isFetching) {
+      return (
+        <div className={styles.emptyChart} data-testid="hotels-fetching">
+          <Loader2 className={`${styles.emptyChartIcon} animate-spin`} />
+          <p>Fetching latest hotel prices…</p>
+        </div>
+      );
+    }
     return (
       <div className={styles.emptyChart}>
         <Hotel className={styles.emptyChartIcon} />
@@ -988,43 +1013,80 @@ export default function TripDetailPage({
     }
   };
 
-  const pollRefreshStatus = async (refreshGroupId: string) => {
-    const POLL_INTERVAL_MS = 2_000;
-    const INITIAL_DELAY_MS = 500;
-    const MAX_POLL_MS = 60_000;
-    const deadline = Date.now() + MAX_POLL_MS;
-    let first = true;
+  const pollRefreshStatus = useCallback(
+    async (refreshGroupId: string) => {
+      const POLL_INTERVAL_MS = 2_000;
+      const INITIAL_DELAY_MS = 500;
+      const MAX_POLL_MS = 60_000;
+      const MAX_NOT_FOUND = 3;
+      const deadline = Date.now() + MAX_POLL_MS;
+      let first = true;
+      let notFoundCount = 0;
 
-    while (Date.now() < deadline) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, first ? INITIAL_DELAY_MS : POLL_INTERVAL_MS)
-      );
-      first = false;
-      try {
-        const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
-        if (status.status === "completed") {
-          setIsRefreshing(false);
-          return;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, first ? INITIAL_DELAY_MS : POLL_INTERVAL_MS)
+        );
+        first = false;
+        try {
+          const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
+          notFoundCount = 0;
+          if (status.status === "completed") {
+            // Refetch directly — SSE also delivers the snapshot, but the
+            // stream can be expired/disconnected, so don't depend on it.
+            await fetchTripDetails(false);
+            setIsRefreshing(false);
+            return;
+          }
+          if (status.status === "failed") {
+            toast.error(
+              status.error
+                ? `Price refresh failed: ${status.error}`
+                : "Price refresh failed. Please try again in a moment."
+            );
+            setIsRefreshing(false);
+            return;
+          }
+          // "running" / "pending" — keep polling.
+        } catch (err) {
+          // The endpoint may briefly 404 while Temporal registers the
+          // workflow — tolerate a few, but a persistent 404 means the
+          // workflow doesn't exist (e.g. history already purged): stop.
+          if (err instanceof ApiError && err.status === 404) {
+            notFoundCount += 1;
+            if (notFoundCount >= MAX_NOT_FOUND) {
+              setIsRefreshing(false);
+              return;
+            }
+          }
+          // Other transient failures: keep polling until the deadline.
         }
-        if (status.status === "failed") {
-          toast.error(
-            status.error
-              ? `Price refresh failed: ${status.error}`
-              : "Price refresh failed. Please try again in a moment."
-          );
-          setIsRefreshing(false);
-          return;
-        }
-        // "running" / "pending" — keep polling.
-      } catch {
-        // Status endpoint may briefly 404 while Temporal registers the workflow;
-        // ignore transient failures and keep polling until the deadline.
       }
-    }
-    // Timed out waiting for completion — stop the spinner and stay quiet.
-    // SSE will still deliver the snapshot if/when it lands.
-    setIsRefreshing(false);
-  };
+      // Timed out waiting for completion — stop the spinner and stay quiet.
+      // SSE will still deliver the snapshot if/when it lands.
+      setIsRefreshing(false);
+    },
+    [fetchTripDetails]
+  );
+
+  // Creating a trip kicks off an initial PriceCheckWorkflow server-side with
+  // the deterministic id `price-check-<tripId>`. When the page loads a
+  // just-created trip that has no snapshots yet, surface that in-flight fetch
+  // instead of a bare "No offers" state: show the refreshing indicator and
+  // poll until it lands. Recency-gated so an old snapshot-less trip doesn't
+  // spin on every visit.
+  const initialFetchPollStarted = useRef(false);
+  useEffect(() => {
+    if (initialFetchPollStarted.current) return;
+    if (isLoading || !trip) return;
+    if (priceHistory.length > 0) return;
+    if (trip.status.toLowerCase() !== "active") return;
+    const createdAt = Date.parse(trip.created_at ?? "");
+    if (!Number.isFinite(createdAt) || Date.now() - createdAt > INITIAL_FETCH_WINDOW_MS) return;
+    initialFetchPollStarted.current = true;
+    setIsRefreshing(true);
+    void pollRefreshStatus(`price-check-${tripId}`);
+  }, [isLoading, trip, priceHistory, tripId, pollRefreshStatus]);
 
   const handleBack = useCallback(() => {
     router.push("/trips");
@@ -1329,6 +1391,7 @@ export default function TripDetailPage({
                     selectedFlightKey={selectedFlightKey}
                     expandedFlightKey={selection.expandedFlightId}
                     onSelectFlight={(id) => dispatchSelection({ type: "selectFlight", id })}
+                    isFetching={isRefreshing}
                   />
                 ) : (
                   <HotelsList
@@ -1336,6 +1399,7 @@ export default function TripDetailPage({
                     selectedHotelKey={selectedHotelKey}
                     onSelectHotel={(id) => dispatchSelection({ type: "selectHotel", id })}
                     nights={nights}
+                    isFetching={isRefreshing}
                   />
                 )}
               </>
@@ -1350,6 +1414,7 @@ export default function TripDetailPage({
                   selectedFlightKey={selectedFlightKey}
                   expandedFlightKey={selection.expandedFlightId}
                   onSelectFlight={(id) => dispatchSelection({ type: "selectFlight", id })}
+                  isFetching={isRefreshing}
                 />
               </>
             )}

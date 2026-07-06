@@ -1909,6 +1909,61 @@ describe("TripDetailPage", () => {
     });
   });
 
+  describe("initial price fetch (just-created trip)", () => {
+    it("auto-polls the creation workflow and shows the fetching state", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, created_at: new Date().toISOString() },
+          price_history: [],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // The in-flight initial fetch is surfaced instead of a bare empty state.
+      await waitFor(() => {
+        expect(screen.getByTestId("flights-fetching")).toBeInTheDocument();
+      });
+
+      await waitFor(
+        () => {
+          expect(mockGetRefreshStatus).toHaveBeenCalledWith("price-check-test-trip");
+        },
+        { timeout: 3000 }
+      );
+
+      // Poll reports completed → details are refetched (the completion path
+      // awaits the refetch before clearing the fetching state, so the spinner
+      // disappearing proves the refetch ran — no SSE dependency).
+      await waitFor(
+        () => {
+          expect(screen.queryByTestId("flights-fetching")).not.toBeInTheDocument();
+        },
+        { timeout: 5000 }
+      );
+    });
+
+    it("does not auto-poll an old snapshot-less trip", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData },
+          price_history: [],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
+      });
+      expect(mockGetRefreshStatus).not.toHaveBeenCalled();
+    });
+  });
+
   describe("SSE real-time updates", () => {
     beforeEach(() => {
       mockSSEContext.priceUpdates = [];

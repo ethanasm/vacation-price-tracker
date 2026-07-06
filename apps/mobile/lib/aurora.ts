@@ -209,3 +209,27 @@ export function buildChartSeries(
   points.push({ label: 'Now', total: currentTotal, hotel: currentHotel });
   return { points, nowLabel: `Now $${Math.round(currentTotal).toLocaleString('en-US')}` };
 }
+
+/**
+ * Window after creation during which a snapshot-less trip is assumed to have
+ * its initial server-side price fetch still in flight (trip creation starts a
+ * PriceCheckWorkflow). Mirrors the web trip-detail page.
+ */
+export const INITIAL_FETCH_WINDOW_MS = 15 * 60_000;
+
+/**
+ * True when a just-created active trip has no snapshots yet — the detail
+ * screen shows a fetching indicator and polls until the first snapshot lands.
+ * Recency-gated so an old snapshot-less trip doesn't poll on every visit.
+ */
+export function isAwaitingInitialFetch(
+  trip: { status: string; created_at?: string | null } | null | undefined,
+  history: unknown[],
+  now: number = Date.now(),
+): boolean {
+  if (!trip || history.length > 0) return false;
+  if (trip.status !== 'active') return false;
+  const created = Date.parse(trip.created_at ?? '');
+  if (!Number.isFinite(created)) return false;
+  return now - created <= INITIAL_FETCH_WINDOW_MS;
+}
