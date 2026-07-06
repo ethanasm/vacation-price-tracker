@@ -96,25 +96,61 @@ comment/typo fix) don't need an edit, but when in doubt, update it.
 
 ### 4. Attach visual review material if the diff touches UI
 
-Run `git diff --name-only main...HEAD` and match against the web UI paths:
+A UI change on **either surface** — web (Next.js) or mobile (Expo) — needs
+before/after screenshots in the PR body so reviewers never have to pull the
+branch to see what changed. Run `git diff --name-only origin/main...HEAD` (use
+`origin/main`, not a possibly-stale local `main`) and match against the UI paths
+for **both** surfaces:
 
+**Web** (Next.js):
 - `apps/web/src/app/**`
 - `apps/web/src/components/**`
 - `apps/web/src/context/**`
 - `apps/web/src/hooks/**`
 - `apps/web/src/lib/**/*.tsx`
 
-If anything matches, map the touched files to the affected routes (e.g.
+**Mobile** (Expo — screens, layouts, and RN components):
+- `apps/mobile/app/**`
+- `apps/mobile/components/**`
+- `apps/mobile/**/*.tsx`
+
+If nothing matches on either list, skip this step. Otherwise capture **before
+and after** where layout changed (screenshot HEAD, then
+`git checkout HEAD^ -- <changed files>`, re-shoot, restore — never `git stash`
+on a clean tree, it silently no-ops and yields two "after" shots), in both light
+and dark, using the per-surface capture path below.
+
+**Web capture.** Map the touched files to routes (e.g.
 `src/app/trips/[tripId]/page.tsx` → `/trips/<id>`) and use the **`debug-web`**
-skill to capture full-page screenshots in both `--project=light` and
-`--project=dark`. Capture **before and after** where layout changed (screenshot
-HEAD, then `git checkout HEAD^ -- <changed files>`, re-shoot, restore — never
-`git stash` on a clean tree, it silently no-ops and yields two "after" shots).
+skill to screenshot each in `--project=light` and `--project=dark`.
+
+**Mobile capture.** The sandbox has **no iOS Simulator and no Android emulator**
+(see `apps/mobile/CLAUDE.md`), so you cannot screenshot a native device here.
+The supported analog is the **Expo web export** — the same react-native-web
+render used for the mobile compile-check — served and screenshotted with
+Playwright. These Aurora screens are token-driven (`lib/theme/tokens.ts`), so
+the web render is representative of the native layout for review purposes. Do
+**not** silently skip mobile screenshots just because there's no simulator.
+
+1. Export the app to web:
+   `pnpm --filter mobile exec expo export --platform web --output-dir /tmp/vpt-mobile-web`
+2. Render the changed screen/component. The root `_layout` mounts an auth gate,
+   so a data-backed route (e.g. trip detail) isn't reachable headlessly. Add a
+   **temporary, uncommitted** Expo Router route (e.g. `app/__shot.tsx`) that
+   mounts the changed component inside the theme provider with a representative
+   mock (for a flight-card change, a **round-trip** offer *and* a one-way offer,
+   so both the fixed and the unaffected paths show), export, then serve the
+   bundle (`npx serve /tmp/vpt-mobile-web` or any static server) and screenshot
+   the route with Playwright/Chromium at a phone viewport (~390×844) in a
+   light-background and a dark-background wrapper. Delete the temp route before
+   committing — it must never reach the PR branch.
+3. If a change genuinely can't be rendered this way, say so **explicitly in the
+   PR body** and attach whatever visual evidence is possible — don't leave a
+   mobile UI change with no visual at all.
 
 Host the PNGs on an orphan `pr-screenshots` branch and reference them in the PR
 body via `https://github.com/ethanasm/vacation-price-tracker/raw/pr-screenshots/...`
-— never commit screenshots to `main` or the PR branch. If nothing matches, skip
-this step.
+— never commit screenshots to `main` or the PR branch.
 
 ### 5. Peer-review the PR with an Opus subagent
 
