@@ -69,6 +69,37 @@ describe("API Client", () => {
       expect(response.status).toBe(200);
     });
 
+    it("shares one refresh request across concurrent 401s", async () => {
+      // The backend rotates the refresh token on every /v1/auth/refresh call,
+      // so two concurrent refreshes would invalidate each other. Both 401
+      // handlers must share a single in-flight refresh.
+      const urlCalls = new Map<string, number>();
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.endsWith("/v1/auth/refresh")) {
+          // Yield so both callers are waiting on the same refresh promise.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return { ok: true, status: 200 };
+        }
+        const count = (urlCalls.get(url) ?? 0) + 1;
+        urlCalls.set(url, count);
+        return count === 1
+          ? { ok: false, status: 401 }
+          : { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      const [responseA, responseB] = await Promise.all([
+        fetchWithAuth("/v1/protected-a"),
+        fetchWithAuth("/v1/protected-b"),
+      ]);
+
+      expect(responseA.status).toBe(200);
+      expect(responseB.status).toBe(200);
+      const refreshCalls = mockFetch.mock.calls.filter(([url]) =>
+        String(url).endsWith("/v1/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(1);
+    });
+
     it("throws AuthError when refresh fails", async () => {
       // First call: 401
       mockFetch.mockResolvedValueOnce({

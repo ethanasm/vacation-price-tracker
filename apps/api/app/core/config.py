@@ -161,7 +161,16 @@ class Settings(BaseSettings):
     # JWT
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7
+    # Idle-session ceiling. Each refresh rotates in a new refresh token with a
+    # fresh 30-day expiry, so active users stay signed in indefinitely; only
+    # 30 days of inactivity signs a session out (parity with showbook's
+    # 30-day rolling web session).
+    refresh_token_expire_days: int = 30
+
+    @property
+    def refresh_token_expire_seconds(self) -> int:
+        """Refresh-token lifetime in seconds (cookie max_age + Redis TTL)."""
+        return self.refresh_token_expire_days * 24 * 60 * 60
 
     @property
     def is_production(self) -> bool:

@@ -292,17 +292,29 @@ function withCsrfHeaders(options: RequestInit): RequestInit {
 /**
  * Attempts to refresh the access token.
  * Returns true if successful, false otherwise.
+ *
+ * Single-flight: the backend rotates the refresh token on every call, so two
+ * concurrent refreshes would race — the loser presents an already-rotated
+ * token, gets a 401, and the session looks dead even though it isn't.
+ * Concurrent callers therefore share one in-flight request.
  */
-async function refreshAccessToken(): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/v1/auth/refresh`, withCsrfHeaders({
-      method: "POST",
-      credentials: "include",
-    }));
-    return response.ok;
-  } catch {
-    return false;
-  }
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshAccessToken(): Promise<boolean> {
+  refreshInFlight ??= (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/auth/refresh`, withCsrfHeaders({
+        method: "POST",
+        credentials: "include",
+      }));
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
 }
 
 /**

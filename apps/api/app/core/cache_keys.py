@@ -33,8 +33,15 @@ class CacheKeys:
         return f"session:{user_id}"
 
     @staticmethod
-    def refresh_token(user_id: str) -> str:
-        """Key for refresh token storage."""
+    def refresh_token(user_id: str, jti: str | None = None) -> str:
+        """Key for refresh token storage.
+
+        Keyed per-session by the token's ``jti`` so concurrent sessions (web +
+        mobile) don't rotate each other out. ``jti=None`` is the legacy
+        per-user key, still honored for tokens minted before jti existed.
+        """
+        if jti:
+            return f"refresh_token:{user_id}:{jti}"
         return f"refresh_token:{user_id}"
 
     @staticmethod
@@ -71,7 +78,8 @@ class CacheTTL:
     IDEMPOTENCY = 86400  # 24 hours
     PRICE_CACHE = 86400  # 24 hours
     SESSION = 3600  # 1 hour
-    REFRESH_TOKEN = 604800  # 7 days
+    # Refresh-token TTL lives on settings.refresh_token_expire_seconds so the
+    # Redis TTL always matches the JWT exp and cookie max_age.
     RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
     REFRESH_LOCK = 1800  # 30 minutes
     AUDIT_LOG_RETENTION = 86400 * 90  # 90 days
