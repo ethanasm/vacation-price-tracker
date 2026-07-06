@@ -41,6 +41,21 @@ def _result(name: str, status: str, summary: str, detail: dict | None = None) ->
     return {"name": name, "status": status, "summary": summary, "detail": detail}
 
 
+def _errored(name: str, status: str, summary: str, exc: BaseException) -> CheckResult:
+    """Degrade a thrown check to a CheckResult, but log the exception first.
+
+    The email digest only carries ``str(exc)``; without this log the stack never
+    reaches Axiom/stdout and the underlying cause is undiagnosable.
+    """
+    logger.warning(
+        "Health check %s errored",
+        name,
+        exc_info=exc,
+        extra={"event": f"health.check.{name}.error"},
+    )
+    return _result(name, status, summary)
+
+
 def _rollup(checks: list[CheckResult]) -> str:
     statuses = {c["status"] for c in checks}
     if "fail" in statuses:
@@ -58,7 +73,7 @@ async def _check_database() -> CheckResult:
             await session.execute(text("SELECT 1"))
         return _result("database", "ok", "Postgres reachable")
     except Exception as exc:
-        return _result("database", "fail", f"Postgres unreachable: {exc}")
+        return _errored("database", "fail", f"Postgres unreachable: {exc}", exc)
 
 
 async def _check_redis() -> CheckResult:
@@ -66,7 +81,7 @@ async def _check_redis() -> CheckResult:
         await redis_client.ping()
         return _result("redis", "ok", "Redis reachable")
     except Exception as exc:
-        return _result("redis", "fail", f"Redis unreachable: {exc}")
+        return _errored("redis", "fail", f"Redis unreachable: {exc}", exc)
 
 
 def _check_temporal(client: Client | None) -> CheckResult:
@@ -96,7 +111,7 @@ async def _check_data_freshness() -> CheckResult:
             )
         return _result("data_freshness", "ok", f"{count} price snapshots in the last 24h", detail)
     except Exception as exc:
-        return _result("data_freshness", "fail", f"Snapshot query failed: {exc}")
+        return _errored("data_freshness", "fail", f"Snapshot query failed: {exc}", exc)
 
 
 async def _check_failed_trips() -> CheckResult:
@@ -121,7 +136,7 @@ async def _check_failed_trips() -> CheckResult:
             return _result("failed_trips", "warn", f"{errored} trip(s) in ERROR status", detail)
         return _result("failed_trips", "ok", f"No errored trips ({active} active)", detail)
     except Exception as exc:
-        return _result("failed_trips", "fail", f"Trip status query failed: {exc}")
+        return _errored("failed_trips", "fail", f"Trip status query failed: {exc}", exc)
 
 
 async def _check_notifications() -> CheckResult:
@@ -150,7 +165,7 @@ async def _check_notifications() -> CheckResult:
             "notifications", "ok", f"No failed notifications ({pending} pending)", detail
         )
     except Exception as exc:
-        return _result("notifications", "fail", f"Outbox query failed: {exc}")
+        return _errored("notifications", "fail", f"Outbox query failed: {exc}", exc)
 
 
 async def _check_budget(name: str, metric: str, limit: int, label: str) -> CheckResult:
@@ -167,7 +182,7 @@ async def _check_budget(name: str, metric: str, limit: int, label: str) -> Check
             return _result(name, "warn", summary, detail)
         return _result(name, "ok", summary, detail)
     except Exception as exc:
-        return _result(name, "unknown", f"{label} budget read failed: {exc}")
+        return _errored(name, "unknown", f"{label} budget read failed: {exc}", exc)
 
 
 async def _check_refresh_run(client: Client | None) -> CheckResult:
@@ -206,8 +221,12 @@ async def _check_refresh_run(client: Client | None) -> CheckResult:
                         f"{result.get('users_total', 0)} users)",
                         detail,
                     )
-            except Exception:  # pragma: no cover - result fetch best-effort
-                pass
+            except Exception as exc:  # pragma: no cover - result fetch best-effort
+                logger.warning(
+                    "Health check refresh_run could not read the workflow result",
+                    exc_info=exc,
+                    extra={"event": "health.check.refresh_run.result_read_failed"},
+                )
             return _result("refresh_run", "ok", "Last refresh completed", detail)
         if status_name == "RUNNING":
             return _result("refresh_run", "ok", "Refresh currently running", detail)
@@ -215,7 +234,7 @@ async def _check_refresh_run(client: Client | None) -> CheckResult:
             return _result("refresh_run", "fail", f"Last refresh {status_name}", detail)
         return _result("refresh_run", "warn", f"Last refresh status: {status_name}", detail)
     except Exception as exc:
-        return _result("refresh_run", "unknown", f"Schedule history read failed: {exc}")
+        return _errored("refresh_run", "unknown", f"Schedule history read failed: {exc}", exc)
 
 
 async def _check_error_volume() -> CheckResult:
@@ -288,10 +307,32 @@ async def run_health_check_activity() -> dict:
     status = _rollup(checks)
     counts = {s: sum(1 for c in checks if c["status"] == s) for s in ("ok", "warn", "fail", "unknown")}
 
+    # One queryable event per sub-check (showbook's health.check.<name>.<status>
+    # pattern) so a single failing check is visible in Axiom without parsing the
+    # rollup — failed checks at error, degraded at warn.
+    _CHECK_LEVELS = {"fail": logging.ERROR, "warn": logging.WARNING}
+    for check in checks:
+        logger.log(
+            _CHECK_LEVELS.get(check["status"], logging.INFO),
+            "Health check %s: %s — %s",
+            check["name"],
+            check["status"],
+            check["summary"],
+            extra={
+                "event": f"health.check.{check['name']}.{check['status']}",
+                "status": check["status"],
+            },
+        )
+
     try:
         async with AsyncSessionLocal() as session:
             flags = await list_feature_flags(session)
-    except Exception:  # pragma: no cover - informational only
+    except Exception as exc:  # pragma: no cover - informational only
+        logger.warning(
+            "Health check could not read feature flags",
+            exc_info=exc,
+            extra={"event": "health.check.flags.error"},
+        )
         flags = []
 
     recipients = settings.admin_emails_list

@@ -10,6 +10,7 @@ def test_cache_key_builders():
     assert CacheKeys.hotel_cache("HNL", "2024-01-01", "2024-01-03") == "hotel:HNL:2024-01-01:2024-01-03"
     assert CacheKeys.user_session("user") == "session:user"
     assert CacheKeys.refresh_token("user") == "refresh_token:user"
+    assert CacheKeys.refresh_token("user", "abc123") == "refresh_token:user:abc123"
     assert CacheKeys.refresh_lock("user") == "refresh:lock:user"
     assert CacheKeys.rate_limit("user", "price_check") == "rate_limit:user:price_check"
 

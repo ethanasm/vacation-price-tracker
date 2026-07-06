@@ -29,8 +29,9 @@
 //     into the `fields` map — query them as `['fields']['logger']`, not as
 //     top-level columns. Only CORE_FIELDS (_time, service, level, event, env,
 //     hostname, pid, msg, status) and the err.* allowlist are real columns.
-//   - Third-party library logs (langfuse, temporalio, uvicorn) arrive with
-//     `event == null`; that's expected, not a misconfiguration.
+//   - Third-party library logs only ship at ERROR+ (they arrive with
+//     `event == null`); sub-ERROR library noise is filtered before ingest
+//     (AxiomShipFilter) and is only visible in `docker logs`.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

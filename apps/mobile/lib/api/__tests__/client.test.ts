@@ -1,7 +1,8 @@
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApiClient } from '../client';
 import { ApiError, AuthError, NetworkError } from '../errors';
+import { configureTelemetry } from '../../telemetry';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -9,6 +10,19 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'content-type': 'application/json' },
   });
 }
+
+// The client reports failed ops through lib/telemetry; stub its transport so
+// error-path tests never touch the network, and capture what was reported.
+const reportedEvents: { event: string; level: string; context?: Record<string, unknown> }[] = [];
+beforeEach(() => {
+  reportedEvents.length = 0;
+  configureTelemetry({
+    fetchImpl: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      reportedEvents.push(JSON.parse(String(init?.body)));
+      return new Response('{"ok":true}');
+    }) as typeof fetch,
+  });
+});
 
 test('listTrips unwraps the {data} envelope and attaches the bearer token', async () => {
   let seenAuth: string | null = null;
@@ -73,6 +87,48 @@ test('a non-401 error surfaces as ApiError carrying status + detail', async () =
     () => client.getTrip('missing'),
     (err: unknown) => err instanceof ApiError && (err as ApiError).status === 404,
   );
+});
+
+test('failed requests report telemetry: 4xx at warn, 5xx at error, network as network_error', async () => {
+  const failing = (status: number) =>
+    createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: () => 'jwt',
+      refresh: async () => true,
+      fetchImpl: async () => jsonResponse({ title: 'nope' }, status),
+    });
+
+  await assert.rejects(() => failing(404).getTrip('t1'));
+  assert.equal(reportedEvents.at(-1)?.event, 'api.request.failed');
+  assert.equal(reportedEvents.at(-1)?.level, 'warn');
+  assert.equal(reportedEvents.at(-1)?.context?.status, 404);
+
+  await assert.rejects(() => failing(503).listTrips());
+  assert.equal(reportedEvents.at(-1)?.event, 'api.request.failed');
+  assert.equal(reportedEvents.at(-1)?.level, 'error');
+
+  const offline = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async () => {
+      throw new TypeError('Network request failed');
+    },
+  });
+  await assert.rejects(() => offline.listTrips(), NetworkError);
+  assert.equal(reportedEvents.at(-1)?.event, 'api.network_error');
+});
+
+test('an expired session (401 + failed refresh) reports api.auth_expired at warn', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt-old',
+    refresh: async () => false,
+    fetchImpl: async () => jsonResponse({ detail: 'expired' }, 401),
+  });
+  await assert.rejects(() => client.listTrips(), AuthError);
+  assert.equal(reportedEvents.at(-1)?.event, 'api.auth_expired');
+  assert.equal(reportedEvents.at(-1)?.level, 'warn');
 });
 
 test('createTrip sends the X-Idempotency-Key header and POST body', async () => {

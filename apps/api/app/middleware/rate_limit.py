@@ -227,7 +227,12 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
         identifier, "api", settings.daily_quota_per_user
     )
     if not allowed:
-        logger.info("Daily API quota exceeded for %s on path %s", identifier, path)
+        logger.info(
+            "Daily API quota exceeded for %s on path %s",
+            identifier,
+            path,
+            extra={"event": "quota.daily_exceeded", "resource": "api", "path": path},
+        )
         return _rate_limit_response(retry_after, path)
 
     if is_chat_message:
@@ -235,20 +240,37 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
             identifier, "chat", settings.chat_daily_quota_per_user
         )
         if not allowed:
-            logger.info("Daily chat quota exceeded for %s on path %s", identifier, path)
+            logger.info(
+                "Daily chat quota exceeded for %s on path %s",
+                identifier,
+                path,
+                extra={"event": "quota.daily_exceeded", "resource": "chat", "path": path},
+            )
             return _rate_limit_response(retry_after, path)
 
     # Global budget breaker (read-only gate): reject new expensive work cheaply.
     if is_chat_message and await is_global_budget_tripped(
         "groq_tokens", settings.global_daily_groq_token_budget
     ):
-        logger.warning("Global Groq budget tripped; rejecting chat on %s", path)
+        logger.warning(
+            "Global Groq budget tripped; rejecting chat on %s",
+            path,
+            extra={"event": "budget.breaker_rejected", "metric": "groq_tokens", "path": path},
+        )
         return _budget_response(_seconds_to_utc_midnight(), path)
 
     if is_refresh and await is_global_budget_tripped(
         "skiplagged_calls", settings.global_daily_skiplagged_call_budget
     ):
-        logger.warning("Global Skiplagged budget tripped; rejecting refresh on %s", path)
+        logger.warning(
+            "Global Skiplagged budget tripped; rejecting refresh on %s",
+            path,
+            extra={
+                "event": "budget.breaker_rejected",
+                "metric": "skiplagged_calls",
+                "path": path,
+            },
+        )
         return _budget_response(_seconds_to_utc_midnight(), path)
 
     return None

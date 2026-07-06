@@ -4,9 +4,11 @@ import DashboardLayout from "../app/trips/layout";
 
 // Mock next/navigation
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
+    replace: mockReplace,
   }),
 }));
 
@@ -158,7 +160,7 @@ describe("DashboardLayout", () => {
     });
   });
 
-  it("shows skeleton avatar when not authenticated (middleware handles redirect)", () => {
+  it("clears the dead session and returns to landing when auth resolves signed-out", async () => {
     mockUseAuth.mockReturnValue({
       user: null,
       isLoading: false,
@@ -171,10 +173,51 @@ describe("DashboardLayout", () => {
       </DashboardLayout>,
     );
 
-    // Component shows skeleton avatar; middleware handles redirect to home
+    // Component shows the skeleton shell while the self-heal kicks in
     expect(screen.getByText("--")).toBeInTheDocument();
-    // Children are still rendered (middleware handles unauthenticated redirect at server level)
-    expect(screen.getByText("Child content")).toBeInTheDocument();
+
+    // The middleware let the request through on a cookie the server had
+    // revoked; the layout clears it and sends the visitor back to landing.
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith("/?signedout=1");
+    });
+  });
+
+  it("returns to landing even when the logout call fails", async () => {
+    mockLogout.mockRejectedValue(new Error("network down"));
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      logout: mockLogout,
+    });
+
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/?signedout=1");
+    });
+  });
+
+  it("does not self-heal while auth is still loading", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: true,
+      logout: mockLogout,
+    });
+
+    render(
+      <DashboardLayout>
+        <div>Child content</div>
+      </DashboardLayout>,
+    );
+
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("renders children when authenticated", () => {

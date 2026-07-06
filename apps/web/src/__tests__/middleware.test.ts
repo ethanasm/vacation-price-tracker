@@ -110,13 +110,103 @@ describe("Auth Middleware", () => {
     expect(response.status).toBe(200);
   });
 
-  it("redirects to / when access_token_cookie is expired", async () => {
+  it("redirects to / when access_token_cookie is expired and no refresh token", async () => {
     const token = buildToken({
       type: "access",
       exp: Math.floor(Date.now() / 1000) - 60,
     });
     const request = createMockRequest("/trips", {
       access_token_cookie: token,
+    });
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/");
+    expect(response.status).toBe(307);
+  });
+
+  it("allows /trips when access token is expired but refresh token is valid", async () => {
+    const expiredAccess = buildToken({
+      type: "access",
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+    const validRefresh = buildToken({
+      type: "refresh",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const request = createMockRequest("/trips", {
+      access_token_cookie: expiredAccess,
+      refresh_token_cookie: validRefresh,
+    });
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+
+  it("allows /trips with only a valid refresh token", async () => {
+    const validRefresh = buildToken({
+      type: "refresh",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const request = createMockRequest("/trips", {
+      refresh_token_cookie: validRefresh,
+    });
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+
+  it("redirects to / when both tokens are expired", async () => {
+    const expiredAccess = buildToken({
+      type: "access",
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+    const expiredRefresh = buildToken({
+      type: "refresh",
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+    const request = createMockRequest("/trips", {
+      access_token_cookie: expiredAccess,
+      refresh_token_cookie: expiredRefresh,
+    });
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/");
+    expect(response.status).toBe(307);
+  });
+
+  it("redirects to / when refresh cookie holds a non-refresh token", async () => {
+    const accessInRefreshSlot = buildToken({
+      type: "access",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const request = createMockRequest("/trips", {
+      refresh_token_cookie: accessInRefreshSlot,
+    });
+
+    const response = await middleware(request as NextRequest);
+
+    expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/");
+    expect(response.status).toBe(307);
+  });
+
+  it("redirects to / when refresh token has an invalid signature", async () => {
+    const forgedRefresh = buildToken(
+      {
+        type: "refresh",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      "wrong-secret",
+    );
+    const request = createMockRequest("/trips", {
+      refresh_token_cookie: forgedRefresh,
     });
 
     const response = await middleware(request as NextRequest);
@@ -231,13 +321,98 @@ describe("Auth Middleware", () => {
   });
 
   it("does not affect non-protected routes", async () => {
-    const request = createMockRequest("/");
+    const request = createMockRequest("/access-denied");
 
     const response = await middleware(request as NextRequest);
 
     expect(mockNext).toHaveBeenCalled();
     expect(mockRedirect).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
+  });
+
+  describe("landing page redirect", () => {
+    it("renders the landing page for anonymous visitors", async () => {
+      const request = createMockRequest("/");
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+    });
+
+    it("redirects / to /trips when the access token is valid", async () => {
+      const token = buildToken({
+        type: "access",
+        exp: Math.floor(Date.now() / 1000) + 60,
+      });
+      const request = createMockRequest("/", { access_token_cookie: token });
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/trips");
+      expect(response.status).toBe(307);
+    });
+
+    it("redirects / to /trips when only the refresh token is still valid", async () => {
+      const expiredAccess = buildToken({
+        type: "access",
+        exp: Math.floor(Date.now() / 1000) - 60,
+      });
+      const validRefresh = buildToken({
+        type: "refresh",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      const request = createMockRequest("/", {
+        access_token_cookie: expiredAccess,
+        refresh_token_cookie: validRefresh,
+      });
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockRedirect).toHaveBeenCalledWith("http://localhost:3000/trips");
+      expect(response.status).toBe(307);
+    });
+
+    it("does not redirect a self-heal exit (?signedout=1) even with valid-looking cookies", async () => {
+      // The trips layout lands here after a server-revoked session; logout()
+      // may have failed to clear the httpOnly cookies, so they still verify.
+      // Redirecting would bounce straight back to /trips and loop.
+      const validRefresh = buildToken({
+        type: "refresh",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      const request = createMockRequest("/?signedout=1", {
+        refresh_token_cookie: validRefresh,
+      });
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+    });
+
+    it("renders the landing page when both tokens are expired", async () => {
+      const expiredAccess = buildToken({
+        type: "access",
+        exp: Math.floor(Date.now() / 1000) - 60,
+      });
+      const expiredRefresh = buildToken({
+        type: "refresh",
+        exp: Math.floor(Date.now() / 1000) - 60,
+      });
+      const request = createMockRequest("/", {
+        access_token_cookie: expiredAccess,
+        refresh_token_cookie: expiredRefresh,
+      });
+
+      const response = await middleware(request as NextRequest);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+    });
   });
 
   it("matches /trips/settings and other subpaths", async () => {

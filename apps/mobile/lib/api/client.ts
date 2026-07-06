@@ -8,6 +8,7 @@
  * typed methods unwrap and return `data`.
  */
 import type { components } from './types';
+import { logClientEvent } from '../telemetry';
 import { ApiError, AuthError, NetworkError } from './errors';
 
 export type TripStatus = components['schemas']['TripStatus'];
@@ -70,12 +71,25 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     try {
       res = await fetchImpl(url, { ...init, headers: baseHeaders });
     } catch {
+      logClientEvent('api.network_error', {
+        message: `Network error for ${path}`,
+        context: { path },
+      });
       throw new NetworkError();
     }
 
     if (res.status === 401) {
       const ok = await refreshOnce();
-      if (!ok) throw new AuthError('Session expired. Please sign in again.');
+      if (!ok) {
+        // warn, not error: routine session expiry, but worth charting (this is
+        // how showbook spotted its mobile auth-churn via mobile.trpc.error).
+        logClientEvent('api.auth_expired', {
+          message: 'Session expired and token refresh failed',
+          level: 'warn',
+          context: { path, status: 401 },
+        });
+        throw new AuthError('Session expired. Please sign in again.');
+      }
       // Rebuild headers so the refreshed bearer token is attached.
       const retryHeaders = buildHeaders();
       for (const [k, v] of baseHeaders.entries()) {
@@ -84,9 +98,20 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       try {
         res = await fetchImpl(url, { ...init, headers: retryHeaders });
       } catch {
+        logClientEvent('api.network_error', {
+          message: `Network error for ${path} (post-refresh retry)`,
+          context: { path },
+        });
         throw new NetworkError();
       }
-      if (res.status === 401) throw new AuthError('Authentication failed after token refresh.');
+      if (res.status === 401) {
+        logClientEvent('api.auth_expired', {
+          message: 'Still unauthorized after token refresh',
+          level: 'warn',
+          context: { path, status: 401 },
+        });
+        throw new AuthError('Authentication failed after token refresh.');
+      }
     }
 
     return res;
@@ -96,6 +121,14 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     const res = await request(path, init);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { title?: string; detail?: string };
+      // Every failed API op reports (the mobile analogue of showbook's
+      // errorReporterLink → mobile.trpc.error): server faults at error,
+      // client-side 4xx at warn.
+      logClientEvent('api.request.failed', {
+        message: body.title ?? `Request failed (${res.status})`,
+        level: res.status >= 500 ? 'error' : 'warn',
+        context: { path, status: res.status },
+      });
       throw new ApiError(res.status, body.title ?? `Request failed (${res.status})`, body.detail);
     }
     return (await res.json()) as T;

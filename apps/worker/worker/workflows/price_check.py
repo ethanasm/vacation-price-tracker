@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable
 from datetime import timedelta
 
@@ -6,21 +7,27 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-from worker.activities.price_check import (
-    fetch_flights_activity,
-    fetch_hotels_activity,
-    filter_results_activity,
-    load_trip_details,
-    save_snapshot_activity,
-)
 from worker.types import FetchResult, PriceCheckResult
+from worker.wf_logging import wf_logger
+
+logger = logging.getLogger(__name__)
 
 with workflow.unsafe.imports_passed_through():
-    # Pulls in the email render/client stack (jinja2/httpx); keep it passed
-    # through so the workflow sandbox doesn't re-import those modules.
+    # Activity imports pull in the DB/client stack (and, for notifications, the
+    # email render stack — jinja2/httpx); keep them passed through so the
+    # workflow sandbox doesn't re-import those modules under its restriction
+    # checker. Re-importing worker.activities.price_check here unguarded was
+    # the source of the workflow_sandbox._restrictions warning flood in prod.
     from worker.activities.notifications import (
         evaluate_notifications_activity,
         send_push_notification_activity,
+    )
+    from worker.activities.price_check import (
+        fetch_flights_activity,
+        fetch_hotels_activity,
+        filter_results_activity,
+        load_trip_details,
+        save_snapshot_activity,
     )
 
 
@@ -147,12 +154,24 @@ class PriceCheckWorkflow:
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
 
-        return {
+        result: PriceCheckResult = {
             "success": True,
             "snapshot_id": snapshot_id,
             "flight_error": normalized_flight["error"],
             "hotel_error": normalized_hotel["error"],
         }
+        wf_logger(logger).info(
+            "Price check complete for trip_id=%s",
+            trip_id,
+            extra={
+                "event": "workflow.price_check.summary",
+                "trip_id": trip_id,
+                "snapshot_id": snapshot_id,
+                "flight_error": normalized_flight["error"],
+                "hotel_error": normalized_hotel["error"],
+            },
+        )
+        return result
 
 
 def _skipped_fetch_result(label: str) -> FetchResult:

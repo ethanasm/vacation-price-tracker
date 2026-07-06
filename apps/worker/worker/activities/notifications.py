@@ -66,7 +66,11 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
 
         snapshot = await session.get(PriceSnapshot, snapshot_uuid)
         if snapshot is None:
-            logger.warning("evaluate_notifications: snapshot %s not found", snapshot_id)
+            logger.warning(
+                "evaluate_notifications: snapshot %s not found",
+                snapshot_id,
+                extra={"event": "notifications.evaluate.snapshot_missing"},
+            )
             return False
 
         rule = (
@@ -149,7 +153,16 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
         session.add(rule)
         await session.commit()
         logger.info(
-            "Enqueued price-drop notification for trip_id=%s new_price=%s", trip.id, price
+            "Enqueued price-drop notification for trip_id=%s new_price=%s",
+            trip.id,
+            price,
+            extra={
+                "event": "notifications.price_drop.enqueued",
+                "trip_id": str(trip.id),
+                "user_id": str(trip.user_id),
+                "new_price": str(price),
+                "old_price": str(previous_price) if previous_price is not None else None,
+            },
         )
         return True
 
@@ -264,6 +277,7 @@ async def send_push_notification_activity(snapshot_id: str) -> int:
             extra={
                 "event": "notifications.push.send_failed",
                 "trip_id": str(trip.id),
+                "user_id": str(outbox.user_id),
                 "device_count": len(messages),
             },
         )
@@ -277,6 +291,7 @@ async def send_push_notification_activity(snapshot_id: str) -> int:
         extra={
             "event": "notifications.push.sent",
             "trip_id": str(trip.id),
+            "user_id": str(outbox.user_id),
             "device_count": len(messages),
         },
     )
@@ -339,6 +354,17 @@ async def send_user_digest_activity(user_id: str) -> dict:
                 row.sent_at = now
                 session.add(row)
             await session.commit()
+            logger.info(
+                "Digest skipped for user_id=%s (unsubscribed or unreachable); drained %d rows",
+                user_id,
+                len(rows),
+                extra={
+                    "event": "notifications.digest.skipped",
+                    "user_id": user_id,
+                    "reason": "unsubscribed_or_unreachable",
+                    "count": len(rows),
+                },
+            )
             return {"sent": False, "count": 0}
 
         trip_names = dict(
@@ -394,7 +420,16 @@ async def send_user_digest_activity(user_id: str) -> dict:
                 idempotency_key=_digest_idempotency_key(user_id),
             )
         except EmailError as exc:
-            logger.error("Digest send failed for user_id=%s: %s", user_id, exc)
+            logger.error(
+                "Digest send failed for user_id=%s",
+                user_id,
+                exc_info=exc,
+                extra={
+                    "event": "notifications.digest.send_failed",
+                    "user_id": user_id,
+                    "count": len(rows),
+                },
+            )
             for row in rows:
                 row.attempts += 1
                 row.error = str(exc)[:500]
@@ -408,5 +443,14 @@ async def send_user_digest_activity(user_id: str) -> dict:
             session.add(row)
         await session.commit()
         trip_count = len(digest_trips)
-        logger.info("Sent digest to user_id=%s covering %d trips", user_id, trip_count)
+        logger.info(
+            "Sent digest to user_id=%s covering %d trips",
+            user_id,
+            trip_count,
+            extra={
+                "event": "notifications.digest.sent",
+                "user_id": user_id,
+                "count": trip_count,
+            },
+        )
         return {"sent": True, "count": trip_count}

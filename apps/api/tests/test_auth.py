@@ -1,11 +1,13 @@
 """Tests for authentication endpoints."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import app.routers.auth as auth_module
 import jwt
 import pytest
+from app.core.cache_keys import CacheKeys
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.errors import AuthenticationRequired
@@ -258,6 +260,17 @@ class TestTokenRefresh:
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid refresh token."
 
+    def test_refresh_returns_401_for_access_token(self, client_with_csrf, csrf_headers):
+        """An access token in the refresh cookie is rejected by type, not by luck."""
+        access_token = create_access_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, access_token)
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid refresh token."
+
     def test_refresh_returns_401_when_token_rotated(self, client_with_csrf, mock_redis, csrf_headers):
         """Test refresh returns 401 when token doesn't match Redis."""
         refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"})
@@ -294,6 +307,100 @@ class TestTokenRefresh:
         assert any(CookieNames.ACCESS_TOKEN in header for header in set_cookie_headers)
         assert any(CookieNames.REFRESH_TOKEN in header for header in set_cookie_headers)
 
+    def test_refresh_tokens_carry_unique_jti(self):
+        """Each refresh token gets its own jti so sessions are stored per-device."""
+        token_a = create_refresh_token(data={JWTClaims.SUBJECT: "user"})
+        token_b = create_refresh_token(data={JWTClaims.SUBJECT: "user"})
+
+        payload_a = jwt.decode(token_a, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload_b = jwt.decode(token_b, settings.secret_key, algorithms=[settings.jwt_algorithm])
+
+        assert payload_a[JWTClaims.JWT_ID]
+        assert payload_b[JWTClaims.JWT_ID]
+        assert payload_a[JWTClaims.JWT_ID] != payload_b[JWTClaims.JWT_ID]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sessions_store_under_distinct_keys(self, mock_redis, monkeypatch):
+        """Two sessions for one user occupy separate Redis keys (no eviction)."""
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+        user_id = uuid.uuid4()
+
+        token_a = create_refresh_token(data={JWTClaims.SUBJECT: str(user_id)})
+        token_b = create_refresh_token(data={JWTClaims.SUBJECT: str(user_id)})
+        await auth_module._store_refresh_token(user_id, token_a)
+        await auth_module._store_refresh_token(user_id, token_b)
+
+        keys = [call.args[0] for call in mock_redis.set.call_args_list]
+        assert len(set(keys)) == 2
+        assert all(key.startswith(f"refresh_token:{user_id}:") for key in keys)
+
+    @pytest.mark.asyncio
+    async def test_refresh_rotates_within_session_only(self, test_session, mock_redis, monkeypatch):
+        """A successful refresh deletes the presented jti key and stores the new one."""
+        user = User(google_sub="rotate_user", email="rotate@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        presented_jti = jwt.decode(
+            refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )[JWTClaims.JWT_ID]
+        mock_redis.get.return_value = refresh_token
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: refresh_token},
+        )
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.status_code == 200
+        presented_key = CacheKeys.refresh_token(str(user.id), presented_jti)
+        mock_redis.get.assert_called_once_with(presented_key)
+        mock_redis.delete.assert_called_once_with(presented_key)
+        stored_key = mock_redis.set.call_args.args[0]
+        assert stored_key.startswith(f"refresh_token:{user.id}:")
+        assert stored_key != presented_key
+
+    @pytest.mark.asyncio
+    async def test_refresh_accepts_legacy_token_without_jti(self, test_session, mock_redis, monkeypatch):
+        """Tokens minted before jti existed validate against the legacy per-user key."""
+        user = User(google_sub="legacy_user", email="legacy@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+        legacy_token = jwt.encode(
+            {
+                JWTClaims.SUBJECT: str(user.id),
+                JWTClaims.EXPIRATION: expire,
+                JWTClaims.TYPE: TokenType.REFRESH.value,
+            },
+            settings.secret_key,
+            algorithm=settings.jwt_algorithm,
+        )
+        mock_redis.get.return_value = legacy_token
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: legacy_token},
+        )
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.status_code == 200
+        legacy_key = CacheKeys.refresh_token(str(user.id))
+        mock_redis.get.assert_called_once_with(legacy_key)
+        mock_redis.delete.assert_called_once_with(legacy_key)
+        # The replacement is stored under its own jti key going forward.
+        assert mock_redis.set.call_args.args[0].startswith(f"refresh_token:{user.id}:")
+
 
 class TestLogout:
     """Test logout logic."""
@@ -319,7 +426,7 @@ class TestLogout:
         assert payload[JWTClaims.TYPE] == TokenType.REFRESH.value
         assert JWTClaims.EXPIRATION in payload
 
-        # Token should have reasonable expiration (7 days)
+        # Token should have reasonable expiration (refresh_token_expire_days)
         exp_time = datetime.fromtimestamp(payload[JWTClaims.EXPIRATION], tz=UTC)
         expected_exp = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         # Within 1 minute of expected expiration
@@ -343,6 +450,9 @@ class TestLogout:
         await test_session.refresh(user)
 
         refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        token_jti = jwt.decode(
+            refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )[JWTClaims.JWT_ID]
         monkeypatch.setattr(auth_module, "redis_client", mock_redis)
 
         request = _make_request(
@@ -354,7 +464,8 @@ class TestLogout:
 
         assert response.status_code == 200
         assert response.body.decode() == "Logged out successfully."
-        mock_redis.delete.assert_called()
+        # Only this session's key is revoked — other devices stay signed in.
+        mock_redis.delete.assert_called_once_with(CacheKeys.refresh_token(str(user.id), token_jti))
 
 
 class TestAuthMe:
