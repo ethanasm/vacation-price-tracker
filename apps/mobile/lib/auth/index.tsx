@@ -5,6 +5,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { API_URL, describeGoogleOAuthMisconfiguration, GOOGLE_OAUTH_CLIENT_ID_ANDROID, GOOGLE_OAUTH_CLIENT_ID_IOS, GOOGLE_OAUTH_CLIENT_ID_WEB } from '@/lib/env';
 import { exchangeGoogleIdTokenForSession, describeSignInError } from './exchange';
+import { requestSessionRefresh } from './refresh';
 import { buildE2ESession } from './e2e';
 import { saveSession, loadSession, clearSession } from './storage';
 import type { SessionData, SessionUser } from './contract';
@@ -175,26 +176,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const refresh = React.useCallback(async (): Promise<boolean> => {
     const rt = refreshRef.current;
     if (!rt) return false;
-    try {
-      const res = await fetch(`${API_URL.replace(/\/+$/, '')}/v1/auth/refresh`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-      if (!res.ok) return false;
-      const body = (await res.json().catch(() => null)) as
-        | { access_token?: string; refresh_token?: string }
-        | null;
-      if (!body?.access_token || !body?.refresh_token) return false;
-      const next = { accessToken: body.access_token, refreshToken: body.refresh_token, user: user! };
-      if (user) await saveSession(SecureStore, next).catch(() => undefined);
-      setToken(body.access_token);
-      setRefreshTokenValue(body.refresh_token);
-      return true;
-    } catch {
+    const result = await requestSessionRefresh({ apiUrl: API_URL, refreshToken: rt });
+    if (!result.ok) {
+      if (result.sessionExpired) {
+        // The server definitively rejected this session — retrying can never
+        // succeed. Sign out so the auth gate routes to the sign-in screen
+        // instead of stranding the user on a "check your connection" error.
+        await signOut();
+      }
       return false;
     }
-  }, [user]);
+    const next = { accessToken: result.accessToken, refreshToken: result.refreshToken, user: user! };
+    if (user) await saveSession(SecureStore, next).catch(() => undefined);
+    setToken(result.accessToken);
+    setRefreshTokenValue(result.refreshToken);
+    return true;
+  }, [user, signOut]);
 
   const value = React.useMemo<AuthContextValue>(
     () => ({ user, token, isLoading, isSigningIn, error, signIn, signOut, refresh }),
