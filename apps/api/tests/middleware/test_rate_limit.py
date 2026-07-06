@@ -85,28 +85,51 @@ def test_is_chat_path_no_match():
 # =============================================================================
 
 
-def test_get_client_ip_from_x_forwarded_for():
-    """X-Forwarded-For header should be used when present."""
+def test_get_client_ip_takes_rightmost_trusted_hop():
+    """With 1 trusted proxy hop (the default), the client IP is the rightmost
+    X-Forwarded-For entry (proxy-observed), NOT the spoofable leftmost entry."""
     request = _make_request(headers={"X-Forwarded-For": "203.0.113.1, 198.51.100.2"})
-    assert _get_client_ip(request) == "203.0.113.1"
+    assert _get_client_ip(request) == "198.51.100.2"
+
+
+def test_get_client_ip_ignores_spoofed_leftmost_entry():
+    """A forged leftmost XFF entry can't move the client's rate-limit bucket."""
+    spoofed = _make_request(headers={"X-Forwarded-For": "1.2.3.4, 198.51.100.2"})
+    rotated = _make_request(headers={"X-Forwarded-For": "9.9.9.9, 198.51.100.2"})
+    assert _get_client_ip(spoofed) == "198.51.100.2"
+    assert _get_client_ip(rotated) == "198.51.100.2"
 
 
 def test_get_client_ip_from_x_forwarded_for_single():
-    """X-Forwarded-For with single IP should work."""
+    """X-Forwarded-For with a single IP (1 hop) is used directly."""
     request = _make_request(headers={"X-Forwarded-For": "203.0.113.1"})
     assert _get_client_ip(request) == "203.0.113.1"
 
 
-def test_get_client_ip_from_x_real_ip():
-    """X-Real-IP header should be used as fallback."""
-    request = _make_request(headers={"X-Real-IP": "198.51.100.5"})
-    assert _get_client_ip(request) == "198.51.100.5"
+def test_get_client_ip_malformed_forwarded_for_falls_back_to_peer():
+    """A non-IP X-Forwarded-For value is rejected and the socket peer is used."""
+    request = _make_request(
+        headers={"X-Forwarded-For": "not-an-ip"}, client_host="192.168.1.100"
+    )
+    assert _get_client_ip(request) == "192.168.1.100"
 
 
-def test_get_client_ip_prefers_forwarded_for_over_real_ip():
-    """X-Forwarded-For should take precedence over X-Real-IP."""
-    request = _make_request(headers={"X-Forwarded-For": "203.0.113.1", "X-Real-IP": "198.51.100.5"})
-    assert _get_client_ip(request) == "203.0.113.1"
+def test_get_client_ip_zero_trusted_hops_ignores_forwarded_for(monkeypatch):
+    """trusted_proxy_count=0 (direct-bind) ignores a client-supplied XFF."""
+    monkeypatch.setattr(rate_limit_module.settings, "trusted_proxy_count", 0)
+    request = _make_request(
+        headers={"X-Forwarded-For": "203.0.113.1"}, client_host="192.168.1.100"
+    )
+    assert _get_client_ip(request) == "192.168.1.100"
+
+
+def test_get_client_ip_multi_hop(monkeypatch):
+    """With N trusted hops the client is the Nth entry from the right."""
+    monkeypatch.setattr(rate_limit_module.settings, "trusted_proxy_count", 2)
+    request = _make_request(
+        headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.7, 10.0.0.1"}
+    )
+    assert _get_client_ip(request) == "203.0.113.7"
 
 
 def test_get_client_ip_from_direct_client():

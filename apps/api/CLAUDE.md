@@ -84,6 +84,13 @@ the SQLite test DB.
 - 24h Redis cache for identical Skiplagged route/date queries.
 - Per-user token-bucket throttling so no single user can hammer Skiplagged MCP.
 - `rate_limit_per_minute` (default 100) and `chat_rate_limit_per_minute` (default 10).
+- **Client identity for limiting** (`middleware/rate_limit.py`): authenticated
+  requests key on the user id resolved from the JWT — the access-token **cookie**
+  (web) *or* the `Authorization: Bearer` header (mobile). Unauthenticated
+  requests key on the client IP, taken as the `TRUSTED_PROXY_COUNT`-th
+  `X-Forwarded-For` entry **from the right** (default 1 = the Cloudflare Tunnel
+  hop). The leftmost XFF entry is client-appendable and must never be trusted;
+  the chosen value is IP-validated before it keys a bucket or hits a log.
 
 ### Cost / abuse ceilings (`app/core/quota.py`)
 
