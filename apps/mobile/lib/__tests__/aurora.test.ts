@@ -15,6 +15,7 @@ import {
   flightSummaryLine,
   clockLabel,
   makeIdempotencyKey,
+  isAwaitingInitialFetch,
   type Selection,
   type FlightOffer,
   type HotelOffer,
@@ -233,4 +234,36 @@ test('buildChartSeries gracefully handles malformed date keys (dayLabel fallback
   // The BADDATE key's slice(0,10) = 'BADDATE' which has no '-' so mo/dom are undefined → MONTHS[NaN-1] = undefined → dayLabel returns raw 'BADDATE'
   // expect only the Now point
   assert.equal(points.length, 2); // BADDATE + Now (dayLabel returns fallback 'BADDATE')
+});
+
+test('isAwaitingInitialFetch: fresh active trip with no snapshots → true', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  const trip = { status: 'active', created_at: '2026-07-06T11:55:00Z' };
+  assert.equal(isAwaitingInitialFetch(trip, [], now), true);
+});
+
+test('isAwaitingInitialFetch: false when snapshots exist', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  const trip = { status: 'active', created_at: '2026-07-06T11:55:00Z' };
+  assert.equal(isAwaitingInitialFetch(trip, [{}], now), false);
+});
+
+test('isAwaitingInitialFetch: false for paused trips', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  const trip = { status: 'paused', created_at: '2026-07-06T11:55:00Z' };
+  assert.equal(isAwaitingInitialFetch(trip, [], now), false);
+});
+
+test('isAwaitingInitialFetch: false once the recency window has passed', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  const trip = { status: 'active', created_at: '2026-07-06T11:00:00Z' };
+  assert.equal(isAwaitingInitialFetch(trip, [], now), false);
+});
+
+test('isAwaitingInitialFetch: false for missing trip or unparseable created_at', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  assert.equal(isAwaitingInitialFetch(null, [], now), false);
+  assert.equal(isAwaitingInitialFetch(undefined, [], now), false);
+  assert.equal(isAwaitingInitialFetch({ status: 'active', created_at: 'garbage' }, [], now), false);
+  assert.equal(isAwaitingInitialFetch({ status: 'active' }, [], now), false);
 });

@@ -1876,6 +1876,124 @@ describe("TripDetailPage", () => {
       jest.useRealTimers();
     });
 
+    it("stops polling after the 60s deadline when the workflow never settles", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          refresh_group_id: "refresh-123",
+          status: "running",
+          total: 1,
+          completed: 0,
+          failed: 0,
+          in_progress: 1,
+          error: null,
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByTitle("Refresh prices");
+      await user.click(refreshButton);
+      await waitFor(() => {
+        expect(refreshButton).toBeDisabled();
+      });
+
+      // Never completes — the deadline stops the spinner quietly.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(65_000);
+      });
+      await waitFor(() => {
+        expect(refreshButton).not.toBeDisabled();
+      });
+      const { toast } = jest.requireMock("sonner");
+      expect(toast.error).not.toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
+
+    it("gives up after three consecutive 404s from the status endpoint", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
+      mockGetRefreshStatus.mockRejectedValue(new ApiError(404, "Refresh group not found"));
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByTitle("Refresh prices");
+      await user.click(refreshButton);
+      await waitFor(() => {
+        expect(refreshButton).toBeDisabled();
+      });
+
+      // Polls at 0.5s, 2.5s, 4.5s — the third consecutive 404 stops the loop
+      // well before the 60s deadline.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5_000);
+      });
+      await waitFor(() => {
+        expect(refreshButton).not.toBeDisabled();
+      });
+      expect(mockGetRefreshStatus).toHaveBeenCalledTimes(3);
+
+      jest.useRealTimers();
+    });
+
+    it("stops polling when the page unmounts", async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-123" } });
+      mockGetRefreshStatus.mockResolvedValue({
+        data: {
+          refresh_group_id: "refresh-123",
+          status: "running",
+          total: 1,
+          completed: 0,
+          failed: 0,
+          in_progress: 1,
+          error: null,
+        },
+      });
+
+      let view: ReturnType<typeof render> | undefined;
+      await act(async () => {
+        view = render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Test Vacation")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Refresh prices"));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3_000);
+      });
+      const callsBeforeUnmount = mockGetRefreshStatus.mock.calls.length;
+      expect(callsBeforeUnmount).toBeGreaterThan(0);
+
+      view?.unmount();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(20_000);
+      });
+      // The in-flight loop aborts on the next tick — no further status calls.
+      expect(mockGetRefreshStatus.mock.calls).toHaveLength(callsBeforeUnmount);
+
+      jest.useRealTimers();
+    });
+
     it("shows error toast when refresh workflow reports a failure", async () => {
       mockRefresh.mockResolvedValue({ data: { refresh_group_id: "refresh-fail" } });
       mockGetRefreshStatus.mockResolvedValueOnce({
@@ -1906,6 +2024,61 @@ describe("TripDetailPage", () => {
           expect.stringContaining("MCP request failed with status 502"),
         );
       });
+    });
+  });
+
+  describe("initial price fetch (just-created trip)", () => {
+    it("auto-polls the creation workflow and shows the fetching state", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, created_at: new Date().toISOString() },
+          price_history: [],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // The in-flight initial fetch is surfaced instead of a bare empty state.
+      await waitFor(() => {
+        expect(screen.getByTestId("flights-fetching")).toBeInTheDocument();
+      });
+
+      await waitFor(
+        () => {
+          expect(mockGetRefreshStatus).toHaveBeenCalledWith("price-check-test-trip");
+        },
+        { timeout: 3000 }
+      );
+
+      // Poll reports completed → details are refetched (the completion path
+      // awaits the refetch before clearing the fetching state, so the spinner
+      // disappearing proves the refetch ran — no SSE dependency).
+      await waitFor(
+        () => {
+          expect(screen.queryByTestId("flights-fetching")).not.toBeInTheDocument();
+        },
+        { timeout: 5000 }
+      );
+    });
+
+    it("does not auto-poll an old snapshot-less trip", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData },
+          price_history: [],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("No flight offers available")).toBeInTheDocument();
+      });
+      expect(mockGetRefreshStatus).not.toHaveBeenCalled();
     });
   });
 

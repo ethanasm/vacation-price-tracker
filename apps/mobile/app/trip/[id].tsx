@@ -25,6 +25,7 @@ import {
   computeTripTotal,
   buildChartSeries,
   parsePrice,
+  isAwaitingInitialFetch,
   type FlightOffer,
   type HotelOffer,
   type PriceSnapshot,
@@ -58,6 +59,13 @@ export default function TripDetailScreen(): React.JSX.Element {
     queryKey: ['trip', id],
     queryFn: () => api.getTrip(id as string),
     enabled: Boolean(id),
+    // A just-created trip has its initial price fetch running server-side
+    // (creation starts a PriceCheckWorkflow) — poll until the snapshot lands.
+    refetchInterval: (q) =>
+      q.state.data &&
+      isAwaitingInitialFetch(q.state.data.trip, q.state.data.price_history ?? [])
+        ? 3000
+        : false,
   });
 
   if (query.isLoading) {
@@ -99,6 +107,7 @@ export default function TripDetailScreen(): React.JSX.Element {
       hotels={hotels}
       onRefresh={() => void query.refetch()}
       isRefreshing={query.isRefetching}
+      awaitingInitialFetch={isAwaitingInitialFetch(query.data.trip, history)}
     />
   );
 }
@@ -110,6 +119,7 @@ function TripDetailBody({
   hotels,
   onRefresh,
   isRefreshing,
+  awaitingInitialFetch = false,
 }: {
   trip: TripDetail;
   history: PriceSnapshot[];
@@ -117,6 +127,7 @@ function TripDetailBody({
   hotels: HotelOffer[];
   onRefresh: () => void;
   isRefreshing: boolean;
+  awaitingInitialFetch?: boolean;
 }): React.JSX.Element {
   const router = useRouter();
   const { tokens } = useTheme();
@@ -236,9 +247,18 @@ function TripDetailBody({
       ) : null}
 
       {flights.length === 0 && hotels.length === 0 ? (
-        <Text style={[styles.empty, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
-          No price snapshots yet. Pull Refresh to fetch the latest offers.
-        </Text>
+        awaitingInitialFetch ? (
+          <View style={styles.fetchingWrap} testID="initial-fetch-indicator">
+            <ActivityIndicator color={c.primary} />
+            <Text style={[styles.fetchingText, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+              Fetching latest prices…
+            </Text>
+          </View>
+        ) : (
+          <Text style={[styles.empty, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+            No price snapshots yet. Pull Refresh to fetch the latest offers.
+          </Text>
+        )
       ) : null}
     </>
   );
@@ -403,4 +423,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   empty: { fontSize: 14, textAlign: 'center', paddingVertical: 30 },
+  fetchingWrap: { alignItems: 'center', gap: 10, paddingVertical: 30 },
+  fetchingText: { fontSize: 14, textAlign: 'center' },
 });
