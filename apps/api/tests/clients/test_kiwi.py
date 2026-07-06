@@ -262,6 +262,48 @@ class TestKiwiFlightSearch:
         assert result.success is False
         assert "boom" in (result.error or "")
 
+    @pytest.mark.anyio
+    async def test_search_flights_all_retries_empty_then_returns_results(self):
+        """A cold Kiwi search can return an empty itinerary list that fills on
+        an immediate re-query (prod 2026-07-06) — tracking searches retry."""
+        client = KiwiClient()
+        empty = _search_response([])
+        full = _search_response([_itinerary()])
+        mock_post = AsyncMock(side_effect=[empty, full])
+        patcher = _patched_client(mock_post)
+        try:
+            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+                result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
+        finally:
+            patcher.stop()
+        assert mock_post.call_count == 2
+        assert result.success is True
+        assert len(result.flights) == 1
+
+    @pytest.mark.anyio
+    async def test_search_flights_all_empty_after_retries_returns_empty(self):
+        client = KiwiClient()
+        mock_post = AsyncMock(return_value=_search_response([]))
+        patcher = _patched_client(mock_post)
+        try:
+            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+                result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
+        finally:
+            patcher.stop()
+        assert mock_post.call_count == 3  # initial + EMPTY_RESULT_RETRIES
+        assert result.success is True
+        assert result.flights == []
+
+    @pytest.mark.anyio
+    async def test_search_flights_all_does_not_retry_failed_result(self):
+        client = KiwiClient()
+        with patch.object(
+            client, "_call_mcp", AsyncMock(side_effect=RuntimeError("boom"))
+        ) as mock_call:
+            result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
+        assert mock_call.await_count == 1
+        assert result.success is False
+
 
 class TestClientSideFilters:
     def _flights(self, specs):

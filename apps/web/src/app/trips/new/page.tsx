@@ -49,9 +49,11 @@ export default function CreateTripPage() {
     const idempotencyKey = generateIdempotencyKey();
 
     try {
-      await api.trips.create(payload, idempotencyKey);
-      toast.success("Trip created successfully!");
-      router.push("/trips");
+      const created = await api.trips.create(payload, idempotencyKey);
+      toast.success("Trip created — fetching initial prices…");
+      // Land on the trip detail page, which surfaces the in-flight initial
+      // price fetch (the API starts a PriceCheckWorkflow on creation).
+      router.push(`/trips/${created.data.id}`);
     } catch (error) {
       console.error("Failed to create trip:", error);
       logClientEvent("trip.create.failed", {

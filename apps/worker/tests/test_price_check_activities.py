@@ -486,7 +486,12 @@ async def test_save_snapshot_activity_dedup_skips_recent(monkeypatch):
     recent_snapshot = SimpleNamespace(
         id=existing_snapshot_id,
         created_at=datetime.now(UTC) - timedelta(seconds=30),  # 30 seconds ago
-        raw_data={"ok": True},  # No errors, so dedup should skip
+        # Healthy snapshot: offers present, error values null → dedup skips.
+        raw_data={
+            "flights": {"data": [{"price": "100.00"}]},
+            "hotels": {"data": []},
+            "errors": {"flights": None, "hotels": None},
+        },
     )
     session = DummySessionWithDedup(None, [], recent_snapshot=recent_snapshot)
     monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManagerWithDedup(session))
@@ -555,6 +560,65 @@ async def test_save_snapshot_activity_allows_retry_after_error(monkeypatch):
     assert snapshot_id != str(existing_snapshot_id)
     assert session.added is not None
     assert session.added.total_price == Decimal("300.00")
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_activity_handles_legacy_raw_data_shapes(monkeypatch):
+    """Old snapshots may carry non-dict errors/flights shapes — the dedup
+    check must classify them without crashing (truthy errors → degraded)."""
+    trip_id = str(uuid.uuid4())
+    existing_snapshot_id = uuid.uuid4()
+    recent_snapshot = SimpleNamespace(
+        id=existing_snapshot_id,
+        created_at=datetime.now(UTC) - timedelta(seconds=10),
+        raw_data={"errors": "upstream exploded", "flights": ["legacy-list-shape"]},
+    )
+    session = DummySessionWithDedup(None, [], recent_snapshot=recent_snapshot)
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManagerWithDedup(session))
+
+    payload = {
+        "trip_id": trip_id,
+        "flights": [{"price": "120.00"}],
+        "hotels": [],
+        "raw_data": {"ok": True},
+    }
+
+    snapshot_id = await pc.save_snapshot_activity(payload)
+
+    assert snapshot_id != str(existing_snapshot_id)
+    assert session.added is not None
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_activity_allows_retry_after_empty_snapshot(monkeypatch):
+    """A recent snapshot with zero offers and null errors (empty provider blip,
+    prod 2026-07-06) must not block an immediate retry with real data."""
+    trip_id = str(uuid.uuid4())
+    existing_snapshot_id = uuid.uuid4()
+    recent_snapshot = SimpleNamespace(
+        id=existing_snapshot_id,
+        created_at=datetime.now(UTC) - timedelta(seconds=15),
+        raw_data={
+            "flights": {"data": [], "provider": "kiwi", "priced_count": 0},
+            "hotels": {"data": []},
+            "errors": {"flights": None, "hotels": None},
+        },
+    )
+    session = DummySessionWithDedup(None, [], recent_snapshot=recent_snapshot)
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManagerWithDedup(session))
+
+    payload = {
+        "trip_id": trip_id,
+        "flights": [{"price": "185.00"}],
+        "hotels": [],
+        "raw_data": {"ok": True},
+    }
+
+    snapshot_id = await pc.save_snapshot_activity(payload)
+
+    assert snapshot_id != str(existing_snapshot_id)
+    assert session.added is not None
+    assert session.added.flight_price == Decimal("185.00")
 
 
 def test_filter_helpers_and_price_extraction():

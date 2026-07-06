@@ -43,6 +43,14 @@ MAX_TRANSIENT_RETRIES = 2
 BASE_BACKOFF_SECONDS = 0.5
 MAX_BACKOFF_SECONDS = 4.0
 
+# Kiwi's stateless search sometimes returns an empty itinerary list on a cold
+# route/date query and results on an immediate re-query (observed in prod
+# 2026-07-06: first tracking fetch 0 itineraries, identical query 10s later
+# returned 5). Tracking searches re-query a couple of times before accepting
+# an empty result as truth.
+EMPTY_RESULT_RETRIES = 2
+EMPTY_RESULT_BACKOFF_SECONDS = 2.0
+
 # Our CabinClass enum values -> Kiwi's single-letter cabin codes.
 CABIN_CLASS_TO_KIWI = {
     "economy": "M",
@@ -469,19 +477,43 @@ class KiwiClient:
         The Kiwi MCP has no server-side pagination — a single call returns the
         full result set (~15 itineraries), so this is one request regardless of
         ``max_pages``.
+
+        An empty-but-successful result is re-queried up to
+        ``EMPTY_RESULT_RETRIES`` times: cold searches can legitimately come back
+        empty and fill in seconds later, and a tracking run that accepts the
+        empty answer records a misleading no-offer snapshot.
         """
-        return await self.search_flights(
-            origin=origin,
-            destination=destination,
-            departure_date=departure_date,
-            return_date=return_date,
-            adults=adults,
-            max_stops=max_stops,
-            sort=sort,
-            limit=limit,
-            offset=0,
-            cabin=cabin,
-        )
+        result: FlightSearchResult | None = None
+        for attempt in range(EMPTY_RESULT_RETRIES + 1):
+            if attempt:
+                await asyncio.sleep(EMPTY_RESULT_BACKOFF_SECONDS * attempt)
+            result = await self.search_flights(
+                origin=origin,
+                destination=destination,
+                departure_date=departure_date,
+                return_date=return_date,
+                adults=adults,
+                max_stops=max_stops,
+                sort=sort,
+                limit=limit,
+                offset=0,
+                cabin=cabin,
+            )
+            if not result.success or result.total_results > 0 or attempt >= EMPTY_RESULT_RETRIES:
+                break
+            logger.warning(
+                "Kiwi returned no itineraries for %s-%s %s; retrying (%d/%d)",
+                origin,
+                destination,
+                departure_date,
+                attempt + 1,
+                EMPTY_RESULT_RETRIES,
+                extra={
+                    "event": "kiwi.flights.empty_retry",
+                    "attempt": attempt + 1,
+                },
+            )
+        return result
 
     # -------------------------------------------------------------------------
     # Response normalization
