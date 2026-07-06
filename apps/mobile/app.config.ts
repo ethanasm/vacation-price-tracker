@@ -93,7 +93,7 @@ const config: ExpoConfig = {
 		package: ANDROID_PACKAGE,
 		adaptiveIcon: {
 			foregroundImage: "./assets/adaptive-icon.png",
-			backgroundColor: "#7C3AED",
+			backgroundColor: "#0B3555",
 		},
 	},
 	plugins: [
