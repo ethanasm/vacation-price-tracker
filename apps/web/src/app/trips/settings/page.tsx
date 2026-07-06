@@ -52,7 +52,9 @@ function AdminFlagsCard() {
       );
       toast.success(`${flagLabel(name)} ${next ? "enabled" : "disabled"}`);
     } catch {
-      toast.error("Failed to update flag", { description: "Please try again." });
+      toast.error("Failed to update flag", {
+        description: "Please try again.",
+      });
     } finally {
       setSavingFlag(null);
     }
@@ -66,12 +68,15 @@ function AdminFlagsCard() {
           Admin
         </CardTitle>
         <CardDescription>
-          Operator feature flags — these change behavior for every user, instantly.
+          Operator feature flags — these change behavior for every user,
+          instantly.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {loadFailed ? (
-          <p className="text-sm text-muted-foreground">Failed to load feature flags.</p>
+          <p className="text-sm text-muted-foreground">
+            Failed to load feature flags.
+          </p>
         ) : flags === null ? (
           <p className="text-sm text-muted-foreground">Loading flags…</p>
         ) : (
@@ -85,8 +90,12 @@ function AdminFlagsCard() {
               }
             >
               <div className="space-y-0.5">
-                <Label htmlFor={`flag-${flag.name}`}>{flagLabel(flag.name)}</Label>
-                <p className="text-sm text-muted-foreground">{flag.description}</p>
+                <Label htmlFor={`flag-${flag.name}`}>
+                  {flagLabel(flag.name)}
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {flag.description}
+                </p>
               </div>
               <Switch
                 id={`flag-${flag.name}`}
@@ -111,7 +120,11 @@ export default function SettingsPage() {
   // Middleware redirects unauthenticated users; show a shell while auth loads.
   if (isLoading || !user) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-8 text-muted-foreground">Loading…</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-4 py-8 text-muted-foreground">
+          Loading…
+        </div>
+      </div>
     );
   }
 
@@ -138,60 +151,70 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-4"
-        onClick={() => router.push("/trips")}
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back
-      </Button>
+    // The app body is height:100vh + overflow:hidden (Aurora canvas), so every
+    // route must scroll internally — without this wrapper the page clips at
+    // the viewport and content below the fold (e.g. the Admin card's last
+    // rows) is unreachable.
+    <div
+      data-testid="settings-scroll-region"
+      className="min-h-0 flex-1 overflow-y-auto"
+    >
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-4"
+          onClick={() => router.push("/trips")}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back
+        </Button>
 
-      <h1 className="mb-6 text-2xl font-extrabold">Settings</h1>
+        <h1 className="mb-6 text-2xl font-extrabold">Settings</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-          <CardDescription>
-            Manage how you hear about price changes on your tracked trips.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="email-notifications">Email notifications</Label>
-              <p className="text-sm text-muted-foreground">
-                Get a daily digest when a tracked trip drops below your price target.
-              </p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+            <CardDescription>
+              Manage how you hear about price changes on your tracked trips.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="email-notifications">Email notifications</Label>
+                <p className="text-sm text-muted-foreground">
+                  Get a daily digest when a tracked trip drops below your price
+                  target.
+                </p>
+              </div>
+              <Switch
+                id="email-notifications"
+                checked={user.email_notifications_enabled}
+                disabled={saving}
+                onCheckedChange={handleToggleEmail}
+                aria-label="Email notifications"
+              />
             </div>
-            <Switch
-              id="email-notifications"
-              checked={user.email_notifications_enabled}
-              disabled={saving}
-              onCheckedChange={handleToggleEmail}
-              aria-label="Email notifications"
-            />
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="sms-notifications">SMS alerts</Label>
-              <p className="text-sm text-muted-foreground">
-                Instant text on a major price drop.
-              </p>
+            <div className="mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="sms-notifications">SMS alerts</Label>
+                <p className="text-sm text-muted-foreground">
+                  Instant text on a major price drop.
+                </p>
+              </div>
+              <Switch
+                id="sms-notifications"
+                checked={false}
+                disabled
+                aria-label="SMS alerts"
+              />
             </div>
-            <Switch
-              id="sms-notifications"
-              checked={false}
-              disabled
-              aria-label="SMS alerts"
-            />
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {user.is_admin && <AdminFlagsCard />}
+        {user.is_admin && <AdminFlagsCard />}
+      </div>
     </div>
   );
 }

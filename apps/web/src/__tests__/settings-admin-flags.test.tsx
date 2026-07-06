@@ -111,3 +111,12 @@ describe("Settings admin flags card", () => {
     expect(screen.getByRole("switch", { name: "Kiwi flights flag" })).not.toBeChecked();
   });
 });
+
+describe("Settings page scroll container", () => {
+  it("wraps content in an internal scroll region (body is overflow:hidden)", () => {
+    authAs(true);
+    render(<SettingsPage />);
+    const region = screen.getByTestId("settings-scroll-region");
+    expect(region).toHaveClass("overflow-y-auto", "flex-1", "min-h-0");
+  });
+});
