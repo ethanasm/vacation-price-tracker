@@ -45,6 +45,20 @@ class CacheKeys:
         return f"refresh_token:{user_id}"
 
     @staticmethod
+    def refresh_token_grace(user_id: str, jti: str | None = None) -> str:
+        """Key for the post-rotation grace record of a refresh token.
+
+        Written when a refresh token is rotated; maps the retired token to its
+        replacement for a short window so a client whose connection dropped
+        after the server rotated (but before the response arrived) can retry
+        the same token and recover the replacement instead of being signed out.
+        Mirrors :meth:`refresh_token`'s jti/legacy keying.
+        """
+        if jti:
+            return f"refresh_token_grace:{user_id}:{jti}"
+        return f"refresh_token_grace:{user_id}"
+
+    @staticmethod
     def refresh_lock(user_id: str) -> str:
         """Key for refresh-all lock per user."""
         return f"refresh:lock:{user_id}"
@@ -80,6 +94,14 @@ class CacheTTL:
     SESSION = 3600  # 1 hour
     # Refresh-token TTL lives on settings.refresh_token_expire_seconds so the
     # Redis TTL always matches the JWT exp and cookie max_age.
+    # Post-rotation grace: how long a rotated-out refresh token may still be
+    # replayed to recover its replacement. Long enough to cover a mobile client
+    # that lost connectivity mid-refresh and retries when the app is reopened
+    # (the observed prod outage gap was ~27 minutes). Replay only re-yields the
+    # already-issued replacement and only while that replacement is still the
+    # live, unused session token — logout or any forward rotation kills it —
+    # so the longer window does not extend a dead session's life.
+    REFRESH_TOKEN_GRACE = 3600  # 1 hour
     RATE_LIMIT = 60  # 1 minute window (for per-minute rate limiting)
     REFRESH_LOCK = 1800  # 30 minutes
     AUDIT_LOG_RETENTION = 86400 * 90  # 90 days

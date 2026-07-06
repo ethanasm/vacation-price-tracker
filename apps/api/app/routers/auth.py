@@ -1,4 +1,5 @@
 import hmac
+import json
 import logging
 import uuid
 
@@ -13,7 +14,7 @@ from sqlalchemy.future import select
 
 from app.core.admins import is_admin_email
 from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
-from app.core.cache_keys import CacheKeys
+from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.errors import (
@@ -110,6 +111,65 @@ def _refresh_token_key(user_id: uuid.UUID, payload: dict) -> str:
     """Redis key for a refresh token: per-session (jti) when the token carries
     one, else the legacy per-user key (tokens minted before jti existed)."""
     return CacheKeys.refresh_token(str(user_id), payload.get(JWTClaims.JWT_ID))
+
+
+def _grace_key(user_id: uuid.UUID, payload: dict) -> str:
+    return CacheKeys.refresh_token_grace(str(user_id), payload.get(JWTClaims.JWT_ID))
+
+
+async def _write_rotation_grace(
+    user_id: uuid.UUID, payload: dict, presented_token: str, replacement_token: str
+) -> None:
+    """Remember presented→replacement briefly after a rotation.
+
+    Refresh tokens are single-use: rotation deletes the presented token before
+    the response reaches the client. If that response is lost (connection drop
+    mid-refresh — observed bricking mobile sessions in prod), the client's only
+    credential is a token the server no longer recognizes. The grace record
+    lets a retry of the retired token recover the same replacement instead of
+    being permanently signed out.
+    """
+    await redis_client.set(
+        _grace_key(user_id, payload),
+        json.dumps({"presented": presented_token, "replacement": replacement_token}),
+        ex=CacheTTL.REFRESH_TOKEN_GRACE,
+    )
+
+
+async def _grace_replacement(user_id: uuid.UUID, payload: dict, presented_token: str) -> str | None:
+    """The replacement refresh token if ``presented_token`` was rotated out
+    within the grace window, else None.
+
+    A replay is honored only while the replacement is still the *live* stored
+    session token — i.e. the client never received it (the lost-response case).
+    Once the session rotates forward or is revoked (logout), the replacement's
+    own key is gone and the replay fails closed, so a leaked retired token
+    cannot resurrect a dead or superseded session.
+    """
+    raw = await redis_client.get(_grace_key(user_id, payload))
+    if not raw:
+        return None
+    try:
+        record = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(record, dict) or record.get("presented") != presented_token:
+        return None
+    replacement = record.get("replacement")
+    if not isinstance(replacement, str) or not replacement:
+        return None
+    try:
+        replacement_payload = jwt.decode(
+            replacement,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except jwt.PyJWTError:
+        return None
+    live = await redis_client.get(_refresh_token_key(user_id, replacement_payload))
+    if live != replacement:
+        return None
+    return replacement
 
 
 async def _store_refresh_token(user_id: uuid.UUID, refresh_token: str) -> None:
@@ -313,23 +373,39 @@ async def refresh_token(
 
     presented_key = _refresh_token_key(user_id, payload)
     stored_token = await redis_client.get(presented_key)
-    if stored_token != refresh_token_value:
-        raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
-
-    jwt_data = _build_jwt_data(user_id)
-    new_access_token = create_access_token(data=jwt_data)
-    new_refresh_token = create_refresh_token(data=jwt_data)
-    # Rotate within this session only: drop the presented token's key, store
-    # the replacement under its own jti. Other sessions' tokens are untouched.
-    await redis_client.delete(presented_key)
-    await _store_refresh_token(user_id, new_refresh_token)
+    replayed = False
+    if stored_token == refresh_token_value:
+        jwt_data = _build_jwt_data(user_id)
+        new_access_token = create_access_token(data=jwt_data)
+        new_refresh_token = create_refresh_token(data=jwt_data)
+        # Rotate within this session only: drop the presented token's key, store
+        # the replacement under its own jti. Other sessions' tokens are
+        # untouched. The grace record is written before the delete so there is
+        # no instant where the presented token is neither valid nor replayable.
+        await _write_rotation_grace(user_id, payload, refresh_token_value, new_refresh_token)
+        await redis_client.delete(presented_key)
+        await _store_refresh_token(user_id, new_refresh_token)
+    else:
+        # The presented token was already rotated out. If that happened within
+        # the grace window, the client likely never received the rotation
+        # response (connection dropped mid-refresh) — hand back the same
+        # replacement idempotently instead of stranding the session.
+        new_refresh_token_or_none = await _grace_replacement(user_id, payload, refresh_token_value)
+        if new_refresh_token_or_none is None:
+            raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
+        new_access_token = create_access_token(data=_build_jwt_data(user_id))
+        new_refresh_token = new_refresh_token_or_none
+        replayed = True
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user:
         logger.info(
-            "User token refreshed",
-            extra={"event": "auth.token.refresh", "user_id": str(user.id)},
+            "User token refresh replayed within grace" if replayed else "User token refreshed",
+            extra={
+                "event": "auth.token.refresh_replayed" if replayed else "auth.token.refresh",
+                "user_id": str(user.id),
+            },
         )
 
     if body_mode:
@@ -363,7 +439,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             )
             user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
             # Revoke only this session's refresh token; other devices stay in.
-            await redis_client.delete(_refresh_token_key(user_id, payload))
+            # The grace record goes with it so a retired token can't be
+            # replayed to resurrect the session after an explicit logout.
+            await redis_client.delete(
+                _refresh_token_key(user_id, payload),
+                _grace_key(user_id, payload),
+            )
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalars().first()
             if user:
