@@ -12,9 +12,17 @@ with workflow.unsafe.imports_passed_through():
 @workflow.defn
 class RunHealthCheckWorkflow:
     @workflow.run
-    async def run(self) -> dict:
+    async def run(self, refresh_summary: dict | None = None) -> dict:
+        """Run the health checks and email the digest.
+
+        ``refresh_summary`` is set when this workflow is chained off a
+        ScheduledRefreshAllUsersWorkflow run — the digest then reports that
+        run's actual results. The standalone cron firing passes nothing and
+        the refresh outcome is read from Temporal schedule history instead.
+        """
         return await workflow.execute_activity(
             run_health_check_activity,
+            refresh_summary,
             start_to_close_timeout=timedelta(seconds=120),
             # The activity catches its own errors and is idempotent (Resend
             # collapses same-key sends within 24h), so a single retry is safe.

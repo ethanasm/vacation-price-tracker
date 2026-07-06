@@ -328,12 +328,63 @@ def test_rollup_precedence():
 
 
 @pytest.mark.asyncio
-async def test_refresh_run_running_is_ok(configured, monkeypatch):
+async def test_refresh_run_still_running_is_warn(configured, monkeypatch):
+    """The cron health check fires an hour after the refresh — a run still
+    open at that point is stuck or badly delayed (the Jun 2026 outage sat
+    RUNNING for 11 days and read as ok here)."""
     client = _temporal_client(recent_actions=[_action()], wf_status="RUNNING")
     monkeypatch.setattr(hc, "_connect_temporal", AsyncMock(return_value=client))
     monkeypatch.setattr(hc, "ResendClient", lambda: _FakeResend())
     await _seed(configured, snapshots_24h=2)
-    assert (await hc.run_health_check_activity())["status"] == "ok"
+    assert (await hc.run_health_check_activity())["status"] == "warn"
+
+
+def _schedule_averse_client():
+    """Temporal client stub that fails the test if schedule history is read."""
+
+    def _boom(_id):
+        raise AssertionError("schedule history must not be consulted for a chained run")
+
+    return SimpleNamespace(get_schedule_handle=_boom, get_workflow_handle=_boom)
+
+
+@pytest.mark.asyncio
+async def test_refresh_run_uses_chained_summary(configured, monkeypatch):
+    """A chained run reports the passed-in results (including the digest
+    outcome) instead of reading Temporal schedule history."""
+    monkeypatch.setattr(
+        hc, "_connect_temporal", AsyncMock(return_value=_schedule_averse_client())
+    )
+    fake = _FakeResend()
+    monkeypatch.setattr(hc, "ResendClient", lambda: fake)
+    await _seed(configured, snapshots_24h=2)
+
+    summary = {
+        "users_total": 2,
+        "users_successful": 2,
+        "users_failed": 0,
+        "digests": {"users_total": 2, "sent": 1, "skipped": 1},
+    }
+    result = await hc.run_health_check_activity(summary)
+
+    assert result["status"] == "ok"
+    assert "Today&#39;s refresh OK (2/2 users); digests sent 1/2 (skipped 1)" in fake.calls[0][
+        "html"
+    ] or "Today's refresh OK (2/2 users); digests sent 1/2 (skipped 1)" in fake.calls[0]["html"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_run_chained_summary_with_failures_is_warn(configured, monkeypatch):
+    monkeypatch.setattr(
+        hc, "_connect_temporal", AsyncMock(return_value=_schedule_averse_client())
+    )
+    monkeypatch.setattr(hc, "ResendClient", lambda: _FakeResend())
+    await _seed(configured, snapshots_24h=2)
+
+    summary = {"users_total": 3, "users_successful": 2, "users_failed": 1}
+    result = await hc.run_health_check_activity(summary)
+
+    assert result["status"] == "warn"
 
 
 @pytest.mark.asyncio

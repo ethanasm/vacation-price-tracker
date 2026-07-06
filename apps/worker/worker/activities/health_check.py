@@ -185,6 +185,47 @@ async def _check_budget(name: str, metric: str, limit: int, label: str) -> Check
         return _errored(name, "unknown", f"{label} budget read failed: {exc}", exc)
 
 
+def _summarize_chained_refresh(refresh_summary: dict) -> CheckResult:
+    """Build the refresh_run check from the run that chained this health check.
+
+    No Temporal history read: the ScheduledRefreshAllUsersWorkflow that just
+    finished passed its own results (plus the digest outcome) in.
+    """
+    total = refresh_summary.get("users_total", 0)
+    ok = refresh_summary.get("users_successful", 0)
+    failed = refresh_summary.get("users_failed", 0)
+    digests = refresh_summary.get("digests")
+    digest_note = ""
+    if isinstance(digests, dict):
+        digest_note = (
+            f"; digests sent {digests.get('sent', 0)}/{digests.get('users_total', 0)}"
+            f" (skipped {digests.get('skipped', 0)})"
+        )
+    if failed:
+        return _result(
+            "refresh_run",
+            "warn",
+            f"Today's refresh completed with {failed} user failure(s)"
+            f" ({ok}/{total} ok){digest_note}",
+            dict(refresh_summary),
+        )
+    return _result(
+        "refresh_run",
+        "ok",
+        f"Today's refresh OK ({ok}/{total} users){digest_note}",
+        dict(refresh_summary),
+    )
+
+
+async def _refresh_run_check(
+    client: Client | None, refresh_summary: dict | None
+) -> CheckResult:
+    """Chained runs report their own results; cron runs read schedule history."""
+    if refresh_summary is not None:
+        return _summarize_chained_refresh(refresh_summary)
+    return await _check_refresh_run(client)
+
+
 async def _check_refresh_run(client: Client | None) -> CheckResult:
     if client is None:
         return _result("refresh_run", "unknown", "Temporal unreachable — schedule history unread")
@@ -229,7 +270,12 @@ async def _check_refresh_run(client: Client | None) -> CheckResult:
                 )
             return _result("refresh_run", "ok", "Last refresh completed", detail)
         if status_name == "RUNNING":
-            return _result("refresh_run", "ok", "Refresh currently running", detail)
+            # The cron health check fires an hour after the refresh; a run
+            # still open at that point is stuck or badly delayed (the Jun 2026
+            # outage sat "RUNNING" for 11 days and read as ok here).
+            return _result(
+                "refresh_run", "warn", "Refresh still running at health-check time", detail
+            )
         if status_name in {"FAILED", "TERMINATED", "TIMED_OUT", "CANCELED"}:
             return _result("refresh_run", "fail", f"Last refresh {status_name}", detail)
         return _result("refresh_run", "warn", f"Last refresh status: {status_name}", detail)
@@ -271,8 +317,14 @@ async def _connect_temporal() -> Client | None:
 
 
 @activity.defn
-async def run_health_check_activity() -> dict:
-    """Run all health checks, roll up status, and email the digest to ADMIN_EMAILS."""
+async def run_health_check_activity(refresh_summary: dict | None = None) -> dict:
+    """Run all health checks, roll up status, and email the digest to ADMIN_EMAILS.
+
+    ``refresh_summary`` (results of the ScheduledRefreshAllUsersWorkflow run
+    that chained this check, including the digest outcome) feeds the
+    refresh_run check directly; without it the outcome is read from Temporal
+    schedule history (standalone cron firing).
+    """
     now = datetime.now(UTC)
     temporal_client = await _connect_temporal()
 
@@ -298,7 +350,7 @@ async def run_health_check_activity() -> dict:
                 settings.global_daily_skiplagged_call_budget,
                 "Kiwi calls",
             ),
-            _check_refresh_run(temporal_client),
+            _refresh_run_check(temporal_client, refresh_summary),
             _check_error_volume(),
         )
     )

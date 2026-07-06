@@ -17,6 +17,7 @@ with workflow.unsafe.imports_passed_through():
 
 REFRESH_ALL_TRIPS_WORKFLOW_NAME = "RefreshAllTripsWorkflow"
 SEND_DAILY_DIGESTS_WORKFLOW_NAME = "SendDailyDigestsWorkflow"
+RUN_HEALTH_CHECK_WORKFLOW_NAME = "RunHealthCheckWorkflow"
 MAX_PARALLEL_USERS = 3
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class ScheduledRefreshAllUsersWorkflow:
 
         # Send the daily digest only after every per-user refresh (and thus every
         # snapshot + outbox enqueue) has completed, so digests are never partial.
-        await self._send_daily_digests()
+        digest_result = await self._send_daily_digests()
 
         wf_logger(logger).info(
             "Scheduled refresh complete (%d/%d users ok)",
@@ -73,16 +74,22 @@ class ScheduledRefreshAllUsersWorkflow:
                 "users_failed": failed,
             },
         )
-        return {
+        summary: ScheduledRefreshResult = {
             "users_total": len(user_ids),
             "users_successful": successful,
             "users_failed": failed,
         }
+        # Chain the health check so it runs after (and reports on) THIS run,
+        # regardless of how long the refresh took. The 07:00 UTC cron schedule
+        # stays as a fallback for the day the refresh never fires; the email's
+        # per-day idempotency key collapses the duplicate send.
+        await self._run_health_check(summary, digest_result)
+        return summary
 
-    async def _send_daily_digests(self) -> None:
+    async def _send_daily_digests(self) -> dict | None:
         run_id = workflow.info().run_id
         try:
-            await workflow.execute_child_workflow(
+            return await workflow.execute_child_workflow(
                 SEND_DAILY_DIGESTS_WORKFLOW_NAME,
                 id=f"daily-digest-{run_id}",
             )
@@ -91,6 +98,27 @@ class ScheduledRefreshAllUsersWorkflow:
                 "Daily digest dispatch failed",
                 exc_info=exc,
                 extra={"event": "workflow.scheduled_refresh.digest_dispatch_failed"},
+            )
+            return None
+
+    async def _run_health_check(
+        self, summary: ScheduledRefreshResult, digest_result: dict | None
+    ) -> None:
+        refresh_summary: dict = dict(summary)
+        if digest_result is not None:
+            refresh_summary["digests"] = digest_result
+        try:
+            await workflow.start_child_workflow(
+                RUN_HEALTH_CHECK_WORKFLOW_NAME,
+                refresh_summary,
+                id=f"health-check-{workflow.info().run_id}",
+                parent_close_policy=ParentClosePolicy.ABANDON,
+            )
+        except Exception as exc:
+            wf_logger(logger).error(
+                "Health check dispatch failed",
+                exc_info=exc,
+                extra={"event": "workflow.scheduled_refresh.health_dispatch_failed"},
             )
 
     async def _run_child(self, user_id: str) -> None:
