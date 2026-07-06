@@ -1,8 +1,9 @@
 """Tests for the Resend email client."""
 
+import httpx
 import pytest
 from app.clients import email as email_module
-from app.clients.email import EmailConfigError, ResendClient
+from app.clients.email import EmailConfigError, EmailSendError, ResendClient
 
 
 class _FakeResponse:
@@ -64,6 +65,26 @@ async def test_send_posts_to_resend(monkeypatch):
     assert call["json"]["headers"] == {"List-Unsubscribe": "<https://app.test/u>"}
     assert call["headers"]["Authorization"] == "Bearer re_test"
     assert call["headers"]["Idempotency-Key"] == "key-1"
+
+
+class _RejectingAsyncClient(_FakeAsyncClient):
+    """Resend answering 409 (idempotency-key reuse with a different payload)."""
+
+    async def post(self, url, json, headers):  # noqa: ARG002 - stub signature
+        request = httpx.Request("POST", url)
+        response = httpx.Response(409, text="conflict", request=request)
+        raise httpx.HTTPStatusError("conflict", request=request, response=response)
+
+
+@pytest.mark.asyncio
+async def test_send_rejection_carries_status_code(monkeypatch):
+    monkeypatch.setattr(email_module.httpx, "AsyncClient", _RejectingAsyncClient)
+    client = ResendClient(api_key="re_test", from_address="App <a@verified.com>")
+
+    with pytest.raises(EmailSendError) as exc_info:
+        await client.send(to="x@example.com", subject="Hi", html="<p>hi</p>")
+
+    assert exc_info.value.status_code == 409
 
 
 @pytest.mark.asyncio

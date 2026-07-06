@@ -41,7 +41,15 @@ all with `ScheduleOverlapPolicy.SKIP`. Times are UTC.
 | `daily-price-refresh` | `DAILY_REFRESH_CRON` | `0 6 * * *` | `ScheduledRefreshAllUsersWorkflow` | Refresh every active trip, then chain the user price-drop digest. |
 | `daily-health-check` | `DAILY_HEALTH_CRON` | `0 7 * * *` | `RunHealthCheckWorkflow` | Run system health checks and email an ops summary to `ADMIN_EMAILS`. |
 
-The health check runs an hour after the refresh so it reports on the overnight run.
+The health check is **chained**: `ScheduledRefreshAllUsersWorkflow` starts
+`RunHealthCheckWorkflow` as its final step, passing the run's results (users
+ok/failed + digest outcome) so the email reports the run that just finished —
+however long it took. The `daily-health-check` cron (an hour later) stays as a
+fallback for the day the refresh never fires; it reads the outcome from
+Temporal schedule history instead, flags a still-`RUNNING` refresh as **warn**
+(a run still open an hour later is stuck — see the Jun 2026 outage), and the
+email's per-day idempotency key (`health-summary-{date}`) collapses the
+duplicate send.
 
 ## Workflows
 

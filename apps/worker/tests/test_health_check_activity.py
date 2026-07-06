@@ -50,6 +50,15 @@ class _BoomResend:
         raise EmailSendError("resend down")
 
 
+class _DuplicateKeyResend:
+    """Resend rejecting an idempotency-key reuse with a different payload."""
+
+    async def send(self, **_kwargs):
+        from app.clients.email import EmailSendError
+
+        raise EmailSendError("Resend rejected send: 409 conflict", status_code=409)
+
+
 class _BoomSession:
     async def __aenter__(self):
         raise RuntimeError("db down")
@@ -198,6 +207,26 @@ async def test_email_failure_is_swallowed(configured, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_email_idempotency_conflict_is_benign(configured, monkeypatch, caplog):
+    """The cron fallback re-sends today's key with a different payload; the
+    409 Resend answers with must log as info, not a daily ERROR."""
+    import logging
+
+    monkeypatch.setattr(hc, "ResendClient", lambda: _DuplicateKeyResend())
+    await _seed(configured)
+
+    with caplog.at_level(logging.INFO):
+        result = await hc.run_health_check_activity()
+
+    assert result["sent"] == 0
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any(
+        getattr(r, "event", None) == "health.check.email.duplicate_skipped"
+        for r in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_redis_down_marks_fail(configured, monkeypatch):
     monkeypatch.setattr(hc, "redis_client", _FakeRedis(ping_ok=False))
     monkeypatch.setattr(hc, "ResendClient", lambda: _FakeResend())
@@ -328,12 +357,63 @@ def test_rollup_precedence():
 
 
 @pytest.mark.asyncio
-async def test_refresh_run_running_is_ok(configured, monkeypatch):
+async def test_refresh_run_still_running_is_warn(configured, monkeypatch):
+    """The cron health check fires an hour after the refresh — a run still
+    open at that point is stuck or badly delayed (the Jun 2026 outage sat
+    RUNNING for 11 days and read as ok here)."""
     client = _temporal_client(recent_actions=[_action()], wf_status="RUNNING")
     monkeypatch.setattr(hc, "_connect_temporal", AsyncMock(return_value=client))
     monkeypatch.setattr(hc, "ResendClient", lambda: _FakeResend())
     await _seed(configured, snapshots_24h=2)
-    assert (await hc.run_health_check_activity())["status"] == "ok"
+    assert (await hc.run_health_check_activity())["status"] == "warn"
+
+
+def _schedule_averse_client():
+    """Temporal client stub that fails the test if schedule history is read."""
+
+    def _boom(_id):
+        raise AssertionError("schedule history must not be consulted for a chained run")
+
+    return SimpleNamespace(get_schedule_handle=_boom, get_workflow_handle=_boom)
+
+
+@pytest.mark.asyncio
+async def test_refresh_run_uses_chained_summary(configured, monkeypatch):
+    """A chained run reports the passed-in results (including the digest
+    outcome) instead of reading Temporal schedule history."""
+    monkeypatch.setattr(
+        hc, "_connect_temporal", AsyncMock(return_value=_schedule_averse_client())
+    )
+    fake = _FakeResend()
+    monkeypatch.setattr(hc, "ResendClient", lambda: fake)
+    await _seed(configured, snapshots_24h=2)
+
+    summary = {
+        "users_total": 2,
+        "users_successful": 2,
+        "users_failed": 0,
+        "digests": {"users_total": 2, "sent": 1, "skipped": 1},
+    }
+    result = await hc.run_health_check_activity(summary)
+
+    assert result["status"] == "ok"
+    assert "Today&#39;s refresh OK (2/2 users); digests sent 1/2 (skipped 1)" in fake.calls[0][
+        "html"
+    ] or "Today's refresh OK (2/2 users); digests sent 1/2 (skipped 1)" in fake.calls[0]["html"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_run_chained_summary_with_failures_is_warn(configured, monkeypatch):
+    monkeypatch.setattr(
+        hc, "_connect_temporal", AsyncMock(return_value=_schedule_averse_client())
+    )
+    monkeypatch.setattr(hc, "ResendClient", lambda: _FakeResend())
+    await _seed(configured, snapshots_24h=2)
+
+    summary = {"users_total": 3, "users_successful": 2, "users_failed": 1}
+    result = await hc.run_health_check_activity(summary)
+
+    assert result["status"] == "warn"
 
 
 @pytest.mark.asyncio

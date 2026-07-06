@@ -32,7 +32,16 @@ class EmailConfigError(EmailError):
 
 
 class EmailSendError(EmailError):
-    """Raised when Resend rejects a send or the request fails."""
+    """Raised when Resend rejects a send or the request fails.
+
+    ``status_code`` carries the HTTP status when Resend answered (None for
+    transport failures) so callers can special-case rejections — e.g. the 409
+    an idempotency-key reuse with a different payload returns.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class ResendClient:
@@ -112,7 +121,8 @@ class ResendClient:
         except httpx.HTTPStatusError as exc:  # pragma: no cover - network error path
             body = exc.response.text
             raise EmailSendError(
-                f"Resend rejected send to {to}: {exc.response.status_code} {body}"
+                f"Resend rejected send to {to}: {exc.response.status_code} {body}",
+                status_code=exc.response.status_code,
             ) from exc
         except httpx.HTTPError as exc:  # pragma: no cover - network error path
             raise EmailSendError(f"Resend request failed for {to}: {exc}") from exc
