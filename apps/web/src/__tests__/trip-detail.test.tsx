@@ -1989,7 +1989,7 @@ describe("TripDetailPage", () => {
         await jest.advanceTimersByTimeAsync(20_000);
       });
       // The in-flight loop aborts on the next tick — no further status calls.
-      expect(mockGetRefreshStatus.mock.calls.length).toBe(callsBeforeUnmount);
+      expect(mockGetRefreshStatus.mock.calls).toHaveLength(callsBeforeUnmount);
 
       jest.useRealTimers();
     });

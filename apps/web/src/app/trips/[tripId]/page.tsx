@@ -1002,7 +1002,7 @@ export default function TripDetailPage({
       // The workflow raises on Skiplagged errors (and does NOT save a snapshot),
       // so we need this signal — there's no other channel that tells the UI
       // "the fetch failed" vs. "the fetch found nothing".
-      void pollRefreshStatus(refreshGroupId);
+      pollRefreshStatus(refreshGroupId).catch(() => setIsRefreshing(false));
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.detail || "Failed to refresh trip");
@@ -1023,6 +1023,31 @@ export default function TripDetailPage({
     };
   }, []);
 
+  // Handle one refresh-status result: returns true when polling should stop.
+  const settleRefreshStatus = useCallback(
+    async (status: { status: string; error?: string | null }) => {
+      if (status.status === "completed") {
+        // Refetch directly — SSE also delivers the snapshot, but the
+        // stream can be expired/disconnected, so don't depend on it.
+        await fetchTripDetails(false);
+        setIsRefreshing(false);
+        return true;
+      }
+      if (status.status === "failed") {
+        toast.error(
+          status.error
+            ? `Price refresh failed: ${status.error}`
+            : "Price refresh failed. Please try again in a moment."
+        );
+        setIsRefreshing(false);
+        return true;
+      }
+      // "running" / "pending" — keep polling.
+      return false;
+    },
+    [fetchTripDetails]
+  );
+
   const pollRefreshStatus = useCallback(
     async (refreshGroupId: string) => {
       const POLL_INTERVAL_MS = 2_000;
@@ -1042,27 +1067,12 @@ export default function TripDetailPage({
         try {
           const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
           notFoundCount = 0;
-          if (status.status === "completed") {
-            // Refetch directly — SSE also delivers the snapshot, but the
-            // stream can be expired/disconnected, so don't depend on it.
-            await fetchTripDetails(false);
-            setIsRefreshing(false);
-            return;
-          }
-          if (status.status === "failed") {
-            toast.error(
-              status.error
-                ? `Price refresh failed: ${status.error}`
-                : "Price refresh failed. Please try again in a moment."
-            );
-            setIsRefreshing(false);
-            return;
-          }
-          // "running" / "pending" — keep polling.
+          if (await settleRefreshStatus(status)) return;
         } catch (err) {
           // The endpoint may briefly 404 while Temporal registers the
           // workflow — tolerate a few, but a persistent 404 means the
           // workflow doesn't exist (e.g. history already purged): stop.
+          // Other transient failures: keep polling until the deadline.
           if (err instanceof ApiError && err.status === 404) {
             notFoundCount += 1;
             if (notFoundCount >= MAX_NOT_FOUND) {
@@ -1070,14 +1080,13 @@ export default function TripDetailPage({
               return;
             }
           }
-          // Other transient failures: keep polling until the deadline.
         }
       }
       // Timed out waiting for completion — stop the spinner and stay quiet.
       // SSE will still deliver the snapshot if/when it lands.
       setIsRefreshing(false);
     },
-    [fetchTripDetails]
+    [settleRefreshStatus]
   );
 
   // Creating a trip kicks off an initial PriceCheckWorkflow server-side with
@@ -1096,7 +1105,7 @@ export default function TripDetailPage({
     if (!Number.isFinite(createdAt) || Date.now() - createdAt > INITIAL_FETCH_WINDOW_MS) return;
     initialFetchPollStarted.current = true;
     setIsRefreshing(true);
-    void pollRefreshStatus(`price-check-${tripId}`);
+    pollRefreshStatus(`price-check-${tripId}`).catch(() => setIsRefreshing(false));
   }, [isLoading, trip, priceHistory, tripId, pollRefreshStatus]);
 
   const handleBack = useCallback(() => {
