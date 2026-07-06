@@ -206,8 +206,8 @@ describe("CreateTripPage", () => {
     const { toast } = jest.requireMock("sonner");
     expect(getPayload).toHaveBeenCalledTimes(1);
     expect(mockCreate).toHaveBeenCalledWith(tripPayloadFixture, expect.any(String));
-    expect(toast.success).toHaveBeenCalledWith("Trip created successfully!");
-    expect(mockPush).toHaveBeenCalledWith("/trips");
+    expect(toast.success).toHaveBeenCalledWith("Trip created — fetching initial prices…");
+    expect(mockPush).toHaveBeenCalledWith("/trips/test-trip-id");
   });
 
   it("shows an error toast when submission fails", async () => {

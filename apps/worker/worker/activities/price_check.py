@@ -518,19 +518,32 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
         if recent_snapshot:
             seconds_ago = (datetime.now(UTC) - recent_snapshot.created_at).total_seconds()
 
-            # Check if recent snapshot contains errors - if so, allow retry with better data
+            # Allow a retry to supersede a recent snapshot that is degraded:
+            # an upstream fetch recorded an error, or no offers came back at
+            # all (a provider blip can return an empty-but-"successful" search;
+            # observed with Kiwi in prod 2026-07-06). Note `errors` is always
+            # a dict with (possibly null) flights/hotels keys — check the
+            # values, not the dict's truthiness.
             raw_data = recent_snapshot.raw_data or {}
-            has_errors = bool(raw_data.get("errors"))
+            errors = raw_data.get("errors")
+            has_errors = any(errors.values()) if isinstance(errors, dict) else bool(errors)
+            raw_flights = raw_data.get("flights")
+            raw_hotels = raw_data.get("hotels")
+            flight_data = raw_flights.get("data") if isinstance(raw_flights, dict) else None
+            hotel_data = raw_hotels.get("data") if isinstance(raw_hotels, dict) else None
+            has_no_offers = not flight_data and not hotel_data
 
-            if has_errors:
+            if has_errors or has_no_offers:
                 logger.info(
-                    "Recent snapshot %s had errors; allowing new snapshot for trip_id=%s",
+                    "Recent snapshot %s was degraded (%s); allowing new snapshot for trip_id=%s",
                     recent_snapshot.id,
+                    "errors" if has_errors else "no offers",
                     payload["trip_id"],
                     extra={
                         "event": "activity.save_snapshot.retry_after_errors",
                         "trip_id": payload["trip_id"],
                         "snapshot_id": str(recent_snapshot.id),
+                        "reason": "errors" if has_errors else "no_offers",
                     },
                 )
             else:

@@ -100,6 +100,70 @@ async def test_get_refresh_progress_with_status(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_refresh_progress_query_failed_running(monkeypatch):
+    """PriceCheckWorkflow has no refresh_progress query — the server fails the
+    query and the SDK raises WorkflowQueryFailedError; we fall back to describe().
+    (Regression: this surfaced as 500s on /v1/trips/refresh-status in prod.)"""
+    handle = MagicMock()
+    handle.query = AsyncMock(
+        side_effect=temporal_client.WorkflowQueryFailedError(
+            "Query handler for 'refresh_progress' expected but not found"
+        )
+    )
+    description = MagicMock()
+    description.status = temporal_client.WorkflowExecutionStatus.RUNNING
+    handle.describe = AsyncMock(return_value=description)
+    client = MagicMock()
+    client.get_workflow_handle = MagicMock(return_value=handle)
+    monkeypatch.setattr(temporal_service, "get_temporal_client", lambda: client)
+
+    result = await temporal_service.get_refresh_progress("price-check-abc")
+
+    assert result["status"] == "running"
+    handle.describe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_refresh_progress_query_failed_other_reason_reraises(monkeypatch):
+    """A runtime failure inside RefreshAllTripsWorkflow's real query handler
+    must surface, not silently degrade to a describe() status."""
+    handle = MagicMock()
+    handle.query = AsyncMock(
+        side_effect=temporal_client.WorkflowQueryFailedError("KeyError: 'total'")
+    )
+    handle.describe = AsyncMock()
+    client = MagicMock()
+    client.get_workflow_handle = MagicMock(return_value=handle)
+    monkeypatch.setattr(temporal_service, "get_temporal_client", lambda: client)
+
+    with pytest.raises(temporal_client.WorkflowQueryFailedError):
+        await temporal_service.get_refresh_progress("refresh-1")
+    handle.describe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_refresh_progress_query_failed_completed(monkeypatch):
+    handle = MagicMock()
+    handle.query = AsyncMock(
+        side_effect=temporal_client.WorkflowQueryFailedError(
+            "Query handler for 'refresh_progress' expected but not found"
+        )
+    )
+    description = MagicMock()
+    description.status = temporal_client.WorkflowExecutionStatus.COMPLETED
+    handle.describe = AsyncMock(return_value=description)
+    handle.result = AsyncMock(return_value={"total": 1, "failed": 0, "successful": 1})
+    client = MagicMock()
+    client.get_workflow_handle = MagicMock(return_value=handle)
+    monkeypatch.setattr(temporal_service, "get_temporal_client", lambda: client)
+
+    result = await temporal_service.get_refresh_progress("price-check-abc")
+
+    assert result["status"] == "completed"
+    assert result["failed"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_refresh_progress_reraises_without_status(monkeypatch):
     handle = MagicMock()
     handle.query = AsyncMock(side_effect=temporal_client.WorkflowQueryRejectedError(None))

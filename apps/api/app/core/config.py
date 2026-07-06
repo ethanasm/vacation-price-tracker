@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 100
     chat_rate_limit_per_minute: int = 10
 
+    # Number of trusted reverse-proxy hops in front of the app, counted from the
+    # right of `X-Forwarded-For`. Prod runs behind a single Cloudflare Tunnel hop,
+    # so the client IP is the 1st entry from the right (default 1). Set to 0 for a
+    # direct-bind deployment (no proxy) so a client-supplied XFF is ignored in
+    # favour of the socket peer. Getting this right matters: the per-IP rate limit
+    # and daily quota key on this IP, so an over-count lets a client forge buckets.
+    trusted_proxy_count: int = 1
+
     # Cost / abuse ceilings (daily quotas + global daily spend circuit-breaker).
     # Always on, like the per-minute rate limiter above. All counters live in
     # Redis and auto-reset at UTC midnight. The four limits are the tunable knobs
