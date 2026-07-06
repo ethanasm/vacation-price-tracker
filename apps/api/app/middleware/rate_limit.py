@@ -59,9 +59,10 @@ def _get_client_ip(request: Request) -> str:
     `X-Forwarded-For` is client-appendable, so the *leftmost* entry is fully
     attacker-controlled — keying the rate limiter on it (the previous behaviour)
     let a client mint a fresh bucket per request by rotating the header. With N
-    trusted hops, the real client is the (N+1)th entry from the right; anything
-    further left was supplied by the client and is ignored. Falls back to the
-    socket peer when the header is absent, malformed, or trust is disabled.
+    trusted hops each proxy appends the address it saw, so the real client is
+    the Nth entry from the right (`parts[-N]`); anything further left was
+    supplied by the client and is ignored. Falls back to the socket peer when
+    the header is absent, malformed, or trust is disabled.
     """
     hops = settings.trusted_proxy_count
     if hops > 0:

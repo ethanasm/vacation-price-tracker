@@ -170,6 +170,26 @@ def test_extract_user_id_from_valid_token():
     assert _extract_user_id_from_token(request) == user_id
 
 
+def test_extract_user_id_from_bearer_header():
+    """Mobile clients authenticate with Authorization: Bearer, not the cookie —
+    the identifier must resolve from the header so mobile requests key on the
+    user (not a spoofable IP) and can't escape the per-user daily quota."""
+    user_id = "mobile-user-9"
+    token = create_access_token(data={"sub": user_id})
+    request = _make_request(headers={"Authorization": f"Bearer {token}"})
+    assert _extract_user_id_from_token(request) == user_id
+
+
+def test_extract_user_id_rejects_refresh_token_in_bearer():
+    """A refresh token in the bearer slot must not identify a user for quota
+    purposes (it can't call these endpoints anyway)."""
+    from app.core.security import create_refresh_token
+
+    token = create_refresh_token(data={"sub": "user-x"})
+    request = _make_request(headers={"Authorization": f"Bearer {token}"})
+    assert _extract_user_id_from_token(request) is None
+
+
 def test_extract_user_id_no_token():
     """No token should return None."""
     request = _make_request()
