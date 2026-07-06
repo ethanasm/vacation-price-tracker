@@ -87,11 +87,16 @@ async def get_refresh_progress(refresh_group_id: str) -> dict:
         if exc.status is None:
             raise
         return await _status_from_execution(handle, exc.status)
-    except temporal_client.WorkflowQueryFailedError:
+    except temporal_client.WorkflowQueryFailedError as exc:
         # PriceCheckWorkflow registers no refresh_progress query handler, so the
         # server fails the query ("Query handler ... expected but not found").
         # The SDK surfaces that as WorkflowQueryFailedError (a TemporalError,
-        # NOT an RPCError) — fall back to describe().
+        # NOT an RPCError) — fall back to describe(). Only the missing-handler
+        # case falls through: RefreshAllTripsWorkflow DOES register the query,
+        # and a runtime failure inside its handler must surface, not be
+        # silently downgraded to a describe() status.
+        if "expected but not found" not in str(exc):
+            raise
         description = await handle.describe()
         return await _status_from_execution(handle, description.status)
     except temporal_client.RPCError as exc:

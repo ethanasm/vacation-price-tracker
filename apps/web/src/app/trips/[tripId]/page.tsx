@@ -1013,6 +1013,16 @@ export default function TripDetailPage({
     }
   };
 
+  // Flipped on unmount so in-flight poll loops stop instead of hitting the
+  // API (and calling setState) for up to 60s after navigating away.
+  const pollAbortedRef = useRef(false);
+  useEffect(() => {
+    pollAbortedRef.current = false;
+    return () => {
+      pollAbortedRef.current = true;
+    };
+  }, []);
+
   const pollRefreshStatus = useCallback(
     async (refreshGroupId: string) => {
       const POLL_INTERVAL_MS = 2_000;
@@ -1027,6 +1037,7 @@ export default function TripDetailPage({
         await new Promise((resolve) =>
           setTimeout(resolve, first ? INITIAL_DELAY_MS : POLL_INTERVAL_MS)
         );
+        if (pollAbortedRef.current) return;
         first = false;
         try {
           const { data: status } = await api.trips.getRefreshStatus(refreshGroupId);
