@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
 
@@ -11,7 +12,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
-from app.core.constants import CookieNames, JWTClaims
+from app.core.constants import CookieNames, JWTClaims, TokenType
 from app.core.errors import PROBLEM_JSON_MEDIA_TYPE, GlobalBudgetExceeded, RateLimitExceeded
 from app.core.quota import (
     _seconds_to_utc_midnight,
@@ -34,29 +35,71 @@ CHAT_PATHS = {"/v1/chat/messages", "/v1/chat"}
 CHAT_MESSAGE_PATHS = {"/v1/chat/messages", "/v1/chat/elicitation"}
 
 
+def _valid_ip(value: str) -> str | None:
+    """Return the value if it parses as an IPv4/IPv6 address, else None.
+
+    Guards the rate-limit key against a client-forged `X-Forwarded-For` value:
+    an unparseable entry is rejected rather than trusted, mirroring the IP
+    validation the admin-SQL endpoint already does in `core/admin_query.py`.
+    Also stops a crafted value (newlines, control chars) from reaching the
+    structured log field on a rejection (CWE-117).
+    """
+    candidate = value.strip()
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    return candidate
+
+
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP from request, considering proxy headers."""
-    # Check X-Forwarded-For header (set by proxies/load balancers)
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        # Take the first IP (original client)
-        return forwarded_for.split(",")[0].strip()
+    """Extract the client IP, trusting only `settings.trusted_proxy_count` proxy
+    hops from the right of `X-Forwarded-For`.
 
-    # Check X-Real-IP header (common in nginx setups)
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    `X-Forwarded-For` is client-appendable, so the *leftmost* entry is fully
+    attacker-controlled — keying the rate limiter on it (the previous behaviour)
+    let a client mint a fresh bucket per request by rotating the header. With N
+    trusted hops each proxy appends the address it saw, so the real client is
+    the Nth entry from the right (`parts[-N]`); anything further left was
+    supplied by the client and is ignored. Falls back to the socket peer when
+    the header is absent, malformed, or trust is disabled.
+    """
+    hops = settings.trusted_proxy_count
+    if hops > 0:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            parts = [p.strip() for p in forwarded_for.split(",") if p.strip()]
+            # The entry appended by the outermost trusted proxy is at index -hops.
+            if len(parts) >= hops:
+                validated = _valid_ip(parts[-hops])
+                if validated:
+                    return validated
 
-    # Fall back to direct client address
+    # Fall back to the direct socket peer (trustworthy: set by the ASGI server).
     if request.client:
-        return request.client.host
+        peer = _valid_ip(request.client.host)
+        if peer:
+            return peer
 
     return "unknown"
 
 
 def _extract_user_id_from_token(request: Request) -> str | None:
-    """Extract user ID from JWT access token cookie if present."""
+    """Extract user ID from the JWT access token — cookie (web) or, failing that,
+    the `Authorization: Bearer` header (mobile).
+
+    The bearer path is essential: mobile clients authenticate with the header,
+    not the cookie, so reading the cookie alone dropped every authenticated
+    mobile request to IP-based limiting — letting mobile users escape the
+    per-user daily quota entirely. Mirrors `auth._extract_access_token`.
+    """
     access_token = request.cookies.get(CookieNames.ACCESS_TOKEN)
+    if not access_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            scheme, _, credential = auth_header.partition(" ")
+            if scheme.lower() == "bearer" and credential:
+                access_token = credential
     if not access_token:
         return None
 
@@ -66,6 +109,10 @@ def _extract_user_id_from_token(request: Request) -> str | None:
             settings.secret_key,
             algorithms=[settings.jwt_algorithm],
         )
+        # Only an access token identifies a user here; a refresh token in the
+        # bearer slot must not key the quota (it can't call these endpoints).
+        if payload.get(JWTClaims.TYPE) != TokenType.ACCESS.value:
+            return None
         return payload.get(JWTClaims.SUBJECT)
     except jwt.PyJWTError:
         # Invalid or expired token - fall back to IP-based rate limiting
