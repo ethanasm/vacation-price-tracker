@@ -138,7 +138,14 @@ async def _write_rotation_grace(
 
 async def _grace_replacement(user_id: uuid.UUID, payload: dict, presented_token: str) -> str | None:
     """The replacement refresh token if ``presented_token`` was rotated out
-    within the grace window, else None."""
+    within the grace window, else None.
+
+    A replay is honored only while the replacement is still the *live* stored
+    session token — i.e. the client never received it (the lost-response case).
+    Once the session rotates forward or is revoked (logout), the replacement's
+    own key is gone and the replay fails closed, so a leaked retired token
+    cannot resurrect a dead or superseded session.
+    """
     raw = await redis_client.get(_grace_key(user_id, payload))
     if not raw:
         return None
@@ -149,7 +156,20 @@ async def _grace_replacement(user_id: uuid.UUID, payload: dict, presented_token:
     if not isinstance(record, dict) or record.get("presented") != presented_token:
         return None
     replacement = record.get("replacement")
-    return replacement if isinstance(replacement, str) and replacement else None
+    if not isinstance(replacement, str) or not replacement:
+        return None
+    try:
+        replacement_payload = jwt.decode(
+            replacement,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except jwt.PyJWTError:
+        return None
+    live = await redis_client.get(_refresh_token_key(user_id, replacement_payload))
+    if live != replacement:
+        return None
+    return replacement
 
 
 async def _store_refresh_token(user_id: uuid.UUID, refresh_token: str) -> None:
@@ -419,7 +439,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             )
             user_id = uuid.UUID(payload.get(JWTClaims.SUBJECT))
             # Revoke only this session's refresh token; other devices stay in.
-            await redis_client.delete(_refresh_token_key(user_id, payload))
+            # The grace record goes with it so a retired token can't be
+            # replayed to resurrect the session after an explicit logout.
+            await redis_client.delete(
+                _refresh_token_key(user_id, payload),
+                _grace_key(user_id, payload),
+            )
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalars().first()
             if user:

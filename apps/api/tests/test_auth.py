@@ -418,9 +418,11 @@ class TestTokenRefresh:
         replacement_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
         # First get: the session key no longer holds the retired token.
         # Second get: the grace record maps it to the replacement.
+        # Third get: the replacement is still the live stored session token.
         mock_redis.get.side_effect = [
             None,
             json.dumps({"presented": retired_token, "replacement": replacement_token}),
+            replacement_token,
         ]
         monkeypatch.setattr(auth_module, "redis_client", mock_redis)
 
@@ -437,6 +439,63 @@ class TestTokenRefresh:
         # Replay is idempotent: nothing is rotated, stored, or deleted.
         mock_redis.set.assert_not_called()
         mock_redis.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refresh_replay_rejected_when_replacement_not_live(self, test_session, mock_redis, monkeypatch):
+        """A grace replay fails closed once the replacement is revoked (logout)
+        or superseded (the session rotated forward) — a leaked retired token
+        cannot resurrect a dead session."""
+        import json
+
+        user = User(google_sub="grace_revoked", email="grace-revoked@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        retired_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        replacement_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        # The replacement's own key is gone (revoked) — replay must 401.
+        mock_redis.get.side_effect = [
+            None,
+            json.dumps({"presented": retired_token, "replacement": replacement_token}),
+            None,
+        ]
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: retired_token},
+        )
+        with pytest.raises(AuthenticationRequired):
+            await auth_module.refresh_token(request, db=test_session)
+
+    @pytest.mark.asyncio
+    async def test_refresh_replay_rejected_when_replacement_undecodable(self, test_session, mock_redis, monkeypatch):
+        """A grace record whose replacement doesn't decode as our JWT fails closed."""
+        import json
+
+        user = User(google_sub="grace_bad_repl", email="grace-bad-repl@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        retired_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get.side_effect = [
+            None,
+            json.dumps({"presented": retired_token, "replacement": "not-a-jwt"}),
+        ]
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: retired_token},
+        )
+        with pytest.raises(AuthenticationRequired):
+            await auth_module.refresh_token(request, db=test_session)
 
     @pytest.mark.asyncio
     async def test_refresh_replay_returns_pair_in_body_for_mobile(self, test_session, mock_redis, monkeypatch):
@@ -456,6 +515,7 @@ class TestTokenRefresh:
         mock_redis.get.side_effect = [
             None,
             json.dumps({"presented": retired_token, "replacement": replacement_token}),
+            replacement_token,
         ]
         monkeypatch.setattr(auth_module, "redis_client", mock_redis)
 
@@ -608,7 +668,11 @@ class TestLogout:
         assert response.status_code == 200
         assert response.body.decode() == "Logged out successfully."
         # Only this session's key is revoked — other devices stay signed in.
-        mock_redis.delete.assert_called_once_with(CacheKeys.refresh_token(str(user.id), token_jti))
+        # The grace record goes with it so the session can't be replayed back.
+        mock_redis.delete.assert_called_once_with(
+            CacheKeys.refresh_token(str(user.id), token_jti),
+            CacheKeys.refresh_token_grace(str(user.id), token_jti),
+        )
 
 
 class TestAuthMe:
