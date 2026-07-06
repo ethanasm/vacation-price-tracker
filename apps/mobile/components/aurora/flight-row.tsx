@@ -10,22 +10,12 @@ import {
   multiCarrierSubtitle,
   flightSummaryLine,
   returnSummaryLine,
+  displayLegs,
   formatMoneyString,
   clockLabel,
   type FlightOffer,
-  type FlightItinerary,
   type FlightSegment,
 } from '@/lib/aurora';
-
-/** Outbound itinerary (first) of an offer. */
-function outboundSegments(offer: FlightOffer): FlightSegment[] {
-  return (offer.itineraries ?? [])[0]?.segments ?? [];
-}
-
-/** Itineraries that carry at least one segment, in order (outbound then return). */
-function displayItineraries(offer: FlightOffer): FlightItinerary[] {
-  return (offer.itineraries ?? []).filter((it) => (it.segments ?? []).length > 0);
-}
 
 /** Unique carrier codes across every segment of every leg (for the multi-carrier pair). */
 function carrierCodes(segs: FlightSegment[]): string[] {
@@ -50,7 +40,8 @@ function durationLabel(minutes?: number | null): string {
   if (m <= 0) return '';
   const h = Math.floor(m / 60);
   const min = m % 60;
-  return h > 0 ? `${h}h ${min}m` : `${min}m`;
+  if (h <= 0) return `${min}m`;
+  return min > 0 ? `${h}h ${min}m` : `${h}h`;
 }
 
 /** Collapsed: radio + airline chip + name + stops badge + price + chevron, with a
@@ -70,10 +61,10 @@ export function FlightRow({
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const c = tokens.color;
-  const itineraries = displayItineraries(offer);
-  const outbound = outboundSegments(offer);
+  const legs = displayLegs(offer);
+  const outbound = legs.find((l) => l.label === 'OUTBOUND')?.segments ?? [];
   // Carrier codes span every leg so a return-only codeshare still reads as multi-carrier.
-  const codes = carrierCodes(itineraries.flatMap((it) => it.segments ?? []));
+  const codes = carrierCodes(legs.flatMap((l) => l.segments));
   const multiCarrier = codes.length > 1;
   const viaCode = offer.stops > 0 ? outbound[0]?.arrival_airport ?? null : null;
   const badge = stopsBadge(offer.stops, viaCode);
@@ -144,18 +135,17 @@ export function FlightRow({
 
       {expanded ? (
         <View testID={`flight-detail-${offer.id}`} style={[styles.detail, { borderTopColor: c.hairline }]}>
-          {itineraries.map((itin, itinIdx) => {
-            const legSegs = itin.segments ?? [];
-            const total = durationLabel(itin.total_duration_minutes);
+          {legs.map((leg, legIdx) => {
+            const total = durationLabel(leg.totalMinutes);
             return (
               <View
-                key={`itin-${itinIdx}`}
-                testID={`flight-itinerary-${offer.id}-${itinIdx}`}
-                style={itinIdx > 0 ? [styles.itinerary, { borderTopColor: c.hairline }] : null}
+                key={`leg-${legIdx}`}
+                testID={`flight-itinerary-${offer.id}-${legIdx}`}
+                style={legIdx > 0 ? [styles.itinerary, { borderTopColor: c.hairline }] : null}
               >
                 <View style={styles.itineraryHeadingRow}>
                   <Text style={[styles.detailHeading, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
-                    {itinIdx === 0 ? 'OUTBOUND' : 'RETURN'}
+                    {leg.label}
                   </Text>
                   {total ? (
                     <Text style={[styles.itineraryTotal, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
@@ -163,8 +153,8 @@ export function FlightRow({
                     </Text>
                   ) : null}
                 </View>
-                {legSegs.map((seg, i) => {
-                  const next = legSegs[i + 1];
+                {leg.segments.map((seg, i) => {
+                  const next = leg.segments[i + 1];
                   const layMin = next ? minutesBetween(seg.arrival_time, next.departure_time) : 0;
                   return (
                     <View key={`${seg.carrier_code}-${seg.flight_number}-${i}`}>
