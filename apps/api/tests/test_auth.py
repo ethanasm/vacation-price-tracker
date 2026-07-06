@@ -366,6 +366,149 @@ class TestTokenRefresh:
         assert stored_key != presented_key
 
     @pytest.mark.asyncio
+    async def test_refresh_writes_rotation_grace_record(self, test_session, mock_redis, monkeypatch):
+        """Rotation records presented→replacement so a lost response is recoverable."""
+        import json
+
+        user = User(google_sub="grace_writer", email="grace-writer@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        refresh_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        presented_jti = jwt.decode(
+            refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )[JWTClaims.JWT_ID]
+        mock_redis.get.return_value = refresh_token
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: refresh_token},
+        )
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.status_code == 200
+        grace_key = CacheKeys.refresh_token_grace(str(user.id), presented_jti)
+        grace_calls = [c for c in mock_redis.set.call_args_list if c.args[0] == grace_key]
+        assert len(grace_calls) == 1
+        record = json.loads(grace_calls[0].args[1])
+        assert record["presented"] == refresh_token
+        # The replacement in the grace record is the token stored as the new session.
+        stored_calls = [
+            c for c in mock_redis.set.call_args_list if c.args[0].startswith(f"refresh_token:{user.id}:")
+        ]
+        assert record["replacement"] == stored_calls[0].args[1]
+
+    @pytest.mark.asyncio
+    async def test_refresh_replays_rotated_token_within_grace(self, test_session, mock_redis, monkeypatch):
+        """A rotated-out token retried within grace gets the same replacement back
+        (the lost-response recovery path), without rotating again."""
+        import json
+
+        user = User(google_sub="grace_replayer", email="grace-replay@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        retired_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        replacement_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        # First get: the session key no longer holds the retired token.
+        # Second get: the grace record maps it to the replacement.
+        mock_redis.get.side_effect = [
+            None,
+            json.dumps({"presented": retired_token, "replacement": replacement_token}),
+        ]
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        request = _make_request(
+            "/v1/auth/refresh",
+            method="POST",
+            cookies={CookieNames.REFRESH_TOKEN: retired_token},
+        )
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.status_code == 200
+        set_cookie_headers = response.headers.getlist("set-cookie")
+        assert any(replacement_token in header for header in set_cookie_headers)
+        # Replay is idempotent: nothing is rotated, stored, or deleted.
+        mock_redis.set.assert_not_called()
+        mock_redis.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refresh_replay_returns_pair_in_body_for_mobile(self, test_session, mock_redis, monkeypatch):
+        """The grace replay also serves the mobile (JSON body) mode."""
+        import json
+
+        from fastapi import Request as FastAPIRequest
+
+        user = User(google_sub="grace_mobile", email="grace-mobile@example.com")
+        set_test_timestamps(user)
+        test_session.add(user)
+        await test_session.commit()
+        await test_session.refresh(user)
+
+        retired_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        replacement_token = create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get.side_effect = [
+            None,
+            json.dumps({"presented": retired_token, "replacement": replacement_token}),
+        ]
+        monkeypatch.setattr(auth_module, "redis_client", mock_redis)
+
+        body = json.dumps({"refresh_token": retired_token}).encode()
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/v1/auth/refresh",
+            "headers": [(b"content-type", b"application/json")],
+            "query_string": b"",
+        }
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = FastAPIRequest(scope, receive)
+        response = await auth_module.refresh_token(request, db=test_session)
+
+        assert response.refresh_token == replacement_token
+        assert response.access_token
+        assert response.user.id == str(user.id)
+
+    def test_refresh_returns_401_when_grace_record_mismatches(self, client_with_csrf, mock_redis, csrf_headers):
+        """A grace record for a *different* presented token does not unlock a replay."""
+        import json
+
+        refresh_token = create_refresh_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
+        mock_redis.get.side_effect = [
+            None,
+            json.dumps({"presented": "some_other_token", "replacement": "whatever"}),
+        ]
+
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Refresh token has been rotated or invalidated."
+
+    def test_refresh_returns_401_when_grace_record_malformed(self, client_with_csrf, mock_redis, csrf_headers):
+        """Garbage in the grace record fails closed."""
+        refresh_token = create_refresh_token(
+            data={JWTClaims.SUBJECT: "00000000-0000-0000-0000-000000000000"}
+        )
+        client_with_csrf.cookies.set(CookieNames.REFRESH_TOKEN, refresh_token)
+        mock_redis.get.side_effect = [None, "not json"]
+
+        response = client_with_csrf.post("/v1/auth/refresh", headers=csrf_headers)
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_refresh_accepts_legacy_token_without_jti(self, test_session, mock_redis, monkeypatch):
         """Tokens minted before jti existed validate against the legacy per-user key."""
         user = User(google_sub="legacy_user", email="legacy@example.com")
