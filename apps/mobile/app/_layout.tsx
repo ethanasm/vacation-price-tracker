@@ -96,6 +96,7 @@ function AuthGate(): React.JSX.Element {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="trip/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="trip/[id]/edit" options={{ presentation: 'modal' }} />
       <Stack.Screen name="trip/new" options={{ presentation: 'modal' }} />
       <Stack.Screen name="settings" options={{ presentation: 'card' }} />
     </Stack>

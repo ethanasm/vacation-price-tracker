@@ -27,6 +27,8 @@ export const tokens = Object.freeze({
     textFaint: '#BDB6D4',
     success: '#059669',
     successBg: '#ECFDF5',
+    // web --color-destructive hsl(0 72% 50%)
+    destructive: '#DB2424',
     warning: '#9A7B18',
     warningBg: '#FEF6DD',
     layover: '#C98A3A',

@@ -70,14 +70,17 @@ function MiniStat({
  * A single trip row on the Trips list: name + status chip, a `${origin} ↔
  * ${destination} · ${dateRange}` meta line, and a three-up Flight / Hotel /
  * Total mini-stat row. Money via formatMoneyString; absent component prices
- * render "—" (full numbers live on Trip detail). The whole card is pressable.
+ * render "—" (full numbers live on Trip detail). The whole card is pressable;
+ * a long press opens the trip action sheet (web's right-click menu twin).
  */
 export function TripCard({
   trip,
   onPress,
+  onLongPress,
 }: {
   trip: TripSummary;
   onPress: () => void;
+  onLongPress?: () => void;
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const chip = statusChip(trip.status);
@@ -97,6 +100,7 @@ export function TripCard({
       accessibilityRole="button"
       accessibilityLabel={`Trip ${trip.name}`}
       onPress={onPress}
+      onLongPress={onLongPress}
     >
       <AuroraCard>
         <View style={styles.topRow}>

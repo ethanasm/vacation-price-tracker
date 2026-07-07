@@ -62,6 +62,18 @@ network errors only; debug non-network failures rather than retrying):
 
     git push -u origin <branch>
 
+**Every push — not just the first.** Before any follow-up push to the PR branch
+(peer-review fixes, CI fixes, review-comment changes), re-check whether the
+branch has fallen behind the target branch and update it if so:
+
+    git fetch origin main
+    git merge-base --is-ancestor origin/main HEAD || git merge origin/main --no-edit
+
+If the merge brings in changes, resolve conflicts, re-run the relevant gate,
+and push the merge together with your fix. `main` moves while a PR is open;
+pushing onto a stale base ships a diff no one has validated against current
+`main` and leaves conflicts to be discovered at merge time.
+
 ### 3. Open the PR
 
 Use `mcp__github__create_pull_request` with
@@ -207,8 +219,10 @@ When a failure event arrives:
    environment issue.
 3. If it's a real failure, fix it locally, re-run the relevant gate
    (`pnpm verify` or the targeted Nx task), and push — CI re-runs
-   automatically. If the fix changes what the PR does, **update the PR body** to
-   match (see "Keep the body in sync with the diff" in step 3).
+   automatically. Before that push, run the staleness check from step 2
+   ("Every push — not just the first") and merge `origin/main` if the branch
+   has fallen behind. If the fix changes what the PR does, **update the PR
+   body** to match (see "Keep the body in sync with the diff" in step 3).
 4. Repeat until CI is green. Unsubscribe with
    `mcp__github__unsubscribe_pr_activity` once the PR is merged or the user
    releases you.
@@ -226,6 +240,8 @@ apply one and it changes the diff's behavior, **update the PR body** too.
 - Pushing follow-up commits (peer-review fixes, CI fixes, review-comment changes)
   while leaving the PR description describing only the first commit — refresh the
   body whenever the diff's behavior changes.
+- Pushing a follow-up commit without first checking whether the branch has fallen
+  behind `main` — every push gets the step-2 staleness check, not just the first.
 - Skipping the screenshots section on UI changes — reviewers shouldn't have to
   pull the branch to see what changed visually.
 - Committing screenshots to `main` or the PR branch instead of the orphan

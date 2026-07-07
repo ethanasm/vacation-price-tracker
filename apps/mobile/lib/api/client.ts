@@ -16,6 +16,7 @@ export type TripSummary = components['schemas']['TripResponse'];
 export type TripDetail = components['schemas']['TripDetail'];
 export type TripDetailResponse = components['schemas']['TripDetailResponse'];
 export type TripCreate = components['schemas']['TripCreate'];
+export type TripUpdate = components['schemas']['TripUpdate'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
 export type RefreshStartResponse = components['schemas']['RefreshStartResponse'];
 export type RefreshStatusResponse = components['schemas']['RefreshStatusResponse'];
@@ -52,6 +53,9 @@ export interface ApiClient {
   listTrips(params?: { page?: number; limit?: number; status?: TripStatus }): Promise<TripSummary[]>;
   getTrip(id: string): Promise<TripDetailResponse>;
   createTrip(body: TripCreate, idempotencyKey: string): Promise<TripDetail>;
+  updateTrip(id: string, body: TripUpdate): Promise<TripDetail>;
+  updateTripStatus(id: string, status: 'active' | 'paused'): Promise<TripSummary>;
+  deleteTrip(id: string): Promise<void>;
   refreshTrip(id: string): Promise<RefreshStartResponse>;
   getRefreshStatus(refreshGroupId: string): Promise<RefreshStatusResponse>;
   sendChatMessage(body: { message: string; thread_id?: string }): Promise<Response>;
@@ -146,8 +150,8 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     return res;
   }
 
-  async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
-    const res = await request(path, init);
+  /** Throws ApiError (reporting telemetry) when the response is not ok. */
+  async function ensureOk(res: Response, path: string): Promise<void> {
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { title?: string; detail?: string };
       // Every failed API op reports (the mobile analogue of showbook's
@@ -160,6 +164,11 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       });
       throw new ApiError(res.status, body.title ?? `Request failed (${res.status})`, body.detail);
     }
+  }
+
+  async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
+    const res = await request(path, init);
+    await ensureOk(res, path);
     return (await res.json()) as T;
   }
 
@@ -194,6 +203,34 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         body: JSON.stringify(body),
       });
       return env.data;
+    },
+
+    async updateTrip(id, body) {
+      const env = await requestJson<Envelope<TripDetail>>(`/v1/trips/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: buildHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify(body),
+      });
+      return env.data;
+    },
+
+    async updateTripStatus(id, status) {
+      const env = await requestJson<Envelope<TripSummary>>(
+        `/v1/trips/${encodeURIComponent(id)}/status`,
+        {
+          method: 'PATCH',
+          headers: buildHeaders({ 'content-type': 'application/json' }),
+          body: JSON.stringify({ status }),
+        },
+      );
+      return env.data;
+    },
+
+    async deleteTrip(id) {
+      // 204 No Content on success — don't parse a body.
+      const path = `/v1/trips/${encodeURIComponent(id)}`;
+      const res = await request(path, { method: 'DELETE', headers: buildHeaders() });
+      await ensureOk(res, path);
     },
 
     async refreshTrip(id) {
