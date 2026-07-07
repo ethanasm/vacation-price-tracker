@@ -151,7 +151,21 @@ class TestAppConfiguration:
 
     def test_auth_router_included(self, app):
         """Test auth router is included in app."""
-        routes = [route.path for route in app.routes]
+        # FastAPI >= 0.139 registers include_router() calls lazily as
+        # _IncludedRouter entries that carry no .path themselves; their
+        # APIRoutes (with the full prefixed path) live on .original_router.
+        routes = []
+        for route in app.routes:
+            path = getattr(route, "path", None)
+            if path is not None:
+                routes.append(path)
+            included = getattr(route, "original_router", None)
+            if included is not None:
+                routes.extend(
+                    subpath
+                    for subroute in included.routes
+                    if (subpath := getattr(subroute, "path", None)) is not None
+                )
 
         assert "/v1/auth/google/start" in routes
         assert "/v1/auth/google/callback" in routes
