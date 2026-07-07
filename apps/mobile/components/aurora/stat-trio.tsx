@@ -8,18 +8,21 @@ import { useTheme, formatUsd } from '@/lib/theme';
  * The Flight / Hotel / Trip-total stat row that sits above the price chart. The
  * trip-total chip is a violet gradient card; the other two are plain surface
  * chips. Values are formatted via `formatUsd`. The three value `Text`s carry
- * the canonical E2E testIDs.
+ * the canonical E2E testIDs. Flights-only trips (`showHotel: false`) hide the
+ * hotel chip instead of showing a misleading $0 — mirrors the web trip detail.
  */
 export function StatTrio({
   flight,
   hotelTotal,
   hotelPerNight,
   tripTotal,
+  showHotel = true,
 }: {
   flight: number;
   hotelTotal: number;
   hotelPerNight: number;
   tripTotal: number;
+  showHotel?: boolean;
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const c = tokens.color;
@@ -39,22 +42,24 @@ export function StatTrio({
         </Text>
       </View>
 
-      <View style={[styles.chip, { backgroundColor: c.surface, borderRadius: tokens.radius.inner }]}>
-        <View style={styles.labelRow}>
-          <Building2 size={13} color={c.textMuted} strokeWidth={2} />
-          <Text style={[styles.label, { color: c.textMuted, fontFamily: tokens.font[700] }]}>HOTEL</Text>
+      {showHotel ? (
+        <View style={[styles.chip, { backgroundColor: c.surface, borderRadius: tokens.radius.inner }]}>
+          <View style={styles.labelRow}>
+            <Building2 size={13} color={c.textMuted} strokeWidth={2} />
+            <Text style={[styles.label, { color: c.textMuted, fontFamily: tokens.font[700] }]}>HOTEL</Text>
+          </View>
+          <Text
+            testID="trip-detail-hotel-stat"
+            accessibilityLabel={`Hotel ${formatUsd(hotelTotal)}`}
+            style={[styles.value, { color: c.textStrong, fontFamily: tokens.font[800] }]}
+          >
+            {formatUsd(hotelTotal)}
+          </Text>
+          <Text style={[styles.subnote, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
+            {`${formatUsd(hotelPerNight)}/night`}
+          </Text>
         </View>
-        <Text
-          testID="trip-detail-hotel-stat"
-          accessibilityLabel={`Hotel ${formatUsd(hotelTotal)}`}
-          style={[styles.value, { color: c.textStrong, fontFamily: tokens.font[800] }]}
-        >
-          {formatUsd(hotelTotal)}
-        </Text>
-        <Text style={[styles.subnote, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
-          {`${formatUsd(hotelPerNight)}/night`}
-        </Text>
-      </View>
+      ) : null}
 
       <LinearGradient
         colors={tokens.gradient.totalCard}
