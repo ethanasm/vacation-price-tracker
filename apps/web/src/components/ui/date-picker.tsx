@@ -69,7 +69,7 @@ export function DatePicker({
             if (toDate && date > toDate) return true
             return false
           }}
-          initialFocus
+          autoFocus
         />
       </PopoverContent>
     </Popover>
