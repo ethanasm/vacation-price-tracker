@@ -31,8 +31,20 @@ on:
     types: [opened, synchronize, reopened, labeled]
     paths: *mobile_paths
   schedule:
-    # 09:00 UTC — nightly E2E (build/audit are guarded off for this trigger).
-    - cron: "0 9 * * *"
+    # 11:00 UTC — nightly E2E (build/audit are guarded off for this trigger).
+    # Deliberately staggered away from showbook's nightly e2e at 09:00 UTC:
+    # both repos' self-hosted runners (vpt-prod-1 / desktop-showbook) share one
+    # WSL box, and it cannot run two emulator+Gradle jobs at once — the memory
+    # contention alone has killed jobs on both sides even without direct
+    # interference. Keep at least a 2h gap from showbook's schedule.
+    #
+    # Known limitation: this stagger only serializes nightly-vs-nightly. GHA
+    # `concurrency` groups are repo-scoped, so a `mobile-visual` PR run or a
+    # manual dispatch can still land while a showbook job holds the box; the
+    # port/serial/dir isolation below makes such overlap survivable, but the
+    # OOM risk remains. Durable fix would be a cross-repo host mutex (flock)
+    # adopted by both runners.
+    - cron: "0 11 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -153,6 +165,16 @@ jobs:
       ANDROID_SDK_ROOT: ${{ vars.ANDROID_SDK_ROOT || '/opt/android-sdk' }}
       ANDROID_AVD_NAME: vpt_e2e
       ANDROID_AVD_HOME: ${{ vars.ANDROID_AVD_HOME || '/home/ethan/.android-avd' }}
+      # This runner shares its WSL box (and therefore the single adb server on
+      # port 5037) with the showbook repo's runner (desktop-showbook), whose e2e
+      # emulator is pinned to console port 5600 (serial emulator-5600). Launch
+      # OUR emulator on an explicit distinct port and pin ANDROID_SERIAL
+      # job-wide so every bare `adb ...` call and Maestro target only our
+      # device — otherwise concurrent runs die with "more than one
+      # device/emulator". Never run `adb kill-server` here: it tears down the
+      # OTHER repo's live adb session too (this bit us on 2026-07-07).
+      ANDROID_EMULATOR_PORT: "5554"
+      ANDROID_SERIAL: emulator-5554
       # Gradle in CI: no daemon, single worker, 2 GB heap — the WSL runner OOMs
       # at higher caps when the 2 GB AVD + Metro run alongside.
       GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m"'
@@ -346,15 +368,35 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          adb kill-server || true
+          # `adb start-server` is safe on the shared server; `adb kill-server`
+          # is NOT (it kills the other repo's live adb session — see job env
+          # comment). Stale-state cleanup is scoped to OUR AVD name only:
+          # a broad `pkill -f emulator|qemu|java|gradle` would kill showbook's
+          # emulator or Gradle build mid-run on this shared box.
           adb start-server
+          # Clear any stuck offline transport for our serial left by a killed
+          # run — a targeted replacement for the recovery `adb kill-server`
+          # used to provide (reconnect only touches offline devices, so
+          # showbook's healthy session is unaffected).
+          adb reconnect offline || true
+          # Match on "-avd <name>" rather than "emulator -avd <name>": the
+          # emulator launcher execs into qemu-system-* whose argv keeps the
+          # -avd flag but not the `emulator` prefix. The trailing boundary
+          # keeps a hypothetical vpt_e2e_2 AVD from matching.
+          if pgrep -f -- "-avd ${ANDROID_AVD_NAME}( |$)" >/dev/null; then
+            echo "killing stale ${ANDROID_AVD_NAME} emulator from a previous run"
+            pkill -f -- "-avd ${ANDROID_AVD_NAME}( |$)" || true
+            sleep 5
+          fi
+          rm -f "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"/*.lock 2>/dev/null || true
           nohup env ANDROID_AVD_HOME="$ANDROID_AVD_HOME" \
             emulator -avd "$ANDROID_AVD_NAME" \
+              -port "$ANDROID_EMULATOR_PORT" \
               -no-window -no-audio -no-boot-anim -no-snapshot-save \
               -accel auto \
               -gpu swiftshader_indirect \
-            > /tmp/emulator.log 2>&1 &
-          echo "emulator pid: $!"
+            > /tmp/vpt-emulator.log 2>&1 &
+          echo "emulator pid: $! (serial $ANDROID_SERIAL)"
 
       - name: Wait for emulator
         shell: bash
@@ -379,7 +421,7 @@ jobs:
             sleep 10
           done
           echo "::error::emulator failed to boot in 10 minutes"
-          tail -100 /tmp/emulator.log || true
+          tail -100 /tmp/vpt-emulator.log || true
           exit 1
 
       - name: Install APK
@@ -393,16 +435,20 @@ jobs:
         run: |
           set -uo pipefail
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
-          mkdir -p /tmp/maestro-debug
+          # /tmp/vpt-maestro-debug is repo-unique on purpose: showbook's e2e
+          # workflow on this shared box uses /tmp/showbook-maestro-debug, and a
+          # shared /tmp/maestro-debug once let its failure publisher post OUR
+          # screenshots on a showbook PR.
+          mkdir -p /tmp/vpt-maestro-debug
           adb shell pm clear me.ethanasm.vacation_price_tracker || true
           adb shell am start -W -n me.ethanasm.vacation_price_tracker/.MainActivity || true
           sleep 8
-          adb exec-out screencap -p > /tmp/maestro-debug/cold-launch.png || true
+          adb exec-out screencap -p > /tmp/vpt-maestro-debug/cold-launch.png || true
           adb shell uiautomator dump /sdcard/cold-launch.xml >/dev/null 2>&1 || true
-          adb pull /sdcard/cold-launch.xml /tmp/maestro-debug/cold-launch.xml || true
+          adb pull /sdcard/cold-launch.xml /tmp/vpt-maestro-debug/cold-launch.xml || true
           echo "::group::Cold-launch UI hierarchy (text nodes only)"
-          if [ -f /tmp/maestro-debug/cold-launch.xml ]; then
-            grep -oE 'text="[^"]*"' /tmp/maestro-debug/cold-launch.xml \
+          if [ -f /tmp/vpt-maestro-debug/cold-launch.xml ]; then
+            grep -oE 'text="[^"]*"' /tmp/vpt-maestro-debug/cold-launch.xml \
               | grep -v 'text=""' | sort -u | head -50 || true
           else
             echo "no UI dump captured"
@@ -415,18 +461,20 @@ jobs:
         run: |
           set -uo pipefail
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$HOME/.maestro/bin:$PATH"
-          rm -rf /tmp/maestro-debug/.maestro
-          mkdir -p /tmp/maestro-debug
+          rm -rf /tmp/vpt-maestro-debug/.maestro
+          mkdir -p /tmp/vpt-maestro-debug
           # Invoke maestro once per flow with an explicit pm clear between, so
           # SecureStore values from one flow don't survive into the next on the
           # AOSP system image (clearState alone proved unreliable in showbook CI).
+          # --device pins Maestro to OUR emulator; without it Maestro can pick
+          # up showbook's emulator on the shared adb server.
           RC=0
           for flow in apps/mobile/e2e/flows/*.yaml; do
             echo "::group::pm clear before $(basename "$flow")"
             adb shell pm clear me.ethanasm.vacation_price_tracker || true
             sleep 2
             echo "::endgroup::"
-            maestro test --debug-output /tmp/maestro-debug "$flow" || {
+            maestro --device "$ANDROID_SERIAL" test --debug-output /tmp/vpt-maestro-debug "$flow" || {
               status=$?
               echo "::warning::$(basename "$flow") failed with status $status"
               RC=$status
@@ -439,7 +487,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          mkdir -p /tmp/maestro-debug
+          mkdir -p /tmp/vpt-maestro-debug
           # On a failure, dump the isolated e2e backend container logs so the
           # actual server-side traceback behind a 500 (the client only ever sees
           # the masked "An unexpected error occurred") is visible in-job AND
@@ -447,9 +495,9 @@ jobs:
           # names are pinned in infra/docker-compose.e2e.yml.
           for c in vpt-e2e-api vpt-e2e-worker; do
             echo "::group::docker logs $c (tail 200 of 1000)"
-            docker logs --tail 1000 "$c" > "/tmp/maestro-debug/${c}.log" 2>&1 \
+            docker logs --tail 1000 "$c" > "/tmp/vpt-maestro-debug/${c}.log" 2>&1 \
               || echo "::warning::could not read logs for $c"
-            tail -200 "/tmp/maestro-debug/${c}.log" 2>/dev/null || true
+            tail -200 "/tmp/vpt-maestro-debug/${c}.log" 2>/dev/null || true
             echo "::endgroup::"
           done
 
@@ -459,16 +507,16 @@ jobs:
         run: |
           set -u
           echo "::group::Maestro debug dir contents"
-          ls -la /tmp/maestro-debug/ 2>/dev/null || echo "no debug dir"
+          ls -la /tmp/vpt-maestro-debug/ 2>/dev/null || echo "no debug dir"
           echo "::endgroup::"
           shopt -s nullglob
-          for f in /tmp/maestro-debug/**/*.txt /tmp/maestro-debug/**/*.json /tmp/maestro-debug/**/*.log /tmp/maestro-debug/*.txt /tmp/maestro-debug/*.json /tmp/maestro-debug/*.log; do
+          for f in /tmp/vpt-maestro-debug/**/*.txt /tmp/vpt-maestro-debug/**/*.json /tmp/vpt-maestro-debug/**/*.log /tmp/vpt-maestro-debug/*.txt /tmp/vpt-maestro-debug/*.json /tmp/vpt-maestro-debug/*.log; do
             echo "::group::$f"
             tail -200 "$f" 2>/dev/null || true
             echo "::endgroup::"
           done
           echo "::group::Screenshots captured"
-          find /tmp/maestro-debug -name '*.png' -printf '%p\n' 2>/dev/null | sort || true
+          find /tmp/vpt-maestro-debug -name '*.png' -printf '%p\n' 2>/dev/null | sort || true
           echo "::endgroup::"
 
       - name: Upload Maestro debug artifacts
@@ -477,8 +525,8 @@ jobs:
         with:
           name: maestro-debug-${{ github.run_id }}
           path: |
-            /tmp/maestro-debug/**
-            /tmp/emulator.log
+            /tmp/vpt-maestro-debug/**
+            /tmp/vpt-emulator.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -513,13 +561,13 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          if [ ! -d /tmp/maestro-debug ]; then
-            echo "no /tmp/maestro-debug — nothing to publish"
+          if [ ! -d /tmp/vpt-maestro-debug ]; then
+            echo "no /tmp/vpt-maestro-debug — nothing to publish"
             exit 0
           fi
-          FLAT=/tmp/maestro-debug-flat
+          FLAT=/tmp/vpt-maestro-debug-flat
           rm -rf "$FLAT"; mkdir -p "$FLAT"
-          [ -f /tmp/maestro-debug/cold-launch.png ] && cp /tmp/maestro-debug/cold-launch.png "$FLAT/cold-launch.png"
+          [ -f /tmp/vpt-maestro-debug/cold-launch.png ] && cp /tmp/vpt-maestro-debug/cold-launch.png "$FLAT/cold-launch.png"
           n=1
           while IFS= read -r -d '' f; do
             base="$(basename "$f")"
@@ -527,7 +575,7 @@ jobs:
             [ -z "$flow" ] && flow="unknown"
             cp "$f" "$FLAT/maestro-${flow}-${n}.png"
             n=$((n + 1))
-          done < <(find /tmp/maestro-debug -name '*.png' -path '*tests*' -print0)
+          done < <(find /tmp/vpt-maestro-debug -name '*.png' -path '*tests*' -print0)
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
           # Push the PNGs to an orphan pr-screenshots branch under
@@ -564,10 +612,17 @@ jobs:
         shell: bash
         run: |
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          # `adb emu kill` only targets OUR emulator ($ANDROID_SERIAL). Do NOT
+          # `adb kill-server` here: the adb server is shared with showbook's
+          # runner on this box, and killing it nukes their live e2e session.
           adb emu kill || true
-          adb kill-server || true
+          # "-avd <name>" (not "emulator -avd") — the launcher execs into
+          # qemu-system-* which drops the `emulator` argv prefix.
           for _ in $(seq 1 30); do
-            pgrep -f "emulator -avd ${ANDROID_AVD_NAME}" >/dev/null || break
+            pgrep -f -- "-avd ${ANDROID_AVD_NAME}( |$)" >/dev/null || break
             sleep 1
           done
+          # Fallback if the console kill didn't land — scoped to OUR AVD name,
+          # never a broad pkill on emulator/qemu/java/gradle (shared box).
+          pkill -f -- "-avd ${ANDROID_AVD_NAME}( |$)" 2>/dev/null || true
           rm -f "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"/*.lock 2>/dev/null || true
