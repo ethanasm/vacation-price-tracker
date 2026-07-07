@@ -92,8 +92,11 @@ pnpm --filter mobile test:coverage   # writes coverage/mobile-unit.info
 
 3-tab bar **Trips · Alerts · Chat** (`app/(tabs)/_layout.tsx`, lucide
 `Plane`/`Bell`/`MessageCircle`, active tint Aurora violet `#7C3AED`). Stack:
-`trip/[id]` (detail, card), `trip/new` (create, modal), `(auth)/sign-in`. New
-screens consume the Aurora tokens via `useTheme()` — never hard-code colors.
+`trip/[id]` (detail, card), `trip/new` (create, modal), `settings` (card),
+`(auth)/sign-in`. Every signed-in screen renders a `SettingsCog`
+(`components/aurora/settings-cog.tsx`, imported directly — not via the barrel)
+in its top-right header that pushes `/settings`. New screens consume the Aurora
+tokens via `useTheme()` — never hard-code colors.
 
 ## Maestro E2E flows
 

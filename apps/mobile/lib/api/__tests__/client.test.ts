@@ -168,6 +168,89 @@ test('a transport failure surfaces as NetworkError, not AuthError', async () => 
   );
 });
 
+test('getMe hits /v1/auth/me and returns the unenveloped user', async () => {
+  let seenUrl = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url) => {
+      seenUrl = String(url);
+      return jsonResponse({
+        id: 'u1',
+        email: 'a@b.c',
+        email_notifications_enabled: true,
+        is_admin: true,
+      });
+    },
+  });
+  const me = await client.getMe();
+  assert.equal(seenUrl, 'https://api.test/v1/auth/me');
+  assert.equal(me.id, 'u1');
+  assert.equal(me.is_admin, true);
+});
+
+test('updatePreferences PATCHes only the provided fields', async () => {
+  let seenMethod = '';
+  let seenBody = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url, init) => {
+      assert.equal(String(url), 'https://api.test/v1/users/preferences');
+      seenMethod = init?.method ?? 'GET';
+      seenBody = String(init?.body);
+      return jsonResponse({
+        id: 'u1',
+        email: 'a@b.c',
+        email_notifications_enabled: false,
+        push_notifications_enabled: true,
+      });
+    },
+  });
+  const updated = await client.updatePreferences({ email_notifications_enabled: false });
+  assert.equal(seenMethod, 'PATCH');
+  assert.deepEqual(JSON.parse(seenBody), { email_notifications_enabled: false });
+  assert.equal(updated.email_notifications_enabled, false);
+});
+
+test('listFeatureFlags returns the flags array from the response', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url) => {
+      assert.equal(String(url), 'https://api.test/v1/feature-flags');
+      return jsonResponse({
+        flags: [{ name: 'kiwi_flights', description: 'Kiwi provider', enabled: true }],
+      });
+    },
+  });
+  const flags = await client.listFeatureFlags();
+  assert.equal(flags.length, 1);
+  assert.equal(flags[0].name, 'kiwi_flights');
+});
+
+test('setFeatureFlag PATCHes the encoded flag name with the enabled body', async () => {
+  let seenUrl = '';
+  let seenBody = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url, init) => {
+      seenUrl = String(url);
+      seenBody = String(init?.body);
+      return jsonResponse({ name: 'beta optimizer', description: 'Beta', enabled: true });
+    },
+  });
+  const flag = await client.setFeatureFlag('beta optimizer', true);
+  assert.equal(seenUrl, 'https://api.test/v1/feature-flags/beta%20optimizer');
+  assert.deepEqual(JSON.parse(seenBody), { enabled: true });
+  assert.equal(flag.enabled, true);
+});
+
 test('concurrent 401s coalesce into a single refresh (single-flight)', async () => {
   let refreshCalls = 0;
   let refreshed = false;

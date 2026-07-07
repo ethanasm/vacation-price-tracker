@@ -8,12 +8,14 @@ export function ToggleRow({
   subtitle,
   value,
   onValueChange,
+  disabled,
   testID,
 }: {
   title: string;
   subtitle?: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  disabled?: boolean;
   testID?: string;
 }): React.JSX.Element {
   const { tokens } = useTheme();
@@ -32,6 +34,7 @@ export function ToggleRow({
       <Switch
         value={value}
         onValueChange={onValueChange}
+        disabled={disabled}
         trackColor={{ true: tokens.color.primary, false: tokens.color.hairlineAlt }}
         thumbColor="#FFFFFF"
         ios_backgroundColor={tokens.color.hairlineAlt}
