@@ -20,6 +20,27 @@ export type TripUpdate = components['schemas']['TripUpdate'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
 export type RefreshStart = components['schemas']['RefreshStartResponse'];
 export type RefreshStatus = components['schemas']['RefreshStatusResponse'];
+export type UserResponse = components['schemas']['UserResponse'];
+export type FeatureFlagItem = components['schemas']['FeatureFlagItem'];
+export type FeatureFlagsResponse = components['schemas']['FeatureFlagsResponse'];
+
+/** Editable per-user notification preferences; omitted fields stay unchanged. */
+export interface UserPreferencesUpdate {
+  email_notifications_enabled?: boolean;
+  push_notifications_enabled?: boolean;
+}
+
+/**
+ * PATCH /v1/users/preferences response. Hand-typed (mirroring
+ * apps/api/app/routers/users.py UserPreferencesResponse) because the generated
+ * types.ts predates that route.
+ */
+export interface UserPreferencesResponse {
+  id: string;
+  email: string;
+  email_notifications_enabled: boolean;
+  push_notifications_enabled: boolean;
+}
 
 export interface ApiClientOptions {
   baseUrl: string;
@@ -38,6 +59,10 @@ export interface ApiClient {
   refreshTrip(id: string): Promise<RefreshStart>;
   getRefreshStatus(refreshGroupId: string): Promise<RefreshStatus>;
   sendChatMessage(body: { message: string; thread_id?: string }): Promise<Response>;
+  getMe(): Promise<UserResponse>;
+  updatePreferences(prefs: UserPreferencesUpdate): Promise<UserPreferencesResponse>;
+  listFeatureFlags(): Promise<FeatureFlagItem[]>;
+  setFeatureFlag(name: string, enabled: boolean): Promise<FeatureFlagItem>;
 }
 
 interface Envelope<T> {
@@ -232,6 +257,39 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         method: 'POST',
         headers: buildHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify(body),
+      });
+    },
+
+    // The auth/user/flag endpoints below return their models directly (no
+    // {data} envelope), matching the web client (apps/web/src/lib/api.ts).
+    async getMe() {
+      return requestJson<UserResponse>('/v1/auth/me', {
+        method: 'GET',
+        headers: buildHeaders(),
+      });
+    },
+
+    async updatePreferences(prefs) {
+      return requestJson<UserPreferencesResponse>('/v1/users/preferences', {
+        method: 'PATCH',
+        headers: buildHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify(prefs),
+      });
+    },
+
+    async listFeatureFlags() {
+      const res = await requestJson<FeatureFlagsResponse>('/v1/feature-flags', {
+        method: 'GET',
+        headers: buildHeaders(),
+      });
+      return res.flags;
+    },
+
+    async setFeatureFlag(name, enabled) {
+      return requestJson<FeatureFlagItem>(`/v1/feature-flags/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: buildHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ enabled }),
       });
     },
   };

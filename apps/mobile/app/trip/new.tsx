@@ -20,6 +20,7 @@ import type { TripCreate } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { makeIdempotencyKey } from '@/lib/aurora';
 import { AuroraCard, GradientButton, SegmentedControl, type SegmentedOption } from '@/components/aurora';
+import { SettingsCog } from '@/components/aurora/settings-cog';
 import { FormField } from '@/components/aurora/form-field';
 import { ToggleRow } from '@/components/aurora/toggle-row';
 import { CollapsibleSection } from '@/components/aurora/collapsible-section';
@@ -133,9 +134,12 @@ export default function NewTripScreen(): React.JSX.Element {
           <Text accessibilityRole="header" style={{ color: tokens.color.textStrong, fontFamily: tokens.font[800], fontSize: tokens.type.h1.fontSize, letterSpacing: tokens.type.h1.letterSpacing }}>
             Create new trip
           </Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close" testID="create-trip-close" onPress={() => router.back()} hitSlop={10}>
-            <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[700], fontSize: 22 }}>✕</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <SettingsCog />
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" testID="create-trip-close" onPress={() => router.back()} hitSlop={10}>
+              <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[700], fontSize: 22 }}>✕</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -274,6 +278,7 @@ export default function NewTripScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   scroll: { paddingHorizontal: 20, paddingBottom: 32 },
   card: { marginBottom: 14 },
   sectionTitle: { fontSize: 16, marginBottom: 12 },
