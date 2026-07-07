@@ -234,14 +234,18 @@ class TestKiwiFlightSearch:
         client = KiwiClient()
         mock_post = AsyncMock(return_value=_search_response([_itinerary(), _itinerary(price=200)]))
         patcher = _patched_client(mock_post)
+        mock_sleep = AsyncMock()
         try:
-            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+            with patch("app.clients.kiwi.asyncio.sleep", mock_sleep):
                 result = await client.search_flights_all(
                     "SFO", "RDM", "2026-08-22", max_pages=4, cabin="business"
                 )
         finally:
             patcher.stop()
         assert mock_post.call_count == COVERAGE_QUERIES
+        # The empty-retry backoff must NOT pace the happy-path coverage
+        # re-sample — that would add dead time to every tracking fetch.
+        assert mock_sleep.await_count == 0
         # Identical samples dedupe by segment fingerprint: the two itineraries
         # here share segments, differing only in price — cheapest wins.
         assert len(result.flights) == 1
@@ -359,8 +363,8 @@ class TestFlightFingerprint:
 
         flight = KiwiClient._normalize_itinerary(_itinerary(), "USD")
         fp = _flight_fingerprint(flight)
-        assert "AS-AS3361@2026-08-22T16:28:00" in fp
-        assert "AS-AS3360@" in fp
+        assert "outbound:AS-AS3361@2026-08-22T16:28:00" in fp
+        assert "inbound:AS-AS3360@" in fp
 
     def test_falls_back_to_endpoints_without_segments(self):
         from app.clients.kiwi import _flight_fingerprint

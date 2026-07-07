@@ -496,7 +496,10 @@ class KiwiClient:
         result: FlightSearchResult | None = None
         max_attempts = max(COVERAGE_QUERIES, 1 + EMPTY_RESULT_RETRIES)
         for attempt in range(max_attempts):
-            if attempt:
+            # Back off only before genuine empty-retries (cold searches fill in
+            # seconds). A coverage re-sample of an already-populated result
+            # runs immediately — no dead time on the happy path.
+            if attempt and not merged:
                 await asyncio.sleep(EMPTY_RESULT_BACKOFF_SECONDS * attempt)
             try:
                 result = await self.search_flights(
@@ -514,6 +517,8 @@ class KiwiClient:
             except KiwiMCPError:
                 # A coverage/retry query failing must not discard pairings an
                 # earlier query already returned — return the partial union.
+                # (GlobalBudgetExceeded intentionally propagates even then:
+                # a tripped breaker is a hard stop, not a partial result.)
                 if not merged:
                     raise
                 logger.warning(
@@ -697,7 +702,7 @@ def _flight_fingerprint(flight: FlightSearchFlight) -> str:
         for seg in leg.get("segments") or []:
             if isinstance(seg, dict):
                 parts.append(
-                    f"{seg.get('carrier')}-{seg.get('flightNumber')}@{seg.get('departureTime')}"
+                    f"{leg_key}:{seg.get('carrier')}-{seg.get('flightNumber')}@{seg.get('departureTime')}"
                 )
     if parts:
         return "|".join(parts)
