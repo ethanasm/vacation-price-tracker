@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 
 // Radix >= 2.1.17 applies pointer-events: none scroll-locking that jsdom cannot
 // resolve back to "auto" via stylesheets, so user-event would refuse every click
 // on open menus/dialogs. Real browsers route these clicks fine — skip the check.
 const setupUser = () => userEvent.setup({ pointerEventsCheck: 0 });
-import { toast } from "sonner";
 
 // Mock next/navigation
 const mockPush = jest.fn();

@@ -3,8 +3,10 @@ FROM node:26-alpine AS base
 
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
-# Node >= 25 images no longer bundle corepack — install it before enabling
-# (pnpm version is pinned by the packageManager field in package.json).
+# Node >= 25 images no longer bundle corepack — install it before enabling.
+# corepack@latest (not a pin) is deliberate: stale corepack versions break when
+# the npm registry rotates signing keys, and the pnpm version that actually
+# runs stays deterministic via the packageManager field in package.json.
 RUN npm install -g corepack@latest && corepack enable
 ENV NEXT_TELEMETRY_DISABLED=1
 
