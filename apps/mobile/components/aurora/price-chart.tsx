@@ -73,7 +73,10 @@ export function PriceChart({
     ? `${heroLine} L ${x(points.length - 1)} ${pad.t + innerH} L ${x(0)} ${pad.t + innerH} Z`
     : '';
 
-  const minFlightLine = linePath((p) => p.minFlight);
+  // Flights-only with nothing selected: the hero line IS the flight minimum,
+  // so a separate dashed min line would just overdraw the same values.
+  const soloMinLine = !showHotel && !hasSelectedFlight;
+  const minFlightLine = soloMinLine ? '' : linePath((p) => p.minFlight);
   const selectedFlightLine = hasSelectedFlight ? linePath((p) => p.selectedFlight) : '';
   const hotelLine = showHotel ? linePath((p) => p.hotel) : '';
   const selectedHotelLine = hasSelectedHotel ? linePath((p) => p.selectedHotel) : '';
@@ -83,7 +86,7 @@ export function PriceChart({
 
   const legend: { label: string; color: string; dashed: boolean }[] = [
     ...(showHotel ? [{ label: 'Total', color: c.primary, dashed: false }] : []),
-    { label: 'Flight (min)', color: c.accentCyan, dashed: true },
+    { label: 'Flight (min)', color: c.accentCyan, dashed: !soloMinLine },
     ...(hasSelectedFlight
       ? [{ label: selectedFlightLabel || 'Selected flight', color: c.accentCyan, dashed: false }]
       : []),

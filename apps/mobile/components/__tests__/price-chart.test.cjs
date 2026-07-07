@@ -76,6 +76,21 @@ describe('PriceChart (flights-only)', () => {
   });
 });
 
+describe('PriceChart (flights-only, no selection)', () => {
+  const bare = points.map(({ selectedFlight, ...p }) => p);
+  const el = React.createElement(PriceChart, {
+    points: bare,
+    nowLabel: 'Now $262',
+    showHotel: false,
+  });
+
+  it('draws the flight minimum once (solid hero), not doubled with a dashed twin', () => {
+    const stroked = paths(render(el));
+    assert.equal(stroked.length, 1);
+    assert.equal(stroked.filter((p) => p.props.strokeDasharray).length, 0);
+  });
+});
+
 describe('PriceChart (hotel-tracking)', () => {
   const hotelPoints = points.map((p) => ({
     ...p,
