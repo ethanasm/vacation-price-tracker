@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react-native';
 import { AuroraCard, GradientButton } from '@/components/aurora';
+import { SettingsCog } from '@/components/aurora/settings-cog';
 import { TripCard } from '@/components/aurora/trip-card';
 import { useApiClient } from '@/lib/api/provider';
 import { useTheme } from '@/lib/theme';
@@ -139,20 +140,23 @@ export default function TripsScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: tokens.color.pageBg }]}>
       <View style={styles.header}>
-        <Text
-          accessibilityRole="header"
-          style={{
-            color: tokens.color.textStrong,
-            fontFamily: tokens.font[tokens.type.h1.weight],
-            fontSize: tokens.type.h1.fontSize,
-            letterSpacing: tokens.type.h1.letterSpacing,
-          }}
-        >
-          Your Trips
-        </Text>
-        <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 13, marginTop: 2 }}>
-          {`${count} tracked`}
-        </Text>
+        <View style={styles.headerText}>
+          <Text
+            accessibilityRole="header"
+            style={{
+              color: tokens.color.textStrong,
+              fontFamily: tokens.font[tokens.type.h1.weight],
+              fontSize: tokens.type.h1.fontSize,
+              letterSpacing: tokens.type.h1.letterSpacing,
+            }}
+          >
+            Your Trips
+          </Text>
+          <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 13, marginTop: 2 }}>
+            {`${count} tracked`}
+          </Text>
+        </View>
+        <SettingsCog />
       </View>
 
       <View style={styles.fill}>{renderBody()}</View>
@@ -180,7 +184,14 @@ export default function TripsScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  headerText: { flex: 1 },
   listContent: { paddingHorizontal: 20, paddingBottom: 96 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
