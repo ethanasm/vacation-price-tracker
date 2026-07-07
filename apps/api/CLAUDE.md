@@ -154,8 +154,11 @@ per-segment data** (carrier, flight number, airports, ISO times, durations,
 stops, cabin), so no id-string parsing; the full itinerary rides along in
 `raw_data` for the worker's airline filter and the trips router's itinerary
 builder (`_parse_kiwi_flight_offer`). No server-side pagination/sort/stop
-filtering — applied client-side (~15 itineraries per search). Airline display
-names come from the static map in `app/core/airlines.py`.
+filtering — applied client-side (~15 itineraries per search). Each stateless
+call returns a *varying* sample of pairings that can miss whole carriers, so
+the tracking path (`search_flights_all`) unions `COVERAGE_QUERIES` queries,
+deduped by segment fingerprint (cheapest price per pairing wins). Airline
+display names come from the static map in `app/core/airlines.py`.
 
 Which provider serves flights is the `kiwi_flights` feature flag
 (`app/services/flight_provider.py` dispatches; hotels always Skiplagged).

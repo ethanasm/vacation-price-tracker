@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from app.clients.kiwi import (
+    COVERAGE_QUERIES,
     KiwiClient,
     KiwiConnectionError,
     KiwiRateLimitError,
@@ -227,20 +228,67 @@ class TestKiwiFlightSearch:
         assert result.flights == []
 
     @pytest.mark.anyio
-    async def test_search_flights_all_is_single_call(self):
+    async def test_search_flights_all_runs_coverage_queries(self):
+        """Tracking searches union COVERAGE_QUERIES samples (Kiwi has no
+        pagination; each stateless call returns a varying ~15-pairing sample)."""
         client = KiwiClient()
         mock_post = AsyncMock(return_value=_search_response([_itinerary(), _itinerary(price=200)]))
         patcher = _patched_client(mock_post)
         try:
-            result = await client.search_flights_all(
-                "SFO", "RDM", "2026-08-22", max_pages=4, cabin="business"
-            )
+            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+                result = await client.search_flights_all(
+                    "SFO", "RDM", "2026-08-22", max_pages=4, cabin="business"
+                )
         finally:
             patcher.stop()
-        assert mock_post.call_count == 1
-        assert len(result.flights) == 2
+        assert mock_post.call_count == COVERAGE_QUERIES
+        # Identical samples dedupe by segment fingerprint: the two itineraries
+        # here share segments, differing only in price — cheapest wins.
+        assert len(result.flights) == 1
+        assert result.flights[0].price_amount == Decimal("187")
         sent = mock_post.call_args.kwargs["json"]["params"]["arguments"]
         assert sent["cabinClass"] == "C"
+
+    @pytest.mark.anyio
+    async def test_search_flights_all_unions_distinct_pairings_across_queries(self):
+        """A pairing missing from one sample but present in another survives
+        (prod 2026-07-07: a refresh lost the only Alaska nonstop pairing)."""
+        ua = _itinerary(price=262, itinerary_id="q1_0|q1_1")
+        for seg in ua["outbound"]["segments"]:
+            seg.update(carrier="UA", flightNumber="UA670")
+        for seg in ua["inbound"]["segments"]:
+            seg.update(carrier="UA", flightNumber="UA702")
+        as_ = _itinerary(price=209, itinerary_id="q2_0|q2_1")
+        client = KiwiClient()
+        mock_post = AsyncMock(side_effect=[_search_response([ua]), _search_response([as_])])
+        patcher = _patched_client(mock_post)
+        try:
+            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+                result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
+        finally:
+            patcher.stop()
+        assert mock_post.call_count == 2
+        assert result.total_results == 2
+        assert sorted(f.price_amount for f in result.flights) == [Decimal("209"), Decimal("262")]
+
+    @pytest.mark.anyio
+    async def test_search_flights_all_returns_partial_union_when_coverage_query_fails(self):
+        """A failing coverage query must not discard earlier queries' pairings."""
+        client = KiwiClient()
+        mock_post = AsyncMock(
+            side_effect=[
+                _search_response([_itinerary()]),
+                httpx.Response(status_code=400, text="upstream sad"),
+            ]
+        )
+        patcher = _patched_client(mock_post)
+        try:
+            with patch("app.clients.kiwi.asyncio.sleep", AsyncMock()):
+                result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
+        finally:
+            patcher.stop()
+        assert result.success is True
+        assert len(result.flights) == 1
 
     @pytest.mark.anyio
     async def test_limit_and_offset_slice_client_side(self):
@@ -303,6 +351,25 @@ class TestKiwiFlightSearch:
             result = await client.search_flights_all("SFO", "RDM", "2026-08-22")
         assert mock_call.await_count == 1
         assert result.success is False
+
+
+class TestFlightFingerprint:
+    def test_fingerprints_segments_across_both_legs(self):
+        from app.clients.kiwi import _flight_fingerprint
+
+        flight = KiwiClient._normalize_itinerary(_itinerary(), "USD")
+        fp = _flight_fingerprint(flight)
+        assert "AS-AS3361@2026-08-22T16:28:00" in fp
+        assert "AS-AS3360@" in fp
+
+    def test_falls_back_to_endpoints_without_segments(self):
+        from app.clients.kiwi import _flight_fingerprint
+
+        flight = KiwiClient._normalize_itinerary(
+            {"price": 100, "outbound": {"from": "SFO", "to": "RDM", "departureTime": "2026-08-22T10:00:00"}},
+            "USD",
+        )
+        assert _flight_fingerprint(flight) == "None|SFO-RDM@2026-08-22T10:00:00"
 
 
 class TestClientSideFilters:
