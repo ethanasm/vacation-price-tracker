@@ -37,6 +37,13 @@ on:
     # WSL box, and it cannot run two emulator+Gradle jobs at once — the memory
     # contention alone has killed jobs on both sides even without direct
     # interference. Keep at least a 2h gap from showbook's schedule.
+    #
+    # Known limitation: this stagger only serializes nightly-vs-nightly. GHA
+    # `concurrency` groups are repo-scoped, so a `mobile-visual` PR run or a
+    # manual dispatch can still land while a showbook job holds the box; the
+    # port/serial/dir isolation below makes such overlap survivable, but the
+    # OOM risk remains. Durable fix would be a cross-repo host mutex (flock)
+    # adopted by both runners.
     - cron: "0 11 * * *"
   workflow_dispatch: {}
 
@@ -367,9 +374,18 @@ jobs:
           # a broad `pkill -f emulator|qemu|java|gradle` would kill showbook's
           # emulator or Gradle build mid-run on this shared box.
           adb start-server
-          if pgrep -f "emulator -avd ${ANDROID_AVD_NAME}" >/dev/null; then
+          # Clear any stuck offline transport for our serial left by a killed
+          # run — a targeted replacement for the recovery `adb kill-server`
+          # used to provide (reconnect only touches offline devices, so
+          # showbook's healthy session is unaffected).
+          adb reconnect offline || true
+          # Match on "-avd <name>" rather than "emulator -avd <name>": the
+          # emulator launcher execs into qemu-system-* whose argv keeps the
+          # -avd flag but not the `emulator` prefix. The trailing boundary
+          # keeps a hypothetical vpt_e2e_2 AVD from matching.
+          if pgrep -f -- "-avd ${ANDROID_AVD_NAME}( |$)" >/dev/null; then
             echo "killing stale ${ANDROID_AVD_NAME} emulator from a previous run"
-            pkill -f "emulator -avd ${ANDROID_AVD_NAME}" || true
+            pkill -f -- "-avd ${ANDROID_AVD_NAME}( |$)" || true
             sleep 5
           fi
           rm -f "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"/*.lock 2>/dev/null || true
@@ -600,11 +616,13 @@ jobs:
           # `adb kill-server` here: the adb server is shared with showbook's
           # runner on this box, and killing it nukes their live e2e session.
           adb emu kill || true
+          # "-avd <name>" (not "emulator -avd") — the launcher execs into
+          # qemu-system-* which drops the `emulator` argv prefix.
           for _ in $(seq 1 30); do
-            pgrep -f "emulator -avd ${ANDROID_AVD_NAME}" >/dev/null || break
+            pgrep -f -- "-avd ${ANDROID_AVD_NAME}( |$)" >/dev/null || break
             sleep 1
           done
           # Fallback if the console kill didn't land — scoped to OUR AVD name,
           # never a broad pkill on emulator/qemu/java/gradle (shared box).
-          pkill -f "emulator -avd ${ANDROID_AVD_NAME}" 2>/dev/null || true
+          pkill -f -- "-avd ${ANDROID_AVD_NAME}( |$)" 2>/dev/null || true
           rm -f "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"/*.lock 2>/dev/null || true
