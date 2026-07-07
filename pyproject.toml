@@ -116,5 +116,5 @@ fail_under = 70
 
 [dependency-groups]
 dev = [
-    "watchfiles>=1.1.1",
+    "watchfiles>=1.2.0",
 ]
