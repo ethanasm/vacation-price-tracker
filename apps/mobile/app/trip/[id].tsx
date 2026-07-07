@@ -77,6 +77,9 @@ export default function TripDetailScreen(): React.JSX.Element {
   // lands — a bare query.refetch() would only re-read the DB and change nothing.
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const abortedRef = React.useRef(false);
+  // Reentrancy guard independent of the disabled-button state, in case a
+  // second trigger (e.g. a future pull-to-refresh) is ever added.
+  const refreshInFlightRef = React.useRef(false);
   React.useEffect(() => {
     abortedRef.current = false;
     return () => {
@@ -86,7 +89,8 @@ export default function TripDetailScreen(): React.JSX.Element {
 
   const { refetch } = query;
   const handleRefresh = React.useCallback(async () => {
-    if (!id) return;
+    if (!id || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     setIsRefreshing(true);
     try {
       const { refresh_group_id } = await api.refreshTrip(id);
@@ -94,7 +98,10 @@ export default function TripDetailScreen(): React.JSX.Element {
         getStatus: (gid) => api.getRefreshStatus(gid),
         isAborted: () => abortedRef.current,
       });
-      if (outcome.kind === 'aborted') return;
+      // Re-check abort directly: the poll only observes it at its post-sleep
+      // checkpoint, so an unmount during the final getStatus can still return
+      // a settled outcome — don't pop a global Alert over another screen.
+      if (outcome.kind === 'aborted' || abortedRef.current) return;
       if (outcome.kind === 'failed') {
         Alert.alert(
           'Price refresh failed',
@@ -113,6 +120,7 @@ export default function TripDetailScreen(): React.JSX.Element {
         );
       }
     } finally {
+      refreshInFlightRef.current = false;
       if (!abortedRef.current) setIsRefreshing(false);
     }
   }, [id, api, refetch]);
