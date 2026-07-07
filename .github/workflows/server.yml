@@ -55,30 +55,30 @@ jobs:
       DATABASE_URL: sqlite+aiosqlite:///tmp/test_vacation_tracker.db
       GROQ_API_KEY: test-groq-key
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.12.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: pnpm
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       # setup-uv replaces `pip install uv` + uncached `uv sync`; it caches the
       # uv download and the resolved environment keyed on uv.lock.
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       - name: Cache Nx
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .nx/cache
           key: ${{ runner.os }}-nx-python-${{ hashFiles('uv.lock', 'pnpm-lock.yaml') }}
@@ -109,7 +109,7 @@ jobs:
         run: pnpm nx run worker:test:integration
 
       - name: Upload Python coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-coverage
           path: |
@@ -121,13 +121,13 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock

@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Shallow clones disabled for better analysis
 
@@ -120,7 +120,7 @@ jobs:
       # workflows succeeded, so a missing artifact is a hard error (it would
       # silently zero-coverage that language's files).
       - name: Download web coverage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v21
         with:
           name: web-coverage
           workflow: web.yml
@@ -129,7 +129,7 @@ jobs:
           if_no_artifact_found: fail
 
       - name: Download Python coverage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v21
         with:
           name: python-coverage
           workflow: server.yml
@@ -141,7 +141,7 @@ jobs:
       # verdict is in and exit non-zero on failure — this step (and so the PR
       # check) goes red on ANY failing gate condition, security included.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v7
+        uses: SonarSource/sonarqube-scan-action@v8
         with:
           args: -Dsonar.qualitygate.wait=true
         env:
