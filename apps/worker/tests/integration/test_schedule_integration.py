@@ -16,6 +16,7 @@ network, this test is skipped via the marker rather than failing.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import timedelta
 
@@ -69,6 +70,17 @@ async def _fake_run_health_check() -> dict:
     return {"status": "ok", "sent": 0, "skipped": True, "ok": 0, "warn": 0, "fail": 0, "unknown": 0}
 
 
+# Substrings identifying transient network failures from the Temporal CLI
+# download inside start_local(). Deterministic failures (port already bound,
+# unsupported platform, bad config) don't match and re-raise immediately.
+_TRANSIENT_START_ERRORS = (
+    "error decoding response body",
+    "error sending request",
+    "operation timed out",
+    "connection reset",
+)
+
+
 async def _start_local_env() -> WorkflowEnvironment:
     """Start the local Temporal dev server, retrying transient startup failures.
 
@@ -81,9 +93,17 @@ async def _start_local_env() -> WorkflowEnvironment:
     for attempt in range(1, attempts + 1):
         try:
             return await WorkflowEnvironment.start_local()
-        except RuntimeError:
-            if attempt == attempts:
+        except RuntimeError as exc:
+            if attempt == attempts or not any(
+                marker in str(exc).lower() for marker in _TRANSIENT_START_ERRORS
+            ):
                 raise
+            logging.getLogger(__name__).warning(
+                "Temporal dev server startup attempt %d/%d failed (%s); retrying",
+                attempt,
+                attempts,
+                exc,
+            )
             await asyncio.sleep(2**attempt)
     raise AssertionError("unreachable")
 
