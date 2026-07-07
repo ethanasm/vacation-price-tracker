@@ -140,16 +140,19 @@ AUTH_ALLOWED_EMAILS=e2e@vpt.test
 
 `.env.e2e` is gitignored — do not commit it.
 
-Then bring up the stack:
+Then bring up the stack (helper scripts wrap the compose invocations):
 
 ```bash
-docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d
-docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml \
-  run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'
+pnpm e2e:up          # docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d
+pnpm e2e:db:migrate  # alembic upgrade head inside the api image
 ```
 
-Refresh the stack to a new image alongside prod deploys by pinning `IMAGE_TAG`
-and re-running `up -d`.
+**Refreshes after that are automatic:** `deploy.yml` re-pulls the e2e stack on
+every prod deploy, pinned via `IMAGE_TAG` to the same commit SHA prod just
+rolled to, then migrates and checks `/ready`. The deploy job fails loudly if
+the stack exists but `.env.e2e` has gone missing (a silent skip is how a stale
+e2e backend goes unnoticed for weeks), and warns — without failing the prod
+deploy — if the refresh itself errors or `/ready` doesn't come back.
 
 **The `POST /v1/e2e/mint-token` endpoint is owned by P5.** It lives in
 `apps/api/**`, is gated on `E2E_MODE=1` so it never exists in prod, and is

@@ -88,6 +88,41 @@ jobs:
         # retries cover the boot/migration window.
         run: pnpm prod:health:ready
 
+      # The Maestro mobile-e2e backend (infra/docker-compose.e2e.yml) is meant
+      # to track prod (docs/mobile-cicd.md § "VPT e2e backend stack") but was
+      # previously refreshed only by hand — which in practice meant it drifted
+      # for weeks. Refresh it here, pinned to the exact images this deploy
+      # just rolled out, while the GHCR login is still valid. The skip is
+      # silent ONLY on a host that has never set the stack up (no .env.e2e
+      # AND no e2e containers); if the stack exists but .env.e2e is gone,
+      # this fails the job — prod has already rolled by this point, so
+      # failing only surfaces the config rot. A refresh that runs but fails
+      # stays a warning: a broken e2e backend should fail the mobile E2E
+      # job, not prod deploys.
+      - name: Refresh e2e backend (if configured)
+        working-directory: /opt/vacation-price-tracker
+        env:
+          IMAGE_TAG: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -uo pipefail
+          if [ ! -f .env.e2e ]; then
+            if docker ps -a --format '{{.Names}}' | grep -q 'vpt-e2e-'; then
+              echo "::error::.env.e2e is missing from /opt/vacation-price-tracker but the vpt-e2e stack exists — deploys cannot refresh it. Recreate .env.e2e (see the infra/docker-compose.e2e.yml header) or tear the stack down."
+              exit 1
+            fi
+            echo "No .env.e2e and no vpt-e2e stack — skipping e2e backend refresh"
+            exit 0
+          fi
+          if ! (pnpm e2e:pull && pnpm e2e:up && pnpm e2e:db:migrate); then
+            echo "::warning::e2e backend refresh failed — mobile e2e may run against a stale backend"
+            exit 0
+          fi
+          if pnpm e2e:health:ready; then
+            echo "e2e backend refreshed and ready"
+          else
+            echo "::warning::vpt-e2e api /ready is failing after refresh — mobile e2e will fail until it recovers"
+          fi
+
       - name: Prune old images
         # Each deploy pulls fresh :<sha> images; they're tagged, so a plain
         # dangling prune never reclaims them and the host disk grows deploy over

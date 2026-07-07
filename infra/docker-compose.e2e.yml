@@ -8,14 +8,14 @@
 #
 # Brought up once on the prod box by the operator (see docs/mobile-cicd.md
 # § "VPT e2e backend stack"):
-#   # create infra/.env.e2e (mirror .env.prod) with POSTGRES_PASSWORD, SECRET_KEY,
-#   #   VPT_E2E_BACKEND_TOKEN, AUTH_ALLOWED_EMAILS=e2e@vpt.test
-#   docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d
-#   docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml \
-#     run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'
+#   # create .env.e2e at the repo root (mirror .env.prod) with POSTGRES_PASSWORD,
+#   #   SECRET_KEY, VPT_E2E_BACKEND_TOKEN, AUTH_ALLOWED_EMAILS=e2e@vpt.test
+#   pnpm e2e:up
+#   pnpm e2e:db:migrate
 #
-# Image tag is selected by IMAGE_TAG (defaults to latest); the operator pins it
-# to the deployed commit SHA when refreshing the stack alongside a prod deploy.
+# Image tag is selected by IMAGE_TAG (defaults to latest). After the one-time
+# bring-up, deploy.yml refreshes this stack on every prod deploy with IMAGE_TAG
+# pinned to the deployed commit SHA, so it never drifts from prod.
 
 name: vpt-e2e
 
