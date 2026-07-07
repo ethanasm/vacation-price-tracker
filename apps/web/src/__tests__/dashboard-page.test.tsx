@@ -3,6 +3,11 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 
+// Radix >= 2.1.17 applies pointer-events: none scroll-locking that jsdom cannot
+// resolve back to "auto" via stylesheets, so user-event would refuse every click
+// on open menus/dialogs. Real browsers route these clicks fine — skip the check.
+const setupUser = () => userEvent.setup({ pointerEventsCheck: 0 });
+
 // Mock next/navigation
 const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
@@ -629,7 +634,7 @@ describe("DashboardPage", () => {
   describe("error and empty states", () => {
     it("shows failed state and retries on button click", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockList.mockRejectedValueOnce(new ApiError(500, "Server Error", "DB down"));
 
       render(<DashboardPage />);
@@ -703,7 +708,7 @@ describe("DashboardPage", () => {
   describe("inline trip actions", () => {
     it("updates status badge inline when a trip is paused", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockResolvedValue(undefined);
 
       render(<DashboardPage />);
@@ -734,7 +739,7 @@ describe("DashboardPage", () => {
 
     it("updates status badge inline when a trip is resumed", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockResolvedValue(undefined);
 
       render(<DashboardPage />);
@@ -762,7 +767,7 @@ describe("DashboardPage", () => {
   describe("single trip deletion from dashboard", () => {
     it("removes a trip from the table when deleted via kebab menu", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockDeleteTrip.mockResolvedValue(undefined);
 
       render(<DashboardPage />);
@@ -821,7 +826,7 @@ describe("DashboardPage", () => {
     });
 
     it("shows confirmation dialog when Delete All is clicked", async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime, pointerEventsCheck: 0 });
       render(<DashboardPage />);
 
       await waitFor(() => {
@@ -838,7 +843,7 @@ describe("DashboardPage", () => {
 
     it("deletes all trips on confirmation", async () => {
       mockDeleteAll.mockResolvedValue({ data: { deleted_count: 4 } });
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime, pointerEventsCheck: 0 });
 
       render(<DashboardPage />);
 
@@ -868,7 +873,7 @@ describe("DashboardPage", () => {
 
     it("shows error toast when delete all fails with non-ApiError", async () => {
       mockDeleteAll.mockRejectedValue(new Error("Network failure"));
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime, pointerEventsCheck: 0 });
 
       render(<DashboardPage />);
 
@@ -893,7 +898,7 @@ describe("DashboardPage", () => {
 
     it("shows error toast when delete all fails", async () => {
       mockDeleteAll.mockRejectedValue(new ApiError(500, "Server error", "Internal server error"));
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime, pointerEventsCheck: 0 });
 
       render(<DashboardPage />);
 
