@@ -108,7 +108,7 @@ Object.defineProperty(global, "crypto", {
   value: {
     subtle: webcrypto.subtle,
     randomUUID: () => webcrypto.randomUUID(),
-    getRandomValues: (arr: Uint8Array) => webcrypto.getRandomValues(arr),
+    getRandomValues: (arr: Uint8Array<ArrayBuffer>) => webcrypto.getRandomValues(arr),
   },
 });
 
