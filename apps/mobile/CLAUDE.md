@@ -1,6 +1,6 @@
 # Vacation Price Tracker Mobile (`apps/mobile`)
 
-Expo SDK 56 + Expo Router app (iOS + Android). Read the
+Expo SDK 57 + Expo Router app (iOS + Android). Read the
 [repo-root `CLAUDE.md`](../../CLAUDE.md) first for project-wide conventions and
 the **Cross-platform parity** rules; this file covers what's specific to the
 mobile app.
