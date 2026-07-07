@@ -66,7 +66,14 @@
     "prod:db:backup": "mkdir -p backups && docker compose --env-file .env.prod -f infra/docker-compose.prod.yml exec -T db pg_dump --format=custom --no-owner --no-acl -U postgres vacation_tracker > \"backups/pre-migrate-${DEPLOY_SHA:-$(date -u +%Y%m%dT%H%M%SZ)}.dump\"",
     "prod:health:ready": "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8001/ready",
     "prod:query": "node scripts/prod-query.mjs",
-    "prod:axiom": "node scripts/prod-axiom.mjs"
+    "prod:axiom": "node scripts/prod-axiom.mjs",
+    "e2e:up": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d",
+    "e2e:down": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml down",
+    "e2e:pull": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml pull api worker",
+    "e2e:ps": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml ps",
+    "e2e:logs": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml logs -f --tail=100",
+    "e2e:db:migrate": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'",
+    "e2e:health:ready": "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8010/ready"
   },
   "devDependencies": {
     "@nx/next": "23.0.1",
