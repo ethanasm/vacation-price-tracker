@@ -5,6 +5,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { API_URL, describeGoogleOAuthMisconfiguration, GOOGLE_OAUTH_CLIENT_ID_ANDROID, GOOGLE_OAUTH_CLIENT_ID_IOS, GOOGLE_OAUTH_CLIENT_ID_WEB } from '@/lib/env';
 import { exchangeGoogleIdTokenForSession, describeSignInError } from './exchange';
+import { googleAndroidRedirectUri } from './google-redirect';
 import { requestSessionRefresh } from './refresh';
 import { buildE2ESession } from './e2e';
 import { saveSession, loadSession, clearSession } from './storage';
@@ -56,6 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     iosClientId: GOOGLE_OAUTH_CLIENT_ID_IOS ?? PLACEHOLDER_CLIENT_ID,
     androidClientId: GOOGLE_OAUTH_CLIENT_ID_ANDROID ?? PLACEHOLDER_CLIENT_ID,
     webClientId: GOOGLE_OAUTH_CLIENT_ID_WEB ?? PLACEHOLDER_CLIENT_ID,
+    // Android cannot use the provider's default `<applicationId>:/oauthredirect`
+    // redirect: the package name contains underscores, which are invalid in a
+    // URI scheme, so Google rejects the request with 400 invalid_request. Use
+    // the reversed-client-id redirect instead (scheme registered in the Android
+    // manifest by app.config.ts). iOS keeps the default — its bundle id uses
+    // hyphens and is a scheme Google accepts.
+    redirectUri:
+      Platform.OS === 'android'
+        ? googleAndroidRedirectUri(GOOGLE_OAUTH_CLIENT_ID_ANDROID)
+        : undefined,
   });
 
   // Restore cached session on mount.
@@ -150,6 +161,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     const configError = describeGoogleOAuthMisconfiguration(platform);
     if (configError) {
       setError(`Sign-in is not configured: ${configError}`);
+      return;
+    }
+    // A present-but-malformed Android client id would silently fall back to the
+    // provider's underscore-scheme default, which Google always rejects —
+    // surface it instead.
+    if (platform === 'android' && !googleAndroidRedirectUri(GOOGLE_OAUTH_CLIENT_ID_ANDROID)) {
+      setError(
+        'Sign-in is not configured: EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID is not a usable Google OAuth client id.',
+      );
       return;
     }
     setIsSigningIn(true);

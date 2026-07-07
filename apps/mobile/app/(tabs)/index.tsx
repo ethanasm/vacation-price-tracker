@@ -18,28 +18,9 @@ import { SettingsCog } from '@/components/aurora/settings-cog';
 import { TripCard } from '@/components/aurora/trip-card';
 import { TripActionSheet } from '@/components/aurora/trip-action-sheet';
 import { useApiClient } from '@/lib/api/provider';
+import { pollRefreshStatus } from '@/lib/api/trip-refresh';
 import { useTheme } from '@/lib/theme';
-import type { ApiClient, TripSummary } from '@/lib/api/client';
-
-/**
- * Kick off a server-side price refresh for one trip and wait for the workflow
- * to finish (same 2s/30-attempt poll as web's trip-row-actions), so callers
- * can refetch the list once fresh prices have landed.
- */
-async function refreshTripAndWait(api: ApiClient, tripId: string): Promise<void> {
-  const { refresh_group_id } = await api.refreshTrip(tripId);
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const status = await api.getRefreshStatus(refresh_group_id);
-    if (status.status === 'failed') throw new Error(status.error ?? 'Refresh failed');
-    // Same terminal condition as web: an explicit completed status, or every
-    // workflow in the group having finished one way or the other.
-    if (status.status === 'completed') return;
-    if (status.total > 0 && status.completed + status.failed >= status.total) return;
-  }
-  // Still running after 60s — stop polling without treating it as a failure;
-  // the caller's onSettled invalidation picks up prices whenever they land.
-}
+import type { TripSummary } from '@/lib/api/client';
 
 /** Grey placeholder card shown while the trip list loads. */
 function SkeletonCard(): React.JSX.Element {
@@ -90,9 +71,22 @@ export default function TripsScreen(): React.JSX.Element {
   }
 
   const refreshMutation = useMutation({
-    mutationFn: (trip: TripSummary) => refreshTripAndWait(api, trip.id),
-    onSettled: (_data, _err, trip) => invalidateTrip(trip.id),
+    // Same poll loop as trip detail's Refresh button (lib/api/trip-refresh);
+    // completed/timeout/not_found all fall through to the onSettled
+    // invalidation so anything that landed late still shows.
+    mutationFn: async (trip: TripSummary) => {
+      const { refresh_group_id } = await api.refreshTrip(trip.id);
+      return pollRefreshStatus(refresh_group_id, {
+        getStatus: (gid) => api.getRefreshStatus(gid),
+      });
+    },
+    onSuccess: (outcome) => {
+      if (outcome.kind === 'failed') {
+        Alert.alert('Price refresh failed', outcome.error ?? 'Please try again in a moment.');
+      }
+    },
     onError: () => Alert.alert('Refresh failed', 'Could not refresh prices. Please try again.'),
+    onSettled: (_data, _err, trip) => invalidateTrip(trip.id),
   });
 
   const statusMutation = useMutation({

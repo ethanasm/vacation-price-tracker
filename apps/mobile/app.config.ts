@@ -4,18 +4,29 @@ import {
 	type ConfigPlugin,
 	withAndroidManifest,
 } from "expo/config-plugins";
+// Expo's config loader transpiles only this file, so it cannot import sibling
+// TS modules — this mirrors lib/auth/google-redirect.ts (keep the two in sync).
+const googleReversedClientIdScheme = (clientId: string | undefined): string | undefined => {
+	const suffix = ".apps.googleusercontent.com";
+	if (!clientId?.endsWith(suffix)) return undefined;
+	const prefix = clientId.slice(0, -suffix.length);
+	if (!/^[a-z0-9][a-z0-9+.-]*$/i.test(prefix)) return undefined;
+	return `com.googleusercontent.apps.${prefix}`;
+};
 
-// Google OAuth on native uses the *application id* as the redirect scheme.
-// expo-auth-session's Google provider builds
-// `me.ethanasm.vacation_price_tracker:/oauthredirect` from
-// Application.applicationId (the Android package) at runtime — the Expo config
-// `scheme` never changes the redirect URI, it only registers which schemes the
-// app catches. iOS appends its bundle id to CFBundleURLSchemes automatically;
-// Android does NOT, so the package name must be registered in the Android
-// manifest or Chrome drops the callback. It cannot live in `scheme`: underscores
-// are invalid there (`^[a-z][a-z0-9+.-]*$`) and EAS Update rejects the whole
-// manifest on publish. withAndroidOAuthRedirectScheme below registers it at
-// prebuild instead, which never passes through that validation.
+// Google OAuth on Android cannot use expo-auth-session's default redirect.
+// The provider derives `<applicationId>:/oauthredirect`, but our Android
+// package contains underscores, which are invalid in a URI scheme (RFC 3986),
+// so Google rejects the authorization request with `400 invalid_request`
+// before the consent screen ever renders — registering the underscore scheme
+// in the manifest (the previous fix) can't help because Google never
+// redirects at all. The app instead passes Google's reversed-client-id
+// redirect (`com.googleusercontent.apps.<id>:/oauthredirect`, built in
+// lib/auth/google-redirect.ts and wired up in lib/auth/index.tsx), and the
+// plugin below registers that scheme in the Android manifest at prebuild so
+// the browser can hand the callback back to the app. iOS needs none of this:
+// its bundle id uses hyphens (a valid scheme Google accepts) and Expo
+// registers it in CFBundleURLSchemes automatically.
 //
 // The iOS bundle id uses HYPHENS (me.ethanasm.vacation-price-tracker) because
 // Apple disallows underscores in CFBundleIdentifier; Android keeps underscores
@@ -24,12 +35,22 @@ import {
 const ANDROID_PACKAGE = "me.ethanasm.vacation_price_tracker";
 const IOS_BUNDLE_ID = "me.ethanasm.vacation-price-tracker";
 
+const ANDROID_OAUTH_SCHEME = googleReversedClientIdScheme(
+	process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID,
+);
+
 const withAndroidOAuthRedirectScheme: ConfigPlugin = (cfg) =>
 	withAndroidManifest(cfg, (manifestCfg) => {
+		if (!ANDROID_OAUTH_SCHEME) {
+			console.warn(
+				"[app.config] EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID is missing or invalid — the Google OAuth redirect scheme was NOT registered, so Android sign-in cannot complete in this build.",
+			);
+			return manifestCfg;
+		}
 		// appendScheme doesn't dedupe, so guard for non-clean prebuild reruns.
-		if (!AndroidConfig.Scheme.hasScheme(ANDROID_PACKAGE, manifestCfg.modResults)) {
+		if (!AndroidConfig.Scheme.hasScheme(ANDROID_OAUTH_SCHEME, manifestCfg.modResults)) {
 			manifestCfg.modResults = AndroidConfig.Scheme.appendScheme(
-				ANDROID_PACKAGE,
+				ANDROID_OAUTH_SCHEME,
 				manifestCfg.modResults,
 			);
 		}

@@ -18,8 +18,8 @@ export type TripDetailResponse = components['schemas']['TripDetailResponse'];
 export type TripCreate = components['schemas']['TripCreate'];
 export type TripUpdate = components['schemas']['TripUpdate'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
-export type RefreshStart = components['schemas']['RefreshStartResponse'];
-export type RefreshStatus = components['schemas']['RefreshStatusResponse'];
+export type RefreshStartResponse = components['schemas']['RefreshStartResponse'];
+export type RefreshStatusResponse = components['schemas']['RefreshStatusResponse'];
 export type UserResponse = components['schemas']['UserResponse'];
 export type FeatureFlagItem = components['schemas']['FeatureFlagItem'];
 export type FeatureFlagsResponse = components['schemas']['FeatureFlagsResponse'];
@@ -56,8 +56,8 @@ export interface ApiClient {
   updateTrip(id: string, body: TripUpdate): Promise<TripDetail>;
   updateTripStatus(id: string, status: 'active' | 'paused'): Promise<TripSummary>;
   deleteTrip(id: string): Promise<void>;
-  refreshTrip(id: string): Promise<RefreshStart>;
-  getRefreshStatus(refreshGroupId: string): Promise<RefreshStatus>;
+  refreshTrip(id: string): Promise<RefreshStartResponse>;
+  getRefreshStatus(refreshGroupId: string): Promise<RefreshStatusResponse>;
   sendChatMessage(body: { message: string; thread_id?: string }): Promise<Response>;
   getMe(): Promise<UserResponse>;
   updatePreferences(prefs: UserPreferencesUpdate): Promise<UserPreferencesResponse>;
@@ -234,7 +234,9 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     },
 
     async refreshTrip(id) {
-      const env = await requestJson<Envelope<RefreshStart>>(
+      // Starts a PriceCheckWorkflow server-side; poll getRefreshStatus with the
+      // returned refresh_group_id to learn when the new snapshot lands.
+      const env = await requestJson<Envelope<RefreshStartResponse>>(
         `/v1/trips/${encodeURIComponent(id)}/refresh`,
         { method: 'POST', headers: buildHeaders() },
       );
@@ -243,7 +245,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
 
     async getRefreshStatus(refreshGroupId) {
       const q = new URLSearchParams({ refresh_group_id: refreshGroupId });
-      const env = await requestJson<Envelope<RefreshStatus>>(
+      const env = await requestJson<Envelope<RefreshStatusResponse>>(
         `/v1/trips/refresh-status?${q.toString()}`,
         { method: 'GET', headers: buildHeaders() },
       );
