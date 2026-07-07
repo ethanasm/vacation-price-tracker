@@ -61,6 +61,19 @@ concurrency:
 
 jobs:
   scan:
+    # Dependabot-triggered pull_request runs only receive *Dependabot* secrets,
+    # never the repository's Actions secrets — SONAR_TOKEN comes through empty
+    # and the scanner dies with "Not authorized". Dependency bumps change no
+    # first-party source (build/lint/test/audit still gate them), so skip the
+    # scan instead of failing every Dependabot PR. To re-enable scanning on
+    # these PRs, register SONAR_TOKEN under Settings → Secrets and variables →
+    # Dependabot and drop this condition.
+    #
+    # Deliberately unconditional on event type: a Dependabot-actored *push* to
+    # main (e.g. auto-merge) is ALSO denied repo secrets, so scoping this to
+    # pull_request would just turn the skip into a red run on main. That
+    # commit's analysis lands with the next non-Dependabot-actored run.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
