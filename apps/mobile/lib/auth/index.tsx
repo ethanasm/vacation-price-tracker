@@ -154,6 +154,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       setError(`Sign-in is not configured: ${configError}`);
       return;
     }
+    // A present-but-malformed Android client id would silently fall back to the
+    // provider's underscore-scheme default, which Google always rejects —
+    // surface it instead.
+    if (platform === 'android' && !googleAndroidRedirectUri(GOOGLE_OAUTH_CLIENT_ID_ANDROID)) {
+      setError(
+        'Sign-in is not configured: EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID is not a usable Google OAuth client id.',
+      );
+      return;
+    }
     setIsSigningIn(true);
     try {
       const result = await promptAsync();
