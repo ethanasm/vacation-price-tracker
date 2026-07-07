@@ -8,6 +8,7 @@ import { exchangeGoogleIdTokenForSession, describeSignInError } from './exchange
 import { requestSessionRefresh } from './refresh';
 import { buildE2ESession } from './e2e';
 import { saveSession, loadSession, clearSession } from './storage';
+import { logClientEvent } from '@/lib/telemetry';
 import type { SessionData, SessionUser } from './contract';
 
 export type { SessionUser, SessionData } from './contract';
@@ -82,7 +83,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     // Best-effort, matching the refresh path below: a storage failure (e.g.
     // SecureStore is unavailable on the web e2e harness) must not fail
     // sign-in — the session just won't survive an app restart.
-    await saveSession(SecureStore, session).catch(() => undefined);
+    await saveSession(SecureStore, session).catch(() => {
+      logClientEvent('auth.persist_failed', {
+        message: 'Session could not be persisted to secure storage',
+        level: 'warn',
+      });
+    });
     setToken(session.accessToken);
     setRefreshTokenValue(session.refreshToken);
     setUser(session.user);

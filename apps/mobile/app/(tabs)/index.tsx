@@ -31,10 +31,14 @@ async function refreshTripAndWait(api: ApiClient, tripId: string): Promise<void>
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     const status = await api.getRefreshStatus(refresh_group_id);
-    if (status.status === 'completed') return;
     if (status.status === 'failed') throw new Error(status.error ?? 'Refresh failed');
+    // Same terminal condition as web: an explicit completed status, or every
+    // workflow in the group having finished one way or the other.
+    if (status.status === 'completed') return;
+    if (status.total > 0 && status.completed + status.failed >= status.total) return;
   }
-  throw new Error('Refresh timed out');
+  // Still running after 60s — stop polling without treating it as a failure;
+  // the caller's onSettled invalidation picks up prices whenever they land.
 }
 
 /** Grey placeholder card shown while the trip list loads. */

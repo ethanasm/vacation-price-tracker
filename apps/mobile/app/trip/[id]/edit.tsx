@@ -24,8 +24,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useTheme } from '@/lib/theme';
 import { useApiClient } from '@/lib/api/provider';
-import type { TripDetail, TripUpdate } from '@/lib/api/client';
+import type { TripDetail } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
+import { buildTripUpdate, seedThreshold } from '@/lib/trip-edit';
 import { AuroraCard, GradientButton, SegmentedControl, type SegmentedOption } from '@/components/aurora';
 import { FormField } from '@/components/aurora/form-field';
 import { ToggleRow } from '@/components/aurora/toggle-row';
@@ -76,14 +77,6 @@ export default function EditTripScreen(): React.JSX.Element {
   return <EditTripForm trip={query.data.trip} />;
 }
 
-/** Seed the threshold field: blank when the trip notifies on every refresh. */
-function seedThreshold(trip: TripDetail): string {
-  const prefs = trip.notification_prefs;
-  if (!prefs || prefs.notify_without_threshold) return '';
-  const value = Number.parseFloat(prefs.threshold_value);
-  return Number.isFinite(value) && value > 0 ? String(value) : '';
-}
-
 function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
   const { tokens } = useTheme();
   const router = useRouter();
@@ -121,68 +114,30 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
     if (!destination.trim()) return 'To (destination) is required.';
     if (!DATE_RE.test(departDate.trim())) return 'Depart date must be YYYY-MM-DD.';
     if (returnDate.trim() && !DATE_RE.test(returnDate.trim())) return 'Return date must be YYYY-MM-DD.';
+    if (!flightEnabled && !hotelEnabled) return 'Track at least flights or hotels.';
     if (hotelEnabled && !hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
     return null;
   }
 
-  function buildUpdate(): TripUpdate {
-    const isRoundTrip = returnDate.trim().length > 0;
-    const thresholdValue = Number.parseFloat(threshold);
-    const hasThreshold = Number.isFinite(thresholdValue) && thresholdValue > 0;
-    const existingNotify = trip.notification_prefs;
-
-    // The mobile form edits a subset of each prefs object — start from the
-    // trip's saved prefs so untouched fields round-trip unchanged.
-    const body: TripUpdate = {
-      name: name.trim(),
-      origin_airport: origin.trim().toUpperCase(),
-      destination_code: destination.trim().toUpperCase(),
-      is_round_trip: isRoundTrip,
-      depart_date: departDate.trim(),
-      return_date: isRoundTrip ? returnDate.trim() : null,
-      adults: Math.max(1, Number.parseInt(adults, 10) || 1),
-      track_flights: flightEnabled,
-      track_hotels: hotelEnabled,
-      notification_prefs: {
-        threshold_type: existingNotify?.threshold_type ?? 'trip_total',
-        threshold_value: hasThreshold ? thresholdValue : 0,
-        notify_without_threshold: !hasThreshold,
-        email_enabled: existingNotify?.email_enabled ?? true,
-        sms_enabled: existingNotify?.sms_enabled ?? false,
-      },
-    };
-    if (flightEnabled) {
-      const existing = trip.flight_prefs;
-      body.flight_prefs = {
-        airlines: existing?.airlines ?? [],
-        // The toggle only distinguishes nonstop from "not nonstop" — keep a
-        // saved '1-stop' preference instead of collapsing it to 'any'.
-        stops_mode: nonStopOnly
-          ? 'nonstop'
-          : existing?.stops_mode && existing.stops_mode !== 'nonstop'
-            ? existing.stops_mode
-            : 'any',
-        max_stops: existing?.max_stops ?? null,
-        cabin,
-      };
-    }
-    if (hotelEnabled) {
-      const existing = trip.hotel_prefs;
-      body.hotel_prefs = {
-        rooms: existing?.rooms ?? 1,
-        adults_per_room: existing?.adults_per_room ?? 2,
-        city: hotelCity.trim(),
-        room_selection_mode: existing?.room_selection_mode ?? 'cheapest',
-        preferred_room_types: existing?.preferred_room_types ?? [],
-        preferred_views: existing?.preferred_views ?? [],
-        min_star_rating: existing?.min_star_rating ?? null,
-      };
-    }
-    return body;
-  }
-
   const mutation = useMutation({
-    mutationFn: () => api.updateTrip(trip.id, buildUpdate()),
+    mutationFn: () =>
+      api.updateTrip(
+        trip.id,
+        buildTripUpdate(trip, {
+          name,
+          origin,
+          destination,
+          departDate,
+          returnDate,
+          adults,
+          flightEnabled,
+          cabin,
+          nonStopOnly,
+          hotelEnabled,
+          hotelCity,
+          threshold,
+        }),
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['trips'] });
       void queryClient.invalidateQueries({ queryKey: ['trip', trip.id] });

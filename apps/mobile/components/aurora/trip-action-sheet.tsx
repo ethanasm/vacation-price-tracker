@@ -64,8 +64,15 @@ export function TripActionSheet({
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const isPaused = trip?.status === 'paused';
-  const isExpired = trip?.status === 'expired';
+
+  // Keep rendering the last trip while the Modal slides out (trip goes null on
+  // close, but the sheet body shouldn't vanish mid-animation).
+  const [lastTrip, setLastTrip] = React.useState(trip);
+  if (trip && trip !== lastTrip) setLastTrip(trip);
+  const shown = trip ?? lastTrip;
+
+  const isPaused = shown?.status === 'paused';
+  const isExpired = shown?.status === 'expired';
 
   return (
     <Modal visible={trip !== null} transparent animationType="slide" onRequestClose={onClose}>
@@ -77,7 +84,7 @@ export function TripActionSheet({
           onPress={onClose}
           testID="trip-action-sheet-backdrop"
         />
-        {trip ? (
+        {shown ? (
           <View
             testID="trip-action-sheet"
             style={[
@@ -91,13 +98,13 @@ export function TripActionSheet({
               numberOfLines={1}
               style={[styles.title, { color: tokens.color.textStrong, fontFamily: tokens.font[700] }]}
             >
-              {trip.name}
+              {shown.name}
             </Text>
             <Text
               numberOfLines={1}
               style={[styles.subtitle, { color: tokens.color.textMuted, fontFamily: tokens.font[500] }]}
             >
-              {`${trip.origin_airport} ↔ ${trip.destination_code}`}
+              {`${shown.origin_airport} ↔ ${shown.destination_code}`}
             </Text>
 
             {!isExpired ? (
@@ -105,24 +112,24 @@ export function TripActionSheet({
                 <ActionRow
                   icon={RefreshCw}
                   label="Refresh"
-                  onPress={() => onRefresh(trip)}
+                  onPress={() => onRefresh(shown)}
                   testID="trip-action-refresh"
                 />
                 <ActionRow
                   icon={isPaused ? Play : Pause}
                   label={isPaused ? 'Resume' : 'Pause'}
-                  onPress={() => onToggleStatus(trip)}
+                  onPress={() => onToggleStatus(shown)}
                   testID="trip-action-pause"
                 />
               </>
             ) : null}
-            <ActionRow icon={Pencil} label="Edit" onPress={() => onEdit(trip)} testID="trip-action-edit" />
+            <ActionRow icon={Pencil} label="Edit" onPress={() => onEdit(shown)} testID="trip-action-edit" />
             <View style={[styles.separator, { backgroundColor: tokens.color.hairline }]} />
             <ActionRow
               icon={Trash2}
               label="Delete"
               destructive
-              onPress={() => onDelete(trip)}
+              onPress={() => onDelete(shown)}
               testID="trip-action-delete"
             />
           </View>

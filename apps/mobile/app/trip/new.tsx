@@ -72,6 +72,7 @@ export default function NewTripScreen(): React.JSX.Element {
     if (!destination.trim()) return 'To (destination) is required.';
     if (!DATE_RE.test(departDate.trim())) return 'Depart date must be YYYY-MM-DD.';
     if (returnDate.trim() && !DATE_RE.test(returnDate.trim())) return 'Return date must be YYYY-MM-DD.';
+    if (!flightEnabled && !hotelEnabled) return 'Track at least flights or hotels.';
     if (hotelEnabled && !hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
     return null;
   }
@@ -87,7 +88,7 @@ export default function NewTripScreen(): React.JSX.Element {
         is_round_trip: isRoundTrip,
         depart_date: departDate.trim(),
         return_date: isRoundTrip ? returnDate.trim() : null,
-        adults: Math.max(1, Number.parseInt(adults, 10) || 1),
+        adults: Math.min(9, Math.max(1, Number.parseInt(adults, 10) || 1)),
         track_flights: flightEnabled,
         track_hotels: hotelEnabled,
         flight_prefs: flightEnabled
