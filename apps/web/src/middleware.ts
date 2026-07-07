@@ -33,7 +33,7 @@ function decodeBase64UrlString(value: string): string {
 /**
  * Decode a base64url string into bytes.
  */
-function decodeBase64UrlBytes(value: string): Uint8Array {
+function decodeBase64UrlBytes(value: string): Uint8Array<ArrayBuffer> {
   const binary = decodeBase64UrlString(value);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {

@@ -1,13 +1,16 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
-  "organizeImports": {
-    "enabled": true
-  },
+  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
     "rules": {
       "security": {
         "noDangerouslySetInnerHtml": "warn"
+      },
+      "a11y": {
+        "useSemanticElements": "off",
+        "useAriaPropsSupportedByRole": "off",
+        "noStaticElementInteractions": "off"
       }
     }
   },
@@ -22,6 +25,14 @@
     }
   },
   "files": {
-    "ignore": [".next", "node_modules", "out", "coverage", ".pnpm-store"]
+    "includes": [
+      "**",
+      "!**/*.css",
+      "!**/.next",
+      "!**/node_modules",
+      "!**/out",
+      "!**/coverage",
+      "!**/.pnpm-store"
+    ]
   }
 }
