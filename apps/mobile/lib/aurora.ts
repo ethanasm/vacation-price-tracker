@@ -64,6 +64,59 @@ export function parsePrice(value?: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Build a stable flight key from carrier, flight number, route, and date —
+ * "UA-UA670|SFO-RDM|2026-08-22" per segment, joined by "+". Stays stable
+ * across API responses for the "same" round trip, so the chart can find a
+ * selected pairing in historical snapshots. Mirrors the web app's
+ * `flightStableKey` (apps/web/src/lib/price-history.ts).
+ */
+export function flightStableKey(flight: FlightOffer): string {
+  const segments = (flight.itineraries ?? []).flatMap((it) => it.segments ?? []);
+  if (segments.length === 0) {
+    // Fallback for flat structure - airline code, flight number, departure date
+    const code = flight.airline_code ?? '';
+    const num = flight.flight_number ?? '';
+    const date = flight.departure_time?.slice(0, 10) ?? '';
+    if (code && num && date) return `${code}-${num}|${date}`;
+    // Last resort: the id (not stable across API calls, but better than nothing)
+    return flight.id;
+  }
+  return segments
+    .map((s) => {
+      const code = s.carrier_code ?? '';
+      const num = s.flight_number ?? '';
+      const dep = s.departure_airport ?? '';
+      const arr = s.arrival_airport ?? '';
+      const date = s.departure_time?.slice(0, 10) ?? '';
+      return `${code}-${num}|${dep}-${arr}|${date}`;
+    })
+    .join('+');
+}
+
+/** Stable hotel key: the normalized hotel name. Mirrors the web app. */
+export function hotelStableKey(hotel: HotelOffer): string {
+  return (hotel.name ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Display label for a flight: flight numbers across both itineraries, e.g.
+ * "UA670 / UA702" for a typical round trip (segments within a leg join with
+ * "+"). Mirrors the web trip-detail's chart-legend label.
+ */
+export function flightDisplayLabel(flight: FlightOffer): string | null {
+  const legLabels = (flight.itineraries ?? [])
+    .map((it) =>
+      (it.segments ?? [])
+        .map((s) => s.flight_number ?? s.carrier_code ?? '')
+        .filter(Boolean)
+        .join('+'),
+    )
+    .filter(Boolean);
+  if (legLabels.length > 0) return legLabels.join(' / ');
+  return flight.flight_number ?? flight.airline_code ?? null;
+}
+
 export function formatMoneyString(value?: string | null): string {
   const n = parsePrice(value) ?? 0;
   return `$${Math.round(n).toLocaleString('en-US')}`;
@@ -230,6 +283,21 @@ export interface ChartPoint {
   label: string;
   total: number;
   hotel: number;
+  /** Cheapest flight seen that day (the dashed "Flight (min)" series). */
+  minFlight: number;
+  /** The selected round trip's price that day (carried forward across gaps). */
+  selectedFlight?: number;
+  /** The selected hotel's price that day (carried forward across gaps). */
+  selectedHotel?: number;
+}
+
+export interface ChartSeriesOptions {
+  selectedFlightKey?: string | null;
+  selectedHotelKey?: string | null;
+  /** Live price of the currently selected flight, for the synthetic Now point. */
+  nowSelectedFlight?: number | null;
+  /** Live price of the currently selected hotel, for the synthetic Now point. */
+  nowSelectedHotel?: number | null;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -240,32 +308,138 @@ function dayLabel(day: string): string {
 }
 
 /**
- * One point per calendar day (cheapest total that day), then append a synthetic
- * "Now" point at the live selection's total/hotel so the chart's current dot and
- * the "Now $X" badge track the selection. Mirrors the web price-history chart.
+ * Cheapest price for the selected offer across ALL of a day's snapshots.
+ *
+ * A day can hold several snapshots (daily cron + manual refreshes), and the
+ * selected offer's best quote may live in a snapshot other than the day's
+ * cheapest-total one. Mirrors the web app's matching.
+ */
+function selectedOfferDailyMin<T>(
+  snapshots: PriceSnapshot[],
+  offersOf: (snapshot: PriceSnapshot) => T[],
+  keyOf: (offer: T) => string,
+  selectedKey: string,
+): number | null {
+  let min: number | null = null;
+  for (const snapshot of snapshots) {
+    for (const offer of offersOf(snapshot)) {
+      if (keyOf(offer) !== selectedKey) continue;
+      const price = parsePrice((offer as { price?: string | null }).price);
+      if (price !== null && (min === null || price < min)) min = price;
+    }
+  }
+  return min;
+}
+
+/**
+ * One point per calendar day — total/hotel/minFlight from the day's
+ * cheapest-total snapshot; the selected flight/hotel matched across ALL of the
+ * day's snapshots by stable key (carried forward across days with no match) —
+ * then a synthetic "Now" point at the live selection so the chart's current
+ * dot and the "Now $X" badge track the selection. Mirrors the web
+ * price-history chart, including dropping degraded snapshots (no priced
+ * component) so they don't plot a fake $0 point.
  */
 export function buildChartSeries(
   history: PriceSnapshot[],
   currentTotal: number,
   currentHotel: number,
+  options: ChartSeriesOptions = {},
 ): { points: ChartPoint[]; nowLabel: string } {
-  const cheapestByDay = new Map<string, { total: number; hotel: number }>();
+  const { selectedFlightKey, selectedHotelKey, nowSelectedFlight, nowSelectedHotel } = options;
+  const cheapestByDay = new Map<string, { total: number; hotel: number; flight: number }>();
+  const snapshotsByDay = new Map<string, PriceSnapshot[]>();
   for (const snap of history) {
     const day = (snap.created_at ?? '').slice(0, 10);
     if (!day) continue;
-    const flight = parsePrice(snap.flight_price) ?? 0;
-    const hotel = parsePrice(snap.hotel_price) ?? 0;
+    const flightPrice = parsePrice(snap.flight_price);
+    const hotelPrice = parsePrice(snap.hotel_price);
+    // No priced component at all = a degraded provider response, not a $0 trip.
+    if (flightPrice === null && hotelPrice === null) continue;
+    const flight = flightPrice ?? 0;
+    const hotel = hotelPrice ?? 0;
     const total = flight + hotel;
+    snapshotsByDay.set(day, [...(snapshotsByDay.get(day) ?? []), snap]);
     const existing = cheapestByDay.get(day);
-    if (!existing || total < existing.total) cheapestByDay.set(day, { total, hotel });
+    if (!existing || total < existing.total) cheapestByDay.set(day, { total, hotel, flight });
   }
   const days = [...cheapestByDay.keys()].sort((a, b) => a.localeCompare(b));
+
+  let lastSelectedFlight: number | null = null;
+  let lastSelectedHotel: number | null = null;
   const points: ChartPoint[] = days.map((day) => {
-    const v = cheapestByDay.get(day) as { total: number; hotel: number };
-    return { label: dayLabel(day), total: v.total, hotel: v.hotel };
+    const v = cheapestByDay.get(day) as { total: number; hotel: number; flight: number };
+    const daySnapshots = snapshotsByDay.get(day) ?? [];
+
+    let selectedFlight: number | undefined;
+    if (selectedFlightKey) {
+      const match = selectedOfferDailyMin(
+        daySnapshots,
+        (s) => (s.flight_offers ?? []) as FlightOffer[],
+        flightStableKey,
+        selectedFlightKey,
+      );
+      if (match !== null) {
+        selectedFlight = match;
+        lastSelectedFlight = match;
+      } else if (lastSelectedFlight !== null) {
+        selectedFlight = lastSelectedFlight;
+      }
+    }
+
+    let selectedHotel: number | undefined;
+    if (selectedHotelKey) {
+      const match = selectedOfferDailyMin(
+        daySnapshots,
+        (s) => (s.hotel_offers ?? []) as HotelOffer[],
+        hotelStableKey,
+        selectedHotelKey,
+      );
+      if (match !== null) {
+        selectedHotel = match;
+        lastSelectedHotel = match;
+      } else if (lastSelectedHotel !== null) {
+        selectedHotel = lastSelectedHotel;
+      }
+    }
+
+    return {
+      label: dayLabel(day),
+      total: v.total,
+      hotel: v.hotel,
+      minFlight: v.flight,
+      selectedFlight,
+      selectedHotel,
+    };
   });
-  points.push({ label: 'Now', total: currentTotal, hotel: currentHotel });
+
+  const lastDay = points[points.length - 1];
+  points.push({
+    label: 'Now',
+    total: currentTotal,
+    hotel: currentHotel,
+    minFlight: lastDay ? lastDay.minFlight : Math.max(currentTotal - currentHotel, 0),
+    selectedFlight: nowSelectedFlight ?? lastSelectedFlight ?? undefined,
+    selectedHotel: nowSelectedHotel ?? lastSelectedHotel ?? undefined,
+  });
   return { points, nowLabel: `Now $${Math.round(currentTotal).toLocaleString('en-US')}` };
+}
+
+/**
+ * Clean y-axis ticks from $0 up to a rounded ceiling ≥ the plotted maximum
+ * (1/2/2.5/5 × power of ten steps, aiming for ~4 intervals). Replaces the
+ * chart's old fixed $0–$1000 scale, which squashed cheap trips against the
+ * baseline and clipped expensive ones.
+ */
+export function yAxisTicks(maxValue: number): number[] {
+  if (!Number.isFinite(maxValue) || maxValue <= 0) return [0, 250, 500, 750, 1000];
+  const rawStep = maxValue / 4;
+  const pow = 10 ** Math.floor(Math.log10(rawStep));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= rawStep) ?? 10 * pow;
+  const intervals = Math.ceil(maxValue / step);
+  const ticks: number[] = [];
+  for (let i = 0; i <= intervals; i += 1) ticks.push(i * step);
+  return ticks;
 }
 
 /**
