@@ -25,6 +25,9 @@ import {
   selectReducer,
   computeTripTotal,
   buildChartSeries,
+  flightStableKey,
+  hotelStableKey,
+  flightDisplayLabel,
   parsePrice,
   isAwaitingInitialFetch,
   type FlightOffer,
@@ -147,7 +150,14 @@ function TripDetailBody({
   const hotelPerNight = selectedHotel ? parsePrice(selectedHotel.price) ?? 0 : 0;
   const hotelTotal = Math.round(hotelPerNight * nights);
   const tripTotal = computeTripTotal(selectedFlight, selectedHotel, nights);
-  const chart = buildChartSeries(history, tripTotal, hotelTotal);
+  // Mirrors the web trip detail: hotel series/tile only when the trip tracks hotels.
+  const hasHotelTracking = trip.hotel_prefs !== null && trip.hotel_prefs !== undefined;
+  const chart = buildChartSeries(history, tripTotal, hotelTotal, {
+    selectedFlightKey: selectedFlight ? flightStableKey(selectedFlight) : null,
+    selectedHotelKey: selectedHotel ? hotelStableKey(selectedHotel) : null,
+    nowSelectedFlight: selectedFlight ? flightPrice : null,
+    nowSelectedHotel: selectedHotel ? hotelTotal : null,
+  });
 
   const [showAllFlights, setShowAllFlights] = React.useState(false);
   const [showAllHotels, setShowAllHotels] = React.useState(false);
@@ -196,11 +206,18 @@ function TripDetailBody({
           hotelTotal={hotelTotal}
           hotelPerNight={hotelPerNight}
           tripTotal={tripTotal}
+          showHotel={hasHotelTracking}
         />
       </View>
 
       <View style={styles.chartWrap}>
-        <PriceChart points={chart.points} nowLabel={chart.nowLabel} />
+        <PriceChart
+          points={chart.points}
+          nowLabel={chart.nowLabel}
+          showHotel={hasHotelTracking}
+          selectedFlightLabel={selectedFlight ? flightDisplayLabel(selectedFlight) : null}
+          selectedHotelLabel={selectedHotel?.name ?? null}
+        />
       </View>
     </>
   );

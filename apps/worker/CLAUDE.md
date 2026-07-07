@@ -72,10 +72,11 @@ usage, last refresh-run outcome (Temporal history), and Axiom error volume
 ### PriceCheckWorkflow
 Single trip, saga-style (Temporal handles retries/compensation):
 1. `search_flights_all` via the active flight provider — Skiplagged (up to
-   `max_pages=4`, ~300 results) or Kiwi (single call, ~15 structured
-   itineraries), selected per-fetch by the `kiwi_flights` feature flag
-   (`fetch_flights_activity` reads the DB flag, so a flip applies to the next
-   refresh with no worker restart).
+   `max_pages=4`, ~300 results) or Kiwi (union of `COVERAGE_QUERIES` samples
+   deduped by segment fingerprint — each stateless call returns a varying
+   ~15-pairing sample that can miss whole carriers), selected per-fetch by the
+   `kiwi_flights` feature flag (`fetch_flights_activity` reads the DB flag, so
+   a flip applies to the next refresh with no worker restart).
 2. `search_hotels_all(max_pages=4)`, then `get_hotel_details` for the top 20
    cheapest hotels (parallel) for room-level data.
 3. `filter_results_activity` applies post-fetch filters (see below).

@@ -96,13 +96,41 @@ const snapshotTotal = (snapshot: PriceSnapshot): number | null => {
 };
 
 /**
+ * Cheapest price for the selected offer across ALL of a day's snapshots.
+ *
+ * A day can hold several snapshots (daily cron + manual refreshes), and the
+ * selected offer's best quote may live in a snapshot other than the day's
+ * cheapest-total one — matching only there would show a stale carried-forward
+ * value even though the offer WAS quoted that day.
+ */
+function selectedOfferDailyMin<T>(
+  snapshots: PriceSnapshot[],
+  offersOf: (snapshot: PriceSnapshot) => T[],
+  keyOf: (offer: T) => string,
+  selectedKey: string
+): number | null {
+  let min: number | null = null;
+  for (const snapshot of snapshots) {
+    for (const offer of offersOf(snapshot)) {
+      if (keyOf(offer) !== selectedKey) continue;
+      const price = parsePrice((offer as { price?: string | null }).price);
+      if (price != null && (min === null || price < min)) {
+        min = price;
+      }
+    }
+  }
+  return min;
+}
+
+/**
  * Collapse a list of price snapshots into one point per calendar day so the
  * price-history chart stays readable over long tracking windows.
  *
- * For each UTC day we keep the snapshot with the cheapest total (flight + hotel),
- * which represents the best price seen that day. Optional selected-flight and
- * selected-hotel lines carry their last known price forward across days where
- * the selected offer wasn't returned, matching the chart's existing behaviour.
+ * For each UTC day the total/min lines come from the snapshot with the
+ * cheapest total (flight + hotel) — the best price seen that day. The optional
+ * selected-flight and selected-hotel lines are matched across ALL of the day's
+ * snapshots (cheapest match wins) and carry their last known price forward
+ * across days where the selected offer wasn't returned at all.
  *
  * Input may be in any order (the API returns newest-first); output is always
  * sorted oldest -> newest.
@@ -113,8 +141,9 @@ export function aggregateDailyPriceHistory(
 ): DailyPricePoint[] {
   const { selectedFlightKey, selectedHotelKey } = options;
 
-  // Group snapshots by UTC calendar day, keeping the cheapest-total snapshot.
+  // Group snapshots by UTC calendar day, tracking the cheapest-total snapshot.
   const cheapestByDay = new Map<string, PriceSnapshot>();
+  const snapshotsByDay = new Map<string, PriceSnapshot[]>();
   for (const snapshot of priceHistory) {
     const day = snapshot.created_at.slice(0, 10);
     if (!day) continue;
@@ -122,6 +151,7 @@ export function aggregateDailyPriceHistory(
     // Skip degraded snapshots (no priced offers) so they neither plot a fake $0
     // point nor displace a genuinely-priced snapshot as the day's cheapest.
     if (total === null) continue;
+    snapshotsByDay.set(day, [...(snapshotsByDay.get(day) ?? []), snapshot]);
     const existing = cheapestByDay.get(day);
     const existingTotal = existing ? snapshotTotal(existing) : null;
     if (existingTotal === null || total < existingTotal) {
@@ -138,36 +168,37 @@ export function aggregateDailyPriceHistory(
 
   return days.map((day) => {
     const snapshot = cheapestByDay.get(day) as PriceSnapshot;
+    const daySnapshots = snapshotsByDay.get(day) ?? [];
     const minFlight = parsePrice(snapshot.flight_price) ?? 0;
     const minHotel = parsePrice(snapshot.hotel_price) ?? 0;
 
     let selectedHotel: number | undefined;
-    if (selectedHotelKey && snapshot.hotel_offers) {
-      const match = (snapshot.hotel_offers as ApiHotelOffer[]).find(
-        (h) => hotelStableKey(h) === selectedHotelKey
+    if (selectedHotelKey) {
+      const price = selectedOfferDailyMin(
+        daySnapshots,
+        (s) => (s.hotel_offers ?? []) as ApiHotelOffer[],
+        hotelStableKey,
+        selectedHotelKey
       );
-      if (match) {
-        const price = parsePrice(match.price);
-        if (price != null) {
-          selectedHotel = price;
-          lastKnownSelectedHotel = price;
-        }
+      if (price != null) {
+        selectedHotel = price;
+        lastKnownSelectedHotel = price;
       } else if (lastKnownSelectedHotel != null) {
         selectedHotel = lastKnownSelectedHotel;
       }
     }
 
     let selectedFlight: number | undefined;
-    if (selectedFlightKey && snapshot.flight_offers) {
-      const match = (snapshot.flight_offers as ApiFlightOffer[]).find(
-        (f) => flightStableKey(f) === selectedFlightKey
+    if (selectedFlightKey) {
+      const price = selectedOfferDailyMin(
+        daySnapshots,
+        (s) => (s.flight_offers ?? []) as ApiFlightOffer[],
+        flightStableKey,
+        selectedFlightKey
       );
-      if (match) {
-        const price = parsePrice(match.price);
-        if (price != null) {
-          selectedFlight = price;
-          lastKnownSelectedFlight = price;
-        }
+      if (price != null) {
+        selectedFlight = price;
+        lastKnownSelectedFlight = price;
       } else if (lastKnownSelectedFlight != null) {
         selectedFlight = lastKnownSelectedFlight;
       }

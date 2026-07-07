@@ -51,6 +51,13 @@ MAX_BACKOFF_SECONDS = 4.0
 EMPTY_RESULT_RETRIES = 2
 EMPTY_RESULT_BACKOFF_SECONDS = 2.0
 
+# Each stateless call also samples only ~15 itinerary pairings, and the sample
+# varies between calls — a single call can miss whole carriers (observed in
+# prod 2026-07-07: a refresh lost the route's only Alaska nonstop pairing,
+# leaving just identically-priced United combos in the snapshot). Tracking
+# searches therefore union the results of this many queries.
+COVERAGE_QUERIES = 2
+
 # Our CabinClass enum values -> Kiwi's single-letter cabin codes.
 CABIN_CLASS_TO_KIWI = {
     "economy": "M",
@@ -474,46 +481,135 @@ class KiwiClient:
     ) -> FlightSearchResult:
         """Search for flights (full set for tracking).
 
-        The Kiwi MCP has no server-side pagination — a single call returns the
-        full result set (~15 itineraries), so this is one request regardless of
-        ``max_pages``.
+        The Kiwi MCP has no server-side pagination, and each stateless call
+        samples only ~15 itinerary pairings — a sample that varies between
+        calls and can miss whole carriers. Tracking searches therefore run
+        ``COVERAGE_QUERIES`` queries and union the results, deduplicating by
+        segment fingerprint and keeping the cheapest price per pairing.
 
-        An empty-but-successful result is re-queried up to
-        ``EMPTY_RESULT_RETRIES`` times: cold searches can legitimately come back
-        empty and fill in seconds later, and a tracking run that accepts the
-        empty answer records a misleading no-offer snapshot.
+        An empty union is re-queried up to ``EMPTY_RESULT_RETRIES`` extra
+        times: cold searches can legitimately come back empty and fill in
+        seconds later, and a tracking run that accepts the empty answer
+        records a misleading no-offer snapshot.
         """
+        merged: dict[str, FlightSearchFlight] = {}
         result: FlightSearchResult | None = None
-        for attempt in range(EMPTY_RESULT_RETRIES + 1):
-            if attempt:
+        max_attempts = max(COVERAGE_QUERIES, 1 + EMPTY_RESULT_RETRIES)
+        for attempt in range(max_attempts):
+            # Back off only before genuine empty-retries (cold searches fill in
+            # seconds). A coverage re-sample of an already-populated result
+            # runs immediately — no dead time on the happy path.
+            if attempt and not merged:
                 await asyncio.sleep(EMPTY_RESULT_BACKOFF_SECONDS * attempt)
-            result = await self.search_flights(
-                origin=origin,
-                destination=destination,
-                departure_date=departure_date,
-                return_date=return_date,
-                adults=adults,
-                max_stops=max_stops,
-                sort=sort,
-                limit=limit,
-                offset=0,
-                cabin=cabin,
-            )
-            if not result.success or result.total_results > 0 or attempt >= EMPTY_RESULT_RETRIES:
+            try:
+                result = await self.search_flights(
+                    origin=origin,
+                    destination=destination,
+                    departure_date=departure_date,
+                    return_date=return_date,
+                    adults=adults,
+                    max_stops=max_stops,
+                    sort=sort,
+                    limit=limit,
+                    offset=0,
+                    cabin=cabin,
+                )
+            except KiwiMCPError:
+                # A coverage/retry query failing must not discard pairings an
+                # earlier query already returned — return the partial union.
+                # (GlobalBudgetExceeded intentionally propagates even then:
+                # a tripped breaker is a hard stop, not a partial result.)
+                if not merged:
+                    raise
+                logger.warning(
+                    "Kiwi coverage query %d failed for %s-%s %s; keeping %d pairings from earlier queries",
+                    attempt + 1,
+                    origin,
+                    destination,
+                    departure_date,
+                    len(merged),
+                    extra={"event": "kiwi.flights.coverage_query_failed", "attempt": attempt + 1},
+                )
                 break
+            if not result.success:
+                if merged:
+                    break
+                return result
+            added = self._merge_flights(merged, result.flights)
+            self._log_coverage_progress(
+                attempt, max_attempts, added, bool(merged), origin, destination, departure_date
+            )
+            if attempt + 1 >= COVERAGE_QUERIES and merged:
+                break
+
+        if result is None:  # pragma: no cover - the loop always runs at least one query
+            raise KiwiRequestError("Flight search yielded no result")
+        flights = _apply_sort(list(merged.values()), sort)[:limit]
+        return FlightSearchResult(
+            flights=flights,
+            origin=result.origin,
+            destination=result.destination,
+            departure_date=result.departure_date,
+            return_date=result.return_date,
+            is_round_trip=result.is_round_trip,
+            provider="kiwi",
+            total_results=len(merged),
+            currency=result.currency,
+            success=True,
+            error=None,
+        )
+
+    @staticmethod
+    def _log_coverage_progress(
+        attempt: int,
+        max_attempts: int,
+        added: int,
+        has_results: bool,
+        origin: str,
+        destination: str,
+        departure_date: str,
+    ) -> None:
+        """Log what a coverage/retry query contributed to the running union."""
+        if attempt and added:
+            logger.info(
+                "Kiwi coverage query %d added %d pairing(s) for %s-%s %s",
+                attempt + 1,
+                added,
+                origin,
+                destination,
+                departure_date,
+                extra={"event": "kiwi.flights.coverage_merge", "attempt": attempt + 1, "added": added},
+            )
+        if attempt + 1 < max_attempts and not has_results:
             logger.warning(
                 "Kiwi returned no itineraries for %s-%s %s; retrying (%d/%d)",
                 origin,
                 destination,
                 departure_date,
                 attempt + 1,
-                EMPTY_RESULT_RETRIES,
+                max_attempts - 1,
                 extra={
                     "event": "kiwi.flights.empty_retry",
                     "attempt": attempt + 1,
                 },
             )
-        return result
+
+    @staticmethod
+    def _merge_flights(
+        merged: dict[str, FlightSearchFlight], flights: list[FlightSearchFlight]
+    ) -> int:
+        """Union ``flights`` into ``merged`` by fingerprint, keeping the cheapest
+        price per pairing. Returns how many new pairings were added."""
+        added = 0
+        for flight in flights:
+            key = _flight_fingerprint(flight)
+            existing = merged.get(key)
+            if existing is None:
+                added += 1
+                merged[key] = flight
+            elif flight.price_amount < existing.price_amount:
+                merged[key] = flight
+        return added
 
     # -------------------------------------------------------------------------
     # Response normalization
@@ -588,6 +684,31 @@ class KiwiClient:
             provider="kiwi",
             raw_data=raw_data,
         )
+
+
+def _flight_fingerprint(flight: FlightSearchFlight) -> str:
+    """Identity of an itinerary pairing, stable across separate Kiwi queries.
+
+    Kiwi's ``id`` strings carry a per-query prefix, so the same pairing gets a
+    different id on every search — fingerprint the actual segments (carrier,
+    flight number, departure time) across both legs instead.
+    """
+    raw = flight.raw_data or {}
+    parts: list[str] = []
+    for leg_key in ("outbound", "inbound"):
+        leg = raw.get(leg_key)
+        if not isinstance(leg, dict):
+            continue
+        for seg in leg.get("segments") or []:
+            if isinstance(seg, dict):
+                parts.append(
+                    f"{leg_key}:{seg.get('carrier')}-{seg.get('flightNumber')}@{seg.get('departureTime')}"
+                )
+    if parts:
+        return "|".join(parts)
+    # No structured segments — fall back to endpoint-level identity.
+    dep = flight.departure_time.isoformat() if flight.departure_time else ""
+    return f"{flight.carrier_code}|{flight.departure_airport}-{flight.arrival_airport}@{dep}"
 
 
 def _apply_max_stops(

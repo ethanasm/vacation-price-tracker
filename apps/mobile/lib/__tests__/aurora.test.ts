@@ -18,6 +18,10 @@ import {
   clockLabel,
   makeIdempotencyKey,
   isAwaitingInitialFetch,
+  flightStableKey,
+  hotelStableKey,
+  flightDisplayLabel,
+  yAxisTicks,
   type Selection,
   type FlightOffer,
   type HotelOffer,
@@ -303,6 +307,130 @@ test('makeIdempotencyKey falls back to timestamp+random when crypto is absent', 
   } finally {
     if (saved) Object.defineProperty(globalThis, 'crypto', saved);
   }
+});
+
+// --- stable keys / display label (mirror the web app's helpers) ---
+
+const roundTrip = {
+  id: 'rt-1',
+  airline_code: 'UA',
+  price: '262.00',
+  stops: 0,
+  itineraries: [
+    { direction: 'outbound', stops: 0, segments: [
+      { carrier_code: 'UA', flight_number: 'UA670', departure_airport: 'SFO', arrival_airport: 'RDM', departure_time: '2026-08-22T16:45:00' }] },
+    { direction: 'return', stops: 0, segments: [
+      { carrier_code: 'UA', flight_number: 'UA702', departure_airport: 'RDM', arrival_airport: 'SFO', departure_time: '2026-08-26T06:00:00' }] },
+  ],
+} as unknown as FlightOffer;
+
+test('flightStableKey builds a segment-based key across both legs', () => {
+  assert.equal(
+    flightStableKey(roundTrip),
+    'UA-UA670|SFO-RDM|2026-08-22+UA-UA702|RDM-SFO|2026-08-26',
+  );
+});
+
+test('flightStableKey falls back to flat fields, then to the id', () => {
+  const flat = {
+    id: 'flat-1', airline_code: 'AS', flight_number: 'AS3361',
+    departure_time: '2026-08-22T16:28:00', itineraries: [],
+  } as unknown as FlightOffer;
+  assert.equal(flightStableKey(flat), 'AS-AS3361|2026-08-22');
+  const bare = { id: 'bare-1', itineraries: [] } as unknown as FlightOffer;
+  assert.equal(flightStableKey(bare), 'bare-1');
+});
+
+test('hotelStableKey normalizes the hotel name', () => {
+  assert.equal(hotelStableKey({ id: 'h', name: '  The   Riverhouse ' } as HotelOffer), 'the riverhouse');
+});
+
+test('flightDisplayLabel joins flight numbers per leg, with fallbacks', () => {
+  assert.equal(flightDisplayLabel(roundTrip), 'UA670 / UA702');
+  const flat = { id: 'x', flight_number: 'AS3361', itineraries: [] } as unknown as FlightOffer;
+  assert.equal(flightDisplayLabel(flat), 'AS3361');
+  const bare = { id: 'x', itineraries: [] } as unknown as FlightOffer;
+  assert.equal(flightDisplayLabel(bare), null);
+});
+
+// --- selected-offer series ---
+
+function rtSnapshot(createdAt: string, minFlight: string, offers: { price: string }[]): never {
+  return {
+    created_at: createdAt,
+    flight_price: minFlight,
+    hotel_price: null,
+    flight_offers: offers.map((o, i) => ({ ...roundTrip, id: `o-${i}`, price: o.price })),
+  } as never;
+}
+
+test('buildChartSeries tracks the selected flight across days and matches all same-day snapshots', () => {
+  const key = flightStableKey(roundTrip);
+  const history = [
+    rtSnapshot('2026-07-06T06:00:00Z', '185', [{ price: '263' }]),
+    // Two snapshots on Jul 7: the cheapest-total one does NOT contain the
+    // selected pairing; the other quotes it at 262 — the match must be found.
+    { created_at: '2026-07-07T06:00:00Z', flight_price: '175', hotel_price: null, flight_offers: [] } as never,
+    rtSnapshot('2026-07-07T19:30:00Z', '262', [{ price: '262' }]),
+  ];
+  const { points } = buildChartSeries(history, 262, 0, {
+    selectedFlightKey: key,
+    nowSelectedFlight: 262,
+  });
+  // Jul 6, Jul 7, Now
+  assert.equal(points.length, 3);
+  assert.deepEqual(points.map((p) => p.minFlight), [185, 175, 175]);
+  assert.deepEqual(points.map((p) => p.selectedFlight), [263, 262, 262]);
+});
+
+test('buildChartSeries carries the selected flight forward across a gap day', () => {
+  const key = flightStableKey(roundTrip);
+  const history = [
+    rtSnapshot('2026-07-05T06:00:00Z', '200', [{ price: '250' }]),
+    { created_at: '2026-07-06T06:00:00Z', flight_price: '190', hotel_price: null, flight_offers: [] } as never,
+  ];
+  const { points } = buildChartSeries(history, 250, 0, { selectedFlightKey: key });
+  assert.deepEqual(points.map((p) => p.selectedFlight), [250, 250, 250]);
+});
+
+test('buildChartSeries matches a selected hotel by stable key', () => {
+  const history = [
+    {
+      created_at: '2026-07-06T06:00:00Z',
+      flight_price: '100',
+      hotel_price: '400',
+      hotel_offers: [{ id: 'h1', name: 'Riverhouse', price: '450' }],
+    } as never,
+  ];
+  const { points } = buildChartSeries(history, 550, 450, {
+    selectedHotelKey: 'riverhouse',
+    nowSelectedHotel: 450,
+  });
+  assert.deepEqual(points.map((p) => p.selectedHotel), [450, 450]);
+});
+
+test('buildChartSeries drops degraded snapshots (no priced component)', () => {
+  const history = [
+    { created_at: '2026-07-06T06:00:00Z', flight_price: null, hotel_price: null } as never,
+    { created_at: '2026-07-07T06:00:00Z', flight_price: '180', hotel_price: null } as never,
+  ];
+  const { points } = buildChartSeries(history, 180, 0);
+  // degraded Jul 6 dropped: Jul 7 + Now
+  assert.equal(points.length, 2);
+  assert.equal(points[0].minFlight, 180);
+});
+
+// --- y-axis ticks ---
+
+test('yAxisTicks picks clean rounded steps covering the max', () => {
+  assert.deepEqual(yAxisTicks(280), [0, 100, 200, 300]);
+  assert.deepEqual(yAxisTicks(789), [0, 200, 400, 600, 800]);
+  assert.deepEqual(yAxisTicks(1000), [0, 250, 500, 750, 1000]);
+});
+
+test('yAxisTicks falls back to the legacy $0–$1000 scale for empty data', () => {
+  assert.deepEqual(yAxisTicks(0), [0, 250, 500, 750, 1000]);
+  assert.deepEqual(yAxisTicks(Number.NaN), [0, 250, 500, 750, 1000]);
 });
 
 test('buildChartSeries gracefully handles malformed date keys (dayLabel fallback)', () => {

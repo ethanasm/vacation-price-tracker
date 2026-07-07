@@ -156,6 +156,62 @@ describe("aggregateDailyPriceHistory", () => {
     expect(result[0].selectedFlight).toBe(320);
   });
 
+  it("matches the selected offer across ALL of a day's snapshots, not just the cheapest one", () => {
+    // The day's cheapest-total snapshot (manual refresh, UA-only sample) is
+    // missing the selected flight; an earlier snapshot the same day quoted it.
+    // The selected line must show the real same-day quote, not a carried-over
+    // value from the previous day.
+    const selected = flightOffer("AS", "AS3361", "SFO", "RDM", "2026-08-22", "185");
+    const key = flightStableKey(selected);
+    const history = [
+      snapshot({
+        created_at: "2026-07-06T10:00:00Z",
+        flight_price: "200",
+        flight_offers: [flightOffer("AS", "AS3361", "SFO", "RDM", "2026-08-22", "200")],
+      }),
+      snapshot({
+        created_at: "2026-07-07T06:00:00Z",
+        flight_price: "185",
+        flight_offers: [selected],
+      }),
+      // Cheaper-total snapshot later that day WITHOUT the selected pairing.
+      snapshot({
+        created_at: "2026-07-07T19:30:00Z",
+        flight_price: "175",
+        flight_offers: [flightOffer("UA", "UA670", "SFO", "RDM", "2026-08-22", "175")],
+      }),
+    ];
+
+    const result = aggregateDailyPriceHistory(history, { selectedFlightKey: key });
+
+    expect(result.map((r) => r.minFlight)).toEqual([200, 175]);
+    expect(result.map((r) => r.selectedFlight)).toEqual([200, 185]);
+  });
+
+  it("uses the cheapest same-day quote when the selected offer appears in several snapshots", () => {
+    const offer = hotelOffer("Grand Plaza", "150");
+    const key = hotelStableKey(offer);
+    const history = [
+      snapshot({
+        created_at: "2026-07-15T06:00:00Z",
+        flight_price: "200",
+        hotel_price: "150",
+        hotel_offers: [hotelOffer("Grand Plaza", "150")],
+      }),
+      snapshot({
+        created_at: "2026-07-15T18:00:00Z",
+        flight_price: "210",
+        hotel_price: "145",
+        hotel_offers: [hotelOffer("Grand Plaza", "145")],
+      }),
+    ];
+
+    const result = aggregateDailyPriceHistory(history, { selectedHotelKey: key });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].selectedHotel).toBe(145);
+  });
+
   it("leaves selected lines undefined when nothing is selected", () => {
     const result = aggregateDailyPriceHistory([
       snapshot({ created_at: "2026-07-15T10:00:00Z", flight_price: "100", hotel_price: "50" }),
