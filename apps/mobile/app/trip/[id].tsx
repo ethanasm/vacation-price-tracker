@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/provider';
 import { useTheme, formatUsd } from '@/lib/theme';
 import { StatusChip, PriceChart, GradientButton } from '@/components/aurora';
+import { SettingsCog } from '@/components/aurora/settings-cog';
 import { StatTrio } from '@/components/aurora/stat-trio';
 import { FlightRow } from '@/components/aurora/flight-row';
 import { HotelRow } from '@/components/aurora/hotel-row';
@@ -169,11 +170,14 @@ function TripDetailBody({
   // The pinned-header content (shared by both platforms — Android collapses it).
   const headerInner = (
     <>
-      <Pressable onPress={() => router.back()} accessibilityRole="button">
-        <Text style={[styles.breadcrumb, { color: c.textMuted, fontFamily: tokens.font[600] }]}>
-          {`Your Trips  /  ${trip.name}`}
-        </Text>
-      </Pressable>
+      <View style={styles.breadcrumbRow}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" style={styles.breadcrumbPress}>
+          <Text style={[styles.breadcrumb, { color: c.textMuted, fontFamily: tokens.font[600] }]}>
+            {`Your Trips  /  ${trip.name}`}
+          </Text>
+        </Pressable>
+        <SettingsCog />
+      </View>
 
       <View style={styles.titleRow}>
         <Text numberOfLines={1} style={[styles.title, { color: c.textStrong, fontFamily: tokens.font[800] }]}>
@@ -408,6 +412,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   breadcrumb: { fontSize: 12 },
+  breadcrumbRow: { flexDirection: 'row', alignItems: 'center' },
+  breadcrumbPress: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   title: { flex: 1, fontSize: 24, letterSpacing: -0.5 },
   meta: { fontSize: 13 },

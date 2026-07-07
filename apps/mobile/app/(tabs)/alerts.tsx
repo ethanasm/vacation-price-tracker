@@ -19,6 +19,7 @@ import { useQuery, useQueries } from '@tanstack/react-query';
 import { useTheme } from '@/lib/theme';
 import { useApiClient } from '@/lib/api/provider';
 import { GradientButton } from '@/components/aurora';
+import { SettingsCog } from '@/components/aurora/settings-cog';
 import { AlertRow, type AlertRowData } from '@/components/aurora/alert-row';
 import { presentLocalPriceDrop } from '@/lib/notifications';
 
@@ -90,6 +91,7 @@ export default function AlertsScreen(): React.JSX.Element {
         >
           Alerts
         </Text>
+        <SettingsCog />
       </View>
 
       {isLoading ? (
@@ -144,7 +146,14 @@ export default function AlertsScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
   listContent: { paddingHorizontal: 20, paddingBottom: 24, flexGrow: 1 },
   sep: { height: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },

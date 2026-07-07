@@ -16,6 +16,7 @@ import { useApiClient } from '@/lib/api/provider';
 import { parseSseChunk, initSseState, type SseState } from '@/lib/chat-stream';
 import { ChatBubble } from '@/components/aurora/chat-bubble';
 import { QuickReplyChips } from '@/components/aurora/quick-reply-chips';
+import { SettingsCog } from '@/components/aurora/settings-cog';
 
 interface Message {
   id: string;
@@ -154,7 +155,7 @@ export default function ChatScreen(): React.JSX.Element {
         >
           <Text style={styles.iconGlyph}>✦</Text>
         </LinearGradient>
-        <View>
+        <View style={styles.headerText}>
           <Text
             accessibilityRole="header"
             style={{ color: c.textStrong, fontFamily: tokens.font[800], fontSize: 20 }}
@@ -165,6 +166,7 @@ export default function ChatScreen(): React.JSX.Element {
             Powered by Groq
           </Text>
         </View>
+        <SettingsCog />
       </View>
 
       <KeyboardAvoidingView
@@ -261,6 +263,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
   },
+  headerText: { flex: 1 },
   icon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   iconGlyph: { color: '#FFFFFF', fontSize: 20 },
   thread: { paddingHorizontal: 16, paddingVertical: 12, flexGrow: 1 },
