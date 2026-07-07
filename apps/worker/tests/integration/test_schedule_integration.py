@@ -69,6 +69,25 @@ async def _fake_run_health_check() -> dict:
     return {"status": "ok", "sent": 0, "skipped": True, "ok": 0, "warn": 0, "fail": 0, "unknown": 0}
 
 
+async def _start_local_env() -> WorkflowEnvironment:
+    """Start the local Temporal dev server, retrying transient startup failures.
+
+    `start_local()` downloads the Temporal CLI on first use; a flaky download
+    surfaces as `RuntimeError: Failed starting Temporal dev server: error
+    decoding response body` (took main red on 2026-07-07 while the same suite
+    passed minutes earlier on the PR run).
+    """
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            return await WorkflowEnvironment.start_local()
+        except RuntimeError:
+            if attempt == attempts:
+                raise
+            await asyncio.sleep(2**attempt)
+    raise AssertionError("unreachable")
+
+
 async def _wait_for_recent_actions(handle, timeout_seconds: float = 20.0):
     """Poll the schedule until it records a triggered action, or time out."""
     deadline = asyncio.get_event_loop().time() + timeout_seconds
@@ -88,7 +107,7 @@ async def test_ensure_daily_refresh_schedule_creates_correct_spec(monkeypatch):
         _TEST_TASK_QUEUE,
     )
 
-    async with await WorkflowEnvironment.start_local() as env:
+    async with await _start_local_env() as env:
         await ensure_daily_refresh_schedule(env.client)
 
         handle = env.client.get_schedule_handle(SCHEDULE_ID)
@@ -118,7 +137,7 @@ async def test_schedule_trigger_runs_configured_workflow(monkeypatch):
         _TEST_TASK_QUEUE,
     )
 
-    async with await WorkflowEnvironment.start_local() as env:
+    async with await _start_local_env() as env:
         # Register the real workflow + a stub activity so we don't need a DB.
         async with Worker(
             env.client,
