@@ -40,6 +40,7 @@ updates:
           - "@expo/*"
           - "react-native"
           - "react-native-*"
+          - "@react-native/*"
           - "@react-native-community/*"
           - "babel-preset-expo"
           - "eslint-config-expo"
@@ -72,6 +73,9 @@ updates:
       # manual `expo install --fix` SDK upgrade — keep this list in sync with the
       # mobile pins if the SDK changes.
       - dependency-name: "react-native"
+      # @react-native/* (metro-config is a direct devDependency) versions in
+      # lockstep with react-native itself — a solo bump re-opens the drift.
+      - dependency-name: "@react-native/*"
       - dependency-name: "react"
       - dependency-name: "react-dom"
       - dependency-name: "react-test-renderer"
