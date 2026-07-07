@@ -168,14 +168,16 @@ test('a transport failure surfaces as NetworkError, not AuthError', async () => 
   );
 });
 
-test('getMe hits /v1/auth/me and returns the unenveloped user', async () => {
+test('getMe GETs /v1/auth/me and returns the unenveloped user', async () => {
   let seenUrl = '';
+  let seenMethod = '';
   const client = createApiClient({
     baseUrl: 'https://api.test',
     getToken: () => 'jwt',
     refresh: async () => true,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       seenUrl = String(url);
+      seenMethod = init?.method ?? '';
       return jsonResponse({
         id: 'u1',
         email: 'a@b.c',
@@ -186,6 +188,7 @@ test('getMe hits /v1/auth/me and returns the unenveloped user', async () => {
   });
   const me = await client.getMe();
   assert.equal(seenUrl, 'https://api.test/v1/auth/me');
+  assert.equal(seenMethod, 'GET');
   assert.equal(me.id, 'u1');
   assert.equal(me.is_admin, true);
 });
@@ -215,19 +218,22 @@ test('updatePreferences PATCHes only the provided fields', async () => {
   assert.equal(updated.email_notifications_enabled, false);
 });
 
-test('listFeatureFlags returns the flags array from the response', async () => {
+test('listFeatureFlags GETs /v1/feature-flags and returns the flags array', async () => {
+  let seenMethod = '';
   const client = createApiClient({
     baseUrl: 'https://api.test',
     getToken: () => 'jwt',
     refresh: async () => true,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       assert.equal(String(url), 'https://api.test/v1/feature-flags');
+      seenMethod = init?.method ?? '';
       return jsonResponse({
         flags: [{ name: 'kiwi_flights', description: 'Kiwi provider', enabled: true }],
       });
     },
   });
   const flags = await client.listFeatureFlags();
+  assert.equal(seenMethod, 'GET');
   assert.equal(flags.length, 1);
   assert.equal(flags[0].name, 'kiwi_flights');
 });
