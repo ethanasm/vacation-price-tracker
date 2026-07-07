@@ -17,6 +17,8 @@ export type TripDetail = components['schemas']['TripDetail'];
 export type TripDetailResponse = components['schemas']['TripDetailResponse'];
 export type TripCreate = components['schemas']['TripCreate'];
 export type PriceSnapshot = components['schemas']['PriceSnapshotResponse'];
+export type RefreshStartResponse = components['schemas']['RefreshStartResponse'];
+export type RefreshStatusResponse = components['schemas']['RefreshStatusResponse'];
 export type UserResponse = components['schemas']['UserResponse'];
 export type FeatureFlagItem = components['schemas']['FeatureFlagItem'];
 export type FeatureFlagsResponse = components['schemas']['FeatureFlagsResponse'];
@@ -50,6 +52,8 @@ export interface ApiClient {
   listTrips(params?: { page?: number; limit?: number; status?: TripStatus }): Promise<TripSummary[]>;
   getTrip(id: string): Promise<TripDetailResponse>;
   createTrip(body: TripCreate, idempotencyKey: string): Promise<TripDetail>;
+  refreshTrip(id: string): Promise<RefreshStartResponse>;
+  getRefreshStatus(refreshGroupId: string): Promise<RefreshStatusResponse>;
   sendChatMessage(body: { message: string; thread_id?: string }): Promise<Response>;
   getMe(): Promise<UserResponse>;
   updatePreferences(prefs: UserPreferencesUpdate): Promise<UserPreferencesResponse>;
@@ -189,6 +193,25 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         }),
         body: JSON.stringify(body),
       });
+      return env.data;
+    },
+
+    async refreshTrip(id) {
+      // Starts a PriceCheckWorkflow server-side; poll getRefreshStatus with the
+      // returned refresh_group_id to learn when the new snapshot lands.
+      const env = await requestJson<Envelope<RefreshStartResponse>>(
+        `/v1/trips/${encodeURIComponent(id)}/refresh`,
+        { method: 'POST', headers: buildHeaders() },
+      );
+      return env.data;
+    },
+
+    async getRefreshStatus(refreshGroupId) {
+      const q = new URLSearchParams({ refresh_group_id: refreshGroupId });
+      const env = await requestJson<Envelope<RefreshStatusResponse>>(
+        `/v1/trips/refresh-status?${q.toString()}`,
+        { method: 'GET', headers: buildHeaders() },
+      );
       return env.data;
     },
 

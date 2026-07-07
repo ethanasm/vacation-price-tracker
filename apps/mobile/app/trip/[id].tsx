@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Alert,
   Animated,
   Platform,
 } from 'react-native';
@@ -35,6 +36,8 @@ import {
   type PriceSnapshot,
 } from '@/lib/aurora';
 import type { TripDetail, TripDetailResponse } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/errors';
+import { pollRefreshStatus } from '@/lib/api/trip-refresh';
 
 const MAX_VISIBLE = 4;
 
@@ -71,6 +74,59 @@ export default function TripDetailScreen(): React.JSX.Element {
         ? 3000
         : false,
   });
+
+  // Manual refresh triggers a server-side price fetch (POST /v1/trips/{id}/refresh
+  // starts a PriceCheckWorkflow), then polls refresh-status until the new snapshot
+  // lands — a bare query.refetch() would only re-read the DB and change nothing.
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const abortedRef = React.useRef(false);
+  // Reentrancy guard independent of the disabled-button state, in case a
+  // second trigger (e.g. a future pull-to-refresh) is ever added.
+  const refreshInFlightRef = React.useRef(false);
+  React.useEffect(() => {
+    abortedRef.current = false;
+    return () => {
+      abortedRef.current = true;
+    };
+  }, []);
+
+  const { refetch } = query;
+  const handleRefresh = React.useCallback(async () => {
+    if (!id || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    setIsRefreshing(true);
+    try {
+      const { refresh_group_id } = await api.refreshTrip(id);
+      const outcome = await pollRefreshStatus(refresh_group_id, {
+        getStatus: (gid) => api.getRefreshStatus(gid),
+        isAborted: () => abortedRef.current,
+      });
+      // Re-check abort directly: the poll only observes it at its post-sleep
+      // checkpoint, so an unmount during the final getStatus can still return
+      // a settled outcome — don't pop a global Alert over another screen.
+      if (outcome.kind === 'aborted' || abortedRef.current) return;
+      if (outcome.kind === 'failed') {
+        Alert.alert(
+          'Price refresh failed',
+          outcome.error ?? 'Please try again in a moment.',
+        );
+      } else {
+        // completed — pick up the new snapshot; timeout/not_found — refetch
+        // anyway so anything that landed late still shows.
+        await refetch();
+      }
+    } catch (err) {
+      if (!abortedRef.current) {
+        Alert.alert(
+          'Refresh failed',
+          err instanceof ApiError ? err.detail : 'Please try again in a moment.',
+        );
+      }
+    } finally {
+      refreshInFlightRef.current = false;
+      if (!abortedRef.current) setIsRefreshing(false);
+    }
+  }, [id, api, refetch]);
 
   if (query.isLoading) {
     return (
@@ -109,8 +165,8 @@ export default function TripDetailScreen(): React.JSX.Element {
       history={history}
       flights={flights}
       hotels={hotels}
-      onRefresh={() => void query.refetch()}
-      isRefreshing={query.isRefetching}
+      onRefresh={() => void handleRefresh()}
+      isRefreshing={isRefreshing}
       awaitingInitialFetch={isAwaitingInitialFetch(query.data.trip, history)}
     />
   );
