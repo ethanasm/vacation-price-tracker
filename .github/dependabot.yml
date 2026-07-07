@@ -1,0 +1,110 @@
+# Dependabot config for the vacation-price-tracker monorepo.
+#
+# Four ecosystems: the pnpm JS workspace (web + mobile + worker JS), the root
+# uv/Python project (api + worker), the three service container images, and the
+# CI workflows. Grouping + ignore rules for the Expo mobile stack are ported
+# from showbook's dependabot.yml, because apps/mobile is the same Expo SDK 56 /
+# React Native 0.85.3 / React 19.2.3 stack and hits the same partial-SDK-bump
+# native-init crash class if these packages move independently.
+version: 2
+updates:
+  # ---- JS / TS: root pnpm workspace (apps/web, apps/mobile, apps/worker JS) ----
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+        # babel-preset-expo / eslint-config-expo are devDependencies, but their
+        # majors track the Expo SDK major and MUST move with the expo-sdk group
+        # below. Dependabot assigns each dependency to the FIRST matching group
+        # in definition order, so exclude them here to keep them in expo-sdk.
+        exclude-patterns:
+          - "babel-preset-expo"
+          - "eslint-config-expo"
+      expo-sdk:
+        # The Expo SDK is a tightly-coupled set: every expo-* / @expo/* runtime
+        # package compiles against the expo-modules-core major inside the
+        # matching `expo` host, and react-native is pinned per SDK release.
+        # Mixing versions across an SDK boundary crashes native-module init
+        # before any JS runs. Bundle the SDK-coupled packages into one PR so an
+        # SDK bump lands as a single coordinated change. The ABI-critical
+        # members are additionally `ignore`d below (they move only via a manual
+        # `expo install --fix`); the rest (svg, web, netinfo, expo-*) move
+        # together here.
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native-community/*"
+          - "babel-preset-expo"
+          - "eslint-config-expo"
+    ignore:
+      # These are locked to the Expo SDK 56 / RN 0.85.3 ABI: a standalone bump
+      # overshoots the SDK's blessed version and crashes native init on the next
+      # native build (the partial-SDK-bump failure class documented in
+      # showbook's dependabot.yml). `react` / `react-dom` are ALSO hard-pinned
+      # in the root package.json `pnpm.overrides` (to 19.2.3), so a bump would
+      # additionally die at `pnpm install --frozen-lockfile`. React asserts an
+      # exact version match with the renderer baked into react-native, so it is
+      # not free to float independently of the SDK. All of these move only via a
+      # manual `expo install --fix` SDK upgrade — keep this list in sync with the
+      # mobile pins if the SDK changes.
+      - dependency-name: "react-native"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "react-test-renderer"
+      - dependency-name: "react-native-reanimated"
+      - dependency-name: "react-native-worklets"
+      - dependency-name: "react-native-screens"
+      - dependency-name: "react-native-gesture-handler"
+      - dependency-name: "react-native-safe-area-context"
+      # Babel 8 is dead-on-arrival for the Expo SDK 56 / RN 0.85 toolchain
+      # (babel-preset-expo, @babel/preset-typescript, and the worklets babel
+      # plugin all `assertVersion("^7.0.0-0")`). The root `pnpm.overrides` floors
+      # @babel/core at 7.29.6, so 7.x patches are safe to take — only block the
+      # major until the Expo SDK adopts Babel 8.
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      # ESLint 10 dropped APIs that eslint-config-expo / eslint-config-next still
+      # call. Re-enable the major once both config packages ship ESLint-10
+      # releases.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+
+  # ---- Python: root uv project (apps/api FastAPI + apps/worker Temporal) ----
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-dev:
+        dependency-type: "development"
+
+  # ---- Container base images (one Dockerfile per service) ----
+  - package-ecosystem: "docker"
+    directories:
+      - "/apps/api"
+      - "/apps/worker"
+      - "/apps/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker:
+        patterns:
+          - "*"
+
+  # ---- CI workflows ----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
