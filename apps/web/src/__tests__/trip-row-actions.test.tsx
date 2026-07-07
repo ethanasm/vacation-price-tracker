@@ -2,6 +2,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 
+// Radix >= 2.1.17 applies pointer-events: none scroll-locking that jsdom cannot
+// resolve back to "auto" via stylesheets, so user-event would refuse every click
+// on open menus/dialogs. Real browsers route these clicks fine — skip the check.
+const setupUser = () => userEvent.setup({ pointerEventsCheck: 0 });
+
 // Mock next/navigation
 const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
@@ -88,7 +93,7 @@ describe("TripRowKebab", () => {
 
   it("opens dropdown and shows menu items on click", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <table><tbody><tr>
         <TripRowKebab {...defaultProps} />
@@ -105,7 +110,7 @@ describe("TripRowKebab", () => {
 
   it("shows Resume instead of Pause when trip is paused", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <table><tbody><tr>
         <TripRowKebab {...defaultProps} tripStatus="PAUSED" />
@@ -120,7 +125,7 @@ describe("TripRowKebab", () => {
 
   it("hides Refresh and Pause/Resume for an expired trip", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <table><tbody><tr>
         <TripRowKebab {...defaultProps} tripStatus="EXPIRED" />
@@ -139,7 +144,7 @@ describe("TripRowKebab", () => {
 
   it("calls refresh and polls for completion", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockRefresh.mockResolvedValue({ data: { refresh_group_id: "rg-1" } });
     mockGetRefreshStatus.mockResolvedValue({
       data: { status: "completed", total: 1, completed: 1, failed: 0 },
@@ -168,7 +173,7 @@ describe("TripRowKebab", () => {
 
   it("handles poll error gracefully and calls onRefresh", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockRefresh.mockResolvedValue({ data: { refresh_group_id: "rg-1" } });
     mockGetRefreshStatus.mockRejectedValue(new Error("Poll failed"));
 
@@ -193,7 +198,7 @@ describe("TripRowKebab", () => {
 
   it("shows error toast on refresh ApiError", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockRefresh.mockRejectedValue(new ApiError(500, "Server error", "Refresh failed"));
 
     render(
@@ -212,7 +217,7 @@ describe("TripRowKebab", () => {
 
   it("shows generic error toast on refresh non-ApiError", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockRefresh.mockRejectedValue(new Error("Network error"));
 
     render(
@@ -231,7 +236,7 @@ describe("TripRowKebab", () => {
 
   it("navigates to edit page on Edit click", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
 
     render(
       <table><tbody><tr>
@@ -247,7 +252,7 @@ describe("TripRowKebab", () => {
 
   it("shows delete dialog and deletes on confirm", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockDelete.mockResolvedValue({});
 
     render(
@@ -275,7 +280,7 @@ describe("TripRowKebab", () => {
 
   it("shows error toast on delete ApiError", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockDelete.mockRejectedValue(new ApiError(500, "Server error", "Delete failed"));
 
     render(
@@ -296,7 +301,7 @@ describe("TripRowKebab", () => {
 
   it("shows generic error toast on delete non-ApiError", async () => {
     jest.useRealTimers();
-    const user = userEvent.setup();
+    const user = setupUser();
     mockDelete.mockRejectedValue(new Error("Network error"));
 
     render(
@@ -318,7 +323,7 @@ describe("TripRowKebab", () => {
   describe("pause/resume", () => {
     it("pauses an active trip", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockResolvedValue(undefined);
 
       render(
@@ -339,7 +344,7 @@ describe("TripRowKebab", () => {
 
     it("resumes a paused trip", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockResolvedValue(undefined);
 
       render(
@@ -360,7 +365,7 @@ describe("TripRowKebab", () => {
 
     it("shows error toast on pause ApiError", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockRejectedValue(new ApiError(500, "Server error", "Cannot pause"));
 
       render(
@@ -379,7 +384,7 @@ describe("TripRowKebab", () => {
 
     it("shows generic error toast on pause non-ApiError", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockRejectedValue(new Error("Network error"));
 
       render(
@@ -398,7 +403,7 @@ describe("TripRowKebab", () => {
 
     it("shows generic error toast on resume non-ApiError", async () => {
       jest.useRealTimers();
-      const user = userEvent.setup();
+      const user = setupUser();
       mockUpdateStatus.mockRejectedValue(new Error("Network error"));
 
       render(

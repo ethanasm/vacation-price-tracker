@@ -48,13 +48,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.12.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: pnpm
@@ -62,7 +62,7 @@ jobs:
       # Drop github.sha from the key so it isn't busted every commit; rely on
       # restore-keys to warm from the most recent cache.
       - name: Cache Nx
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .nx/cache
           key: ${{ runner.os }}-nx-web-${{ hashFiles('pnpm-lock.yaml') }}
@@ -82,7 +82,7 @@ jobs:
         run: pnpm nx run-many -t build lint typecheck test:coverage --projects=web
 
       - name: Upload web coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-coverage
           path: apps/web/coverage/lcov.info
@@ -92,13 +92,13 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.12.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: pnpm
