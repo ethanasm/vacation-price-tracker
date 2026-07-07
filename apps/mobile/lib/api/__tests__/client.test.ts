@@ -280,3 +280,49 @@ test('concurrent 401s coalesce into a single refresh (single-flight)', async () 
   await Promise.all([client.listTrips(), client.getTrip('t1')]);
   assert.equal(refreshCalls, 1);
 });
+
+test('refreshTrip POSTs to /v1/trips/{id}/refresh and unwraps the envelope', async () => {
+  let seenUrl = '';
+  let seenMethod = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url, init) => {
+      seenUrl = String(url);
+      seenMethod = init?.method ?? '';
+      return jsonResponse({ data: { refresh_group_id: 'rg-42' }, meta: null });
+    },
+  });
+  const started = await client.refreshTrip('trip 1');
+  assert.equal(seenUrl, 'https://api.test/v1/trips/trip%201/refresh');
+  assert.equal(seenMethod, 'POST');
+  assert.equal(started.refresh_group_id, 'rg-42');
+});
+
+test('getRefreshStatus GETs refresh-status with the group id and unwraps the envelope', async () => {
+  let seenUrl = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url) => {
+      seenUrl = String(url);
+      return jsonResponse({
+        data: {
+          refresh_group_id: 'rg-42',
+          status: 'completed',
+          total: 1,
+          completed: 1,
+          failed: 0,
+          in_progress: 0,
+          error: null,
+        },
+        meta: null,
+      });
+    },
+  });
+  const status = await client.getRefreshStatus('rg-42');
+  assert.equal(seenUrl, 'https://api.test/v1/trips/refresh-status?refresh_group_id=rg-42');
+  assert.equal(status.status, 'completed');
+});
