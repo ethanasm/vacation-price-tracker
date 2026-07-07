@@ -7,16 +7,34 @@ import {
   Pressable,
   RefreshControl,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react-native';
 import { AuroraCard, GradientButton } from '@/components/aurora';
 import { TripCard } from '@/components/aurora/trip-card';
+import { TripActionSheet } from '@/components/aurora/trip-action-sheet';
 import { useApiClient } from '@/lib/api/provider';
 import { useTheme } from '@/lib/theme';
-import type { TripSummary } from '@/lib/api/client';
+import type { ApiClient, TripSummary } from '@/lib/api/client';
+
+/**
+ * Kick off a server-side price refresh for one trip and wait for the workflow
+ * to finish (same 2s/30-attempt poll as web's trip-row-actions), so callers
+ * can refetch the list once fresh prices have landed.
+ */
+async function refreshTripAndWait(api: ApiClient, tripId: string): Promise<void> {
+  const { refresh_group_id } = await api.refreshTrip(tripId);
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const status = await api.getRefreshStatus(refresh_group_id);
+    if (status.status === 'completed') return;
+    if (status.status === 'failed') throw new Error(status.error ?? 'Refresh failed');
+  }
+  throw new Error('Refresh timed out');
+}
 
 /** Grey placeholder card shown while the trip list loads. */
 function SkeletonCard(): React.JSX.Element {
@@ -52,10 +70,53 @@ export default function TripsScreen(): React.JSX.Element {
   const { tokens } = useTheme();
   const router = useRouter();
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['trips'], queryFn: () => api.listTrips() });
 
   const trips = query.data ?? [];
   const count = trips.length;
+
+  // Long-pressed trip whose action sheet is open (null = closed).
+  const [actionTrip, setActionTrip] = React.useState<TripSummary | null>(null);
+
+  function invalidateTrip(tripId: string): void {
+    void queryClient.invalidateQueries({ queryKey: ['trips'] });
+    void queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
+  }
+
+  const refreshMutation = useMutation({
+    mutationFn: (trip: TripSummary) => refreshTripAndWait(api, trip.id),
+    onSettled: (_data, _err, trip) => invalidateTrip(trip.id),
+    onError: () => Alert.alert('Refresh failed', 'Could not refresh prices. Please try again.'),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (trip: TripSummary) =>
+      api.updateTripStatus(trip.id, trip.status === 'paused' ? 'active' : 'paused'),
+    onSuccess: (_data, trip) => invalidateTrip(trip.id),
+    onError: () => Alert.alert('Update failed', 'Could not update the trip. Please try again.'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (trip: TripSummary) => api.deleteTrip(trip.id),
+    onSuccess: (_data, trip) => invalidateTrip(trip.id),
+    onError: () => Alert.alert('Delete failed', 'Could not delete the trip. Please try again.'),
+  });
+
+  function confirmDelete(trip: TripSummary): void {
+    setActionTrip(null);
+    const message = `“${trip.name}” and all its price history will be permanently deleted.`;
+    // RN-web has no Alert implementation — fall back to window.confirm so the
+    // web export (the sandbox/e2e verification surface) can exercise delete.
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete trip?\n\n${message}`)) deleteMutation.mutate(trip);
+      return;
+    }
+    Alert.alert('Delete trip?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(trip) },
+    ]);
+  }
 
   const refreshControl = (
     <RefreshControl
@@ -126,7 +187,11 @@ export default function TripsScreen(): React.JSX.Element {
         data={trips}
         keyExtractor={(t) => t.id}
         renderItem={({ item }) => (
-          <TripCard trip={item} onPress={() => router.push(`/trip/${item.id}`)} />
+          <TripCard
+            trip={item}
+            onPress={() => router.push(`/trip/${item.id}`)}
+            onLongPress={() => setActionTrip(item)}
+          />
         )}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         contentContainerStyle={styles.listContent}
@@ -174,6 +239,24 @@ export default function TripsScreen(): React.JSX.Element {
           <Text style={[styles.fabLabel, { fontFamily: tokens.font[700] }]}>New trip</Text>
         ) : null}
       </Pressable>
+
+      <TripActionSheet
+        trip={actionTrip}
+        onClose={() => setActionTrip(null)}
+        onRefresh={(trip) => {
+          setActionTrip(null);
+          refreshMutation.mutate(trip);
+        }}
+        onToggleStatus={(trip) => {
+          setActionTrip(null);
+          statusMutation.mutate(trip);
+        }}
+        onEdit={(trip) => {
+          setActionTrip(null);
+          router.push(`/trip/${trip.id}/edit`);
+        }}
+        onDelete={confirmDelete}
+      />
     </SafeAreaView>
   );
 }

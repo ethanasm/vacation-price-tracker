@@ -24,11 +24,12 @@ import { FormField } from '@/components/aurora/form-field';
 import { ToggleRow } from '@/components/aurora/toggle-row';
 import { CollapsibleSection } from '@/components/aurora/collapsible-section';
 
-type Cabin = 'economy' | 'premium_economy' | 'business';
+type Cabin = 'economy' | 'premium_economy' | 'business' | 'first';
 const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
   { value: 'economy', label: 'Economy' },
   { value: 'premium_economy', label: 'Premium' },
   { value: 'business', label: 'Business' },
+  { value: 'first', label: 'First' },
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
