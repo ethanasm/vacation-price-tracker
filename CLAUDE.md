@@ -31,7 +31,7 @@ monitor price fluctuations and get notified when costs drop below custom thresho
 
 **Architecture:**
 - **Frontend:** Next.js 16 (App Router), Tailwind, shadcn/ui, assistant-ui (`apps/web`)
-- **Mobile:** Expo SDK 56 + Expo Router (`apps/mobile`) — iOS + Android.
+- **Mobile:** Expo SDK 57 + Expo Router (`apps/mobile`) — iOS + Android.
 - **Backend:** FastAPI (Python 3.12), SQLModel/PostgreSQL — owns the DB (`apps/api`)
 - **Orchestration:** Temporal SDK for Python (`apps/worker`)
 - **Auth:** Google OAuth 2.0 only (no local passwords)
