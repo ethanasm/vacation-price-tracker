@@ -74,6 +74,90 @@ describe('PriceChart (flights-only)', () => {
     assert.ok(labels.includes('Now'));
     assert.ok(labels.includes('Now $262'));
   });
+
+  it('labels every data point along the x-axis when they fit', () => {
+    const labels = texts(render(el));
+    assert.ok(labels.includes('Jul 6'));
+    assert.ok(labels.includes('Jul 7'));
+    assert.ok(labels.includes('Now'));
+  });
+
+  it('scrubbing snaps to the nearest point and pops up its exact prices', () => {
+    const r = render(el);
+    const chart = r.root.findAll(
+      (node) => node.type === 'rn-view' && typeof node.props.onResponderGrant === 'function',
+    )[0];
+    // w=320, pad.l=34, innerW=278 → x(1) = 34 + 278/2 = 173 (the Jul 7 point).
+    TestRenderer.act(() => {
+      chart.props.onResponderGrant({ nativeEvent: { locationX: 173 } });
+    });
+    let labels = texts(r);
+    assert.ok(labels.includes('$262')); // exact price rows in the popup
+    assert.ok(!labels.includes('Now $262')); // badge yields to the popup
+
+    // Moving snaps to another point: x(0)=34 → Jul 6, minFlight $185.
+    TestRenderer.act(() => {
+      chart.props.onResponderMove({ nativeEvent: { locationX: 20 } });
+    });
+    labels = texts(r);
+    assert.ok(labels.includes('$185'));
+
+    TestRenderer.act(() => {
+      chart.props.onResponderRelease();
+    });
+    labels = texts(r);
+    assert.ok(!labels.includes('$185'));
+    assert.ok(labels.includes('Now $262')); // badge returns on release
+  });
+
+  it('yields to the ScrollView on a vertical swipe but not a horizontal scrub', () => {
+    const r = render(el);
+    const chart = r.root.findAll(
+      (node) => node.type === 'rn-view' && typeof node.props.onResponderGrant === 'function',
+    )[0];
+    // Horizontal drag: keep the responder (termination refused).
+    TestRenderer.act(() => {
+      chart.props.onResponderGrant({ nativeEvent: { locationX: 100, pageX: 100, pageY: 300 } });
+      chart.props.onResponderMove({ nativeEvent: { locationX: 140, pageX: 140, pageY: 304 } });
+    });
+    assert.equal(chart.props.onResponderTerminationRequest(), false);
+
+    // Vertical swipe: grant termination, and terminate clears the popup.
+    TestRenderer.act(() => {
+      chart.props.onResponderGrant({ nativeEvent: { locationX: 100, pageX: 100, pageY: 300 } });
+      chart.props.onResponderMove({ nativeEvent: { locationX: 104, pageX: 104, pageY: 360 } });
+    });
+    assert.equal(chart.props.onResponderTerminationRequest(), true);
+    TestRenderer.act(() => {
+      chart.props.onResponderTerminate();
+    });
+    const labels = texts(r);
+    assert.ok(labels.includes('Now $262')); // popup gone, badge back
+  });
+});
+
+describe('PriceChart (x-axis thinning)', () => {
+  // 30 daily points: far more than fit under a 320px-wide chart.
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    label: i === 29 ? 'Now' : `Jun ${i + 1}`,
+    total: 200 + i,
+    hotel: 0,
+    minFlight: 200 + i,
+  }));
+  const el = React.createElement(PriceChart, {
+    points: many,
+    nowLabel: 'Now $229',
+    showHotel: false,
+  });
+
+  it('caps the day labels to what the width fits, keeping both ends', () => {
+    const labels = texts(render(el));
+    const dayLabels = labels.filter((t) => t === 'Now' || /^Jun \d+$/.test(t));
+    assert.ok(dayLabels.length <= 8, `expected ≤8 x labels, got ${dayLabels.length}`);
+    assert.ok(dayLabels.length >= 4, `expected a spread of x labels, got ${dayLabels.length}`);
+    assert.ok(dayLabels.includes('Jun 1'));
+    assert.ok(dayLabels.includes('Now'));
+  });
 });
 
 describe('PriceChart (flights-only, no selection)', () => {
@@ -118,5 +202,22 @@ describe('PriceChart (hotel-tracking)', () => {
     assert.ok(labels.includes('Total'));
     assert.ok(labels.includes('Hotel (min)'));
     assert.ok(labels.includes('Riverhouse'));
+  });
+
+  it('scrub popup lists every visible series with its exact price', () => {
+    const r = render(el);
+    const chart = r.root.findAll(
+      (node) => node.type === 'rn-view' && typeof node.props.onResponderGrant === 'function',
+    )[0];
+    TestRenderer.act(() => {
+      chart.props.onResponderGrant({ nativeEvent: { locationX: 34 } }); // x(0) → Jul 6
+    });
+    const labels = texts(r);
+    // Jul 6 hotel point: total 585, minFlight 185, selectedFlight 263, hotel 400, selectedHotel 450.
+    assert.ok(labels.includes('$585'));
+    assert.ok(labels.includes('$185'));
+    assert.ok(labels.includes('$263'));
+    assert.ok(labels.includes('$400'));
+    assert.ok(labels.includes('$450'));
   });
 });
