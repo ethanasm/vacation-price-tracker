@@ -119,6 +119,7 @@ class TestNotificationOutboxColumns:
             assert isinstance(column.type, String), column.name
             assert not isinstance(column.type, Enum), column.name
             assert column.type.length == 20, column.name
+            assert column.nullable is False, column.name
 
     def test_server_defaults_match_migration(self):
         table = NotificationOutbox.__table__
