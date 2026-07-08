@@ -139,7 +139,7 @@ export function PriceChart({
   // middle label whose point sits too close to a clamped end label.
   const X_LABEL_W = 60;
   const labelCenter = (i: number) => clamp(x(i) - X_LABEL_W / 2, 0, w - X_LABEL_W) + X_LABEL_W / 2;
-  const maxXLabels = Math.max(2, Math.min(Math.floor(innerW / 44), 8));
+  const maxXLabels = Math.max(2, Math.min(Math.floor(innerW / (X_LABEL_W * 0.8)), 8));
   const labelCount = Math.min(points.length, maxXLabels);
   const xLabelIdx = [
     ...new Set(
@@ -158,19 +158,34 @@ export function PriceChart({
   const scrubTo = (locationX: number) => setActiveIdx(indexAt(locationX));
   const active = activeIdx === null ? undefined : points[activeIdx];
 
+  // Gesture-direction tracking so a vertical swipe that starts on the chart
+  // still scrolls the page (on Android the chart lives inside the trip
+  // screen's ScrollView): a hold or horizontal drag keeps the scrub, but a
+  // termination request — the ScrollView trying to take over — is granted
+  // once the movement is clearly vertical.
+  const gesture = React.useRef({ x: 0, y: 0, dx: 0, dy: 0 });
+  const isVerticalSwipe = () =>
+    Math.abs(gesture.current.dy) > 8 && Math.abs(gesture.current.dy) > Math.abs(gesture.current.dx);
+
   return (
     <View>
       <View
         style={{ height }}
         onLayout={(e) => setW(e.nativeEvent.layout.width)}
-        // Press-and-drag scrubbing: claim the touch, snap to the nearest
-        // point, and refuse termination so the parent ScrollView can't steal
-        // the gesture mid-scrub.
+        // Press-and-drag scrubbing: claim the touch and snap to the nearest
+        // point; yield to the ScrollView only on a vertical swipe.
         onStartShouldSetResponder={() => w > 0 && points.length > 0}
         onMoveShouldSetResponder={() => w > 0 && points.length > 0}
-        onResponderTerminationRequest={() => false}
-        onResponderGrant={(e) => scrubTo(e.nativeEvent.locationX)}
-        onResponderMove={(e) => scrubTo(e.nativeEvent.locationX)}
+        onResponderTerminationRequest={isVerticalSwipe}
+        onResponderGrant={(e) => {
+          gesture.current = { x: e.nativeEvent.pageX ?? 0, y: e.nativeEvent.pageY ?? 0, dx: 0, dy: 0 };
+          scrubTo(e.nativeEvent.locationX);
+        }}
+        onResponderMove={(e) => {
+          gesture.current.dx = (e.nativeEvent.pageX ?? 0) - gesture.current.x;
+          gesture.current.dy = (e.nativeEvent.pageY ?? 0) - gesture.current.y;
+          scrubTo(e.nativeEvent.locationX);
+        }}
         onResponderRelease={() => setActiveIdx(null)}
         onResponderTerminate={() => setActiveIdx(null)}
       >
