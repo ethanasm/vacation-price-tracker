@@ -15,6 +15,7 @@ export interface TripEditForm {
   origin: string;
   destination: string;
   departDate: string;
+  isRoundTrip: boolean;
   returnDate: string;
   adults: string;
   flightEnabled: boolean;
@@ -41,7 +42,9 @@ export function seedThreshold(trip: TripDetail): string {
  * survive a re-enable.
  */
 export function buildTripUpdate(trip: TripDetail, form: TripEditForm): TripUpdate {
-  const isRoundTrip = form.returnDate.trim().length > 0;
+  // The toggle drives round-trip; the return-date guard is defensive, since
+  // validation already rejects a round trip without a return date.
+  const isRoundTrip = form.isRoundTrip && form.returnDate.trim().length > 0;
   const thresholdValue = Number.parseFloat(form.threshold);
   const hasThreshold = Number.isFinite(thresholdValue) && thresholdValue > 0;
   const existingNotify = trip.notification_prefs;

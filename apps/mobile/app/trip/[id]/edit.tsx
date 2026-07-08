@@ -1,6 +1,7 @@
 /**
  * Edit-trip modal — the mobile twin of web's /trips/[tripId]/edit. Loads the
- * trip, seeds the same grouped Aurora form as trip/new, and PATCHes a
+ * trip, seeds the same grouped Aurora form as trip/new (airport typeahead,
+ * calendar date pickers, adults select, round-trip toggle), and PATCHes a
  * TripUpdate via useApiClient().updateTrip. Pref fields the mobile form
  * doesn't expose (airlines, max stops, rooms, room types, views, star rating,
  * email/SMS toggles) are preserved from the loaded trip rather than reset, and
@@ -27,10 +28,20 @@ import { useApiClient } from '@/lib/api/provider';
 import type { TripDetail } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { buildTripUpdate, seedThreshold } from '@/lib/trip-edit';
+import {
+  MAX_DATE_DAYS_OUT,
+  addDaysIso,
+  sanitizeDecimal,
+  todayIso,
+  validateTripForm,
+} from '@/lib/trip-form';
 import { AuroraCard, GradientButton, SegmentedControl, type SegmentedOption } from '@/components/aurora';
 import { FormField } from '@/components/aurora/form-field';
 import { ToggleRow } from '@/components/aurora/toggle-row';
 import { CollapsibleSection } from '@/components/aurora/collapsible-section';
+import { AirportField } from '@/components/aurora/airport-field';
+import { DateField } from '@/components/aurora/date-field';
+import { SelectField } from '@/components/aurora/select-field';
 
 type Cabin = 'economy' | 'premium_economy' | 'business' | 'first';
 const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
@@ -40,7 +51,11 @@ const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
   { value: 'first', label: 'First' },
 ];
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// 1–9 adults, matching the API bound and web's traveler select.
+const ADULT_OPTIONS = Array.from({ length: 9 }, (_, i) => ({
+  value: String(i + 1),
+  label: i === 0 ? '1 Adult' : `${i + 1} Adults`,
+}));
 
 export default function EditTripScreen(): React.JSX.Element {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -83,12 +98,20 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
   const api = useApiClient();
   const queryClient = useQueryClient();
 
+  // Bound the pickers like web (today … today+359), but let a trip that
+  // already departed keep its saved date: the floor drops to that date so
+  // renaming an expired trip doesn't force a date change.
+  const today = React.useMemo(() => todayIso(), []);
+  const minDepart = trip.depart_date && trip.depart_date < today ? trip.depart_date : today;
+  const maxDate = React.useMemo(() => addDaysIso(today, MAX_DATE_DAYS_OUT), [today]);
+
   const [name, setName] = React.useState(trip.name);
   const [origin, setOrigin] = React.useState(trip.origin_airport);
   const [destination, setDestination] = React.useState(trip.destination_code);
+  const [isRoundTrip, setIsRoundTrip] = React.useState(trip.is_round_trip);
   const [departDate, setDepartDate] = React.useState(trip.depart_date);
   const [returnDate, setReturnDate] = React.useState(trip.return_date ?? '');
-  const [adults, setAdults] = React.useState(String(trip.adults));
+  const [adults, setAdults] = React.useState(String(Math.min(9, Math.max(1, trip.adults))));
 
   const [flightEnabled, setFlightEnabled] = React.useState(trip.track_flights);
   const [flightExpanded, setFlightExpanded] = React.useState(false);
@@ -108,15 +131,11 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
     setDestination(origin);
   }
 
-  function validate(): string | null {
-    if (!name.trim()) return 'Trip name is required.';
-    if (!origin.trim()) return 'From (origin) is required.';
-    if (!destination.trim()) return 'To (destination) is required.';
-    if (!DATE_RE.test(departDate.trim())) return 'Depart date must be YYYY-MM-DD.';
-    if (returnDate.trim() && !DATE_RE.test(returnDate.trim())) return 'Return date must be YYYY-MM-DD.';
-    if (!flightEnabled && !hotelEnabled) return 'Track at least flights or hotels.';
-    if (hotelEnabled && !hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
-    return null;
+  function onDepartChange(iso: string): void {
+    setDepartDate(iso);
+    // A return on/before the new departure can never be valid — clear it so
+    // the return picker reopens on the departure month for a fresh pick.
+    if (returnDate && returnDate <= iso) setReturnDate('');
   }
 
   const mutation = useMutation({
@@ -128,6 +147,7 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
           origin,
           destination,
           departDate,
+          isRoundTrip,
           returnDate,
           adults,
           flightEnabled,
@@ -146,7 +166,10 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
   });
 
   function onSubmit(): void {
-    const err = validate();
+    const err = validateTripForm(
+      { name, origin, destination, isRoundTrip, departDate, returnDate, flightEnabled, hotelEnabled, hotelCity },
+      minDepart,
+    );
     setValidationError(err);
     if (err) return;
     mutation.mutate();
@@ -181,41 +204,72 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
               placeholder="Summer in Bend"
               testID="edit-trip-name-input"
               autoCapitalize="words"
+              maxLength={100}
             />
-            <FormField
+            <AirportField
               label="From"
               value={origin}
               onChangeText={setOrigin}
-              placeholder="SFO"
+              placeholder="Search airports…"
               testID="edit-trip-origin-input"
               accessibilityLabel="From (origin)"
-              autoCapitalize="characters"
-              maxLength={3}
               right={
                 <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="edit-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
                   <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
                 </Pressable>
               }
             />
-            <FormField
+            <AirportField
               label="To"
               value={destination}
               onChangeText={setDestination}
-              placeholder="RDM"
+              placeholder="Search airports…"
               testID="edit-trip-destination-input"
               accessibilityLabel="To (destination)"
-              autoCapitalize="characters"
-              maxLength={3}
             />
             <View style={styles.dateRow}>
               <View style={styles.dateCol}>
-                <FormField label="Depart" value={departDate} onChangeText={setDepartDate} placeholder="2026-08-22" testID="edit-trip-depart-input" keyboardType="numbers-and-punctuation" maxLength={10} />
+                <DateField
+                  label="Depart"
+                  value={departDate}
+                  onChange={onDepartChange}
+                  minDate={minDepart}
+                  maxDate={maxDate}
+                  placeholder="Select date"
+                  testID="edit-trip-depart-input"
+                  accessibilityLabel="Departure date"
+                />
               </View>
-              <View style={styles.dateCol}>
-                <FormField label="Return" value={returnDate} onChangeText={setReturnDate} placeholder="2026-08-26" testID="edit-trip-return-input" keyboardType="numbers-and-punctuation" maxLength={10} />
-              </View>
+              {isRoundTrip ? (
+                <View style={styles.dateCol}>
+                  <DateField
+                    label="Return"
+                    value={returnDate}
+                    onChange={setReturnDate}
+                    minDate={departDate ? addDaysIso(departDate, 1) : minDepart}
+                    maxDate={maxDate}
+                    initialMonthDate={departDate || undefined}
+                    placeholder="Select date"
+                    testID="edit-trip-return-input"
+                    accessibilityLabel="Return date"
+                  />
+                </View>
+              ) : null}
             </View>
-            <FormField label="Adults" value={adults} onChangeText={setAdults} placeholder="1" keyboardType="number-pad" maxLength={2} />
+            <SelectField
+              label="Adults"
+              value={adults}
+              options={ADULT_OPTIONS}
+              onChange={setAdults}
+              testID="edit-trip-adults"
+            />
+            <ToggleRow
+              title="Round trip"
+              subtitle="Track a return flight too"
+              value={isRoundTrip}
+              onValueChange={setIsRoundTrip}
+              testID="edit-trip-round-trip"
+            />
           </AuroraCard>
 
           <AuroraCard style={styles.card}>
@@ -268,10 +322,10 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
             <FormField
               label="Total drops below ($)"
               value={threshold}
-              onChangeText={setThreshold}
+              onChangeText={(t) => setThreshold(sanitizeDecimal(t))}
               placeholder="800"
-              keyboardType="number-pad"
-              maxLength={7}
+              keyboardType="decimal-pad"
+              maxLength={9}
             />
             <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 12 }}>
               Leave blank to be notified on every price refresh.
