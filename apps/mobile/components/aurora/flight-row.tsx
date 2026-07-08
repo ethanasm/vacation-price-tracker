@@ -11,8 +11,10 @@ import {
   flightSummaryLine,
   returnSummaryLine,
   displayLegs,
+  durationLabel,
   formatMoneyString,
   clockLabel,
+  segmentMetaLabel,
   type FlightOffer,
   type FlightSegment,
 } from '@/lib/aurora';
@@ -33,15 +35,6 @@ function minutesBetween(aIso?: string | null, bIso?: string | null): number {
   const b = Date.parse(bIso);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
   return Math.max(Math.round((b - a) / 60000), 0);
-}
-
-function durationLabel(minutes?: number | null): string {
-  const m = minutes ?? 0;
-  if (m <= 0) return '';
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  if (h <= 0) return `${min}m`;
-  return min > 0 ? `${h}h ${min}m` : `${h}h`;
 }
 
 /** Collapsed: radio + airline chip + name + stops badge + price + chevron, with a
@@ -173,7 +166,7 @@ export function FlightRow({
                           </Text>
                         </View>
                         <Text style={[styles.legMeta, { color: c.textMuted, fontFamily: tokens.font[500] }]}>
-                          {`${durationLabel(seg.duration_minutes)} · ${(seg.carrier_code ?? '').toUpperCase()} ${seg.flight_number ?? ''}`.trim()}
+                          {segmentMetaLabel(seg)}
                         </Text>
                       </View>
                       {next ? (

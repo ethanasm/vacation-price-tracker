@@ -117,6 +117,28 @@ export function flightDisplayLabel(flight: FlightOffer): string | null {
   return flight.flight_number ?? flight.airline_code ?? null;
 }
 
+/**
+ * Meta label for a segment row: "1h 39m · AS3361". `flight_number` already
+ * includes the carrier prefix (e.g. "AS3361", parsed server-side), so it is
+ * used as-is — never concatenated with `carrier_code`, which would render
+ * "AS AS3361". Falls back to the bare carrier code when the number is missing.
+ */
+export function segmentMetaLabel(seg: FlightSegment): string {
+  const dur = durationLabel(seg.duration_minutes);
+  const num = seg.flight_number ?? (seg.carrier_code ?? '').toUpperCase();
+  return [dur, num].filter(Boolean).join(' · ');
+}
+
+/** "1h 39m" / "45m" style duration, or '' when unknown/non-positive. */
+export function durationLabel(minutes?: number | null): string {
+  const m = minutes ?? 0;
+  if (m <= 0) return '';
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (h <= 0) return `${min}m`;
+  return min > 0 ? `${h}h ${min}m` : `${h}h`;
+}
+
 export function formatMoneyString(value?: string | null): string {
   const n = parsePrice(value) ?? 0;
   return `$${Math.round(n).toLocaleString('en-US')}`;
