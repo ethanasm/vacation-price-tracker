@@ -147,8 +147,8 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
           origin,
           destination,
           departDate,
-          // buildTripUpdate derives is_round_trip from a non-empty return date.
-          returnDate: isRoundTrip ? returnDate : '',
+          isRoundTrip,
+          returnDate,
           adults,
           flightEnabled,
           cabin,
