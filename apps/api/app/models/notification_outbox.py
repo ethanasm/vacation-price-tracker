@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Numeric
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.sql import func
 from sqlmodel import Field, SQLModel
 
@@ -36,11 +36,22 @@ class NotificationOutbox(SQLModel, table=True):
             nullable=False,
         )
     )
-    threshold_type: ThresholdType = Field(default=ThresholdType.TRIP_TOTAL, nullable=False)
+    # status / threshold_type are stored as VARCHAR(20) holding the StrEnum
+    # *values* ("pending", "trip_total") — see migration 007_notification_outbox.
+    # A bare enum annotation would make SQLModel emit a native Postgres ENUM
+    # (e.g. ``notificationstatus``) that doesn't exist in the database, so every
+    # prod query against these columns would fail with UndefinedObjectError.
+    threshold_type: ThresholdType = Field(
+        default=ThresholdType.TRIP_TOTAL,
+        sa_column=Column(String(20), nullable=False, server_default="trip_total"),
+    )
     old_price: Decimal | None = Field(default=None, sa_column=Column(Numeric(10, 2)))
     new_price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
     threshold_value: Decimal | None = Field(default=None, sa_column=Column(Numeric(10, 2)))
-    status: NotificationStatus = Field(default=NotificationStatus.PENDING, nullable=False)
+    status: NotificationStatus = Field(
+        default=NotificationStatus.PENDING,
+        sa_column=Column(String(20), nullable=False, server_default="pending"),
+    )
     attempts: int = Field(default=0, nullable=False)
     error: str | None = Field(default=None)
 
