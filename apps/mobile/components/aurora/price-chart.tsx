@@ -16,7 +16,11 @@ import { yAxisTicks, type ChartPoint } from '@/lib/aurora';
  *
  * The y-axis scales to the plotted data (clean rounded ticks) instead of the
  * old fixed $0–$1000 window, and a compact legend names each visible series.
- * Hand-rolled with react-native-svg (no chart lib dependency).
+ * The x-axis labels every data point's day, thinned evenly to what the width
+ * fits without crowding. Press-and-drag scrubbing snaps to the nearest data
+ * point and shows a crosshair + popup with each visible series' exact price
+ * (mirroring the web chart's hover tooltip). Hand-rolled with
+ * react-native-svg (no chart lib dependency).
  */
 export function PriceChart({
   points,
@@ -36,6 +40,8 @@ export function PriceChart({
   const { tokens } = useTheme();
   const c = tokens.color;
   const [w, setW] = React.useState(0);
+  const [activeIdx, setActiveIdx] = React.useState<number | null>(null);
+  const [tipW, setTipW] = React.useState(0);
 
   const hasSelectedFlight = points.some((p) => p.selectedFlight !== undefined);
   const hasSelectedHotel = showHotel && points.some((p) => p.selectedHotel !== undefined);
@@ -82,23 +88,107 @@ export function PriceChart({
   const selectedHotelLine = hasSelectedHotel ? linePath((p) => p.selectedHotel) : '';
 
   const last = points[points.length - 1];
-  const first = points[0];
 
-  const legend: { label: string; color: string; dashed: boolean }[] = [
-    ...(showHotel ? [{ label: 'Total', color: c.primary, dashed: false }] : []),
-    { label: 'Flight (min)', color: c.accentCyan, dashed: !soloMinLine },
-    ...(hasSelectedFlight
-      ? [{ label: selectedFlightLabel || 'Selected flight', color: c.accentCyan, dashed: false }]
+  // One entry per visible series: drives the legend, the scrub popup rows,
+  // and the snapped markers.
+  const series: {
+    label: string;
+    color: string;
+    dashed: boolean;
+    valueOf: (p: ChartPoint) => number | undefined;
+  }[] = [
+    ...(showHotel
+      ? [{ label: 'Total', color: c.primary, dashed: false, valueOf: (p: ChartPoint) => p.total }]
       : []),
-    ...(showHotel ? [{ label: 'Hotel (min)', color: c.accentPink, dashed: true }] : []),
+    {
+      label: 'Flight (min)',
+      color: c.accentCyan,
+      dashed: !soloMinLine,
+      valueOf: (p: ChartPoint) => p.minFlight,
+    },
+    ...(hasSelectedFlight
+      ? [
+          {
+            label: selectedFlightLabel || 'Selected flight',
+            color: c.accentCyan,
+            dashed: false,
+            valueOf: (p: ChartPoint) => p.selectedFlight,
+          },
+        ]
+      : []),
+    ...(showHotel
+      ? [{ label: 'Hotel (min)', color: c.accentPink, dashed: true, valueOf: (p: ChartPoint) => p.hotel }]
+      : []),
     ...(hasSelectedHotel
-      ? [{ label: selectedHotelLabel || 'Selected hotel', color: c.accentPink, dashed: false }]
+      ? [
+          {
+            label: selectedHotelLabel || 'Selected hotel',
+            color: c.accentPink,
+            dashed: false,
+            valueOf: (p: ChartPoint) => p.selectedHotel,
+          },
+        ]
       : []),
   ];
 
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(hi, lo));
+
+  // Day labels for every point, evenly thinned (keeping both ends) once the
+  // width can't fit them all without crowding. The end labels are clamped
+  // inside the chart, which shifts them toward the middle — so also drop any
+  // middle label whose point sits too close to a clamped end label.
+  const X_LABEL_W = 60;
+  const labelCenter = (i: number) => clamp(x(i) - X_LABEL_W / 2, 0, w - X_LABEL_W) + X_LABEL_W / 2;
+  const maxXLabels = Math.max(2, Math.min(Math.floor(innerW / (X_LABEL_W * 0.8)), 8));
+  const labelCount = Math.min(points.length, maxXLabels);
+  const xLabelIdx = [
+    ...new Set(
+      Array.from({ length: labelCount }, (_, i) =>
+        Math.round((i * (points.length - 1)) / Math.max(labelCount - 1, 1)),
+      ),
+    ),
+  ].filter(
+    (i, k, arr) =>
+      k === 0 ||
+      k === arr.length - 1 ||
+      (x(i) - labelCenter(arr[0]) >= 40 && labelCenter(arr[arr.length - 1]) - x(i) >= 40),
+  );
+  const indexAt = (locationX: number): number =>
+    clamp(Math.round(((locationX - pad.l) / innerW) * n), 0, points.length - 1);
+  const scrubTo = (locationX: number) => setActiveIdx(indexAt(locationX));
+  const active = activeIdx === null ? undefined : points[activeIdx];
+
+  // Gesture-direction tracking so a vertical swipe that starts on the chart
+  // still scrolls the page (on Android the chart lives inside the trip
+  // screen's ScrollView): a hold or horizontal drag keeps the scrub, but a
+  // termination request — the ScrollView trying to take over — is granted
+  // once the movement is clearly vertical.
+  const gesture = React.useRef({ x: 0, y: 0, dx: 0, dy: 0 });
+  const isVerticalSwipe = () =>
+    Math.abs(gesture.current.dy) > 8 && Math.abs(gesture.current.dy) > Math.abs(gesture.current.dx);
+
   return (
     <View>
-      <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      <View
+        style={{ height }}
+        onLayout={(e) => setW(e.nativeEvent.layout.width)}
+        // Press-and-drag scrubbing: claim the touch and snap to the nearest
+        // point; yield to the ScrollView only on a vertical swipe.
+        onStartShouldSetResponder={() => w > 0 && points.length > 0}
+        onMoveShouldSetResponder={() => w > 0 && points.length > 0}
+        onResponderTerminationRequest={isVerticalSwipe}
+        onResponderGrant={(e) => {
+          gesture.current = { x: e.nativeEvent.pageX ?? 0, y: e.nativeEvent.pageY ?? 0, dx: 0, dy: 0 };
+          scrubTo(e.nativeEvent.locationX);
+        }}
+        onResponderMove={(e) => {
+          gesture.current.dx = (e.nativeEvent.pageX ?? 0) - gesture.current.x;
+          gesture.current.dy = (e.nativeEvent.pageY ?? 0) - gesture.current.y;
+          scrubTo(e.nativeEvent.locationX);
+        }}
+        onResponderRelease={() => setActiveIdx(null)}
+        onResponderTerminate={() => setActiveIdx(null)}
+      >
         {w > 0 ? (
           <Svg width={w} height={height}>
             <Defs>
@@ -181,6 +271,33 @@ export function PriceChart({
                 strokeWidth={2}
               />
             ) : null}
+            {activeIdx !== null && active ? (
+              <>
+                <Line
+                  x1={x(activeIdx)}
+                  x2={x(activeIdx)}
+                  y1={pad.t}
+                  y2={pad.t + innerH}
+                  stroke={c.textFaint}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                />
+                {series.map((s) => {
+                  const v = s.valueOf(active);
+                  return v === undefined ? null : (
+                    <Circle
+                      key={s.label}
+                      cx={x(activeIdx)}
+                      cy={y(v)}
+                      r={4}
+                      fill={s.color}
+                      stroke="#FFFFFF"
+                      strokeWidth={1.5}
+                    />
+                  );
+                })}
+              </>
+            ) : null}
           </Svg>
         ) : null}
         {/* Y tick labels (skip the $0 baseline; it reads from the axis itself). */}
@@ -199,33 +316,72 @@ export function PriceChart({
                 </Text>
               ))
           : null}
-        {/* First/last x labels. */}
-        {w > 0 && first ? (
-          <Text
+        {/* X day labels, one per (thinned) data point, centered under it. */}
+        {w > 0
+          ? xLabelIdx.map((i) => (
+              <Text
+                key={i}
+                numberOfLines={1}
+                style={[
+                  styles.xLabel,
+                  {
+                    color: c.textMuted,
+                    fontFamily: tokens.font[600],
+                    width: X_LABEL_W,
+                    left: clamp(x(i) - X_LABEL_W / 2, 0, w - X_LABEL_W),
+                  },
+                ]}
+              >
+                {points[i].label}
+              </Text>
+            ))
+          : null}
+        {activeIdx === null ? (
+          <View style={[styles.nowBadge, { backgroundColor: c.primary, borderRadius: tokens.radius.pill }]}>
+            <Text style={{ color: '#FFFFFF', fontFamily: tokens.font[800], fontSize: 11 }}>{nowLabel}</Text>
+          </View>
+        ) : null}
+        {activeIdx !== null && active ? (
+          <View
+            pointerEvents="none"
+            onLayout={(e) => setTipW(e.nativeEvent.layout.width)}
             style={[
-              styles.xLabel,
-              { color: c.textMuted, fontFamily: tokens.font[600], left: pad.l },
+              styles.tooltip,
+              tokens.shadow.cardOnCanvas,
+              {
+                backgroundColor: c.card,
+                borderColor: c.hairlineAlt,
+                borderRadius: tokens.radius.inner,
+                left: clamp(x(activeIdx) - tipW / 2, 4, w - tipW - 4),
+                opacity: tipW > 0 ? 1 : 0,
+              },
             ]}
           >
-            {first.label}
-          </Text>
+            <Text style={[styles.tooltipDay, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
+              {active.label}
+            </Text>
+            {series.map((s) => {
+              const v = s.valueOf(active);
+              return v === undefined ? null : (
+                <View key={s.label} style={styles.tooltipRow}>
+                  <View style={[styles.tooltipDot, { backgroundColor: s.color }]} />
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.tooltipLabel, { color: c.textBodyAlt, fontFamily: tokens.font[600] }]}
+                  >
+                    {s.label}
+                  </Text>
+                  <Text style={[styles.tooltipPrice, { color: c.textStrong, fontFamily: tokens.font[800] }]}>
+                    {`$${Math.round(v).toLocaleString('en-US')}`}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
         ) : null}
-        {w > 0 && last && points.length > 1 ? (
-          <Text
-            style={[
-              styles.xLabel,
-              { color: c.textMuted, fontFamily: tokens.font[600], right: pad.r },
-            ]}
-          >
-            {last.label}
-          </Text>
-        ) : null}
-        <View style={[styles.nowBadge, { backgroundColor: c.primary, borderRadius: tokens.radius.pill }]}>
-          <Text style={{ color: '#FFFFFF', fontFamily: tokens.font[800], fontSize: 11 }}>{nowLabel}</Text>
-        </View>
       </View>
       <View style={styles.legendRow}>
-        {legend.map((item) => (
+        {series.map((item) => (
           <View key={item.label} style={styles.legendItem}>
             {item.dashed ? (
               <View style={styles.legendKeyDashed}>
@@ -251,7 +407,21 @@ export function PriceChart({
 const styles = StyleSheet.create({
   nowBadge: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 8, paddingVertical: 3 },
   tickLabel: { position: 'absolute', left: 0, fontSize: 9 },
-  xLabel: { position: 'absolute', bottom: 0, fontSize: 9 },
+  xLabel: { position: 'absolute', bottom: 0, fontSize: 9, textAlign: 'center' },
+  tooltip: {
+    position: 'absolute',
+    top: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    gap: 2,
+    maxWidth: 200,
+  },
+  tooltipDay: { fontSize: 10 },
+  tooltipRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tooltipDot: { width: 6, height: 6, borderRadius: 3 },
+  tooltipLabel: { fontSize: 10, flexShrink: 1 },
+  tooltipPrice: { fontSize: 11 },
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 2, marginTop: 4 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '48%' },
   legendKey: { width: 14, height: 2, borderRadius: 1 },
