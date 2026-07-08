@@ -4,7 +4,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from app.models.notification_outbox import NotificationOutbox
 from app.models.user import User
+from sqlalchemy import Enum, String
 from sqlalchemy.exc import IntegrityError
 
 
@@ -98,3 +100,27 @@ class TestUserModel:
 
         # ID should persist
         assert user.id is not None
+
+
+class TestNotificationOutboxColumns:
+    """Guard the outbox enum columns' VARCHAR mapping.
+
+    Migration 007_notification_outbox created ``status`` and ``threshold_type``
+    as VARCHAR(20) holding the StrEnum *values*. A bare enum annotation makes
+    SQLModel emit a native Postgres ENUM type (``notificationstatus``) that was
+    never created, so every prod query against these columns failed with
+    UndefinedObjectError — invisible on the SQLite test DB, which never casts.
+    """
+
+    def test_status_and_threshold_type_are_plain_strings(self):
+        table = NotificationOutbox.__table__
+        for column in (table.c.status, table.c.threshold_type):
+            # sa.Enum subclasses String, so the Enum check is the real guard.
+            assert isinstance(column.type, String), column.name
+            assert not isinstance(column.type, Enum), column.name
+            assert column.type.length == 20, column.name
+
+    def test_server_defaults_match_migration(self):
+        table = NotificationOutbox.__table__
+        assert table.c.status.server_default.arg == "pending"
+        assert table.c.threshold_type.server_default.arg == "trip_total"
