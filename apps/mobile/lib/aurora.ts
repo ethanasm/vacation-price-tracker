@@ -465,3 +465,22 @@ export function isAwaitingInitialFetch(
   if (!Number.isFinite(created)) return false;
   return now - created <= INITIAL_FETCH_WINDOW_MS;
 }
+
+/** Floor for the initial-fetch status poll (matches the manual-refresh poll). */
+export const INITIAL_FETCH_POLL_MIN_MS = 60_000;
+
+/**
+ * How long the awaiting-initial-fetch status poll should run: the remainder of
+ * the recency window, so a PriceCheckWorkflow that fails after several retry
+ * cycles (minutes, not seconds) is still caught while the fetching indicator is
+ * up. Clamped to [1 min, window] against short remainders and clock skew.
+ */
+export function initialFetchPollBudgetMs(
+  trip: { created_at?: string | null } | null | undefined,
+  now: number = Date.now(),
+): number {
+  const created = Date.parse(trip?.created_at ?? '');
+  if (!Number.isFinite(created)) return INITIAL_FETCH_POLL_MIN_MS;
+  const remaining = INITIAL_FETCH_WINDOW_MS - (now - created);
+  return Math.min(Math.max(remaining, INITIAL_FETCH_POLL_MIN_MS), INITIAL_FETCH_WINDOW_MS);
+}

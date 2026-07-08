@@ -18,6 +18,9 @@ import {
   clockLabel,
   makeIdempotencyKey,
   isAwaitingInitialFetch,
+  initialFetchPollBudgetMs,
+  INITIAL_FETCH_POLL_MIN_MS,
+  INITIAL_FETCH_WINDOW_MS,
   flightStableKey,
   hotelStableKey,
   flightDisplayLabel,
@@ -475,4 +478,30 @@ test('isAwaitingInitialFetch: false for missing trip or unparseable created_at',
   assert.equal(isAwaitingInitialFetch(undefined, [], now), false);
   assert.equal(isAwaitingInitialFetch({ status: 'active', created_at: 'garbage' }, [], now), false);
   assert.equal(isAwaitingInitialFetch({ status: 'active' }, [], now), false);
+});
+
+test('initialFetchPollBudgetMs: remainder of the recency window for a fresh trip', () => {
+  const now = Date.parse('2026-07-06T12:05:00Z');
+  const trip = { created_at: '2026-07-06T12:00:00Z' }; // 5 min in → 10 min left
+  assert.equal(initialFetchPollBudgetMs(trip, now), 10 * 60_000);
+});
+
+test('initialFetchPollBudgetMs: clamps a short remainder up to the 1-minute floor', () => {
+  const now = Date.parse('2026-07-06T12:14:30Z');
+  const trip = { created_at: '2026-07-06T12:00:00Z' }; // 30s left in the window
+  assert.equal(initialFetchPollBudgetMs(trip, now), INITIAL_FETCH_POLL_MIN_MS);
+});
+
+test('initialFetchPollBudgetMs: clamps a future created_at (clock skew) to the window', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  const trip = { created_at: '2026-07-06T12:10:00Z' };
+  assert.equal(initialFetchPollBudgetMs(trip, now), INITIAL_FETCH_WINDOW_MS);
+});
+
+test('initialFetchPollBudgetMs: floor for missing or unparseable created_at', () => {
+  const now = Date.parse('2026-07-06T12:00:00Z');
+  assert.equal(initialFetchPollBudgetMs(null, now), INITIAL_FETCH_POLL_MIN_MS);
+  assert.equal(initialFetchPollBudgetMs(undefined, now), INITIAL_FETCH_POLL_MIN_MS);
+  assert.equal(initialFetchPollBudgetMs({ created_at: 'garbage' }, now), INITIAL_FETCH_POLL_MIN_MS);
+  assert.equal(initialFetchPollBudgetMs({}, now), INITIAL_FETCH_POLL_MIN_MS);
 });

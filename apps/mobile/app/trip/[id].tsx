@@ -31,6 +31,7 @@ import {
   flightDisplayLabel,
   parsePrice,
   isAwaitingInitialFetch,
+  initialFetchPollBudgetMs,
   type FlightOffer,
   type HotelOffer,
   type PriceSnapshot,
@@ -62,6 +63,11 @@ export default function TripDetailScreen(): React.JSX.Element {
   const { tokens } = useTheme();
   const c = tokens.color;
 
+  // Flipped when the initial-fetch status poll reports the PriceCheckWorkflow
+  // failed — stops the fetching indicator and the snapshot poll (no snapshot
+  // is ever saved on failure, so waiting further is pointless).
+  const [initialFetchFailed, setInitialFetchFailed] = React.useState(false);
+
   const query = useQuery<TripDetailResponse>({
     queryKey: ['trip', id],
     queryFn: () => api.getTrip(id as string),
@@ -69,6 +75,7 @@ export default function TripDetailScreen(): React.JSX.Element {
     // A just-created trip has its initial price fetch running server-side
     // (creation starts a PriceCheckWorkflow) — poll until the snapshot lands.
     refetchInterval: (q) =>
+      !initialFetchFailed &&
       q.state.data &&
       isAwaitingInitialFetch(q.state.data.trip, q.state.data.price_history ?? [])
         ? 3000
@@ -128,6 +135,39 @@ export default function TripDetailScreen(): React.JSX.Element {
     }
   }, [id, api, refetch]);
 
+  // The initial PriceCheckWorkflow (started server-side by trip creation with
+  // the deterministic id `price-check-<tripId>`) raises on fetch errors and
+  // saves NO snapshot, so the 3s getTrip poll alone can never distinguish
+  // "failed" from "still running" — the user would watch the fetching spinner
+  // until the recency window lapsed. Mirror the web trip detail: poll the
+  // refresh-status endpoint for that workflow id and surface a failure.
+  const initialPollStartedRef = React.useRef(false);
+  const tripData = query.data;
+  React.useEffect(() => {
+    if (initialPollStartedRef.current || !id || !tripData) return;
+    if (!isAwaitingInitialFetch(tripData.trip, tripData.price_history ?? [])) return;
+    initialPollStartedRef.current = true;
+    void (async () => {
+      const outcome = await pollRefreshStatus(`price-check-${id}`, {
+        getStatus: (gid) => api.getRefreshStatus(gid),
+        isAborted: () => abortedRef.current,
+        maxPollMs: initialFetchPollBudgetMs(tripData.trip),
+      });
+      if (outcome.kind === 'aborted' || abortedRef.current) return;
+      if (outcome.kind === 'failed') {
+        setInitialFetchFailed(true);
+        Alert.alert(
+          'Price fetch failed',
+          outcome.error ?? 'Please try again in a moment.',
+        );
+      } else if (outcome.kind === 'completed') {
+        await refetch();
+      }
+      // timeout / not_found — stay quiet; the 3s snapshot poll keeps covering
+      // late landings for the rest of the recency window.
+    })();
+  }, [id, tripData, api, refetch]);
+
   if (query.isLoading) {
     return (
       <SafeAreaView style={[styles.fill, styles.center, { backgroundColor: c.pageBg }]}>
@@ -167,7 +207,7 @@ export default function TripDetailScreen(): React.JSX.Element {
       hotels={hotels}
       onRefresh={() => void handleRefresh()}
       isRefreshing={isRefreshing}
-      awaitingInitialFetch={isAwaitingInitialFetch(query.data.trip, history)}
+      awaitingInitialFetch={!initialFetchFailed && isAwaitingInitialFetch(query.data.trip, history)}
     />
   );
 }
