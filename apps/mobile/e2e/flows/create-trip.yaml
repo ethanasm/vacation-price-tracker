@@ -46,20 +46,38 @@ tags:
     id: "create-trip-name-input"
 - inputText: "Maestro Test Trip"
 
+# From/To are typeahead fields: typing ≥2 chars opens a suggestion list and
+# each row is `<input testID>-option-<CODE>`. Picking the exact-code row both
+# fills the field and exercises the autocomplete path.
 - tapOn:
     id: "create-trip-origin-input"
 - inputText: "SEA"
+- tapOn:
+    id: "create-trip-origin-input-option-SEA"
 
 - tapOn:
     id: "create-trip-destination-input"
 - inputText: "OGG"
+- tapOn:
+    id: "create-trip-destination-input-option-OGG"
 
-# Depart date is REQUIRED by the form's client-side validation (must match
-# YYYY-MM-DD); without it, submit short-circuits and never creates the trip.
+# Dates come from a bounded calendar sheet (no keyboard input). The form
+# defaults to a valid round trip (tomorrow → +8 days); re-pick the departure
+# as the 15th of NEXT month so the flow exercises the picker deterministically
+# on any run date (always within the today…today+359 window). Moving the
+# departure past the default return clears the return, so pick the 20th of the
+# same month right after — the return calendar opens on the departure month.
 - tapOn:
     id: "create-trip-depart-input"
-- inputText: "2026-08-22"
-- hideKeyboard
+- tapOn:
+    id: "create-trip-depart-input-next-month"
+- tapOn:
+    id: "create-trip-depart-input-day-15"
+
+- tapOn:
+    id: "create-trip-return-input"
+- tapOn:
+    id: "create-trip-return-input-day-20"
 
 # Hotel city is REQUIRED by the API when track_hotels is on (it 422s otherwise:
 # "hotel_prefs.city is required") — mirrors the web create form. The field sits

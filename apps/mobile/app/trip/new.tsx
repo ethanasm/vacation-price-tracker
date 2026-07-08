@@ -1,12 +1,14 @@
 /**
- * Create-trip modal. Grouped Aurora form: Trip details (name, From/⇄/To,
- * dates, adults), collapsible Flight/Hotel preferences, and a threshold card.
+ * Create-trip modal. Grouped Aurora form: Trip details (name, From/⇄/To with
+ * airport typeahead, calendar date pickers, adults select, round-trip
+ * toggle), collapsible Flight/Hotel preferences, and a threshold card.
  * Submits a TripCreate body via useApiClient().createTrip with an idempotency
  * key, invalidates the trips list, and replaces into the new trip's detail.
  *
- * v1 dates are plain YYYY-MM-DD text fields; a native date picker is a
- * follow-up. Cabin/non-stop/hotel prefs and the threshold map onto the API
- * FlightPrefs / HotelPrefs / NotificationPrefs schemas.
+ * Controls mirror web's create form (apps/web/src/app/trips/new): dates come
+ * from a bounded calendar (today … today+359, return after depart), airports
+ * from the shared OurAirports typeahead, adults from a 1–9 select, and the
+ * threshold input is constrained to a decimal number.
  */
 import React from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
@@ -19,11 +21,21 @@ import { useApiClient } from '@/lib/api/provider';
 import type { TripCreate } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { makeIdempotencyKey } from '@/lib/aurora';
+import {
+  MAX_DATE_DAYS_OUT,
+  addDaysIso,
+  sanitizeDecimal,
+  todayIso,
+  validateTripForm,
+} from '@/lib/trip-form';
 import { AuroraCard, GradientButton, SegmentedControl, type SegmentedOption } from '@/components/aurora';
 import { SettingsCog } from '@/components/aurora/settings-cog';
 import { FormField } from '@/components/aurora/form-field';
 import { ToggleRow } from '@/components/aurora/toggle-row';
 import { CollapsibleSection } from '@/components/aurora/collapsible-section';
+import { AirportField } from '@/components/aurora/airport-field';
+import { DateField } from '@/components/aurora/date-field';
+import { SelectField } from '@/components/aurora/select-field';
 
 type Cabin = 'economy' | 'premium_economy' | 'business' | 'first';
 const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
@@ -33,7 +45,11 @@ const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
   { value: 'first', label: 'First' },
 ];
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// 1–9 adults, matching the API bound and web's traveler select.
+const ADULT_OPTIONS = Array.from({ length: 9 }, (_, i) => ({
+  value: String(i + 1),
+  label: i === 0 ? '1 Adult' : `${i + 1} Adults`,
+}));
 
 export default function NewTripScreen(): React.JSX.Element {
   const { tokens } = useTheme();
@@ -41,11 +57,17 @@ export default function NewTripScreen(): React.JSX.Element {
   const api = useApiClient();
   const queryClient = useQueryClient();
 
+  // Date pickers are bounded to [today, today + 359 days], like web.
+  const today = React.useMemo(() => todayIso(), []);
+  const maxDate = React.useMemo(() => addDaysIso(today, MAX_DATE_DAYS_OUT), [today]);
+
   const [name, setName] = React.useState('');
   const [origin, setOrigin] = React.useState('');
   const [destination, setDestination] = React.useState('');
-  const [departDate, setDepartDate] = React.useState('');
-  const [returnDate, setReturnDate] = React.useState('');
+  const [isRoundTrip, setIsRoundTrip] = React.useState(true);
+  // Same defaults as web's create form: out tomorrow, back in a week.
+  const [departDate, setDepartDate] = React.useState(() => addDaysIso(todayIso(), 1));
+  const [returnDate, setReturnDate] = React.useState(() => addDaysIso(todayIso(), 8));
   const [adults, setAdults] = React.useState('1');
 
   const [flightEnabled, setFlightEnabled] = React.useState(true);
@@ -66,28 +88,23 @@ export default function NewTripScreen(): React.JSX.Element {
     setDestination(origin);
   }
 
-  function validate(): string | null {
-    if (!name.trim()) return 'Trip name is required.';
-    if (!origin.trim()) return 'From (origin) is required.';
-    if (!destination.trim()) return 'To (destination) is required.';
-    if (!DATE_RE.test(departDate.trim())) return 'Depart date must be YYYY-MM-DD.';
-    if (returnDate.trim() && !DATE_RE.test(returnDate.trim())) return 'Return date must be YYYY-MM-DD.';
-    if (!flightEnabled && !hotelEnabled) return 'Track at least flights or hotels.';
-    if (hotelEnabled && !hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
-    return null;
+  function onDepartChange(iso: string): void {
+    setDepartDate(iso);
+    // A return on/before the new departure can never be valid — clear it so
+    // the return picker reopens on the departure month for a fresh pick.
+    if (returnDate && returnDate <= iso) setReturnDate('');
   }
 
   const mutation = useMutation({
     mutationFn: async (): Promise<{ id: string }> => {
-      const isRoundTrip = returnDate.trim().length > 0;
       const thresholdValue = Number.parseFloat(threshold);
       const body: TripCreate = {
         name: name.trim(),
         origin_airport: origin.trim().toUpperCase(),
         destination_code: destination.trim().toUpperCase(),
         is_round_trip: isRoundTrip,
-        depart_date: departDate.trim(),
-        return_date: isRoundTrip ? returnDate.trim() : null,
+        depart_date: departDate,
+        return_date: isRoundTrip ? returnDate : null,
         adults: Math.min(9, Math.max(1, Number.parseInt(adults, 10) || 1)),
         track_flights: flightEnabled,
         track_hotels: hotelEnabled,
@@ -115,7 +132,10 @@ export default function NewTripScreen(): React.JSX.Element {
   });
 
   function onSubmit(): void {
-    const err = validate();
+    const err = validateTripForm(
+      { name, origin, destination, isRoundTrip, departDate, returnDate, flightEnabled, hotelEnabled, hotelCity },
+      today,
+    );
     setValidationError(err);
     if (err) return;
     mutation.mutate();
@@ -153,41 +173,72 @@ export default function NewTripScreen(): React.JSX.Element {
               placeholder="Summer in Bend"
               testID="create-trip-name-input"
               autoCapitalize="words"
+              maxLength={100}
             />
-            <FormField
+            <AirportField
               label="From"
               value={origin}
               onChangeText={setOrigin}
-              placeholder="SFO"
+              placeholder="Search airports…"
               testID="create-trip-origin-input"
               accessibilityLabel="From (origin)"
-              autoCapitalize="characters"
-              maxLength={3}
               right={
                 <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="create-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
                   <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
                 </Pressable>
               }
             />
-            <FormField
+            <AirportField
               label="To"
               value={destination}
               onChangeText={setDestination}
-              placeholder="RDM"
+              placeholder="Search airports…"
               testID="create-trip-destination-input"
               accessibilityLabel="To (destination)"
-              autoCapitalize="characters"
-              maxLength={3}
             />
             <View style={styles.dateRow}>
               <View style={styles.dateCol}>
-                <FormField label="Depart" value={departDate} onChangeText={setDepartDate} placeholder="2026-08-22" testID="create-trip-depart-input" keyboardType="numbers-and-punctuation" maxLength={10} />
+                <DateField
+                  label="Depart"
+                  value={departDate}
+                  onChange={onDepartChange}
+                  minDate={today}
+                  maxDate={maxDate}
+                  placeholder="Select date"
+                  testID="create-trip-depart-input"
+                  accessibilityLabel="Departure date"
+                />
               </View>
-              <View style={styles.dateCol}>
-                <FormField label="Return" value={returnDate} onChangeText={setReturnDate} placeholder="2026-08-26" testID="create-trip-return-input" keyboardType="numbers-and-punctuation" maxLength={10} />
-              </View>
+              {isRoundTrip ? (
+                <View style={styles.dateCol}>
+                  <DateField
+                    label="Return"
+                    value={returnDate}
+                    onChange={setReturnDate}
+                    minDate={departDate ? addDaysIso(departDate, 1) : today}
+                    maxDate={maxDate}
+                    initialMonthDate={departDate || undefined}
+                    placeholder="Select date"
+                    testID="create-trip-return-input"
+                    accessibilityLabel="Return date"
+                  />
+                </View>
+              ) : null}
             </View>
-            <FormField label="Adults" value={adults} onChangeText={setAdults} placeholder="1" keyboardType="number-pad" maxLength={2} />
+            <SelectField
+              label="Adults"
+              value={adults}
+              options={ADULT_OPTIONS}
+              onChange={setAdults}
+              testID="create-trip-adults"
+            />
+            <ToggleRow
+              title="Round trip"
+              subtitle="Track a return flight too"
+              value={isRoundTrip}
+              onValueChange={setIsRoundTrip}
+              testID="create-trip-round-trip"
+            />
           </AuroraCard>
 
           <AuroraCard style={styles.card}>
@@ -240,10 +291,10 @@ export default function NewTripScreen(): React.JSX.Element {
             <FormField
               label="Total drops below ($)"
               value={threshold}
-              onChangeText={setThreshold}
+              onChangeText={(t) => setThreshold(sanitizeDecimal(t))}
               placeholder="800"
-              keyboardType="number-pad"
-              maxLength={7}
+              keyboardType="decimal-pad"
+              maxLength={9}
             />
             <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 12 }}>
               Leave blank to be notified on every price refresh.
