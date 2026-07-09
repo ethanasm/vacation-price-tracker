@@ -11,15 +11,17 @@ import styles from "./airline-chip.module.css";
  * so colored marks stay legible in dark mode.
  */
 function ChipVisual({ code, behind }: { code: string | null | undefined; behind?: boolean }) {
-  const [failed, setFailed] = useState(false);
+  // Track the URL that failed (not a boolean) so a re-render with a different
+  // carrier on the same component instance retries that carrier's logo.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const logoUrl = airlineLogoUrl(code);
   const behindClass = behind ? ` ${styles.behind}` : "";
 
-  if (logoUrl && !failed) {
+  if (logoUrl && failedUrl !== logoUrl) {
     return (
       <span className={`${styles.chip} ${styles.logoChip}${behindClass}`}>
         {/* Decorative: the airline name renders as adjacent text. */}
-        <img src={logoUrl} alt="" onError={() => setFailed(true)} />
+        <img src={logoUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailedUrl(logoUrl)} />
       </span>
     );
   }

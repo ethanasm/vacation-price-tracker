@@ -14,10 +14,12 @@ const SIZE = 30;
  */
 export function AirlineChip({ code, size = SIZE }: { code?: string | null; size?: number }): React.JSX.Element {
   const { tokens } = useTheme();
-  const [failed, setFailed] = useState(false);
+  // Track the URL that failed (not a boolean) so a re-render with a different
+  // carrier on the same component instance retries that carrier's logo.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const logoUrl = airlineLogoUrl(code);
 
-  if (logoUrl && !failed) {
+  if (logoUrl && failedUrl !== logoUrl) {
     return (
       <View
         style={{
@@ -34,7 +36,7 @@ export function AirlineChip({ code, size = SIZE }: { code?: string | null; size?
       >
         <Image
           source={{ uri: logoUrl }}
-          onError={() => setFailed(true)}
+          onError={() => setFailedUrl(logoUrl)}
           resizeMode="contain"
           style={{ width: size * 0.8, height: size * 0.8 }}
           accessibilityIgnoresInvertColors
