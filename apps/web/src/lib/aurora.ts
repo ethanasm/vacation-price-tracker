@@ -25,6 +25,33 @@ export function airlineChip(
   return { initials, gradient: FALLBACK_GRADIENT };
 }
 
+/**
+ * IATA codes with a verified square logo on the Kiwi image CDN — the corpus
+ * mirrors the API's carrier table (apps/api/app/core/airlines.py). Gating on
+ * the corpus matters because the CDN answers unknown codes with a generic
+ * placeholder at HTTP 200, so an onError handler alone can never fall back
+ * to the monogram chip.
+ */
+const AIRLINE_LOGO_CODES = new Set([
+  "AA", "AC", "AF", "AM", "AS", "AV", "AY", "AZ", "B6", "BA",
+  "CM", "CX", "DL", "DY", "EI", "EK", "EY", "F9", "FI", "FR",
+  "G4", "HA", "IB", "JL", "KE", "KL", "LA", "LH", "LX", "MX",
+  "NH", "NK", "NZ", "OS", "QF", "QR", "SK", "SN", "SQ", "SY",
+  "TK", "TP", "TS", "U2", "UA", "VS", "VY", "W6", "WN", "WS",
+  "Y4",
+]);
+
+/**
+ * Square 64px logo URL for a known carrier, or null → render the monogram
+ * chip. Hotlinked from Kiwi's public airline image CDN (the same provider
+ * whose MCP serves our flight data); assets are never vendored into the repo.
+ */
+export function airlineLogoUrl(code?: string | null): string | null {
+  const key = (code ?? "").trim().toUpperCase();
+  if (!AIRLINE_LOGO_CODES.has(key)) return null;
+  return `https://images.kiwi.com/airlines/64x64/${key}.png`;
+}
+
 function allSegments(flight: ApiFlightOffer): ApiFlightSegment[] {
   return (flight.itineraries ?? []).flatMap((it) => it.segments ?? []);
 }
