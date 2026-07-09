@@ -746,7 +746,7 @@ wheels = [
 
 [[package]]
 name = "langfuse"
-version = "4.13.0"
+version = "4.13.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -758,9 +758,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/0c/a830958f9377e31114e8cbe74395a0adc515afaa3d02d8be5372d39e549c/langfuse-4.13.0.tar.gz", hash = "sha256:41b6b13e1e4e96f903a24e2bb69a38b83a8a296d12de11a345e33ec2763f10d2", size = 350477, upload-time = "2026-07-02T14:33:41.764Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/00/16324f1c0d244fee3c4e4ac00e8a422f1afb8873e963182dac7fbf8b34e8/langfuse-4.13.2.tar.gz", hash = "sha256:4484c5d949dd1c5cabab74c179c7e5c19be203940852bf90d1ba5870215eac6a", size = 362128, upload-time = "2026-07-08T15:54:07.889Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/5c/87ddf37cfeb43332e84f173fe8ef64ff6ce8ed6defcbef3fa0c63f545393/langfuse-4.13.0-py3-none-any.whl", hash = "sha256:0e0c5af8c8f299d6878c328518ce8414a188d1f6333ad2109aa8208f2e41500a", size = 611573, upload-time = "2026-07-02T14:33:40.143Z" },
+    { url = "https://files.pythonhosted.org/packages/95/67/40641c2e7897990d1264d16037788c5cc1adb5c967d0f04bcf56c6119336/langfuse-4.13.2-py3-none-any.whl", hash = "sha256:b5b48b02438835316e5bf61266b89faaff0687fb8ebd765d62d5a489401dc56a", size = 636577, upload-time = "2026-07-08T15:54:08.967Z" },
 ]
 
 [[package]]
@@ -2004,7 +2004,7 @@ requires-dist = [
     { name = "idna", specifier = ">=3.15" },
     { name = "itsdangerous" },
     { name = "jinja2" },
-    { name = "langfuse", specifier = ">=4.13.0,<5" },
+    { name = "langfuse", specifier = ">=4.13.2,<5" },
     { name = "mako", specifier = ">=1.3.12" },
     { name = "msgpack", specifier = ">=1.2.1" },
     { name = "pip", marker = "extra == 'dev'", specifier = ">=26.1.2" },
