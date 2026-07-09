@@ -54,6 +54,7 @@ function seededForm(overrides: Partial<TripEditForm> = {}): TripEditForm {
     origin: 'SFO',
     destination: 'OGG',
     departDate: '2026-09-10',
+    isRoundTrip: true,
     returnDate: '2026-09-17',
     adults: '2',
     flightEnabled: true,
@@ -155,6 +156,12 @@ test('normalization: trims + uppercases codes, clamps adults to 1–9, blank ret
   assert.equal(body.return_date, null);
   assert.equal(buildTripUpdate(makeTrip(), seededForm({ adults: '' })).adults, 1);
   assert.equal(buildTripUpdate(makeTrip(), seededForm({ adults: '0' })).adults, 1);
+});
+
+test('the round-trip toggle wins over a lingering return date', () => {
+  const body = buildTripUpdate(makeTrip(), seededForm({ isRoundTrip: false, returnDate: '2026-09-17' }));
+  assert.equal(body.is_round_trip, false);
+  assert.equal(body.return_date, null);
 });
 
 test('seedThreshold: blank for notify-on-every-refresh or missing prefs, numeric otherwise', () => {
