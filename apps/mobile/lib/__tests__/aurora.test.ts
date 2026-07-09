@@ -26,6 +26,7 @@ import {
   flightDisplayLabel,
   segmentMetaLabel,
   durationLabel,
+  airlineLogoUrl,
   yAxisTicks,
   type FlightSegment,
   type Selection,
@@ -507,6 +508,16 @@ test('initialFetchPollBudgetMs: floor for missing or unparseable created_at', ()
   assert.equal(initialFetchPollBudgetMs(undefined, now), INITIAL_FETCH_POLL_MIN_MS);
   assert.equal(initialFetchPollBudgetMs({ created_at: 'garbage' }, now), INITIAL_FETCH_POLL_MIN_MS);
   assert.equal(initialFetchPollBudgetMs({}, now), INITIAL_FETCH_POLL_MIN_MS);
+});
+
+test('airlineLogoUrl maps corpus carriers to the Kiwi CDN and gates unknown codes', () => {
+  assert.equal(airlineLogoUrl('AS'), 'https://images.kiwi.com/airlines/64x64/AS.png');
+  assert.equal(airlineLogoUrl(' ua '), 'https://images.kiwi.com/airlines/64x64/UA.png');
+  // Not in the corpus: the CDN would 200 a generic placeholder, so no URL.
+  assert.equal(airlineLogoUrl('ZZ'), null);
+  assert.equal(airlineLogoUrl(''), null);
+  assert.equal(airlineLogoUrl(null), null);
+  assert.equal(airlineLogoUrl(undefined), null);
 });
 
 test('durationLabel formats hours + minutes and hides unknown durations', () => {
