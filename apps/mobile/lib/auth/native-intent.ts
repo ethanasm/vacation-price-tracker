@@ -27,3 +27,18 @@ export function isOAuthRedirectPath(path: string): boolean {
     .split(/[/?#]/, 1)[0];
   return firstSegment.toLowerCase() === 'oauthredirect';
 }
+
+/**
+ * The full redirectSystemPath mapping: OAuth callback → root, everything else
+ * passes through untouched. A throw inside redirectSystemPath can crash the
+ * app during deep-link handling (per the Expo Router docs), so any unexpected
+ * failure — e.g. a non-string smuggled in at runtime — falls back to
+ * passthrough instead of propagating.
+ */
+export function rewriteNativeIntentPath(path: string): string {
+  try {
+    return isOAuthRedirectPath(path) ? '/' : path;
+  } catch {
+    return path;
+  }
+}

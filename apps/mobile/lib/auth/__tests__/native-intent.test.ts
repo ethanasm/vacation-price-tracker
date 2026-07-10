@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isOAuthRedirectPath } from '../native-intent';
+import { isOAuthRedirectPath, rewriteNativeIntentPath } from '../native-intent';
 
 test('matches the app-scheme callback URL Android delivers', () => {
   // Exact shape from the "Unmatched Route" screen: two slashes, query string.
@@ -32,6 +32,20 @@ test('ignores real routes and near-misses', () => {
   assert.ok(!isOAuthRedirectPath(''));
 });
 
+test('rewrites the OAuth callback to the root route and passes real routes through', () => {
+  assert.equal(rewriteNativeIntentPath('vpt://oauthredirect?state=x&code=y'), '/');
+  assert.equal(rewriteNativeIntentPath('/oauthredirect?state=x'), '/');
+  assert.equal(rewriteNativeIntentPath('/trip/123'), '/trip/123');
+  assert.equal(rewriteNativeIntentPath('/'), '/');
+});
+
+test('never throws — falls back to passthrough on unexpected input', () => {
+  // A throw inside redirectSystemPath can crash the app during deep-link
+  // handling; a runtime non-string must degrade to passthrough, not propagate.
+  const bogus = undefined as unknown as string;
+  assert.equal(rewriteNativeIntentPath(bogus), bogus);
+});
+
 test('app/+native-intent.tsx routes the callback through this helper', () => {
   // The route file itself sits outside the lib coverage gate; pin its
   // load-bearing pieces so a refactor that drops the rewrite fails here.
@@ -39,6 +53,6 @@ test('app/+native-intent.tsx routes the callback through this helper', () => {
     new URL('../../../app/+native-intent.tsx', import.meta.url),
     'utf8',
   );
-  assert.ok(nativeIntent.includes('isOAuthRedirectPath'));
+  assert.ok(nativeIntent.includes('rewriteNativeIntentPath'));
   assert.ok(nativeIntent.includes('redirectSystemPath'));
 });

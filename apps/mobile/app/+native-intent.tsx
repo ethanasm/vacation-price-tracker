@@ -6,8 +6,8 @@
  * the router shows "Unmatched Route" over the completing sign-in. Send it to
  * the root instead; the auth gate takes over from there.
  */
-import { isOAuthRedirectPath } from '@/lib/auth/native-intent';
+import { rewriteNativeIntentPath } from '@/lib/auth/native-intent';
 
 export function redirectSystemPath({ path }: { path: string; initial: boolean }): string {
-  return isOAuthRedirectPath(path) ? '/' : path;
+  return rewriteNativeIntentPath(path);
 }
