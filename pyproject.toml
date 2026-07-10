@@ -44,7 +44,7 @@ dev = [
     "pip-audit",
     # Pinned for known CVEs flagged by the pip-audit step
     "pip>=26.1.2",
-    "pydevd-pycharm~=262.8665.97",
+    "pydevd-pycharm~=262.8665.186",
     "croniter>=6.2.3",
 ]
 
