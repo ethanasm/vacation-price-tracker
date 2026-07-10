@@ -172,6 +172,15 @@ and parsed by `parse_flight_segments()` in `clients/skiplagged_parser.py` (split
 hidden-city marker, split carrier letters from flight-number digits). Schema models
 `FlightSegment` / `FlightItinerary` live in `schemas/trip.py`.
 
+**Normalize provider quirks at the source.** `flight_number` is contractually
+the full carrier-prefixed designator (`"AS3361"`) on every provider path:
+Skiplagged ids parse into `f"{code}{num}"`, and Kiwi values pass through
+`_flight_designator()` in `routers/trips.py`, which prefixes a bare number
+with the segment carrier. Any other provider-specific metadata difference
+gets the same treatment — normalize (or gate by provider) in the mapping
+layer so web/mobile render `/v1/*` fields as-is and never re-derive them
+(e.g. never `carrier_code + flight_number`, which double-prefixes).
+
 ## LLM (Groq) & MCP tools
 
 - Chat uses Groq (`groq_model` default `openai/gpt-oss-120b`) via `clients/groq.py`.

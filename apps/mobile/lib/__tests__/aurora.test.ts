@@ -24,7 +24,11 @@ import {
   flightStableKey,
   hotelStableKey,
   flightDisplayLabel,
+  segmentMetaLabel,
+  durationLabel,
+  airlineLogoUrl,
   yAxisTicks,
+  type FlightSegment,
   type Selection,
   type FlightOffer,
   type HotelOffer,
@@ -504,4 +508,44 @@ test('initialFetchPollBudgetMs: floor for missing or unparseable created_at', ()
   assert.equal(initialFetchPollBudgetMs(undefined, now), INITIAL_FETCH_POLL_MIN_MS);
   assert.equal(initialFetchPollBudgetMs({ created_at: 'garbage' }, now), INITIAL_FETCH_POLL_MIN_MS);
   assert.equal(initialFetchPollBudgetMs({}, now), INITIAL_FETCH_POLL_MIN_MS);
+});
+
+test('airlineLogoUrl maps corpus carriers to the Kiwi CDN and gates unknown codes', () => {
+  assert.equal(airlineLogoUrl('AS'), 'https://images.kiwi.com/airlines/64x64/AS.png');
+  assert.equal(airlineLogoUrl(' ua '), 'https://images.kiwi.com/airlines/64x64/UA.png');
+  // Not in the corpus: the CDN would 200 a generic placeholder, so no URL.
+  assert.equal(airlineLogoUrl('ZZ'), null);
+  assert.equal(airlineLogoUrl(''), null);
+  assert.equal(airlineLogoUrl(null), null);
+  assert.equal(airlineLogoUrl(undefined), null);
+});
+
+test('durationLabel formats hours + minutes and hides unknown durations', () => {
+  assert.equal(durationLabel(99), '1h 39m');
+  assert.equal(durationLabel(120), '2h');
+  assert.equal(durationLabel(45), '45m');
+  assert.equal(durationLabel(0), '');
+  assert.equal(durationLabel(null), '');
+  assert.equal(durationLabel(undefined), '');
+});
+
+test('segmentMetaLabel uses flight_number as-is — never carrier_code + flight_number', () => {
+  const seg = {
+    carrier_code: 'AS',
+    flight_number: 'AS3361', // designator arrives carrier-prefixed from the API
+    duration_minutes: 99,
+  } as FlightSegment;
+  assert.equal(segmentMetaLabel(seg), '1h 39m · AS3361'); // NOT "1h 39m · AS AS3361"
+});
+
+test('segmentMetaLabel falls back to the carrier code and drops empty parts', () => {
+  assert.equal(
+    segmentMetaLabel({ carrier_code: 'ua', flight_number: null, duration_minutes: 95 } as FlightSegment),
+    '1h 35m · UA',
+  );
+  assert.equal(
+    segmentMetaLabel({ carrier_code: 'AS', flight_number: 'AS3360' } as FlightSegment),
+    'AS3360',
+  );
+  assert.equal(segmentMetaLabel({} as FlightSegment), '');
 });

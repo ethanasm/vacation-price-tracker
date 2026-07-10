@@ -71,6 +71,17 @@ a public endpoint, no API key, no documented rate limit
 
 Client details: [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md).
 
+**Provider-specific metadata is normalized at the source.** Offer/segment
+metadata (flight numbers, carrier fields, durations, timestamps) can differ in
+shape between providers. Fix those differences in the API's provider mapping
+layer (`apps/api/app/routers/trips.py` parsers + the clients) — or gate the
+handling by provider there when normalization isn't possible — so `/v1/*`
+schemas present ONE provider-agnostic contract. Never patch around a provider
+quirk in the web/mobile UI: clients render fields as-is. Canonical example:
+`FlightSegment.flight_number` is always the full carrier-prefixed designator
+(`"AS3361"`); clients must not concatenate `carrier_code` with it (that
+renders "AS AS3361").
+
 A 24-hour Redis cache for identical route/date queries stays in place as a courtesy
 and for performance. `MOCK_SKIPLAGGED_API=true` returns mock data in dev (takes
 precedence over the provider flag).

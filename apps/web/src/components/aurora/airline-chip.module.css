@@ -4,4 +4,6 @@
   width: 28px; height: 28px; border-radius: 8px;
   color: #fff; font-weight: 800; font-size: 11px; letter-spacing: .02em;
 }
+.logoChip { background: #fff; border: 1px solid rgba(15, 15, 35, 0.12); }
+.logoChip img { width: 22px; height: 22px; object-fit: contain; }
 .behind { margin-right: -10px; box-shadow: 0 0 0 2px #fff; }

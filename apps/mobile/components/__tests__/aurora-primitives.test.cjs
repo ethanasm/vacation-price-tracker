@@ -30,15 +30,31 @@ describe('StatusChip', () => {
 });
 
 describe('AirlineChipPair', () => {
-  it('renders two monogram chips for a multi-carrier flight', () => {
+  it('renders two logo chips for a multi-carrier flight', () => {
     const r = render(React.createElement(AirlineChipPair, { codes: ['UA', 'AS'] }));
-    const labels = texts(r);
-    assert.ok(labels.includes('UA'));
-    assert.ok(labels.includes('AS'));
+    const uris = r.root.findAllByType('rn-image').map((n) => n.props.source?.uri);
+    assert.deepEqual(uris, [
+      'https://images.kiwi.com/airlines/64x64/UA.png',
+      'https://images.kiwi.com/airlines/64x64/AS.png',
+    ]);
   });
-  it('AirlineChip renders one monogram', () => {
+  it('AirlineChip renders the corpus carrier logo', () => {
     const r = render(React.createElement(AirlineChip, { code: 'DL' }));
+    const imgs = r.root.findAllByType('rn-image');
+    assert.equal(imgs.length, 1);
+    assert.equal(imgs[0].props.source.uri, 'https://images.kiwi.com/airlines/64x64/DL.png');
+  });
+  it('AirlineChip falls back to the monogram when the logo image errors', () => {
+    const r = render(React.createElement(AirlineChip, { code: 'DL' }));
+    const img = r.root.findAllByType('rn-image')[0];
+    TestRenderer.act(() => img.props.onError());
+    assert.equal(r.root.findAllByType('rn-image').length, 0);
     assert.ok(texts(r).includes('DL'));
+  });
+  it('AirlineChip renders the monogram for a carrier outside the logo corpus', () => {
+    const r = render(React.createElement(AirlineChip, { code: 'ZZ' }));
+    assert.equal(r.root.findAllByType('rn-image').length, 0);
+    assert.ok(texts(r).includes('ZZ'));
   });
 });
 

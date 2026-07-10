@@ -1,5 +1,6 @@
 import {
   airlineChip,
+  airlineLogoUrl,
   operatingCarriers,
   multiCarrierSubtitle,
   stopsBadge,
@@ -35,6 +36,19 @@ describe("airlineChip", () => {
   it("falls back to two-letter initials + violet gradient", () => {
     expect(airlineChip("b6")).toEqual({ initials: "B6", gradient: "linear-gradient(135deg,#A78BFA,#7C3AED)" });
     expect(airlineChip(null).initials).toBe("--");
+  });
+});
+
+describe("airlineLogoUrl", () => {
+  it("maps corpus carriers to the Kiwi CDN square logo", () => {
+    expect(airlineLogoUrl("AS")).toBe("https://images.kiwi.com/airlines/64x64/AS.png");
+    expect(airlineLogoUrl(" ua ")).toBe("https://images.kiwi.com/airlines/64x64/UA.png");
+  });
+  it("returns null outside the corpus (the CDN 200s a placeholder for unknown codes)", () => {
+    expect(airlineLogoUrl("ZZ")).toBeNull();
+    expect(airlineLogoUrl("")).toBeNull();
+    expect(airlineLogoUrl(null)).toBeNull();
+    expect(airlineLogoUrl(undefined)).toBeNull();
   });
 });
 

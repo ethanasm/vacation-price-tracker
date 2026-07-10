@@ -218,6 +218,27 @@ def _opt_str(value: object) -> str | None:
     return None if value is None else str(value)
 
 
+def _flight_designator(carrier: object, number: object) -> str | None:
+    """Normalize a provider flight number to the full designator ("AS3361").
+
+    `flight_number` is contractually the carrier-prefixed designator on every
+    provider path: Skiplagged ids parse into f"{code}{num}", and Kiwi usually
+    sends "AS3361" but has been observed sending a bare number. Provider
+    quirks are normalized here at the source so clients render flight_number
+    as-is and never concatenate carrier_code themselves (which double-prefixes
+    to "AS AS3361"). A bare number is only prefixed when the carrier looks
+    like a real IATA designator (2-3 chars, at least one letter).
+    """
+    num = (_opt_str(number) or "").strip()
+    if not num:
+        return None
+    code = (_opt_str(carrier) or "").strip().upper()
+    looks_iata = 2 <= len(code) <= 3 and any(ch.isalpha() for ch in code)
+    if num[0].isdigit() and looks_iata:
+        return f"{code}{num}"
+    return num
+
+
 def _parse_kiwi_itinerary(direction: str, leg: dict) -> FlightItinerary:
     """Build a FlightItinerary from a Kiwi structured leg (outbound/inbound).
 
@@ -231,7 +252,7 @@ def _parse_kiwi_itinerary(direction: str, leg: dict) -> FlightItinerary:
         duration_seconds = seg.get("durationSeconds")
         segments.append(FlightSegment(
             carrier_code=_opt_str(seg.get("carrier")),
-            flight_number=_opt_str(seg.get("flightNumber")),
+            flight_number=_flight_designator(seg.get("carrier"), seg.get("flightNumber")),
             departure_airport=_opt_str(seg.get("from")),
             arrival_airport=_opt_str(seg.get("to")),
             departure_time=_opt_str(seg.get("departureTime")),
@@ -277,7 +298,7 @@ def _parse_kiwi_flight_offer(item: dict, index: int) -> FlightOffer | None:
         in_first = in_segments[0] if isinstance(in_segments, list) and in_segments and isinstance(in_segments[0], dict) else {}
         in_duration = inbound.get("durationSeconds")
         return_flight_payload = {
-            "flight_number": _opt_str(in_first.get("flightNumber")),
+            "flight_number": _flight_designator(in_first.get("carrier"), in_first.get("flightNumber")),
             "departure_time": _opt_str(inbound.get("departureTime")),
             "arrival_time": _opt_str(inbound.get("arrivalTime")),
             "duration_minutes": int(in_duration) // 60
@@ -290,7 +311,10 @@ def _parse_kiwi_flight_offer(item: dict, index: int) -> FlightOffer | None:
     return FlightOffer(
         id=str(item.get("id") or index),
         airline_code=carrier_code,
-        flight_number=_opt_str(first_seg.get("flightNumber") or item.get("flight_number")),
+        flight_number=_flight_designator(
+            first_seg.get("carrier") or carrier_code,
+            first_seg.get("flightNumber") or item.get("flight_number"),
+        ),
         airline_name=_opt_str(item.get("airlines")) or airline_display_name(carrier_code),
         price=price,
         departure_time=_opt_str(item.get("departure_time") or outbound.get("departureTime")),
