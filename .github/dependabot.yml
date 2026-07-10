@@ -96,6 +96,13 @@ updates:
       # releases.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 is the Go-native compiler rewrite: ts-node (which jest
+      # uses to load jest.config.ts) crashes on it and Next.js 16 refuses to
+      # build ("Please install typescript") — both broke on the 6.0.3 → 7.0.2
+      # bump in PR #118. Re-enable the major once ts-node and Next.js support
+      # TS 7 (or after migrating jest.config.ts off ts-node).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # ---- Python: root uv project (apps/api FastAPI + apps/worker Temporal) ----
   - package-ecosystem: "uv"
