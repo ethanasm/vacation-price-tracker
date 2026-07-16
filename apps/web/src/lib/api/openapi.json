@@ -1910,6 +1910,11 @@
             },
             "type": "array",
             "title": "Itineraries"
+          },
+          "round_trip_total": {
+            "type": "boolean",
+            "title": "Round Trip Total",
+            "default": false
           }
         },
         "type": "object",

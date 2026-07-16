@@ -418,6 +418,7 @@ def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
         stops=item.get("stops") if isinstance(item.get("stops"), int) else itinerary.stops,
         return_flight=None,
         itineraries=[itinerary] if itinerary.segments else [],
+        round_trip_total=bool(item.get("round_trip_total")),
     )
 
 

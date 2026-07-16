@@ -145,7 +145,9 @@ class FastFlightsClient:
         )
 
     @observe(name="fast_flights.query")
-    async def _fetch(self, query: Any, route_label: str) -> list[FlightSearchFlight]:
+    async def _fetch(
+        self, query: Any, route_label: str, is_round_trip: bool
+    ) -> list[FlightSearchFlight]:
         """Run one Google Flights query, normalizing results.
 
         Returns the normalized flights; an empty list when Google reports no
@@ -190,7 +192,7 @@ class FastFlightsClient:
                 # blocks are intermittent and usually recover on retry.
                 last_error = exc
                 continue
-            flights = self._normalize_results(result)
+            flights = self._normalize_results(result, is_round_trip)
             langfuse_context.update_current_observation(output={"count": len(flights)})
             return flights
 
@@ -249,7 +251,7 @@ class FastFlightsClient:
             query = self._build_query(
                 origin, destination, departure_date, return_date, adults, max_stops, cabin
             )
-            flights = await self._fetch(query, route_label)
+            flights = await self._fetch(query, route_label, return_date is not None)
         except (FastFlightsError, GlobalBudgetExceeded):
             raise
         except Exception as e:
@@ -324,11 +326,13 @@ class FastFlightsClient:
     # Response normalization
     # -------------------------------------------------------------------------
 
-    def _normalize_results(self, result: Any) -> list[FlightSearchFlight]:
+    def _normalize_results(
+        self, result: Any, is_round_trip: bool
+    ) -> list[FlightSearchFlight]:
         code_to_name, name_to_code = _airline_maps(result)
         flights: list[FlightSearchFlight] = []
         for item in result:
-            flight = self._normalize_flight(item, code_to_name, name_to_code)
+            flight = self._normalize_flight(item, code_to_name, name_to_code, is_round_trip)
             if flight is not None:
                 flights.append(flight)
         return flights
@@ -338,13 +342,17 @@ class FastFlightsClient:
         item: Any,
         code_to_name: dict[str, str],
         name_to_code: dict[str, str],
+        is_round_trip: bool,
     ) -> FlightSearchFlight | None:
         """Normalize one fast-flights ``Flights`` itinerary.
 
         For round trips the itinerary describes the **outbound** leg and the
         price is the round-trip total (matching the other providers'
-        normalizers). Structured segments ride along in ``raw_data`` for
-        downstream itinerary building and airline filtering.
+        normalizers); Google's query protobuf has no selected-flight token, so
+        the paired return legs cannot be fetched — ``round_trip_total`` marks
+        the offer so clients can say the return is included but not itemized.
+        Structured segments ride along in ``raw_data`` for downstream
+        itinerary building and airline filtering.
         """
         try:
             price_amount = Decimal(str(item.price))
@@ -396,6 +404,9 @@ class FastFlightsClient:
             "segments": raw_segments,
             "stops": stops,
             "duration_minutes": duration_minutes,
+            # Round-trip searches list outbound options priced at the
+            # round-trip total; the return leg is not itemized (see docstring).
+            "round_trip_total": is_round_trip,
         }
 
         return FlightSearchFlight(

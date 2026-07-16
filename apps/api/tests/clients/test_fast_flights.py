@@ -146,6 +146,7 @@ class TestSearchFlights:
         assert flight.arrival_time.isoformat() == "2026-09-15T10:05:00"
         raw = flight.raw_data
         assert raw["provider"] == "fast_flights"
+        assert raw["round_trip_total"] is False  # one-way search
         assert raw["carrier_codes"] == ["AS"]
         assert raw["airline_names"] == ["Alaska Airlines"]
         assert raw["segments"][0]["carrier"] == "AS"
@@ -233,6 +234,9 @@ class TestSearchFlights:
             )
         assert result.is_round_trip is True
         assert result.return_date == "2026-09-22"
+        # Round-trip searches list outbound options at the round-trip total;
+        # the marker lets downstream layers say the return is included.
+        assert result.flights[0].raw_data["round_trip_total"] is True
 
     @pytest.mark.asyncio
     async def test_invalid_passenger_count_degrades_to_failed_result(self):

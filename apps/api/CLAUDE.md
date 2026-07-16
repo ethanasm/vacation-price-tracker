@@ -177,7 +177,10 @@ the other clients (`search_flights` / `search_flights_all`,
 provider="fast_flights", `fast_flights_calls` budget metric sharing the same
 ceiling). Provider quirks normalized at the source: one ranked page per query
 (no pagination — `search_flights_all` is a single query), round-trip searches
-list **outbound** options priced at the round-trip total, structured segments
+list **outbound** options priced at the round-trip total (Google's query
+protobuf has no selected-flight token, so paired return legs can't be fetched —
+such offers carry `FlightOffer.round_trip_total=true` and clients render
+"return included in price" instead of a return itinerary), structured segments
 (airports/times/durations) but **no flight numbers**, and airline identity at
 itinerary level only (resolved to IATA codes via the page's own code↔name
 metadata). The sync library runs in a worker thread; transient scrape failures

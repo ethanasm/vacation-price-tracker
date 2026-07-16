@@ -2368,6 +2368,84 @@ describe("TripDetailPage", () => {
       expect(screen.getByText("Delta")).toBeInTheDocument();
     });
 
+    it("says the return is included for round-trip totals without an itemized return", async () => {
+      const user = userEvent.setup({ delay: null });
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, hotel_prefs: null },
+          price_history: [
+            {
+              id: "ph-ff",
+              flight_price: "1585.00",
+              hotel_price: null,
+              total_price: "1585.00",
+              created_at: "2026-07-16T10:30:00Z",
+              provider: "fast_flights",
+              flight_offers: [
+                {
+                  id: "0",
+                  airline_code: "AS",
+                  airline_name: "Alaska",
+                  price: "1585.00",
+                  departure_time: "2026-12-11T08:23:00",
+                  arrival_time: "2026-12-11T11:48:00",
+                  duration_minutes: 325,
+                  stops: 0,
+                  round_trip_total: true,
+                  itineraries: [
+                    {
+                      direction: "outbound",
+                      stops: 0,
+                      segments: [
+                        {
+                          carrier_code: "AS",
+                          flight_number: null,
+                          departure_airport: "SFO",
+                          arrival_airport: "OGG",
+                          departure_time: "2026-12-11T08:23:00",
+                          arrival_time: "2026-12-11T11:48:00",
+                          duration_minutes: 325,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Flights")).toBeInTheDocument();
+      });
+
+      // Collapsed header: the return row says the price already covers it.
+      expect(screen.getByText("Included in price")).toBeInTheDocument();
+
+      // Expanding shows the explanatory RETURN note instead of silence.
+      await user.click(screen.getAllByRole("radio")[0]);
+      await waitFor(() => {
+        expect(screen.getByTestId("return-included-note")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/included in the round-trip price/i)
+      ).toBeInTheDocument();
+    });
+
+    it("shows no return-included row for offers with an itemized return or one-ways", async () => {
+      const user = userEvent.setup({ delay: null });
+      await renderSortFixture();
+
+      // The sort fixture's offers are one-way/itemized shapes — no note anywhere.
+      expect(screen.queryByText("Included in price")).not.toBeInTheDocument();
+      await user.click(screen.getAllByRole("radio")[0]);
+      expect(screen.queryByTestId("return-included-note")).not.toBeInTheDocument();
+    });
+
     it("updates the selected flight when a radio row is clicked", async () => {
       const user = userEvent.setup({ delay: null });
       await renderSortFixture();

@@ -771,6 +771,20 @@
   flex-shrink: 0;
 }
 
+/* "Included in price" text where return times would go (round-trip totals
+   whose return leg the provider doesn't itemize). */
+.headerReturnIncluded {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.returnIncludedNote {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
 .directBadge {
   display: inline-flex;
   align-items: center;

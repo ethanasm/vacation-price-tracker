@@ -1877,6 +1877,7 @@ def _fast_flights_offer(**overrides):
         "price": 187,
         "price_currency": "USD",
         "type": "best",
+        "round_trip_total": True,
         "segments": [
             {
                 "carrier": "AS",
@@ -1916,6 +1917,8 @@ def test_parse_fast_flights_offer_builds_itinerary():
     assert offer.duration_minutes == 645
     assert offer.stops == 1
     assert offer.return_flight is None
+    # Price covers the round trip; Google doesn't itemize the return leg.
+    assert offer.round_trip_total is True
 
     assert [it.direction for it in offer.itineraries] == ["outbound"]
     itinerary = offer.itineraries[0]
@@ -1952,6 +1955,14 @@ def test_parse_fast_flights_offer_unpriced_returns_none():
     assert trips_module._parse_flight_offer(_fast_flights_offer(price=None), 0, {}) is None
 
 
+def test_parse_fast_flights_offer_one_way_is_not_round_trip_total():
+    offer = trips_module._parse_flight_offer(
+        _fast_flights_offer(round_trip_total=False), 0, {}
+    )
+    assert offer is not None
+    assert offer.round_trip_total is False
+
+
 def test_parse_fast_flights_offer_degenerate_shapes():
     # No segments at all: parses (price present) with empty itineraries.
     offer = trips_module._parse_flight_offer(
@@ -1961,6 +1972,8 @@ def test_parse_fast_flights_offer_degenerate_shapes():
     assert offer.itineraries == []
     assert offer.airline_code is None
     assert offer.stops == 0
+    # Legacy stored offers without the marker default to False.
+    assert offer.round_trip_total is False
     # Malformed segment entries are skipped; totals fall back gracefully.
     bad = _fast_flights_offer(duration_minutes=None, stops=None)
     bad["segments"] = ["junk", {"carrier": "AS", "from": "SFO", "to": "JFK"}]
