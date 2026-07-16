@@ -104,46 +104,22 @@ To prevent duplicate state changes in a distributed environment:
 - **Refresh Locking**: The `refresh-all` endpoint checks `meta.refreshing` status. If a refresh is already in progress for a user, subsequent calls return the existing `refresh_group_id` rather than spawning a new Temporal workflow.
 - **Database Constraints**: A unique composite index on `(user_id, trip_name)` prevents duplicate trip creation during intermittent network retries.
 
-## 5. External MCP Tools (Pre-Built)
+## 5. Custom MCP Tools (We Build)
 
-These tools are provided by existing open-source MCP servers and **do not require custom development**:
-
-### Kiwi MCP Server (Flights)
-| Tool | Description | Example |
-|:-----|:------------|:--------|
-| `search-flight` | Search flights between locations | `search-flight({flyFrom: "SFO", flyTo: "MCO", departureDate: "15/02/2026"})` |
-
-### Amadeus MCP Server (Hotels)
-| Tool | Description | Example |
-|:-----|:------------|:--------|
-| `amadeus_hotel_list` | Search hotels in a city | `amadeus_hotel_list({cityCode: "MCO", ratings: [4, 5]})` |
-| `amadeus_hotel_search` | Get hotel offers with pricing | `amadeus_hotel_search({cityCode: "MCO", checkInDate: "2026-02-08", checkOutDate: "2026-02-15", adults: 2})` |
-| `amadeus_hotel_offer` | Get specific offer details | `amadeus_hotel_offer({offerId: "XYZ123"})` |
-| `amadeus_hotel_booking` | Book a hotel (optional) | See Amadeus MCP docs |
-
-**Source**: [github.com/soren-olympus/amadeus-mcp](https://github.com/soren-olympus/amadeus-mcp)
-
-## 6. Custom MCP Tools (We Build)
-
-Since flights and hotels are handled by external MCP servers, our custom tools are limited to **trip management**:
+Since flight and hotel search are handled by the external provider MCPs (see "Data Provider Strategy" in `CLAUDE.md`), our custom tools are limited to **trip management**:
 
 | Tool Name | Parameters | AI Instruction |
 |:----------|:-----------|:---------------|
-| `create_trip` | `TripCreate` object | Use when user expresses intent to "track" or "watch" a route. Calls Kiwi + Amadeus MCP internally. |
+| `create_trip` | `TripCreate` object | Use when user expresses intent to "track" or "watch" a route. Kicks off a price fetch via the active flight/hotel providers. |
 | `list_trips` | None | Use to show the user what they are currently tracking. |
 | `get_trip_details` | `trip_id` | Get full price history and current offers for a specific trip. |
 | `set_notification` | `trip_id`, `threshold` | Update price alert settings for a specific trip. |
 | `pause_trip` | `trip_id` | Pause tracking for a trip. |
 | `trigger_refresh` | None | Force a check of current prices across all active trips. |
 
-## 7. Phase 4: SearchAPI Integration (Flexible Date Optimizer)
+## 6. Phase 4: SearchAPI Integration (Flexible Date Optimizer)
 
-For the date optimizer feature, we use **SearchAPI Google Hotels** to survey price ranges across multiple dates efficiently.
-
-### Why SearchAPI for Phase 4?
-- **Amadeus Limitation**: Free tier (2,000 calls/month) is insufficient for surveying 90+ date combinations.
-- **SearchAPI Advantage**: $40/month for 10,000 searches; better for bulk date-range queries.
-- **Room Data**: Returns property-level pricing with amenities, sufficient for date comparison.
+For the date optimizer feature, we use **SearchAPI Google Hotels** to survey price ranges across multiple dates efficiently. (The provider-selection rationale lives in the knowledge vault: `brain/projects/vacation-price-tracker/research/flight-data-providers.md`.)
 
 ### Optimizer Endpoint
 ```

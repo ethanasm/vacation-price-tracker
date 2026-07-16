@@ -1,7 +1,8 @@
 # Mobile CI/CD — one-time setup
 
 This is the operator runbook for the mobile pipeline added in plan P4
-(`docs/superpowers/plans/2026-06-23-mobile-cicd.md`). The two workflows are
+(now in the knowledge vault:
+`brain/projects/vacation-price-tracker/plans/2026-06-23-mobile-cicd.md`). The two workflows are
 `mobile-deploy.yml` (EAS OTA + gated store release) and `mobile.yml`
 (lint / typecheck / test + audit, plus the self-hosted Android Maestro **E2E
 Test** job). None of this runs until the prerequisites below are provisioned.

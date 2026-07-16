@@ -248,7 +248,8 @@ curl -sS -X POST "https://api.axiom.co/v1/datasets/_apl?format=tabular" \
 - **Phase 3:** Daily scheduled tracking, email notifications, pause/unpause.
 - **Phase 4:** Flexible date optimizer using SearchAPI.
 
-See `docs/PROJECT_PLAN.md` for detailed checklists.
+Detailed phase checklists live in the knowledge vault
+(`brain/projects/vacation-price-tracker/plans/project-plan.md`).
 
 ## Important Constraints
 
