@@ -155,6 +155,9 @@ class TestSearchFlights:
 
     @pytest.mark.asyncio
     async def test_connecting_flight_builds_layovers(self):
+        # Times are LOCAL (DEN->JFK arrival is EDT), so the naive endpoint
+        # diff (08:00 -> 18:45 = 645) overstates the trip; the total must be
+        # segment flight minutes + layover minutes instead.
         segments = [
             _segment("SFO", "DEN", ((2026, 9, 15), (8, 0)), ((2026, 9, 15), (11, 30)), 210),
             _segment("DEN", "JFK", ((2026, 9, 15), (13, 0)), ((2026, 9, 15), (18, 45)), 225),
@@ -167,13 +170,25 @@ class TestSearchFlights:
         assert flight.arrival_airport == "JFK"
         assert flight.stops == 1
         assert flight.stops_text == "1 stop"
-        # Endpoint-to-endpoint duration: 08:00 -> 18:45
-        assert flight.duration_minutes == 645
+        # 210 + 225 flight minutes + 90 layover minutes (11:30 -> 13:00 at DEN)
+        assert flight.duration_minutes == 525
         assert len(flight.layovers) == 1
         layover = flight.layovers[0]
         assert layover.airport == "DEN"
         assert layover.duration_minutes == 90
         assert len(flight.raw_data["segments"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_duration_falls_back_to_endpoint_diff_when_segment_minutes_missing(self):
+        segments = [
+            _segment("SFO", "DEN", ((2026, 9, 15), (8, 0)), ((2026, 9, 15), (11, 30)), None),
+            _segment("DEN", "JFK", ((2026, 9, 15), (13, 0)), ((2026, 9, 15), (18, 45)), 225),
+        ]
+        with _patch_get_flights(return_value=_result([_itinerary(segments=segments)])):
+            result = await _client().search_flights("SFO", "JFK", "2026-09-15")
+
+        # Missing per-segment minutes -> naive endpoint diff (08:00 -> 18:45)
+        assert result.flights[0].duration_minutes == 645
 
     @pytest.mark.asyncio
     async def test_mixed_airline_itinerary_has_no_segment_carrier(self):
@@ -218,6 +233,17 @@ class TestSearchFlights:
             )
         assert result.is_round_trip is True
         assert result.return_date == "2026-09-22"
+
+    @pytest.mark.asyncio
+    async def test_invalid_passenger_count_degrades_to_failed_result(self):
+        # The fast-flights protobuf layer asserts <= 9 passengers; a bad input
+        # must come back as success=False, never an unhandled exception.
+        with _patch_get_flights(return_value=_result([_itinerary()])) as mock_get:
+            result = await _client().search_flights("SFO", "LAX", "2026-09-15", adults=99)
+        assert result.success is False
+        assert result.error
+        assert result.flights == []
+        mock_get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_flights_not_found_is_empty_success(self):

@@ -91,6 +91,9 @@ def downgrade() -> None:
                 WHERE name = 'flight_provider' AND value = 'kiwi'
             ),
             now()
+        WHERE NOT EXISTS (
+            SELECT 1 FROM feature_flags WHERE name = 'kiwi_flights'
+        )
         """
     )
     op.drop_table("app_settings")

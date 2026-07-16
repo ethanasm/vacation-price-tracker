@@ -242,14 +242,17 @@ class FastFlightsClient:
             FlightSearchResult with normalized flight data (provider="fast_flights").
         """
         route_label = f"{origin.upper()}-{destination.upper()} {departure_date}"
-        query = self._build_query(
-            origin, destination, departure_date, return_date, adults, max_stops, cabin
-        )
         try:
+            # Query construction is inside the guard: bad inputs (e.g. a
+            # passenger count the protobuf layer rejects) must degrade to a
+            # failed result, not an unhandled exception.
+            query = self._build_query(
+                origin, destination, departure_date, return_date, adults, max_stops, cabin
+            )
             flights = await self._fetch(query, route_label)
         except (FastFlightsError, GlobalBudgetExceeded):
             raise
-        except Exception as e:  # pragma: no cover - defensive catch-all
+        except Exception as e:
             logger.exception(
                 "Unexpected error calling fast-flights",
                 extra={"event": "fast_flights.unexpected_error", "error": str(e)},
@@ -360,9 +363,6 @@ class FastFlightsClient:
         last = segments[-1]
         departure_time = _to_datetime(first.departure)
         arrival_time = _to_datetime(last.arrival)
-        duration_minutes = None
-        if departure_time and arrival_time and arrival_time > departure_time:
-            duration_minutes = int((arrival_time - departure_time).total_seconds()) // 60
 
         stops = max(0, len(segments) - 1)
         stops_text = "Direct" if stops == 0 else f"{stops} stop{'s' if stops > 1 else ''}"
@@ -372,6 +372,20 @@ class FastFlightsClient:
         # exposes airline identity at itinerary level).
         segment_carrier = carrier_codes[0] if len(carrier_codes) == 1 else None
         raw_segments, layovers = _build_segments(segments, segment_carrier)
+
+        # Total duration = per-segment flight minutes (Google's own values)
+        # plus layover minutes (same-airport local-time diffs, so timezone
+        # neutral). The naive endpoint arrival-departure diff is only a
+        # fallback: departure/arrival are LOCAL times, so across timezones the
+        # diff is off by the origin<->destination UTC offset.
+        duration_minutes = _total_duration_minutes(raw_segments, layovers)
+        if (
+            duration_minutes is None
+            and departure_time
+            and arrival_time
+            and arrival_time > departure_time
+        ):
+            duration_minutes = int((arrival_time - departure_time).total_seconds()) // 60
 
         raw_data: dict[str, Any] = {
             "provider": PROVIDER_NAME,
@@ -457,6 +471,23 @@ def _build_segments(
                 )
             )
     return raw_segments, layovers
+
+
+def _total_duration_minutes(
+    raw_segments: list[dict[str, Any]], layovers: list[FlightLayover]
+) -> int | None:
+    """Sum segment flight minutes + layover minutes; None if any is unknown."""
+    total = 0
+    for seg in raw_segments:
+        minutes = seg.get("durationMinutes")
+        if not isinstance(minutes, int):
+            return None
+        total += minutes
+    for layover in layovers:
+        if layover.duration_minutes is None:
+            return None
+        total += layover.duration_minutes
+    return total
 
 
 def _airline_maps(result: Any) -> tuple[dict[str, str], dict[str, str]]:

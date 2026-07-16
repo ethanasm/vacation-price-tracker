@@ -369,7 +369,11 @@ export function providersInChart(points: ChartPoint[]): string[] {
   );
   return Object.keys(PROVIDER_META)
     .filter((name) => present.has(name))
-    .concat([...present].filter((name) => !(name in PROVIDER_META)).sort());
+    .concat(
+      [...present]
+        .filter((name) => !(name in PROVIDER_META))
+        .sort((a, b) => a.localeCompare(b)),
+    );
 }
 
 export interface ChartSeriesOptions {
