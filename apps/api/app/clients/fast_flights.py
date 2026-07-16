@@ -1,33 +1,42 @@
 """fast-flights client (Google Flights scraper) for flight search.
 
-Third flight-provider option next to the Skiplagged and Kiwi MCPs, built on
-the ``fast-flights`` library (https://github.com/AWeirdDev/flights), which
-queries Google Flights with a protobuf-encoded ``tfs`` parameter and parses
-the embedded JS payload.
+Third flight-provider option next to the Skiplagged and Kiwi MCPs. Pages are
+fetched with the ``fast-flights`` library's fetcher (protobuf ``tfs`` query,
+Chrome-impersonating ``primp`` client, no API key) and parsed by our extended
+parser (``fast_flights_parser``), which reads both itinerary sections of the
+page and the per-segment carrier/flight-number identity that the upstream
+library drops.
 
 Provider characteristics, normalized here at the source (never in clients):
 
-- One page of results per query (~10-20 itineraries); no server-side
-  pagination — ``search_flights_all`` is a single query.
-- Round-trip searches list **outbound** leg options only; the price on each
-  is the full round-trip total (matching how the Skiplagged/Kiwi normalizers
-  treat round trips). There is no inbound-leg data.
-- Segments carry airports, times, and durations but **no flight numbers**;
-  airline identity is itinerary-level. ``FlightSegment.flight_number`` is
-  therefore absent on this provider's offers.
-- The library is synchronous (``primp``) — calls run in a worker thread.
+- One page of results per query (no pagination) — but the page carries two
+  sections ("best" + other departing options) and both are read; the cheapest
+  fare regularly hides outside "best".
+- Round-trip searches list **outbound** options priced at the round-trip
+  total; Google's query protobuf has no selected-flight token, so the exact
+  paired return legs cannot be fetched. Tracking searches instead run a
+  second **reverse one-way query** for the return date and attach the
+  same-airline return options to each outbound offer (``round_trip_total``
+  marks the offer so clients can qualify the pairing).
+- The library's fetcher is synchronous — calls run in a worker thread.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fast_flights import FlightQuery, FlightsNotFound, Passengers, create_query, get_flights
+from fast_flights import FlightQuery, FlightsNotFound, Passengers, create_query
+from fast_flights.fetcher import fetch_flights_html
 
+from app.clients.fast_flights_parser import (
+    ParsedItinerary,
+    ParsedPage,
+    ParsedSegment,
+    parse_flights_page,
+)
 from app.core.airlines import airline_display_name
 from app.core.config import settings
 from app.core.errors import GlobalBudgetExceeded
@@ -44,6 +53,9 @@ PROVIDER_NAME = "fast_flights"
 MAX_TRANSIENT_RETRIES = 2
 BASE_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 4.0
+
+# How many same-airline return options ride along on each round-trip offer.
+MAX_RETURN_OPTIONS = 3
 
 # Our CabinClass enum values -> fast-flights seat types.
 CABIN_CLASS_TO_SEAT = {
@@ -67,20 +79,6 @@ class FastFlightsRequestError(FastFlightsError):
 
 class FastFlightsTransientError(FastFlightsRequestError):
     """Raised for failures worth retrying (blocked/parse-failed page)."""
-
-
-def _to_datetime(simple: Any) -> datetime | None:
-    """Convert a fast-flights SimpleDatetime (date/time tuples) to datetime."""
-    try:
-        year, month, day = simple.date
-        hour, minute = simple.time
-        return datetime(int(year), int(month), int(day), int(hour), int(minute))
-    except (AttributeError, TypeError, ValueError):
-        return None
-
-
-def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
 
 
 class FastFlightsClient:
@@ -145,14 +143,12 @@ class FastFlightsClient:
         )
 
     @observe(name="fast_flights.query")
-    async def _fetch(
-        self, query: Any, route_label: str, is_round_trip: bool
-    ) -> list[FlightSearchFlight]:
-        """Run one Google Flights query, normalizing results.
+    async def _fetch_page(self, query: Any, route_label: str) -> ParsedPage:
+        """Run one Google Flights query, returning the parsed page.
 
-        Returns the normalized flights; an empty list when Google reports no
-        flights for the route/dates. Transient scrape failures (blocked or
-        unparseable page) are retried a couple of times, then raised.
+        Returns an empty page when Google reports no flights for the
+        route/dates. Transient scrape failures (blocked or unparseable page)
+        are retried a couple of times, then raised.
         """
         langfuse_context.update_current_observation(
             name="fast_flights.get_flights",
@@ -180,21 +176,23 @@ class FastFlightsClient:
                 )
                 await asyncio.sleep(delay)
             try:
-                result = await asyncio.to_thread(get_flights, query, proxy=self._proxy)
+                html = await asyncio.to_thread(fetch_flights_html, query, proxy=self._proxy)
+                page = parse_flights_page(html)
             except FlightsNotFound:
                 # Google's explicit "no flights" answer — a legitimate empty
                 # result, not a failure.
                 langfuse_context.update_current_observation(output={"count": 0})
-                return []
+                return ParsedPage()
             except Exception as exc:  # noqa: BLE001 - scraper failures come in many shapes
                 # Anything else (connection error, consent page breaking the
                 # parser, payload drift) is treated as transient: Google
                 # blocks are intermittent and usually recover on retry.
                 last_error = exc
                 continue
-            flights = self._normalize_results(result, is_round_trip)
-            langfuse_context.update_current_observation(output={"count": len(flights)})
-            return flights
+            langfuse_context.update_current_observation(
+                output={"count": len(page.itineraries)}
+            )
+            return page
 
         logger.warning(
             "fast-flights query failed after retries for %s",
@@ -222,6 +220,7 @@ class FastFlightsClient:
         limit: int = 75,
         offset: int = 0,
         cabin: str | None = None,
+        include_return_options: bool = False,
     ) -> FlightSearchResult:
         """Search for flights via Google Flights (fast-flights scraper).
 
@@ -239,11 +238,16 @@ class FastFlightsClient:
             offset: Pagination offset (client-side slice).
             cabin: CabinClass value ("economy", "premium_economy", "business",
                 "first"); mapped to Google seat types.
+            include_return_options: For round trips, run a second reverse
+                one-way query and attach same-airline return options to each
+                offer (costs one extra Google call; the tracking path enables
+                it, the chat path doesn't).
 
         Returns:
             FlightSearchResult with normalized flight data (provider="fast_flights").
         """
         route_label = f"{origin.upper()}-{destination.upper()} {departure_date}"
+        is_round_trip = return_date is not None
         try:
             # Query construction is inside the guard: bad inputs (e.g. a
             # passenger count the protobuf layer rejects) must degrade to a
@@ -251,7 +255,16 @@ class FastFlightsClient:
             query = self._build_query(
                 origin, destination, departure_date, return_date, adults, max_stops, cabin
             )
-            flights = await self._fetch(query, route_label, return_date is not None)
+            page = await self._fetch_page(query, route_label)
+            flights = [
+                flight
+                for itinerary in page.itineraries
+                if (flight := _normalize_itinerary(itinerary, page, is_round_trip)) is not None
+            ]
+            if flights and is_round_trip and include_return_options:
+                await self._attach_return_options(
+                    flights, origin, destination, return_date, adults, max_stops, cabin
+                )
         except (FastFlightsError, GlobalBudgetExceeded):
             raise
         except Exception as e:
@@ -265,7 +278,7 @@ class FastFlightsClient:
                 destination=destination.upper(),
                 departure_date=departure_date,
                 return_date=return_date,
-                is_round_trip=return_date is not None,
+                is_round_trip=is_round_trip,
                 provider=PROVIDER_NAME,
                 total_results=0,
                 currency="USD",
@@ -283,7 +296,7 @@ class FastFlightsClient:
             destination=destination.upper(),
             departure_date=departure_date,
             return_date=return_date,
-            is_round_trip=return_date is not None,
+            is_round_trip=is_round_trip,
             provider=PROVIDER_NAME,
             total_results=total_results,
             currency="USD",
@@ -307,7 +320,9 @@ class FastFlightsClient:
         """Search for flights (full set for tracking).
 
         Google Flights returns its ranked page of itineraries in one response
-        and offers no pagination, so the tracking search is a single query.
+        and offers no pagination. For round trips the tracking search also
+        fetches the reverse one-way page so each offer carries its
+        same-airline return options (two Google calls total).
         """
         return await self.search_flights(
             origin=origin,
@@ -320,223 +335,224 @@ class FastFlightsClient:
             limit=limit,
             offset=0,
             cabin=cabin,
+            include_return_options=True,
         )
 
-    # -------------------------------------------------------------------------
-    # Response normalization
-    # -------------------------------------------------------------------------
+    async def _attach_return_options(
+        self,
+        flights: list[FlightSearchFlight],
+        origin: str,
+        destination: str,
+        return_date: str,
+        adults: int,
+        max_stops: str | None,
+        cabin: str | None,
+    ) -> None:
+        """Fetch the reverse one-way page and attach same-airline return options.
 
-    def _normalize_results(
-        self, result: Any, is_round_trip: bool
-    ) -> list[FlightSearchFlight]:
-        code_to_name, name_to_code = _airline_maps(result)
-        flights: list[FlightSearchFlight] = []
-        for item in result:
-            flight = self._normalize_flight(item, code_to_name, name_to_code, is_round_trip)
-            if flight is not None:
-                flights.append(flight)
-        return flights
-
-    @staticmethod
-    def _normalize_flight(
-        item: Any,
-        code_to_name: dict[str, str],
-        name_to_code: dict[str, str],
-        is_round_trip: bool,
-    ) -> FlightSearchFlight | None:
-        """Normalize one fast-flights ``Flights`` itinerary.
-
-        For round trips the itinerary describes the **outbound** leg and the
-        price is the round-trip total (matching the other providers'
-        normalizers); Google's query protobuf has no selected-flight token, so
-        the paired return legs cannot be fetched — ``round_trip_total`` marks
-        the offer so clients can say the return is included but not itemized.
-        Structured segments ride along in ``raw_data`` for downstream
-        itinerary building and airline filtering.
+        The round-trip page prices outbound options at the round-trip total
+        without itemizing returns; the reverse one-way page lists the real
+        return-leg flights. Each outbound offer gets the return options whose
+        carriers all appear on the outbound (round-trip fares pair within an
+        airline), best-ranked first. A failure here degrades gracefully — the
+        outbound data (and its prices) stands on its own.
         """
+        route_label = f"{destination.upper()}-{origin.upper()} {return_date}"
         try:
-            price_amount = Decimal(str(item.price))
-        except (InvalidOperation, TypeError, ValueError, AttributeError):
-            return None
-        if price_amount <= 0:
-            return None
-
-        segments = list(getattr(item, "flights", None) or [])
-        if not segments:
-            return None
-
-        carrier_codes, airline_names = _collect_airlines(item, code_to_name, name_to_code)
-
-        first = segments[0]
-        last = segments[-1]
-        departure_time = _to_datetime(first.departure)
-        arrival_time = _to_datetime(last.arrival)
-
-        stops = max(0, len(segments) - 1)
-        stops_text = "Direct" if stops == 0 else f"{stops} stop{'s' if stops > 1 else ''}"
-
-        # A single-airline itinerary lets each segment carry the carrier; a
-        # mixed-airline one can't be attributed per-segment (fast-flights only
-        # exposes airline identity at itinerary level).
-        segment_carrier = carrier_codes[0] if len(carrier_codes) == 1 else None
-        raw_segments, layovers = _build_segments(segments, segment_carrier)
-
-        # Total duration = per-segment flight minutes (Google's own values)
-        # plus layover minutes (same-airport local-time diffs, so timezone
-        # neutral). The naive endpoint arrival-departure diff is only a
-        # fallback: departure/arrival are LOCAL times, so across timezones the
-        # diff is off by the origin<->destination UTC offset.
-        duration_minutes = _total_duration_minutes(raw_segments, layovers)
-        if (
-            duration_minutes is None
-            and departure_time
-            and arrival_time
-            and arrival_time > departure_time
-        ):
-            duration_minutes = int((arrival_time - departure_time).total_seconds()) // 60
-
-        raw_data: dict[str, Any] = {
-            "provider": PROVIDER_NAME,
-            "type": getattr(item, "type", None),
-            "price": item.price,
-            "carrier_codes": carrier_codes,
-            "airline_names": airline_names,
-            "segments": raw_segments,
-            "stops": stops,
-            "duration_minutes": duration_minutes,
-            # Round-trip searches list outbound options priced at the
-            # round-trip total; the return leg is not itemized (see docstring).
-            "round_trip_total": is_round_trip,
-        }
-
-        return FlightSearchFlight(
-            departure_airport=str(getattr(first.from_airport, "code", None) or "").upper(),
-            arrival_airport=str(getattr(last.to_airport, "code", None) or "").upper(),
-            departure_time=departure_time,
-            arrival_time=arrival_time,
-            airline_name=", ".join(airline_names) if airline_names else None,
-            carrier_code=carrier_codes[0] if carrier_codes else None,
-            duration_minutes=duration_minutes,
-            stops=stops,
-            stops_text=stops_text,
-            layovers=layovers,
-            price_amount=price_amount,
-            price_currency="USD",
-            price_display=f"${item.price}",
-            booking_link=None,
-            provider=PROVIDER_NAME,
-            raw_data=raw_data,
-        )
-
-
-def _collect_airlines(
-    item: Any,
-    code_to_name: dict[str, str],
-    name_to_code: dict[str, str],
-) -> tuple[list[str], list[str]]:
-    """Resolve an itinerary's ``airlines`` entries to (carrier codes, display names)."""
-    carrier_codes: list[str] = []
-    airline_names: list[str] = []
-    for entry in getattr(item, "airlines", None) or []:
-        code, name = _resolve_airline(str(entry), code_to_name, name_to_code)
-        if code and code not in carrier_codes:
-            carrier_codes.append(code)
-        if name and name not in airline_names:
-            airline_names.append(name)
-    return carrier_codes, airline_names
-
-
-def _build_segments(
-    segments: list[Any], segment_carrier: str | None
-) -> tuple[list[dict[str, Any]], list[FlightLayover]]:
-    """Build the raw segment payloads and derived layovers for one itinerary."""
-    raw_segments: list[dict[str, Any]] = []
-    layovers: list[FlightLayover] = []
-    for i, seg in enumerate(segments):
-        seg_departure = _to_datetime(seg.departure)
-        seg_arrival = _to_datetime(seg.arrival)
-        raw_segments.append(
-            {
-                "carrier": segment_carrier,
-                "from": getattr(seg.from_airport, "code", None),
-                "from_name": getattr(seg.from_airport, "name", None),
-                "to": getattr(seg.to_airport, "code", None),
-                "to_name": getattr(seg.to_airport, "name", None),
-                "departureTime": _iso(seg_departure),
-                "arrivalTime": _iso(seg_arrival),
-                "durationMinutes": seg.duration if isinstance(seg.duration, int) else None,
-                "planeType": getattr(seg, "plane_type", None),
-            }
-        )
-        if i:
-            prev_arrival = _to_datetime(segments[i - 1].arrival)
-            layover_minutes = None
-            if prev_arrival and seg_departure and seg_departure > prev_arrival:
-                layover_minutes = int((seg_departure - prev_arrival).total_seconds()) // 60
-            layovers.append(
-                FlightLayover(
-                    airport=str(getattr(seg.from_airport, "code", None) or ""),
-                    arrival_time=prev_arrival,
-                    departure_time=seg_departure,
-                    duration_minutes=layover_minutes,
-                )
+            query = self._build_query(
+                destination, origin, return_date, None, adults, max_stops, cabin
             )
-    return raw_segments, layovers
+            page = await self._fetch_page(query, route_label)
+        except GlobalBudgetExceeded:
+            raise
+        except FastFlightsError as exc:
+            logger.warning(
+                "fast-flights return-leg query failed for %s; offers keep outbound data only",
+                route_label,
+                exc_info=exc,
+                extra={"event": "fast_flights.return_query_failed"},
+            )
+            return
+
+        options = [
+            {
+                "carriers": sorted({seg.carrier for seg in itinerary.segments if seg.carrier}),
+                "segments": [_segment_payload(seg) for seg in itinerary.segments],
+                "duration_minutes": _itinerary_duration_minutes(itinerary.segments),
+                "stops": max(0, len(itinerary.segments) - 1),
+            }
+            for itinerary in page.itineraries
+        ]
+
+        for flight in flights:
+            raw = flight.raw_data or {}
+            offer_carriers = set(raw.get("carrier_codes") or [])
+            matches = [
+                option
+                for option in options
+                if option["carriers"] and set(option["carriers"]) <= offer_carriers
+            ][:MAX_RETURN_OPTIONS]
+            if not matches:
+                continue
+            chosen = matches[0]
+            raw["return_segments"] = chosen["segments"]
+            raw["return_duration_minutes"] = chosen["duration_minutes"]
+            raw["return_stops"] = chosen["stops"]
+            raw["return_options"] = matches
+            # Return carriers participate in the airline preference filter,
+            # mirroring how Kiwi offers match on both legs.
+            raw["carrier_codes"] = sorted(
+                offer_carriers | {c for option in matches for c in option["carriers"]}
+            )
 
 
-def _total_duration_minutes(
-    raw_segments: list[dict[str, Any]], layovers: list[FlightLayover]
-) -> int | None:
-    """Sum segment flight minutes + layover minutes; None if any is unknown."""
+# -----------------------------------------------------------------------------
+# Normalization helpers
+# -----------------------------------------------------------------------------
+
+
+def _segment_payload(seg: ParsedSegment) -> dict[str, Any]:
+    return {
+        "carrier": seg.carrier,
+        "flightNumber": seg.flight_number,
+        "from": seg.from_code,
+        "from_name": seg.from_name,
+        "to": seg.to_code,
+        "to_name": seg.to_name,
+        "departureTime": seg.departure.isoformat() if seg.departure else None,
+        "arrivalTime": seg.arrival.isoformat() if seg.arrival else None,
+        "durationMinutes": seg.duration_minutes,
+        "planeType": seg.plane_type,
+    }
+
+
+def _build_layovers(segments: list[ParsedSegment]) -> list[FlightLayover]:
+    layovers: list[FlightLayover] = []
+    for prev, seg in zip(segments, segments[1:], strict=False):
+        duration = None
+        if prev.arrival and seg.departure and seg.departure > prev.arrival:
+            duration = int((seg.departure - prev.arrival).total_seconds()) // 60
+        layovers.append(
+            FlightLayover(
+                airport=str(seg.from_code or ""),
+                arrival_time=prev.arrival,
+                departure_time=seg.departure,
+                duration_minutes=duration,
+            )
+        )
+    return layovers
+
+
+def _itinerary_duration_minutes(segments: list[ParsedSegment]) -> int | None:
+    """Sum segment flight minutes + layover minutes; None if any is unknown.
+
+    Segment departure/arrival are LOCAL times, so an endpoint diff would be
+    off by the origin<->destination UTC offset; per-segment durations are
+    Google's own values, and layovers are same-airport local-time diffs
+    (timezone neutral).
+    """
     total = 0
-    for seg in raw_segments:
-        minutes = seg.get("durationMinutes")
-        if not isinstance(minutes, int):
+    for seg in segments:
+        if not isinstance(seg.duration_minutes, int):
             return None
-        total += minutes
-    for layover in layovers:
+        total += seg.duration_minutes
+    for layover in _build_layovers(segments):
         if layover.duration_minutes is None:
             return None
         total += layover.duration_minutes
     return total
 
 
-def _airline_maps(result: Any) -> tuple[dict[str, str], dict[str, str]]:
-    """Build code->name / name->code maps from the result's JS metadata."""
-    code_to_name: dict[str, str] = {}
-    name_to_code: dict[str, str] = {}
-    metadata = getattr(result, "metadata", None)
-    for airline in getattr(metadata, "airlines", None) or []:
-        code = str(getattr(airline, "code", "") or "").upper()
-        name = str(getattr(airline, "name", "") or "")
-        if code and name:
-            code_to_name[code] = name
-            name_to_code[name.lower()] = code
-    return code_to_name, name_to_code
+def _airline_identity(
+    itinerary: ParsedItinerary, page: ParsedPage
+) -> tuple[list[str], list[str]]:
+    """Resolve (carrier codes, display names) for an itinerary.
 
-
-def _resolve_airline(
-    entry: str,
-    code_to_name: dict[str, str],
-    name_to_code: dict[str, str],
-) -> tuple[str | None, str | None]:
-    """Resolve an itinerary ``airlines`` entry to (IATA code, display name).
-
-    Google's payload carries airline identity as strings whose form isn't
-    contractual — resolve via the page's own code<->name metadata first, then
-    fall back to shape heuristics (2-3 char uppercase == IATA code).
+    Codes come from the segments' own identity; names prefer the itinerary's
+    display list, then the page's code->name metadata, then the static map.
     """
-    entry = entry.strip()
-    if not entry:
-        return None, None
-    upper = entry.upper()
-    if upper in code_to_name:
-        return upper, code_to_name[upper]
-    if entry.lower() in name_to_code:
-        return name_to_code[entry.lower()], entry
-    if 2 <= len(entry) <= 3 and entry == upper:
-        return upper, airline_display_name(upper)
-    return None, entry
+    codes: list[str] = []
+    for seg in itinerary.segments:
+        if seg.carrier and seg.carrier not in codes:
+            codes.append(seg.carrier)
+    names = [n for n in itinerary.airline_names if n]
+    if not names:
+        for code in codes:
+            name = page.airline_code_to_name.get(code) or airline_display_name(code)
+            if name and name not in names:
+                names.append(name)
+    return codes, names
+
+
+def _normalize_itinerary(
+    itinerary: ParsedItinerary, page: ParsedPage, is_round_trip: bool
+) -> FlightSearchFlight | None:
+    """Normalize one parsed itinerary to a FlightSearchFlight.
+
+    For round trips the itinerary describes the **outbound** leg and the
+    price is the round-trip total; ``round_trip_total`` marks the offer and
+    the tracking path attaches same-airline return options separately.
+    """
+    try:
+        price_amount = Decimal(str(itinerary.price))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if price_amount <= 0:
+        return None
+
+    segments = itinerary.segments
+    if not segments:
+        return None
+
+    carrier_codes, airline_names = _airline_identity(itinerary, page)
+    first, last = segments[0], segments[-1]
+
+    stops = max(0, len(segments) - 1)
+    stops_text = "Direct" if stops == 0 else f"{stops} stop{'s' if stops > 1 else ''}"
+
+    duration_minutes = _itinerary_duration_minutes(segments)
+    if (
+        duration_minutes is None
+        and first.departure
+        and last.arrival
+        and last.arrival > first.departure
+    ):
+        # Fallback only: naive local-time endpoint diff.
+        duration_minutes = int((last.arrival - first.departure).total_seconds()) // 60
+
+    raw_data: dict[str, Any] = {
+        "provider": PROVIDER_NAME,
+        "price": itinerary.price,
+        "is_best": itinerary.is_best,
+        "carrier_codes": carrier_codes,
+        "airline_names": airline_names,
+        "segments": [_segment_payload(seg) for seg in segments],
+        "stops": stops,
+        "duration_minutes": duration_minutes,
+        # Round-trip searches list outbound options priced at the round-trip
+        # total; the paired return leg is not itemized by Google (see module
+        # docstring).
+        "round_trip_total": is_round_trip,
+    }
+
+    return FlightSearchFlight(
+        departure_airport=str(first.from_code or "").upper(),
+        arrival_airport=str(last.to_code or "").upper(),
+        departure_time=first.departure,
+        arrival_time=last.arrival,
+        airline_name=", ".join(airline_names) if airline_names else None,
+        carrier_code=carrier_codes[0] if carrier_codes else None,
+        duration_minutes=duration_minutes,
+        stops=stops,
+        stops_text=stops_text,
+        layovers=_build_layovers(segments),
+        price_amount=price_amount,
+        price_currency="USD",
+        price_display=f"${itinerary.price}",
+        booking_link=None,
+        provider=PROVIDER_NAME,
+        raw_data=raw_data,
+    )
 
 
 def _apply_sort(flights: list[FlightSearchFlight], sort: str) -> list[FlightSearchFlight]:

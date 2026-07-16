@@ -171,21 +171,35 @@ Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 
 ## fast-flights client (third flight provider)
 
-`app/clients/fast_flights.py` wraps the `fast-flights` PyPI package (Google
-Flights scraper — protobuf `tfs` query, no API key). Interface-compatible with
-the other clients (`search_flights` / `search_flights_all`,
-provider="fast_flights", `fast_flights_calls` budget metric sharing the same
-ceiling). Provider quirks normalized at the source: one ranked page per query
-(no pagination — `search_flights_all` is a single query), round-trip searches
-list **outbound** options priced at the round-trip total (Google's query
-protobuf has no selected-flight token, so paired return legs can't be fetched —
-such offers carry `FlightOffer.round_trip_total=true` and clients render
-"return included in price" instead of a return itinerary), structured segments
-(airports/times/durations) but **no flight numbers**, and airline identity at
-itinerary level only (resolved to IATA codes via the page's own code↔name
-metadata). The sync library runs in a worker thread; transient scrape failures
-(blocked/unparseable page) retry briefly then raise `FastFlightsTransientError`.
-Optional `FAST_FLIGHTS_PROXY` env routes its requests through a proxy.
+`app/clients/fast_flights.py` wraps the `fast-flights` PyPI package's fetcher
+(Google Flights scraper — protobuf `tfs` query, Chrome-impersonating `primp`,
+no API key) but parses pages with **our extended parser**
+(`app/clients/fast_flights_parser.py`): the upstream library reads only the
+"best flights" section and drops per-segment airline identity, while the
+extended parser reads **both** itinerary sections (`payload[3][0]` best +
+`payload[2][0]` other — the cheapest fare regularly hides in the second) and
+extracts each segment's **carrier code + flight number** (`segment[22]`,
+verified empirically 2026-07), so `FlightSegment.flight_number` is a real
+designator on this provider too. Payload indexes are Google's obfuscated
+structure — every read is guarded so drift degrades to missing fields, not a
+crash.
+
+Interface-compatible with the other clients (`search_flights` /
+`search_flights_all`, provider="fast_flights", `fast_flights_calls` budget
+metric sharing the same ceiling). Round-trip quirk, normalized at the source:
+Google's ranked page lists **outbound** options priced at the round-trip
+total, and the query protobuf has no selected-flight token, so the exact
+paired return can't be fetched. The tracking path
+(`search_flights_all`) therefore runs a second **reverse one-way query**
+(2 Google calls per round-trip refresh) and attaches each offer's
+**same-airline return options** (`return_segments`/`return_options` in raw
+data → a real return itinerary on `FlightOffer`); such offers carry
+`FlightOffer.round_trip_total=true` and clients render a "same-airline return
+option" qualifier (or "return included in price" when no airline match
+exists). The chat path stays single-query. The sync fetcher runs in a worker
+thread; transient scrape failures (blocked/unparseable page) retry briefly
+then raise `FastFlightsTransientError`. Optional `FAST_FLIGHTS_PROXY` env
+routes its requests through a proxy.
 
 **Flight numbers are not structured** — they are encoded in the Skiplagged `id`
 field (e.g. `SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741`)

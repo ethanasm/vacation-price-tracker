@@ -2436,6 +2436,96 @@ describe("TripDetailPage", () => {
       ).toBeInTheDocument();
     });
 
+    it("renders the return option with a qualifier when a round-trip total carries return segments", async () => {
+      const user = userEvent.setup({ delay: null });
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: { ...baseTripData, hotel_prefs: null },
+          price_history: [
+            {
+              id: "ph-ff-ret",
+              flight_price: "1585.00",
+              hotel_price: null,
+              total_price: "1585.00",
+              created_at: "2026-07-16T10:30:00Z",
+              provider: "fast_flights",
+              flight_offers: [
+                {
+                  id: "0",
+                  airline_code: "AS",
+                  airline_name: "Alaska",
+                  flight_number: "AS943",
+                  price: "1585.00",
+                  departure_time: "2026-12-11T08:23:00",
+                  arrival_time: "2026-12-11T11:48:00",
+                  duration_minutes: 325,
+                  stops: 0,
+                  round_trip_total: true,
+                  return_flight: {
+                    flight_number: "AS942",
+                    departure_time: "2026-12-18T11:54:00",
+                    arrival_time: "2026-12-18T19:05:00",
+                    duration_minutes: 311,
+                    stops: 0,
+                  },
+                  itineraries: [
+                    {
+                      direction: "outbound",
+                      stops: 0,
+                      segments: [
+                        {
+                          carrier_code: "AS",
+                          flight_number: "AS943",
+                          departure_airport: "SFO",
+                          arrival_airport: "OGG",
+                          departure_time: "2026-12-11T08:23:00",
+                          arrival_time: "2026-12-11T11:48:00",
+                          duration_minutes: 325,
+                        },
+                      ],
+                    },
+                    {
+                      direction: "return",
+                      stops: 0,
+                      segments: [
+                        {
+                          carrier_code: "AS",
+                          flight_number: "AS942",
+                          departure_airport: "OGG",
+                          arrival_airport: "SFO",
+                          departure_time: "2026-12-18T11:54:00",
+                          arrival_time: "2026-12-18T19:05:00",
+                          duration_minutes: 311,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+      await waitFor(() => {
+        expect(screen.getByText("Flights")).toBeInTheDocument();
+      });
+
+      // With a real return itinerary the "included" placeholder is gone…
+      expect(screen.queryByText("Included in price")).not.toBeInTheDocument();
+
+      // …and expanding shows the return leg plus the pairing qualifier.
+      await user.click(screen.getAllByRole("radio")[0]);
+      await waitFor(() => {
+        expect(screen.getByTestId("return-option-qualifier")).toBeInTheDocument();
+      });
+      expect(screen.getByText("AS942")).toBeInTheDocument();
+      expect(screen.queryByTestId("return-included-note")).not.toBeInTheDocument();
+    });
+
     it("shows no return-included row for offers with an itemized return or one-ways", async () => {
       const user = userEvent.setup({ delay: null });
       await renderSortFixture();

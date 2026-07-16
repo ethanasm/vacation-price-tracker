@@ -130,4 +130,51 @@ describe('FlightRow round-trip-total (return not itemized)', () => {
     assert.ok(!labels.includes('Return · included in price'));
     assert.ok(!labels.includes('RETURN'));
   });
+
+  it('a round-trip total WITH return segments renders the leg plus a pairing qualifier', () => {
+    // Tracked fast-flights offers now carry a same-airline return option.
+    const withReturn = {
+      ...roundTripTotalOffer,
+      id: 'f-ffr',
+      itineraries: [
+        roundTripTotalOffer.itineraries[0],
+        {
+          direction: 'return',
+          stops: 0,
+          segments: [
+            {
+              carrier_code: 'AS',
+              flight_number: 'AS942',
+              departure_airport: 'OGG',
+              arrival_airport: 'SFO',
+              departure_time: '2026-12-18T11:54:00',
+              arrival_time: '2026-12-18T19:05:00',
+              duration_minutes: 311,
+            },
+          ],
+        },
+      ],
+    };
+    const r = render(withReturn, true);
+    const labels = texts(r);
+    // Real RETURN leg renders (with the flight number), not the placeholder.
+    assert.ok(labels.includes('RETURN'));
+    assert.ok(!labels.includes('Return · included in price'));
+    assert.equal(
+      r.root.findAll(
+        (n) =>
+          n.type === 'rn-view' &&
+          n.props &&
+          typeof n.props.testID === 'string' &&
+          n.props.testID.startsWith('flight-return-included-'),
+      ).length,
+      0,
+    );
+    // Pairing qualifier is present.
+    const qualifier = r.root.findAll(
+      (n) => n.props && n.props.testID === 'flight-return-qualifier-f-ffr',
+    );
+    assert.ok(qualifier.length >= 1);
+    assert.ok(labels.some((t) => t.includes('Same-airline return option')));
+  });
 });

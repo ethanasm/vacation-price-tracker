@@ -775,6 +775,15 @@ function FlightRow({
             <>
               <div className={styles.itineraryDivider} />
               <ItinerarySection itinerary={returnItinerary} isReturn />
+              {flight.round_trip_total && (
+                <p
+                  data-testid="return-option-qualifier"
+                  className={styles.returnIncludedNote}
+                >
+                  Same-airline return option — Google prices this trip as a
+                  round-trip total.
+                </p>
+              )}
             </>
           )}
           {!returnItinerary && flight.round_trip_total && (

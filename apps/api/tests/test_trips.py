@@ -1881,6 +1881,7 @@ def _fast_flights_offer(**overrides):
         "segments": [
             {
                 "carrier": "AS",
+                "flightNumber": "3361",
                 "from": "SFO",
                 "to": "DEN",
                 "departureTime": "2026-09-15T08:00:00",
@@ -1890,6 +1891,7 @@ def _fast_flights_offer(**overrides):
             },
             {
                 "carrier": "AS",
+                "flightNumber": "877",
                 "from": "DEN",
                 "to": "JFK",
                 "departureTime": "2026-09-15T13:00:00",
@@ -1909,8 +1911,8 @@ def test_parse_fast_flights_offer_builds_itinerary():
     assert offer.id == "2"  # provider has no offer ids; index stands in
     assert offer.airline_code == "AS"
     assert offer.airline_name == "Alaska Airlines"
-    # fast-flights exposes no flight numbers — the field is absent, never faked.
-    assert offer.flight_number is None
+    # Segments carry the full carrier-prefixed designator (extended parser).
+    assert offer.flight_number == "AS3361"
     assert str(offer.price) == "187"
     assert offer.departure_time == "2026-09-15T08:00:00"
     assert offer.arrival_time == "2026-09-15T18:45:00"
@@ -1926,7 +1928,7 @@ def test_parse_fast_flights_offer_builds_itinerary():
     assert len(itinerary.segments) == 2
     first, second = itinerary.segments
     assert first.carrier_code == "AS"
-    assert first.flight_number is None
+    assert first.flight_number == "AS3361"
     assert first.departure_airport == "SFO"
     assert first.arrival_airport == "DEN"
     assert first.departure_time == "2026-09-15T08:00:00"
@@ -1934,6 +1936,7 @@ def test_parse_fast_flights_offer_builds_itinerary():
     assert second.departure_airport == "DEN"
     assert second.arrival_airport == "JFK"
     assert second.arrival_time == "2026-09-15T18:45:00"
+    assert second.flight_number == "AS877"
 
 
 def test_parse_fast_flights_offer_mixed_airlines():
@@ -1961,6 +1964,54 @@ def test_parse_fast_flights_offer_one_way_is_not_round_trip_total():
     )
     assert offer is not None
     assert offer.round_trip_total is False
+
+
+def test_parse_fast_flights_offer_with_return_segments():
+    """A tracked round-trip offer renders its same-airline return option."""
+    offer_dict = _fast_flights_offer(
+        return_segments=[
+            {
+                "carrier": "AS",
+                "flightNumber": "942",
+                "from": "JFK",
+                "to": "SFO",
+                "departureTime": "2026-09-22T11:54:00",
+                "arrivalTime": "2026-09-22T15:05:00",
+                "durationMinutes": 371,
+            }
+        ],
+        return_duration_minutes=371,
+        return_stops=0,
+    )
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.round_trip_total is True
+
+    assert [it.direction for it in offer.itineraries] == ["outbound", "return"]
+    ret = offer.itineraries[1]
+    assert ret.stops == 0
+    seg = ret.segments[0]
+    assert seg.flight_number == "AS942"
+    assert seg.departure_airport == "JFK"
+    assert seg.arrival_airport == "SFO"
+    assert seg.departure_time == "2026-09-22T11:54:00"
+
+    assert offer.return_flight == {
+        "flight_number": "AS942",
+        "departure_time": "2026-09-22T11:54:00",
+        "arrival_time": "2026-09-22T15:05:00",
+        "duration_minutes": 371,
+        "stops": 0,
+    }
+
+
+def test_parse_fast_flights_offer_malformed_return_segments_ignored():
+    offer = trips_module._parse_flight_offer(
+        _fast_flights_offer(return_segments=["junk"]), 0, {}
+    )
+    assert offer is not None
+    assert [it.direction for it in offer.itineraries] == ["outbound"]
+    assert offer.return_flight is None
 
 
 def test_parse_fast_flights_offer_degenerate_shapes():
@@ -2022,7 +2073,7 @@ def test_snapshot_to_response_provider_column_wins():
     response = trips_module._snapshot_to_response(snapshot)
     assert response.provider == "fast_flights"
     assert len(response.flight_offers) == 1
-    assert response.flight_offers[0].flight_number is None
+    assert response.flight_offers[0].flight_number == "AS3361"
 
 
 def test_snapshot_to_response_provider_falls_back_to_raw_data():

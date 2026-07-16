@@ -344,13 +344,11 @@ def _parse_kiwi_flight_offer_safe(item: dict, index: int) -> FlightOffer | None:
         return None
 
 
-def _parse_fast_flights_itinerary(segments: list) -> FlightItinerary:
-    """Build the outbound FlightItinerary from fast-flights structured segments.
+def _parse_fast_flights_itinerary(direction: str, segments: list) -> FlightItinerary:
+    """Build a FlightItinerary from fast-flights structured segments.
 
-    fast-flights exposes airports, times, and durations per segment but no
-    flight numbers (Google's payload carries airline identity at itinerary
-    level only), so ``flight_number`` is absent on this provider's segments.
-    """
+    Segments carry airports, times, durations, and the full carrier +
+    flight-number identity (extracted by our extended page parser)."""
     parsed: list[FlightSegment] = []
     total_minutes = 0
     have_all_durations = True
@@ -364,7 +362,7 @@ def _parse_fast_flights_itinerary(segments: list) -> FlightItinerary:
             have_all_durations = False
         parsed.append(FlightSegment(
             carrier_code=_opt_str(seg.get("carrier")),
-            flight_number=None,
+            flight_number=_flight_designator(seg.get("carrier"), seg.get("flightNumber")),
             departure_airport=_opt_str(seg.get("from")),
             arrival_airport=_opt_str(seg.get("to")),
             departure_time=_opt_str(seg.get("departureTime")),
@@ -372,7 +370,7 @@ def _parse_fast_flights_itinerary(segments: list) -> FlightItinerary:
             duration_minutes=duration if isinstance(duration, int) else None,
         ))
     return FlightItinerary(
-        direction="outbound",
+        direction=direction,
         segments=parsed,
         total_duration_minutes=total_minutes if parsed and have_all_durations else None,
         stops=max(0, len(parsed) - 1),
@@ -382,20 +380,45 @@ def _parse_fast_flights_itinerary(segments: list) -> FlightItinerary:
 def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     """Parse a fast-flights-shaped offer (structured ``segments`` list).
 
-    Round-trip snapshots from this provider list outbound options only, with
-    the round-trip total as the price — there is no return-leg payload.
+    Round-trip offers are priced at the round-trip total; Google doesn't
+    itemize the exact paired return, so the tracking fetch attaches
+    same-airline **return options** (``return_segments``) that render as the
+    return itinerary, with ``round_trip_total`` qualifying the pairing.
     """
     price = _coerce_positive_price(_extract_price(item))
     if price is None:
         return None
 
     segments = item.get("segments") if isinstance(item.get("segments"), list) else []
-    itinerary = _parse_fast_flights_itinerary(segments)
+    itinerary = _parse_fast_flights_itinerary("outbound", segments)
+    itineraries = [itinerary] if itinerary.segments else []
+
+    return_segments = (
+        item.get("return_segments") if isinstance(item.get("return_segments"), list) else []
+    )
+    return_flight_payload = None
+    if return_segments:
+        return_itinerary = _parse_fast_flights_itinerary("return", return_segments)
+        if return_itinerary.segments:
+            itineraries.append(return_itinerary)
+            ret_first = return_itinerary.segments[0]
+            ret_last = return_itinerary.segments[-1]
+            ret_duration = item.get("return_duration_minutes")
+            return_flight_payload = {
+                "flight_number": ret_first.flight_number,
+                "departure_time": ret_first.departure_time,
+                "arrival_time": ret_last.arrival_time,
+                "duration_minutes": ret_duration
+                if isinstance(ret_duration, int)
+                else return_itinerary.total_duration_minutes,
+                "stops": return_itinerary.stops,
+            }
 
     carrier_codes = item.get("carrier_codes")
     first_code = None
     if isinstance(carrier_codes, list) and carrier_codes:
         first_code = _opt_str(carrier_codes[0])
+    outbound_first = itinerary.segments[0] if itinerary.segments else None
     airline_names = item.get("airline_names")
     airline_name = (
         ", ".join(str(n) for n in airline_names)
@@ -406,8 +429,10 @@ def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     total_duration = item.get("duration_minutes")
     return FlightOffer(
         id=str(item.get("id") or index),
-        airline_code=first_code or _opt_str(item.get("carrier_code")),
-        flight_number=None,
+        airline_code=(outbound_first.carrier_code if outbound_first else None)
+        or first_code
+        or _opt_str(item.get("carrier_code")),
+        flight_number=outbound_first.flight_number if outbound_first else None,
         airline_name=airline_name,
         price=price,
         departure_time=_opt_str(item.get("departure_time")),
@@ -416,8 +441,8 @@ def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
         if isinstance(total_duration, int)
         else itinerary.total_duration_minutes,
         stops=item.get("stops") if isinstance(item.get("stops"), int) else itinerary.stops,
-        return_flight=None,
-        itineraries=[itinerary] if itinerary.segments else [],
+        return_flight=return_flight_payload,
+        itineraries=itineraries,
         round_trip_total=bool(item.get("round_trip_total")),
     )
 

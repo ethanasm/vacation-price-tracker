@@ -204,6 +204,14 @@ export function FlightRow({
               </Text>
             </View>
           ) : null}
+          {offer.round_trip_total && legs.some((l) => l.label === 'RETURN') ? (
+            <Text
+              testID={`flight-return-qualifier-${offer.id}`}
+              style={[styles.summary, { color: c.textMuted, fontFamily: tokens.font[500] }]}
+            >
+              Same-airline return option — Google prices this trip as a round-trip total.
+            </Text>
+          ) : null}
           {multiCarrier ? (
             <Text style={[styles.subtitle, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
               {multiCarrierSubtitle(codes.map(carrierName)) ?? ''}
