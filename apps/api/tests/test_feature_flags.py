@@ -65,9 +65,9 @@ def test_canonical_flag_name_returns_registry_constant():
     # Build the lookup key at runtime so it's a distinct string object; the
     # resolved value must be the registry's own constant, never the input —
     # that's what lets callers log it without touching request-supplied text.
-    request_value = "".join(["kiwi", "_", "flights"])
+    request_value = "".join(["beta", "_", "optimizer"])
     resolved = canonical_flag_name(request_value)
-    assert resolved == FeatureFlags.KIWI_FLIGHTS
+    assert resolved == FeatureFlags.BETA_OPTIMIZER
     assert resolved is not request_value
 
 

@@ -16,12 +16,20 @@ import { useTheme } from '@/lib/theme';
 import { useApiClient } from '@/lib/api/provider';
 import { AuroraCard } from '@/components/aurora';
 import { ToggleRow } from '@/components/aurora/toggle-row';
-import type { FeatureFlagItem, UserResponse } from '@/lib/api/client';
+import type { AppSettingItem, FeatureFlagItem, UserResponse } from '@/lib/api/client';
 
-/** Humanize a snake_case flag name for display ("kiwi_flights" → "Kiwi flights"). */
+/** Humanize a snake_case flag name for display ("beta_optimizer" → "Beta optimizer"). */
 function flagLabel(name: string): string {
   const spaced = name.replace(/_/g, ' ');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Humanize a snake_case setting value for display ("fast_flights" → "Fast Flights"). */
+function valueLabel(value: string): string {
+  return value
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 function SectionTitle({ children, icon }: { children: string; icon?: React.ReactNode }): React.JSX.Element {
@@ -54,6 +62,69 @@ function SectionCaption({ children }: { children: string }): React.JSX.Element {
   );
 }
 
+function SettingSegmentRow({
+  setting,
+  disabled,
+  onSelect,
+}: {
+  setting: AppSettingItem;
+  disabled: boolean;
+  onSelect: (value: string) => void;
+}): React.JSX.Element {
+  const { tokens } = useTheme();
+  const c = tokens.color;
+  return (
+    <View accessibilityRole="radiogroup" accessibilityLabel={flagLabel(setting.name)}>
+      <Text style={{ color: c.textStrong, fontFamily: tokens.font[600], fontSize: 14 }}>
+        {flagLabel(setting.name)}
+      </Text>
+      <Text
+        style={{
+          color: c.textMuted,
+          fontFamily: tokens.font[500],
+          fontSize: 12,
+          marginTop: 2,
+          lineHeight: 17,
+        }}
+      >
+        {setting.description}
+      </Text>
+      <View style={[styles.segmentGroup, { borderColor: c.hairline }]}>
+        {setting.allowed_values.map((value) => {
+          const active = setting.value === value;
+          return (
+            <Pressable
+              key={value}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active, disabled }}
+              accessibilityLabel={valueLabel(value)}
+              testID={`settings-setting-${setting.name}-${value}`}
+              disabled={disabled}
+              onPress={() => {
+                if (!active) onSelect(value);
+              }}
+              style={[
+                styles.segmentButton,
+                active ? { backgroundColor: c.primary } : null,
+              ]}
+            >
+              <Text
+                style={{
+                  color: active ? '#FFFFFF' : c.textMuted,
+                  fontFamily: tokens.font[600],
+                  fontSize: 12,
+                }}
+              >
+                {valueLabel(value)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function AdminFlagsCard(): React.JSX.Element {
   const { tokens } = useTheme();
   const c = tokens.color;
@@ -63,6 +134,11 @@ function AdminFlagsCard(): React.JSX.Element {
   const flagsQuery = useQuery({
     queryKey: ['feature-flags'],
     queryFn: () => api.listFeatureFlags(),
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => api.listAppSettings(),
   });
 
   const mutation = useMutation({
@@ -78,6 +154,21 @@ function AdminFlagsCard(): React.JSX.Element {
     },
   });
 
+  const settingMutation = useMutation({
+    mutationFn: ({ name, value }: { name: string; value: string }) =>
+      api.setAppSetting(name, value),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<AppSettingItem[]>(['app-settings'], (current) =>
+        (current ?? []).map((setting) => (setting.name === updated.name ? updated : setting)),
+      );
+    },
+    onError: () => {
+      Alert.alert('Failed to update setting', 'Please try again.');
+    },
+  });
+
+  const busy = mutation.isPending || settingMutation.isPending;
+
   return (
     <AuroraCard style={styles.card} testID="settings-admin-card">
       <SectionTitle icon={<ShieldCheck size={18} color={c.textStrong} strokeWidth={2} />}>
@@ -86,28 +177,46 @@ function AdminFlagsCard(): React.JSX.Element {
       <SectionCaption>
         Operator feature flags — these change behavior for every user, instantly.
       </SectionCaption>
-      {flagsQuery.isError ? (
+      {flagsQuery.isError || settingsQuery.isError ? (
         <Text style={{ color: c.textMuted, fontFamily: tokens.font[500], fontSize: 13 }}>
           Failed to load feature flags.
         </Text>
-      ) : flagsQuery.isLoading ? (
+      ) : flagsQuery.isLoading || settingsQuery.isLoading ? (
         <ActivityIndicator color={c.primary} style={styles.cardSpinner} />
       ) : (
-        (flagsQuery.data ?? []).map((flag, index) => (
-          <View
-            key={flag.name}
-            style={index > 0 ? [styles.rowDivider, { borderTopColor: c.hairline }] : null}
-          >
-            <ToggleRow
-              title={flagLabel(flag.name)}
-              subtitle={flag.description}
-              value={flag.enabled}
-              disabled={mutation.isPending}
-              onValueChange={(next) => mutation.mutate({ name: flag.name, enabled: next })}
-              testID={`settings-flag-${flag.name}`}
-            />
-          </View>
-        ))
+        <>
+          {(settingsQuery.data ?? []).map((setting, index) => (
+            <View
+              key={setting.name}
+              style={index > 0 ? [styles.rowDivider, { borderTopColor: c.hairline }] : null}
+            >
+              <SettingSegmentRow
+                setting={setting}
+                disabled={busy}
+                onSelect={(value) => settingMutation.mutate({ name: setting.name, value })}
+              />
+            </View>
+          ))}
+          {(flagsQuery.data ?? []).map((flag, index) => (
+            <View
+              key={flag.name}
+              style={
+                index > 0 || (settingsQuery.data ?? []).length > 0
+                  ? [styles.rowDivider, { borderTopColor: c.hairline }]
+                  : null
+              }
+            >
+              <ToggleRow
+                title={flagLabel(flag.name)}
+                subtitle={flag.description}
+                value={flag.enabled}
+                disabled={busy}
+                onValueChange={(next) => mutation.mutate({ name: flag.name, enabled: next })}
+                testID={`settings-flag-${flag.name}`}
+              />
+            </View>
+          ))}
+        </>
       )}
     </AuroraCard>
   );
@@ -213,4 +322,18 @@ const styles = StyleSheet.create({
   cardSpinner: { marginVertical: 12 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 8, paddingTop: 8 },
+  segmentGroup: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    padding: 2,
+    marginTop: 8,
+    gap: 2,
+  },
+  segmentButton: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
 });

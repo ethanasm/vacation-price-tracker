@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Column, ForeignKey, Numeric
+from sqlalchemy import JSON, Column, ForeignKey, Numeric, String
 from sqlalchemy.sql import func
 from sqlmodel import DateTime, Field, SQLModel
 
@@ -36,6 +36,13 @@ class PriceSnapshot(SQLModel, table=True):
     raw_data: dict = Field(
         default_factory=dict,
         sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    # Which flight provider the snapshot's data was fetched from
+    # ("skiplagged" / "kiwi" / "fast_flights" / "skiplagged_mock"). Nullable:
+    # rows predating the column are backfilled from raw_data where possible.
+    provider: str | None = Field(
+        default=None,
+        sa_column=Column(String(32), nullable=True),
     )
 
     created_at: datetime = Field(

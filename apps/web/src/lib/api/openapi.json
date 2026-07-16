@@ -1108,6 +1108,81 @@
           }
         }
       }
+    },
+    "/v1/app-settings": {
+      "get": {
+        "tags": [
+          "app-settings"
+        ],
+        "summary": "Get App Settings",
+        "description": "List every known app setting with its live value (admin users only).",
+        "operationId": "get_app_settings_v1_app_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/app-settings/{name}": {
+      "patch": {
+        "tags": [
+          "app-settings"
+        ],
+        "summary": "Update App Setting",
+        "description": "Set a known app setting's value (admin users only).\n\nPATCH (not PUT) so the browser call passes the API's deliberately pinned\nCORS method allowlist (GET/POST/PATCH/DELETE \u2014 see app.main).",
+        "operationId": "update_app_setting_v1_app_settings__name__patch",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettingItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1335,6 +1410,66 @@
           "data"
         ],
         "title": "APIResponse[list[TripResponse]]"
+      },
+      "AppSettingItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "allowed_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "value",
+          "allowed_values"
+        ],
+        "title": "AppSettingItem"
+      },
+      "AppSettingUpdate": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "AppSettingUpdate"
+      },
+      "AppSettingsResponse": {
+        "properties": {
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/AppSettingItem"
+            },
+            "type": "array",
+            "title": "Settings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "AppSettingsResponse"
       },
       "BulkDeleteResponse": {
         "properties": {
@@ -2220,6 +2355,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "flight_offers": {
             "items": {

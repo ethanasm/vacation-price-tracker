@@ -34,7 +34,7 @@ class TestFlagsAuth:
         assert flags_client.get("/v1/admin/flags").status_code == 401
 
     def test_set_requires_token(self, flags_client):
-        resp = flags_client.put("/v1/admin/flags/kiwi_flights", json={"enabled": True})
+        resp = flags_client.put("/v1/admin/flags/beta_optimizer", json={"enabled": True})
         assert resp.status_code == 401
 
     def test_wrong_token_rejected(self, flags_client):
@@ -47,27 +47,27 @@ class TestFlagsEndpoints:
         resp = flags_client.get("/v1/admin/flags", headers=_auth())
         assert resp.status_code == 200
         flags = {f["name"]: f for f in resp.json()["flags"]}
-        assert "kiwi_flights" in flags
-        assert flags["kiwi_flights"]["enabled"] is False
-        assert "Kiwi.com" in flags["kiwi_flights"]["description"]
+        assert "beta_optimizer" in flags
+        assert flags["beta_optimizer"]["enabled"] is False
+        assert "optimizer" in flags["beta_optimizer"]["description"]
 
     def test_set_flag_toggles_and_persists(self, flags_client):
         resp = flags_client.put(
-            "/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": True}
+            "/v1/admin/flags/beta_optimizer", headers=_auth(), json={"enabled": True}
         )
         assert resp.status_code == 200
-        assert resp.json() == {"name": "kiwi_flights", "enabled": True}
+        assert resp.json() == {"name": "beta_optimizer", "enabled": True}
 
         listed = flags_client.get("/v1/admin/flags", headers=_auth()).json()["flags"]
-        assert {f["name"]: f["enabled"] for f in listed}["kiwi_flights"] is True
+        assert {f["name"]: f["enabled"] for f in listed}["beta_optimizer"] is True
 
         # And back off again
         resp = flags_client.put(
-            "/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": False}
+            "/v1/admin/flags/beta_optimizer", headers=_auth(), json={"enabled": False}
         )
         assert resp.status_code == 200
         listed = flags_client.get("/v1/admin/flags", headers=_auth()).json()["flags"]
-        assert {f["name"]: f["enabled"] for f in listed}["kiwi_flights"] is False
+        assert {f["name"]: f["enabled"] for f in listed}["beta_optimizer"] is False
 
     def test_unknown_flag_404(self, flags_client):
         resp = flags_client.put(
@@ -87,7 +87,7 @@ class TestFlagsEndpoints:
         payload = "1.2.3.4\nERROR forged log entry"
         with caplog.at_level(logging.INFO, logger="app.routers.admin"):
             resp = flags_client.put(
-                "/v1/admin/flags/kiwi_flights",
+                "/v1/admin/flags/beta_optimizer",
                 headers={**_auth(), "X-Forwarded-For": payload},
                 json={"enabled": True},
             )
@@ -95,13 +95,13 @@ class TestFlagsEndpoints:
         set_records = [r for r in caplog.records if getattr(r, "event", "") == "admin.flags.set"]
         assert len(set_records) == 1
         record = set_records[0]
-        assert record.flag == "kiwi_flights"
+        assert record.flag == "beta_optimizer"
         assert "forged log entry" not in record.getMessage()
         assert "forged log entry" not in record.ip
 
     def test_invalid_json_body_400(self, flags_client):
         resp = flags_client.put(
-            "/v1/admin/flags/kiwi_flights",
+            "/v1/admin/flags/beta_optimizer",
             headers={**_auth(), "Content-Type": "application/json"},
             content="not-json",
         )
@@ -109,7 +109,7 @@ class TestFlagsEndpoints:
 
     @pytest.mark.parametrize("body", [{"enabled": "yes"}, {"enabled": 1}, {}, ["enabled"]])
     def test_non_boolean_enabled_400(self, flags_client, body):
-        resp = flags_client.put("/v1/admin/flags/kiwi_flights", headers=_auth(), json=body)
+        resp = flags_client.put("/v1/admin/flags/beta_optimizer", headers=_auth(), json=body)
         assert resp.status_code == 400
 
     def test_rate_limited(self, flags_app, mock_redis):
@@ -120,5 +120,5 @@ class TestFlagsEndpoints:
         client = TestClient(flags_app)
         resp = client.get("/v1/admin/flags", headers=_auth())
         assert resp.status_code == 429
-        resp = client.put("/v1/admin/flags/kiwi_flights", headers=_auth(), json={"enabled": True})
+        resp = client.put("/v1/admin/flags/beta_optimizer", headers=_auth(), json={"enabled": True})
         assert resp.status_code == 429

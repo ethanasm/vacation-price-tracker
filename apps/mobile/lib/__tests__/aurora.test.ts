@@ -12,6 +12,8 @@ import {
   selectReducer,
   computeTripTotal,
   buildChartSeries,
+  PROVIDER_META,
+  providersInChart,
   flightSummaryLine,
   returnSummaryLine,
   displayLegs,
@@ -255,6 +257,50 @@ test('buildChartSeries deduplicates same-day snapshots, keeping the cheapest', (
   // one historical point (Aug 1, cheapest total 750) + Now
   assert.equal(points.length, 2);
   assert.equal(points[0].total, 750);
+});
+
+test('buildChartSeries carries the plotted snapshot provider onto each day point', () => {
+  const history = [
+    { created_at: '2025-08-01T00:00:00Z', flight_price: '200', hotel_price: '650', provider: 'kiwi' },
+    { created_at: '2025-08-10T00:00:00Z', flight_price: '180', hotel_price: '620', provider: 'fast_flights' },
+    // Legacy snapshot predating the provider marker.
+    { created_at: '2025-08-12T00:00:00Z', flight_price: '190', hotel_price: '630' },
+  ] as never[];
+  const { points } = buildChartSeries(history, 789, 612);
+  assert.equal(points[0].provider, 'kiwi');
+  assert.equal(points[1].provider, 'fast_flights');
+  assert.equal(points[2].provider, null);
+  // The synthetic Now point is not a snapshot — no provider marker.
+  assert.equal(points[points.length - 1].provider, undefined);
+});
+
+test('buildChartSeries provider follows the day-cheapest snapshot', () => {
+  const history = [
+    { created_at: '2025-08-01T00:00:00Z', flight_price: '200', hotel_price: '650', provider: 'skiplagged' },
+    { created_at: '2025-08-01T12:00:00Z', flight_price: '150', hotel_price: '600', provider: 'fast_flights' },
+  ] as never[];
+  const { points } = buildChartSeries(history, 700, 500);
+  assert.equal(points[0].total, 750);
+  assert.equal(points[0].provider, 'fast_flights');
+});
+
+test('PROVIDER_META maps each known provider to a distinct marker shape', () => {
+  const shapes = Object.values(PROVIDER_META).map((meta) => meta.shape);
+  assert.equal(new Set(shapes).size, shapes.length);
+  assert.equal(PROVIDER_META.skiplagged.label, 'Skiplagged');
+  assert.equal(PROVIDER_META.kiwi.label, 'Kiwi');
+  assert.equal(PROVIDER_META.fast_flights.label, 'Fast Flights');
+});
+
+test('providersInChart lists present providers in registry order, unknown last', () => {
+  const points = [
+    { label: 'Aug 1', total: 1, hotel: 0, minFlight: 1, provider: 'fast_flights' },
+    { label: 'Aug 2', total: 1, hotel: 0, minFlight: 1, provider: 'skiplagged' },
+    { label: 'Aug 3', total: 1, hotel: 0, minFlight: 1, provider: 'mystery' },
+    { label: 'Now', total: 1, hotel: 0, minFlight: 1 },
+  ];
+  assert.deepEqual(providersInChart(points), ['skiplagged', 'fast_flights', 'mystery']);
+  assert.deepEqual(providersInChart([{ label: 'Now', total: 1, hotel: 0, minFlight: 1 }]), []);
 });
 
 test('buildChartSeries skips snapshots without a created_at date', () => {

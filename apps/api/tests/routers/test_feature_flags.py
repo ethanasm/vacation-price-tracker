@@ -79,7 +79,7 @@ async def test_flags_non_admin_forbidden(client_with_csrf, test_session, monkeyp
     _authorize(client_with_csrf, user)
 
     assert client_with_csrf.get("/v1/feature-flags").status_code == 403
-    response = client_with_csrf.patch("/v1/feature-flags/kiwi_flights", json={"enabled": True})
+    response = client_with_csrf.patch("/v1/feature-flags/beta_optimizer", json={"enabled": True})
     assert response.status_code == 403
 
 
@@ -92,9 +92,9 @@ async def test_flags_admin_lists(client_with_csrf, test_session, monkeypatch):
     response = client_with_csrf.get("/v1/feature-flags")
     assert response.status_code == 200
     flags = {f["name"]: f for f in response.json()["flags"]}
-    assert "kiwi_flights" in flags
-    assert flags["kiwi_flights"]["enabled"] is False
-    assert flags["kiwi_flights"]["description"]
+    assert "beta_optimizer" in flags
+    assert flags["beta_optimizer"]["enabled"] is False
+    assert flags["beta_optimizer"]["description"]
 
 
 @pytest.mark.asyncio
@@ -103,10 +103,10 @@ async def test_flags_admin_toggles(client_with_csrf, test_session, monkeypatch):
     monkeypatch.setattr(settings, "admin_emails", ADMIN_EMAIL)
     _authorize(client_with_csrf, user)
 
-    response = client_with_csrf.patch("/v1/feature-flags/kiwi_flights", json={"enabled": True})
+    response = client_with_csrf.patch("/v1/feature-flags/beta_optimizer", json={"enabled": True})
     assert response.status_code == 200
     assert response.json() == {
-        "name": "kiwi_flights",
+        "name": "beta_optimizer",
         "description": response.json()["description"],
         "enabled": True,
     }
@@ -115,9 +115,9 @@ async def test_flags_admin_toggles(client_with_csrf, test_session, monkeypatch):
         f["name"]: f["enabled"]
         for f in client_with_csrf.get("/v1/feature-flags").json()["flags"]
     }
-    assert flags["kiwi_flights"] is True
+    assert flags["beta_optimizer"] is True
 
-    response = client_with_csrf.patch("/v1/feature-flags/kiwi_flights", json={"enabled": False})
+    response = client_with_csrf.patch("/v1/feature-flags/beta_optimizer", json={"enabled": False})
     assert response.status_code == 200
     assert response.json()["enabled"] is False
 
@@ -138,5 +138,5 @@ async def test_flags_invalid_body_422(client_with_csrf, test_session, monkeypatc
     monkeypatch.setattr(settings, "admin_emails", ADMIN_EMAIL)
     _authorize(client_with_csrf, user)
 
-    response = client_with_csrf.patch("/v1/feature-flags/kiwi_flights", json={"enabled": "yes"})
+    response = client_with_csrf.patch("/v1/feature-flags/beta_optimizer", json={"enabled": "yes"})
     assert response.status_code == 422

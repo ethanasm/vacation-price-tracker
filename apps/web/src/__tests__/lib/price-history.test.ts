@@ -1,9 +1,11 @@
 import type { ApiFlightOffer, ApiHotelOffer, PriceSnapshot } from "../../lib/api";
 import {
+  PROVIDER_META,
   aggregateDailyPriceHistory,
   flightStableKey,
   hotelStableKey,
   parsePrice,
+  providersInHistory,
 } from "../../lib/price-history";
 
 function snapshot(overrides: Partial<PriceSnapshot> & { created_at: string }): PriceSnapshot {
@@ -218,5 +220,85 @@ describe("aggregateDailyPriceHistory", () => {
     ]);
     expect(result[0].selectedFlight).toBeUndefined();
     expect(result[0].selectedHotel).toBeUndefined();
+  });
+
+  it("carries the plotted snapshot's provider marker onto each day point", () => {
+    const result = aggregateDailyPriceHistory([
+      snapshot({
+        created_at: "2026-07-14T10:00:00Z",
+        flight_price: "100",
+        provider: "kiwi",
+      }),
+      snapshot({
+        created_at: "2026-07-15T10:00:00Z",
+        flight_price: "90",
+        provider: "fast_flights",
+      }),
+      // Legacy snapshot predating the provider marker.
+      snapshot({ created_at: "2026-07-16T10:00:00Z", flight_price: "95" }),
+    ]);
+    expect(result.map((p) => p.provider)).toEqual(["kiwi", "fast_flights", null]);
+  });
+
+  it("provider follows the day's cheapest snapshot when several exist", () => {
+    const result = aggregateDailyPriceHistory([
+      snapshot({
+        created_at: "2026-07-15T06:00:00Z",
+        flight_price: "120",
+        provider: "skiplagged",
+      }),
+      snapshot({
+        created_at: "2026-07-15T18:00:00Z",
+        flight_price: "100",
+        provider: "fast_flights",
+      }),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].total).toBe(100);
+    expect(result[0].provider).toBe("fast_flights");
+  });
+});
+
+describe("provider metadata", () => {
+  it("maps each known provider to a distinct marker shape", () => {
+    const shapes = Object.values(PROVIDER_META).map((meta) => meta.shape);
+    expect(new Set(shapes).size).toBe(shapes.length);
+    expect(PROVIDER_META.skiplagged.label).toBe("Skiplagged");
+    expect(PROVIDER_META.kiwi.label).toBe("Kiwi");
+    expect(PROVIDER_META.fast_flights.label).toBe("Fast Flights");
+  });
+
+  it("lists providers present in chart data in fixed registry order", () => {
+    const points = aggregateDailyPriceHistory([
+      snapshot({
+        created_at: "2026-07-14T10:00:00Z",
+        flight_price: "100",
+        provider: "fast_flights",
+      }),
+      snapshot({
+        created_at: "2026-07-15T10:00:00Z",
+        flight_price: "90",
+        provider: "skiplagged",
+      }),
+      snapshot({ created_at: "2026-07-16T10:00:00Z", flight_price: "95" }),
+    ]);
+    // Registry order (not appearance order); null providers are excluded.
+    expect(providersInHistory(points)).toEqual(["skiplagged", "fast_flights"]);
+  });
+
+  it("appends unknown providers after the known ones", () => {
+    const points = aggregateDailyPriceHistory([
+      snapshot({
+        created_at: "2026-07-14T10:00:00Z",
+        flight_price: "100",
+        provider: "mystery_provider",
+      }),
+      snapshot({
+        created_at: "2026-07-15T10:00:00Z",
+        flight_price: "90",
+        provider: "kiwi",
+      }),
+    ]);
+    expect(providersInHistory(points)).toEqual(["kiwi", "mystery_provider"]);
   });
 });

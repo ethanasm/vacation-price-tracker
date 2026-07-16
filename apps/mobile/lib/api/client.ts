@@ -23,6 +23,8 @@ export type RefreshStatusResponse = components['schemas']['RefreshStatusResponse
 export type UserResponse = components['schemas']['UserResponse'];
 export type FeatureFlagItem = components['schemas']['FeatureFlagItem'];
 export type FeatureFlagsResponse = components['schemas']['FeatureFlagsResponse'];
+export type AppSettingItem = components['schemas']['AppSettingItem'];
+export type AppSettingsResponse = components['schemas']['AppSettingsResponse'];
 
 /** Editable per-user notification preferences; omitted fields stay unchanged. */
 export interface UserPreferencesUpdate {
@@ -63,6 +65,8 @@ export interface ApiClient {
   updatePreferences(prefs: UserPreferencesUpdate): Promise<UserPreferencesResponse>;
   listFeatureFlags(): Promise<FeatureFlagItem[]>;
   setFeatureFlag(name: string, enabled: boolean): Promise<FeatureFlagItem>;
+  listAppSettings(): Promise<AppSettingItem[]>;
+  setAppSetting(name: string, value: string): Promise<AppSettingItem>;
 }
 
 interface Envelope<T> {
@@ -292,6 +296,22 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         method: 'PATCH',
         headers: buildHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ enabled }),
+      });
+    },
+
+    async listAppSettings() {
+      const res = await requestJson<AppSettingsResponse>('/v1/app-settings', {
+        method: 'GET',
+        headers: buildHeaders(),
+      });
+      return res.settings;
+    },
+
+    async setAppSetting(name, value) {
+      return requestJson<AppSettingItem>(`/v1/app-settings/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: buildHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ value }),
       });
     },
   };

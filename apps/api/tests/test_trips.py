@@ -1853,3 +1853,189 @@ def test_parse_kiwi_flight_offer_unparseable_is_dropped_not_raised():
     poisoned = _kiwi_offer()
     poisoned["outbound"]["segments"] = 42  # truthy non-iterable → TypeError inside
     assert trips_module._parse_flight_offer(poisoned, 0, {}) is None
+
+
+# ---------------------------------------------------------------------------
+# fast-flights-shaped offers (flat structured segments, no flight numbers)
+# ---------------------------------------------------------------------------
+
+
+def _fast_flights_offer(**overrides):
+    offer = {
+        "provider": "fast_flights",
+        "id": None,
+        "airlines": "Alaska Airlines",
+        "carrier_code": "AS",
+        "carrier_codes": ["AS"],
+        "airline_names": ["Alaska Airlines"],
+        "departure_airport": "SFO",
+        "arrival_airport": "JFK",
+        "departure_time": "2026-09-15T08:00:00",
+        "arrival_time": "2026-09-15T18:45:00",
+        "duration_minutes": 645,
+        "stops": 1,
+        "price": 187,
+        "price_currency": "USD",
+        "type": "best",
+        "segments": [
+            {
+                "carrier": "AS",
+                "from": "SFO",
+                "to": "DEN",
+                "departureTime": "2026-09-15T08:00:00",
+                "arrivalTime": "2026-09-15T11:30:00",
+                "durationMinutes": 210,
+                "planeType": "Boeing 737",
+            },
+            {
+                "carrier": "AS",
+                "from": "DEN",
+                "to": "JFK",
+                "departureTime": "2026-09-15T13:00:00",
+                "arrivalTime": "2026-09-15T18:45:00",
+                "durationMinutes": 345,
+                "planeType": "Airbus A321",
+            },
+        ],
+    }
+    offer.update(overrides)
+    return offer
+
+
+def test_parse_fast_flights_offer_builds_itinerary():
+    offer = trips_module._parse_flight_offer(_fast_flights_offer(), 2, {})
+    assert offer is not None
+    assert offer.id == "2"  # provider has no offer ids; index stands in
+    assert offer.airline_code == "AS"
+    assert offer.airline_name == "Alaska Airlines"
+    # fast-flights exposes no flight numbers — the field is absent, never faked.
+    assert offer.flight_number is None
+    assert str(offer.price) == "187"
+    assert offer.departure_time == "2026-09-15T08:00:00"
+    assert offer.arrival_time == "2026-09-15T18:45:00"
+    assert offer.duration_minutes == 645
+    assert offer.stops == 1
+    assert offer.return_flight is None
+
+    assert [it.direction for it in offer.itineraries] == ["outbound"]
+    itinerary = offer.itineraries[0]
+    assert itinerary.stops == 1
+    assert len(itinerary.segments) == 2
+    first, second = itinerary.segments
+    assert first.carrier_code == "AS"
+    assert first.flight_number is None
+    assert first.departure_airport == "SFO"
+    assert first.arrival_airport == "DEN"
+    assert first.departure_time == "2026-09-15T08:00:00"
+    assert first.duration_minutes == 210
+    assert second.departure_airport == "DEN"
+    assert second.arrival_airport == "JFK"
+    assert second.arrival_time == "2026-09-15T18:45:00"
+
+
+def test_parse_fast_flights_offer_mixed_airlines():
+    offer_dict = _fast_flights_offer(
+        carrier_codes=["AS", "UA"],
+        airline_names=["Alaska Airlines", "United"],
+    )
+    for seg in offer_dict["segments"]:
+        seg["carrier"] = None
+    offer = trips_module._parse_flight_offer(offer_dict, 0, {})
+    assert offer is not None
+    assert offer.airline_code == "AS"
+    assert offer.airline_name == "Alaska Airlines, United"
+    assert offer.itineraries[0].segments[0].carrier_code is None
+
+
+def test_parse_fast_flights_offer_unpriced_returns_none():
+    assert trips_module._parse_flight_offer(_fast_flights_offer(price=0), 0, {}) is None
+    assert trips_module._parse_flight_offer(_fast_flights_offer(price=None), 0, {}) is None
+
+
+def test_parse_fast_flights_offer_degenerate_shapes():
+    # No segments at all: parses (price present) with empty itineraries.
+    offer = trips_module._parse_flight_offer(
+        {"provider": "fast_flights", "price": 50}, 3, {}
+    )
+    assert offer is not None
+    assert offer.itineraries == []
+    assert offer.airline_code is None
+    assert offer.stops == 0
+    # Malformed segment entries are skipped; totals fall back gracefully.
+    bad = _fast_flights_offer(duration_minutes=None, stops=None)
+    bad["segments"] = ["junk", {"carrier": "AS", "from": "SFO", "to": "JFK"}]
+    offer = trips_module._parse_flight_offer(bad, 0, {})
+    assert offer is not None
+    assert len(offer.itineraries[0].segments) == 1
+    # A segment without durationMinutes leaves the itinerary total unknown.
+    assert offer.duration_minutes is None
+    assert offer.stops == 0
+
+
+def test_parse_fast_flights_offer_wrong_types_still_parse():
+    """Non-list values where lists are expected degrade gracefully, not crash."""
+    poisoned = _fast_flights_offer(carrier_codes=42, airline_names=42)
+    poisoned["segments"] = 42
+    offer = trips_module._parse_flight_offer(poisoned, 0, {})
+    assert offer is not None
+    assert offer.itineraries == []
+    assert offer.airline_name == "Alaska Airlines"  # falls back to the flat field
+
+
+def test_parse_fast_flights_offer_unparseable_is_dropped_not_raised():
+    """A poisoned stored offer drops that offer instead of 500ing the response."""
+
+    class Hostile(dict):
+        def get(self, *args, **kwargs):  # noqa: D102
+            if args and args[0] == "segments":
+                raise RuntimeError("poisoned")
+            return super().get(*args, **kwargs)
+
+    hostile = Hostile(_fast_flights_offer())
+    assert trips_module._parse_flight_offer(hostile, 0, {}) is None
+
+
+def test_snapshot_to_response_provider_column_wins():
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=Decimal("187.00"),
+        hotel_price=None,
+        total_price=Decimal("187.00"),
+        created_at=datetime.now(UTC),
+        provider="fast_flights",
+        raw_data={"flights": {"provider": "fast_flights", "data": [_fast_flights_offer()]}},
+    )
+    response = trips_module._snapshot_to_response(snapshot)
+    assert response.provider == "fast_flights"
+    assert len(response.flight_offers) == 1
+    assert response.flight_offers[0].flight_number is None
+
+
+def test_snapshot_to_response_provider_falls_back_to_raw_data():
+    """Rows predating the provider column derive it from raw flights metadata."""
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=None,
+        hotel_price=None,
+        total_price=None,
+        created_at=datetime.now(UTC),
+        provider=None,
+        raw_data={"flights": {"provider": "kiwi", "data": []}},
+    )
+    assert trips_module._snapshot_to_response(snapshot).provider == "kiwi"
+
+
+def test_snapshot_to_response_provider_absent_is_none():
+    snapshot = PriceSnapshot(
+        id=uuid.uuid4(),
+        trip_id=uuid.uuid4(),
+        flight_price=None,
+        hotel_price=None,
+        total_price=None,
+        created_at=datetime.now(UTC),
+        provider=None,
+        raw_data={"flights": {"provider": 42, "data": []}},
+    )
+    assert trips_module._snapshot_to_response(snapshot).provider is None

@@ -50,6 +50,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.admin_query import validate_admin_query
+from app.core.app_settings import (
+    canonical_setting_name,
+    canonical_setting_value,
+    list_app_settings,
+    set_app_setting,
+)
 from app.core.config import settings
 from app.core.feature_flags import canonical_flag_name, list_feature_flags, set_feature_flag
 from app.db.deps import get_db
@@ -383,3 +389,72 @@ async def admin_set_flag(
         extra={"event": "admin.flags.set", "flag": flag, "enabled": enabled, "ip": ip},
     )
     return JSONResponse({"name": flag, "enabled": enabled})
+
+
+# ---------------------------------------------------------------------------
+# App-setting admin endpoints (string-valued runtime toggles, e.g.
+# `flight_provider`) — same auth/rate-limit/engine notes as the flag endpoints.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/settings")
+async def admin_list_settings(request: Request, session: AsyncSession = Depends(get_db)):
+    """List every known app setting with its live value and allowed values."""
+    if not _authorized(request):
+        return _unauthorized()
+    ip = _client_ip(request)
+    if await _is_rate_limited(ip):
+        return JSONResponse(
+            {"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"}
+        )
+    return JSONResponse({"settings": await list_app_settings(session)})
+
+
+@router.put("/settings/{name}")
+async def admin_set_setting(
+    name: str, request: Request, session: AsyncSession = Depends(get_db)
+):
+    """Set a known app setting's value. Body: {"value": "<allowed value>"}."""
+    if not _authorized(request):
+        return _unauthorized()
+    ip = _client_ip(request)
+    if await _is_rate_limited(ip):
+        return JSONResponse(
+            {"error": "rate_limited"}, status_code=429, headers={"Retry-After": "60"}
+        )
+
+    # Resolve to the registry's own constants so everything logged/echoed below
+    # is a code-defined string, never a raw request value (CWE-117).
+    setting = canonical_setting_name(name)
+    if setting is None:
+        return JSONResponse(
+            {"error": "unknown_setting", "details": "unknown app setting"},
+            status_code=404,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse(
+            {"error": "bad_request", "details": "invalid JSON body"}, status_code=400
+        )
+    raw_value = body.get("value") if isinstance(body, dict) else None
+    value = canonical_setting_value(setting, raw_value) if isinstance(raw_value, str) else None
+    if value is None:
+        return JSONResponse(
+            {
+                "error": "bad_request",
+                "details": 'body must be {"value": "<allowed value>"}',
+            },
+            status_code=400,
+        )
+
+    await set_app_setting(session, setting, value)
+    logger.info(
+        "admin.settings set %s=%s ip=%s",
+        setting,
+        value,
+        ip,
+        extra={"event": "admin.settings.set", "setting": setting, "value": value, "ip": ip},
+    )
+    return JSONResponse({"name": setting, "value": value})

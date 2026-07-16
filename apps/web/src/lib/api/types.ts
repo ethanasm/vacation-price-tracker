@@ -600,6 +600,49 @@ export interface paths {
         patch: operations["update_feature_flag_v1_feature_flags__name__patch"];
         trace?: never;
     };
+    "/v1/app-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Settings
+         * @description List every known app setting with its live value (admin users only).
+         */
+        get: operations["get_app_settings_v1_app_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/app-settings/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update App Setting
+         * @description Set a known app setting's value (admin users only).
+         *
+         *     PATCH (not PUT) so the browser call passes the API's deliberately pinned
+         *     CORS method allowlist (GET/POST/PATCH/DELETE — see app.main).
+         */
+        patch: operations["update_app_setting_v1_app_settings__name__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -677,6 +720,27 @@ export interface components {
             meta?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** AppSettingItem */
+        AppSettingItem: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Value */
+            value: string;
+            /** Allowed Values */
+            allowed_values: string[];
+        };
+        /** AppSettingUpdate */
+        AppSettingUpdate: {
+            /** Value */
+            value: string;
+        };
+        /** AppSettingsResponse */
+        AppSettingsResponse: {
+            /** Settings */
+            settings: components["schemas"]["AppSettingItem"][];
         };
         /**
          * BulkDeleteResponse
@@ -1117,6 +1181,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Provider */
+            provider?: string | null;
             /** Flight Offers */
             flight_offers?: components["schemas"]["FlightOffer"][];
             /** Hotel Offers */
@@ -2223,6 +2289,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeatureFlagItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_app_settings_v1_app_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_app_setting_v1_app_settings__name__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSettingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSettingItem"];
                 };
             };
             /** @description Validation Error */

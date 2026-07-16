@@ -1901,4 +1901,120 @@ describe("API Client", () => {
       ).rejects.toThrow("Failed to submit elicitation");
     });
   });
+
+  describe("api.featureFlags", () => {
+    it("lists flags", async () => {
+      const payload = { flags: [{ name: "beta_optimizer", description: "d", enabled: false }] };
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => payload });
+
+      const result = await api.featureFlags.list();
+
+      expect(result).toEqual(payload);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/feature-flags",
+        expect.objectContaining({ credentials: "include" })
+      );
+    });
+
+    it("throws ApiError with server detail when the list fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ title: "Forbidden", detail: "Admin access required." }),
+      });
+      await expect(api.featureFlags.list()).rejects.toThrow("Forbidden");
+    });
+
+    it("PATCHes a flag and returns the updated item", async () => {
+      const updated = { name: "beta_optimizer", description: "d", enabled: true };
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => updated });
+
+      const result = await api.featureFlags.set("beta_optimizer", true);
+
+      expect(result).toEqual(updated);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/feature-flags/beta_optimizer",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true }),
+        })
+      );
+    });
+
+    it("throws ApiError when the flag update fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => { throw new Error("no body"); },
+      });
+      await expect(api.featureFlags.set("bogus", true)).rejects.toThrow(
+        "Failed to update feature flag"
+      );
+    });
+  });
+
+  describe("api.appSettings", () => {
+    it("lists settings", async () => {
+      const payload = {
+        settings: [
+          {
+            name: "flight_provider",
+            description: "d",
+            value: "skiplagged",
+            allowed_values: ["skiplagged", "kiwi", "fast_flights"],
+          },
+        ],
+      };
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => payload });
+
+      const result = await api.appSettings.list();
+
+      expect(result).toEqual(payload);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/app-settings",
+        expect.objectContaining({ credentials: "include" })
+      );
+    });
+
+    it("throws ApiError when the list fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => { throw new Error("no body"); },
+      });
+      await expect(api.appSettings.list()).rejects.toThrow("Failed to load app settings");
+    });
+
+    it("PATCHes a setting value and returns the updated item", async () => {
+      const updated = {
+        name: "flight_provider",
+        description: "d",
+        value: "fast_flights",
+        allowed_values: ["skiplagged", "kiwi", "fast_flights"],
+      };
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => updated });
+
+      const result = await api.appSettings.set("flight_provider", "fast_flights");
+
+      expect(result).toEqual(updated);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://localhost:8000/v1/app-settings/flight_provider",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ value: "fast_flights" }),
+        })
+      );
+    });
+
+    it("throws ApiError with server detail when the setting update fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: "Bad Request", detail: "Value not allowed." }),
+      });
+      await expect(api.appSettings.set("flight_provider", "expedia")).rejects.toThrow(
+        "Bad Request"
+      );
+    });
+  });
 });

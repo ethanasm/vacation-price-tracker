@@ -79,6 +79,36 @@ export interface DailyPricePoint {
   minHotel: number;
   selectedFlight?: number;
   selectedHotel?: number;
+  /**
+   * Flight provider the day's plotted snapshot was taken from
+   * ("skiplagged" / "kiwi" / "fast_flights"; null on rows predating the marker).
+   */
+  provider: string | null;
+}
+
+/**
+ * Display metadata for the known flight providers, keyed by the provider
+ * marker stored on each snapshot. `shape` drives the per-provider point marker
+ * on the price chart — a non-color channel, so provider identity stays legible
+ * alongside the series colors (and for colorblind readers).
+ */
+export const PROVIDER_META: Record<
+  string,
+  { label: string; shape: "circle" | "square" | "triangle" }
+> = {
+  skiplagged: { label: "Skiplagged", shape: "circle" },
+  kiwi: { label: "Kiwi", shape: "square" },
+  fast_flights: { label: "Fast Flights", shape: "triangle" },
+};
+
+/** Providers present in aggregated chart data, in fixed registry order. */
+export function providersInHistory(points: DailyPricePoint[]): string[] {
+  const present = new Set(
+    points.map((p) => p.provider).filter((p): p is string => p != null)
+  );
+  return Object.keys(PROVIDER_META)
+    .filter((name) => present.has(name))
+    .concat([...present].filter((name) => !(name in PROVIDER_META)).sort());
 }
 
 interface AggregateOptions {
@@ -212,6 +242,7 @@ export function aggregateDailyPriceHistory(
       selectedFlight,
       minHotel,
       selectedHotel,
+      provider: snapshot.provider ?? null,
     };
   });
 }

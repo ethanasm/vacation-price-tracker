@@ -15,25 +15,35 @@ import { Switch } from "../../../components/ui/switch";
 import { Label } from "../../../components/ui/label";
 import { Button } from "../../../components/ui/button";
 import { useAuth } from "../../../context/AuthContext";
-import { api, type FeatureFlagItem } from "../../../lib/api";
+import { api, type AppSettingItem, type FeatureFlagItem } from "../../../lib/api";
 
-/** Humanize a snake_case flag name for display ("kiwi_flights" → "Kiwi flights"). */
+/** Humanize a snake_case flag name for display ("beta_optimizer" → "Beta optimizer"). */
 function flagLabel(name: string): string {
   const spaced = name.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** Humanize a snake_case setting value for display ("fast_flights" → "Fast Flights"). */
+function valueLabel(value: string): string {
+  return value
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function AdminFlagsCard() {
   const [flags, setFlags] = useState<FeatureFlagItem[] | null>(null);
+  const [settings, setSettings] = useState<AppSettingItem[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [savingFlag, setSavingFlag] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    api.featureFlags
-      .list()
-      .then((response) => {
-        if (!cancelled) setFlags(response.flags);
+    Promise.all([api.featureFlags.list(), api.appSettings.list()])
+      .then(([flagsResponse, settingsResponse]) => {
+        if (cancelled) return;
+        setFlags(flagsResponse.flags);
+        setSettings(settingsResponse.settings);
       })
       .catch(() => {
         if (!cancelled) setLoadFailed(true);
@@ -60,6 +70,25 @@ function AdminFlagsCard() {
     }
   };
 
+  const handleSelectValue = async (name: string, value: string) => {
+    setSavingFlag(name);
+    try {
+      const updated = await api.appSettings.set(name, value);
+      setSettings((current) =>
+        (current ?? []).map((setting) =>
+          setting.name === name ? updated : setting,
+        ),
+      );
+      toast.success(`${flagLabel(name)} set to ${valueLabel(value)}`);
+    } catch {
+      toast.error("Failed to update setting", {
+        description: "Please try again.",
+      });
+    } finally {
+      setSavingFlag(null);
+    }
+  };
+
   return (
     <Card className="mt-6">
       <CardHeader>
@@ -77,35 +106,83 @@ function AdminFlagsCard() {
           <p className="text-sm text-muted-foreground">
             Failed to load feature flags.
           </p>
-        ) : flags === null ? (
+        ) : flags === null || settings === null ? (
           <p className="text-sm text-muted-foreground">Loading flags…</p>
         ) : (
-          flags.map((flag, index) => (
-            <div
-              key={flag.name}
-              className={
-                index === 0
-                  ? "flex items-center justify-between gap-4"
-                  : "mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4"
-              }
-            >
-              <div className="space-y-0.5">
-                <Label htmlFor={`flag-${flag.name}`}>
-                  {flagLabel(flag.name)}
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  {flag.description}
-                </p>
+          <>
+            {settings.map((setting, index) => (
+              <div
+                key={setting.name}
+                className={
+                  index === 0
+                    ? "flex flex-wrap items-center justify-between gap-4"
+                    : "mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4"
+                }
+              >
+                <div className="space-y-0.5">
+                  <Label id={`setting-${setting.name}-label`}>
+                    {flagLabel(setting.name)}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {setting.description}
+                  </p>
+                </div>
+                <div
+                  role="radiogroup"
+                  aria-labelledby={`setting-${setting.name}-label`}
+                  className="inline-flex rounded-lg border border-[var(--aurora-hairline)] p-0.5"
+                >
+                  {setting.allowed_values.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={setting.value === value}
+                      disabled={savingFlag !== null}
+                      onClick={() => {
+                        if (setting.value !== value) {
+                          handleSelectValue(setting.name, value);
+                        }
+                      }}
+                      className={
+                        setting.value === value
+                          ? "rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+                          : "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      }
+                    >
+                      {valueLabel(value)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <Switch
-                id={`flag-${flag.name}`}
-                checked={flag.enabled}
-                disabled={savingFlag !== null}
-                onCheckedChange={(next) => handleToggle(flag.name, next)}
-                aria-label={`${flagLabel(flag.name)} flag`}
-              />
-            </div>
-          ))
+            ))}
+            {flags.map((flag, index) => (
+              <div
+                key={flag.name}
+                className={
+                  index === 0 && settings.length === 0
+                    ? "flex items-center justify-between gap-4"
+                    : "mt-4 flex items-center justify-between gap-4 border-t border-[var(--aurora-hairline)] pt-4"
+                }
+              >
+                <div className="space-y-0.5">
+                  <Label htmlFor={`flag-${flag.name}`}>
+                    {flagLabel(flag.name)}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {flag.description}
+                  </p>
+                </div>
+                <Switch
+                  id={`flag-${flag.name}`}
+                  checked={flag.enabled}
+                  disabled={savingFlag !== null}
+                  onCheckedChange={(next) => handleToggle(flag.name, next)}
+                  aria-label={`${flagLabel(flag.name)} flag`}
+                />
+              </div>
+            ))}
+          </>
         )}
       </CardContent>
     </Card>

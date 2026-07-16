@@ -56,18 +56,31 @@ If you intentionally scope work to one surface (e.g. ship web first, mobile foll
 a public endpoint, no API key, no documented rate limit
 (`search_hotels`/`search_hotels_all` + `get_hotel_details`).
 
-**Flights** come from one of two MCP providers, selected at runtime by the
-`kiwi_flights` feature flag (DB `feature_flags` table, toggled via
-`PUT /v1/admin/flags/kiwi_flights` — no redeploy):
+**Flights** come from one of three providers, selected at runtime by the
+`flight_provider` app setting (DB `app_settings` table, values
+`skiplagged` | `kiwi` | `fast_flights`, changed via
+`PUT /v1/admin/settings/flight_provider` or the Settings-page three-way
+switch — no redeploy):
 
-- **Skiplagged MCP** (flag off, default): chat tools use single-page
-  `search_flights`; the tracking worker uses `search_flights_all` (up to 300
-  results across `max_pages=4`). Flight numbers are parsed from the `id` string.
-- **Kiwi.com MCP** (flag on): `https://mcp.kiwi.com/` — public, stateless, no
-  API key. Returns structured per-segment data (carrier, flight number, times,
+- **Skiplagged MCP** (default): chat tools use single-page `search_flights`;
+  the tracking worker uses `search_flights_all` (up to 300 results across
+  `max_pages=4`). Flight numbers are parsed from the `id` string.
+- **Kiwi.com MCP**: `https://mcp.kiwi.com/` — public, stateless, no API key.
+  Returns structured per-segment data (carrier, flight number, times,
   durations, stops, cabin class) but no server-side pagination (~15 itineraries
   per search; stops/sort/limit applied client-side). Added when Skiplagged's
   flight-search backend began returning sustained 429s (July 2026).
+- **fast-flights** (Google Flights scraper, `fast-flights` PyPI package): no
+  API key; one ranked page per query (no pagination), structured segments
+  (airports, times, durations) but **no flight numbers** and airline identity
+  at itinerary level only; round-trip searches list outbound options priced at
+  the round-trip total. Optional `FAST_FLIGHTS_PROXY` env for its outbound
+  requests.
+
+Every `price_snapshots` row carries a `provider` marker naming the flight
+provider it was fetched from, exposed on `/v1/trips/{id}` snapshots; the web
+and mobile price charts shape the plotted point markers per provider (circle =
+Skiplagged, square = Kiwi, triangle = Fast Flights) with a "Source" legend.
 
 Client details: [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md).
 
@@ -116,7 +129,10 @@ stack, copy `.env.prod.example` to `.env.prod` (see Deployment).
 **Feature flags:** boolean feature gates (`email_notifications`,
 `sms_notifications`, `beta_optimizer`) live in the DB `feature_flags` table
 (`app/core/feature_flags.py`), seeded disabled on startup and toggled at runtime
-(no redeploy) — not env vars. `MAX_TRIPS_PER_USER` (default 10) stays an env limit.
+(no redeploy) — not env vars. String-valued operator settings (currently
+`flight_provider`) live in the sibling `app_settings` table
+(`app/core/app_settings.py`), same seeding/runtime-change model.
+`MAX_TRIPS_PER_USER` (default 10) stays an env limit.
 
 **Cost / abuse ceilings** are always on (like the per-minute rate limiter):
 per-user daily quotas + a global daily Groq/Skiplagged spend circuit-breaker in

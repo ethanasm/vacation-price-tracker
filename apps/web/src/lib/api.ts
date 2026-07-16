@@ -11,6 +11,7 @@
 export type {
   UserResponse as User,
   FeatureFlagItem,
+  AppSettingItem,
   TripStatus,
   TripCreate,
   TripResponse,
@@ -42,6 +43,8 @@ import type {
   UserResponse,
   FeatureFlagItem as GeneratedFeatureFlagItem,
   FeatureFlagsResponse as GeneratedFeatureFlagsResponse,
+  AppSettingItem as GeneratedAppSettingItem,
+  AppSettingsResponse as GeneratedAppSettingsResponse,
   TripDetail as GeneratedTripDetail,
   TripCreate,
   TripResponse,
@@ -463,6 +466,50 @@ export const api = {
         throw new ApiError(
           response.status,
           error.title || "Failed to update feature flag",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+  },
+
+  appSettings: {
+    /**
+     * List operator app settings (admin users only — 403 otherwise).
+     */
+    async list(): Promise<GeneratedAppSettingsResponse> {
+      const response = await fetchWithAuth("/v1/app-settings");
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to load app settings",
+          error.detail
+        );
+      }
+
+      return response.json();
+    },
+
+    /**
+     * Set an app setting's value (admin users only).
+     */
+    async set(name: string, value: string): Promise<GeneratedAppSettingItem> {
+      const response = await fetchWithAuth(`/v1/app-settings/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ value }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new ApiError(
+          response.status,
+          error.title || "Failed to update app setting",
           error.detail
         );
       }

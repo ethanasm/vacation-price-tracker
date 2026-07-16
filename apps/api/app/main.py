@@ -14,6 +14,7 @@ from sqlmodel import SQLModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401 - Import to register models
+from app.core.app_settings import ensure_app_settings
 from app.core.config import settings
 from app.core.errors import (
     AppError,
@@ -36,6 +37,7 @@ from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.security_headers import security_headers_middleware
 from app.routers import (
     admin,
+    app_settings,
     auth,
     chat,
     device_tokens,
@@ -75,11 +77,13 @@ async def lifespan(app: FastAPI):
         async with async_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
 
-    # Seed any missing feature flags (idempotent). The table exists via create_all
-    # in dev and via Alembic in prod; guarded so a pre-migration boot doesn't crash.
+    # Seed any missing feature flags / app settings (idempotent). The tables
+    # exist via create_all in dev and via Alembic in prod; guarded so a
+    # pre-migration boot doesn't crash.
     try:
         async with AsyncSessionLocal() as session:
             await ensure_feature_flags(session)
+            await ensure_app_settings(session)
     except Exception as exc:
         logger.warning(
             "Feature-flag seeding skipped",
@@ -145,6 +149,7 @@ app.include_router(users.router)
 app.include_router(telemetry.router)
 app.include_router(admin.router)
 app.include_router(feature_flags.router)
+app.include_router(app_settings.router)
 
 
 @app.exception_handler(AppError)

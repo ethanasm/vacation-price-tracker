@@ -49,10 +49,13 @@ import { formatPrice, formatShortDate, formatDuration, formatFlightTime, renderS
 import type { ApiFlightItinerary, ApiFlightSegment } from "@/lib/api";
 import { useSSEContextOptional } from "@/lib/sse-provider";
 import {
+  PROVIDER_META,
   aggregateDailyPriceHistory,
   flightStableKey,
   hotelStableKey,
   parsePrice,
+  providersInHistory,
+  type DailyPricePoint,
 } from "@/lib/price-history";
 import {
   airlineChip,
@@ -157,6 +160,69 @@ function getStatusVariant(
   }
 }
 
+/** Display label for a provider marker ("fast_flights" → "Fast Flights"). */
+function providerLabel(provider: string): string {
+  const meta = PROVIDER_META[provider];
+  if (meta) return meta.label;
+  return provider
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
+ * Per-provider point marker (shape, not color, carries provider identity so it
+ * stays legible next to the series colors and for colorblind readers).
+ * Skiplagged = circle, Kiwi = square, Fast Flights = triangle.
+ */
+function ProviderMarker({
+  cx,
+  cy,
+  provider,
+  color,
+  r,
+}: {
+  cx: number;
+  cy: number;
+  provider: string | null;
+  color: string;
+  r: number;
+}) {
+  const shape = provider ? PROVIDER_META[provider]?.shape : undefined;
+  // 2px surface ring so overlapping marks stay separable.
+  const ring = { stroke: "var(--background)", strokeWidth: 1.5 } as const;
+  if (shape === "square") {
+    return (
+      <rect x={cx - r} y={cy - r} width={r * 2} height={r * 2} fill={color} {...ring} />
+    );
+  }
+  if (shape === "triangle") {
+    const points = `${cx},${cy - r - 1} ${cx + r + 1},${cy + r} ${cx - r - 1},${cy + r}`;
+    return <polygon points={points} fill={color} {...ring} />;
+  }
+  // Circle for Skiplagged and the default for unknown/legacy providers.
+  return <circle cx={cx} cy={cy} r={r} fill={color} {...ring} />;
+}
+
+/** "Source" legend mapping each provider present in the data to its marker. */
+function ProviderLegend({ points }: { points: DailyPricePoint[] }) {
+  const providers = providersInHistory(points);
+  if (providers.length === 0) return null;
+  return (
+    <div className={styles.providerLegend} data-testid="provider-legend">
+      <span className={styles.providerLegendTitle}>Source</span>
+      {providers.map((provider) => (
+        <span key={provider} className={styles.providerLegendItem}>
+          <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden="true">
+            <ProviderMarker cx={6} cy={6} provider={provider} color="currentColor" r={4} />
+          </svg>
+          {providerLabel(provider)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function PriceHistoryChart({
   priceHistory,
   selectedHotelKey,
@@ -199,6 +265,33 @@ function PriceHistoryChart({
 
   const selectedFlightLineLabel = selectedFlightLabel ?? "Selected Flight";
   const selectedHotelLineLabel = selectedHotelLabel ?? "Selected Hotel";
+
+  // Per-point marker on the hero line, shaped by the provider the day's
+  // snapshot came from (see ProviderMarker). The hero line is `total` when the
+  // hotel series is shown, otherwise the flight min line.
+  const renderProviderDot =
+    (color: string) =>
+    (props: unknown) => {
+      // Recharts' DotType props aren't exported; pull out the handful we use.
+      const { key, cx, cy, payload } = props as {
+        key?: string | number;
+        cx?: number;
+        cy?: number;
+        payload?: DailyPricePoint;
+      };
+      const dotKey = key ?? payload?.day ?? "dot";
+      if (cx == null || cy == null) return <g key={dotKey} />;
+      return (
+        <ProviderMarker
+          key={dotKey}
+          cx={cx}
+          cy={cy}
+          provider={payload?.provider ?? null}
+          color={color}
+          r={4}
+        />
+      );
+    };
 
   // Paired lines share a color; line style differentiates min vs. selected.
   const chartConfig = {
@@ -244,33 +337,47 @@ function PriceHistoryChart({
             cursor={false}
             content={
               <ChartTooltipContent
-                formatter={(value, name) => (
-                  <span>
-                    {chartConfig[name as keyof typeof chartConfig]?.label}:{" "}
-                    <strong>${Number(value).toLocaleString()}</strong>
-                  </span>
-                )}
+                formatter={(value, name, item) => {
+                  const isHero = name === (showHotel ? "total" : "minFlight");
+                  const provider = isHero
+                    ? ((item as { payload?: DailyPricePoint })?.payload?.provider ?? null)
+                    : null;
+                  return (
+                    <span>
+                      {chartConfig[name as keyof typeof chartConfig]?.label}:{" "}
+                      <strong>${Number(value).toLocaleString()}</strong>
+                      {provider ? (
+                        <span className={styles.tooltipProvider}>
+                          {" "}
+                          via {providerLabel(provider)}
+                        </span>
+                      ) : null}
+                    </span>
+                  );
+                }}
               />
             }
           />
-          {/* Total — bold solid line, stands out from the pairs */}
+          {/* Total — bold solid line, stands out from the pairs. Point markers
+              are shaped by the provider the day's snapshot came from. */}
           {showHotel && (
             <Line
               dataKey="total"
               type="monotone"
               stroke="var(--color-total)"
               strokeWidth={2.5}
-              dot={{ r: 3 }}
+              dot={renderProviderDot("var(--color-total)")}
             />
           )}
-          {/* Mins (flight + hotel) — thin dashed lines, no dots */}
+          {/* Mins (flight + hotel) — thin dashed lines. Flight min carries the
+              provider markers when it is the hero line (no hotel series). */}
           <Line
             dataKey="minFlight"
             type="monotone"
             stroke="var(--color-minFlight)"
             strokeWidth={1.5}
             strokeDasharray="4 4"
-            dot={false}
+            dot={showHotel ? false : renderProviderDot("var(--color-minFlight)")}
           />
           {showHotel && (
             <Line
@@ -305,6 +412,7 @@ function PriceHistoryChart({
           )}
         </LineChart>
       </ChartContainer>
+      <ProviderLegend points={chartData} />
     </div>
   );
 }

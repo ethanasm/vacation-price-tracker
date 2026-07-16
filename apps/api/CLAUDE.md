@@ -50,8 +50,12 @@ the SQLite test DB.
 - Migrations: `pnpm db:migrate` (= `alembic upgrade head`), `pnpm db:migrate:new "<msg>"`
   to autogenerate, `pnpm db:migrate:status` for current revision. `env.py` reads
   `DATABASE_URL`.
+- Tables also include `feature_flags` (boolean toggles) and `app_settings`
+  (string-valued toggles, e.g. `flight_provider`).
 - `PriceSnapshot.raw_data` is a JSONB column kept for debugging — query it when a
-  tracked price looks wrong.
+  tracked price looks wrong. `PriceSnapshot.provider` marks which flight
+  provider the snapshot was fetched from (backfilled from
+  `raw_data->flights->provider` for older rows).
 
 ## Error handling
 
@@ -160,10 +164,25 @@ the tracking path (`search_flights_all`) unions `COVERAGE_QUERIES` queries,
 deduped by segment fingerprint (cheapest price per pairing wins). Airline
 display names come from the static map in `app/core/airlines.py`.
 
-Which provider serves flights is the `kiwi_flights` feature flag
+Which provider serves flights is the `flight_provider` app setting
 (`app/services/flight_provider.py` dispatches; hotels always Skiplagged).
 Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 `GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
+
+## fast-flights client (third flight provider)
+
+`app/clients/fast_flights.py` wraps the `fast-flights` PyPI package (Google
+Flights scraper — protobuf `tfs` query, no API key). Interface-compatible with
+the other clients (`search_flights` / `search_flights_all`,
+provider="fast_flights", `fast_flights_calls` budget metric sharing the same
+ceiling). Provider quirks normalized at the source: one ranked page per query
+(no pagination — `search_flights_all` is a single query), round-trip searches
+list **outbound** options priced at the round-trip total, structured segments
+(airports/times/durations) but **no flight numbers**, and airline identity at
+itinerary level only (resolved to IATA codes via the page's own code↔name
+metadata). The sync library runs in a worker thread; transient scrape failures
+(blocked/unparseable page) retry briefly then raise `FastFlightsTransientError`.
+Optional `FAST_FLIGHTS_PROXY` env routes its requests through a proxy.
 
 **Flight numbers are not structured** — they are encoded in the Skiplagged `id`
 field (e.g. `SFO-CDG-2026-06-15-2026-06-22-trip=AC744-LH6825,TS251-AC401-AC741`)
@@ -251,8 +270,16 @@ PUT  /v1/admin/flags/{name}             body {"enabled": true|false}
 
 Unknown flag → 404; non-boolean body → 400. The flag registry lives in
 `app/core/feature_flags.py` (`KNOWN_FLAGS`); rows are seeded with defaults at
-API startup. The `kiwi_flights` flag selects the flight provider (see the Kiwi
-MCP client section above).
+API startup.
+
+**String-valued settings** get the same treatment via `GET /v1/admin/settings`
+and `PUT /v1/admin/settings/{name}` (body `{"value": "<allowed value>"}`;
+registry in `app/core/app_settings.py`, values validated against each
+setting's `allowed_values`). The `flight_provider` setting
+(`skiplagged` | `kiwi` | `fast_flights`) selects the flight provider (see the
+client sections above). Admin *users* change it from the Settings page via
+`GET/PATCH /v1/app-settings` (cookie + CSRF, `ADMIN_EMAILS`-gated — the
+string-valued sibling of `/v1/feature-flags`).
 
 ## Commit scope
 

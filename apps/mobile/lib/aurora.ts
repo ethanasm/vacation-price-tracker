@@ -338,6 +338,38 @@ export interface ChartPoint {
   selectedFlight?: number;
   /** The selected hotel's price that day (carried forward across gaps). */
   selectedHotel?: number;
+  /**
+   * Flight provider the day's plotted snapshot was taken from ("skiplagged" /
+   * "kiwi" / "fast_flights"). Null on legacy snapshots predating the marker
+   * and on the synthetic "Now" point.
+   */
+  provider?: string | null;
+}
+
+/**
+ * Display metadata for the known flight providers, keyed by the provider
+ * marker stored on each snapshot. `shape` drives the per-provider point marker
+ * on the price chart — a non-color channel, so provider identity stays legible
+ * alongside the series colors (and for colorblind readers). Mirrors
+ * apps/web/src/lib/price-history.ts PROVIDER_META.
+ */
+export const PROVIDER_META: Record<
+  string,
+  { label: string; shape: 'circle' | 'square' | 'triangle' }
+> = {
+  skiplagged: { label: 'Skiplagged', shape: 'circle' },
+  kiwi: { label: 'Kiwi', shape: 'square' },
+  fast_flights: { label: 'Fast Flights', shape: 'triangle' },
+};
+
+/** Providers present in chart points, in fixed registry order. */
+export function providersInChart(points: ChartPoint[]): string[] {
+  const present = new Set(
+    points.map((p) => p.provider).filter((p): p is string => p != null),
+  );
+  return Object.keys(PROVIDER_META)
+    .filter((name) => present.has(name))
+    .concat([...present].filter((name) => !(name in PROVIDER_META)).sort());
 }
 
 export interface ChartSeriesOptions {
@@ -396,7 +428,10 @@ export function buildChartSeries(
   options: ChartSeriesOptions = {},
 ): { points: ChartPoint[]; nowLabel: string } {
   const { selectedFlightKey, selectedHotelKey, nowSelectedFlight, nowSelectedHotel } = options;
-  const cheapestByDay = new Map<string, { total: number; hotel: number; flight: number }>();
+  const cheapestByDay = new Map<
+    string,
+    { total: number; hotel: number; flight: number; provider: string | null }
+  >();
   const snapshotsByDay = new Map<string, PriceSnapshot[]>();
   for (const snap of history) {
     const day = (snap.created_at ?? '').slice(0, 10);
@@ -410,14 +445,21 @@ export function buildChartSeries(
     const total = flight + hotel;
     snapshotsByDay.set(day, [...(snapshotsByDay.get(day) ?? []), snap]);
     const existing = cheapestByDay.get(day);
-    if (!existing || total < existing.total) cheapestByDay.set(day, { total, hotel, flight });
+    if (!existing || total < existing.total) {
+      cheapestByDay.set(day, { total, hotel, flight, provider: snap.provider ?? null });
+    }
   }
   const days = [...cheapestByDay.keys()].sort((a, b) => a.localeCompare(b));
 
   let lastSelectedFlight: number | null = null;
   let lastSelectedHotel: number | null = null;
   const points: ChartPoint[] = days.map((day) => {
-    const v = cheapestByDay.get(day) as { total: number; hotel: number; flight: number };
+    const v = cheapestByDay.get(day) as {
+      total: number;
+      hotel: number;
+      flight: number;
+      provider: string | null;
+    };
     const daySnapshots = snapshotsByDay.get(day) ?? [];
 
     let selectedFlight: number | undefined;
@@ -459,6 +501,7 @@ export function buildChartSeries(
       minFlight: v.flight,
       selectedFlight,
       selectedHotel,
+      provider: v.provider,
     };
   });
 
