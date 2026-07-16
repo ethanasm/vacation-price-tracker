@@ -5,18 +5,23 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.clients.fast_flights import FastFlightsClient, FastFlightsError
 from app.clients.kiwi import KiwiClient, KiwiMCPError
 from app.clients.skiplagged import SkiplaggedClient, SkiplaggedMCPError
 from app.clients.skiplagged_mock import mock_flight_search, mock_hotel_search
 from app.clients.skiplagged_parser import parse_flight_segments
 from app.core.config import settings
 from app.core.errors import GlobalBudgetExceeded
-from app.core.feature_flags import FeatureFlags, is_feature_enabled
 from app.core.telemetry import langfuse_context, observe
 from app.db.session import AsyncSessionLocal
 from app.models.price_snapshot import PriceSnapshot
 from app.models.trip import Trip
 from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
+from app.services.flight_provider import (
+    PROVIDER_FAST_FLIGHTS,
+    PROVIDER_KIWI,
+    get_flight_provider_name,
+)
 from sqlmodel import select
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -155,12 +160,11 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             "error": None,
         }
 
-    # Provider selection is an operator-level runtime toggle (`kiwi_flights`
-    # feature flag in the DB) — read per-fetch so a flip applies to the very
+    # Provider selection is an operator-level runtime choice (`flight_provider`
+    # app setting in the DB) — read per-fetch so a change applies to the very
     # next refresh, no worker restart.
     async with AsyncSessionLocal() as session:
-        use_kiwi = await is_feature_enabled(session, FeatureFlags.KIWI_FLIGHTS)
-    provider = "kiwi" if use_kiwi else "skiplagged"
+        provider = await get_flight_provider_name(session)
 
     logger.info(
         "Fetching flights for trip_id=%s via %s MCP",
@@ -177,8 +181,18 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
     max_stops = "none" if non_stop else None
 
     try:
-        if use_kiwi:
+        if provider == PROVIDER_KIWI:
             result = await KiwiClient().search_flights_all(
+                origin=trip["origin_airport"],
+                destination=trip["destination_code"],
+                departure_date=trip["depart_date"],
+                return_date=trip["return_date"] if trip["is_round_trip"] else None,
+                adults=trip["adults"],
+                max_stops=max_stops,
+                cabin=trip["flight_prefs"].get("cabin"),
+            )
+        elif provider == PROVIDER_FAST_FLIGHTS:
+            result = await FastFlightsClient().search_flights_all(
                 origin=trip["origin_airport"],
                 destination=trip["destination_code"],
                 departure_date=trip["depart_date"],
@@ -199,7 +213,7 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
             )
     except GlobalBudgetExceeded as exc:
         raise _budget_application_error(exc) from exc
-    except (SkiplaggedMCPError, KiwiMCPError) as exc:
+    except (SkiplaggedMCPError, KiwiMCPError, FastFlightsError) as exc:
         logger.warning(
             "Flight fetch failed for trip_id=%s via %s",
             trip["trip_id"],
@@ -629,12 +643,17 @@ async def save_snapshot_activity(payload: SaveSnapshotInput) -> str:
         raw_hotels["unpriced_count"] = len(hotel_items) - hotel_priced
         raw_data["hotels"] = raw_hotels
 
+        # Every snapshot carries a marker for the flight provider it was taken
+        # from — the fetch activity stamps it into raw flights metadata.
+        provider = raw_flights.get("provider")
+
         snapshot = PriceSnapshot(
             trip_id=trip_uuid,
             flight_price=flight_price,
             hotel_price=hotel_price,
             total_price=total_price,
             raw_data=raw_data,
+            provider=provider if isinstance(provider, str) else None,
         )
         session.add(snapshot)
         await session.commit()
@@ -663,6 +682,12 @@ def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
     if kiwi_codes:
         return kiwi_codes
 
+    # fast-flights format: itinerary-level carrier_codes list (Google exposes
+    # no per-segment airline identity)
+    fast_flights_codes = _extract_fast_flights_carrier_codes(flight)
+    if fast_flights_codes:
+        return fast_flights_codes
+
     carrier_codes: list[str] = []
 
     # Skiplagged format: parse from flight id field
@@ -689,6 +714,19 @@ def _extract_carrier_codes(flight: dict[str, Any]) -> list[str]:
             carrier_codes = [str(carrier).upper()]
 
     return carrier_codes
+
+
+def _extract_fast_flights_carrier_codes(flight: dict[str, Any]) -> list[str]:
+    """Collect carrier codes from a fast-flights offer's carrier_codes list."""
+    raw_codes = flight.get("carrier_codes")
+    if not isinstance(raw_codes, list):
+        return []
+    codes: list[str] = []
+    for code in raw_codes:
+        upper = str(code).upper()
+        if upper and upper not in codes:
+            codes.append(upper)
+    return codes
 
 
 def _extract_kiwi_carrier_codes(flight: dict[str, Any]) -> list[str]:

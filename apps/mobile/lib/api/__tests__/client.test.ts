@@ -367,6 +367,58 @@ test('setFeatureFlag PATCHes the encoded flag name with the enabled body', async
   assert.equal(flag.enabled, true);
 });
 
+test('listAppSettings GETs /v1/app-settings and returns the settings array', async () => {
+  let seenMethod = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url, init) => {
+      assert.equal(String(url), 'https://api.test/v1/app-settings');
+      seenMethod = init?.method ?? '';
+      return jsonResponse({
+        settings: [
+          {
+            name: 'flight_provider',
+            description: 'Flight provider',
+            value: 'skiplagged',
+            allowed_values: ['skiplagged', 'kiwi', 'fast_flights'],
+          },
+        ],
+      });
+    },
+  });
+  const settings = await client.listAppSettings();
+  assert.equal(seenMethod, 'GET');
+  assert.equal(settings.length, 1);
+  assert.equal(settings[0].name, 'flight_provider');
+  assert.deepEqual(settings[0].allowed_values, ['skiplagged', 'kiwi', 'fast_flights']);
+});
+
+test('setAppSetting PATCHes the encoded setting name with the value body', async () => {
+  let seenUrl = '';
+  let seenBody = '';
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: () => 'jwt',
+    refresh: async () => true,
+    fetchImpl: async (url, init) => {
+      seenUrl = String(url);
+      seenBody = String(init?.body);
+      return jsonResponse({
+        name: 'flight provider',
+        description: 'Flight provider',
+        value: 'fast_flights',
+        allowed_values: ['skiplagged', 'kiwi', 'fast_flights'],
+      });
+    },
+  });
+  const setting = await client.setAppSetting('flight provider', 'fast_flights');
+  assert.equal(seenUrl, 'https://api.test/v1/app-settings/flight%20provider');
+  assert.deepEqual(JSON.parse(seenBody), { value: 'fast_flights' });
+  assert.equal(setting.value, 'fast_flights');
+});
+
 test('concurrent 401s coalesce into a single refresh (single-flight)', async () => {
   let refreshCalls = 0;
   let refreshed = false;

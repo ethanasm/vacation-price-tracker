@@ -1,5 +1,6 @@
 """Database models for the Vacation Price Tracker API."""
 
+from app.models.app_setting import AppSetting
 from app.models.conversation import Conversation
 from app.models.device_token import DeviceToken
 from app.models.feature_flag import FeatureFlag
@@ -12,6 +13,7 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.models.user import User
 
 __all__ = [
+    "AppSetting",
     "Conversation",
     "DeviceToken",
     "FeatureFlag",

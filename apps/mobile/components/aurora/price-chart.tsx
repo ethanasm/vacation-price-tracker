@@ -1,8 +1,58 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import Svg, {
+  Path,
+  Line,
+  Circle,
+  Rect,
+  Polygon,
+  Defs,
+  LinearGradient as SvgGradient,
+  Stop,
+} from 'react-native-svg';
 import { useTheme } from '@/lib/theme';
-import { yAxisTicks, type ChartPoint } from '@/lib/aurora';
+import { PROVIDER_META, providersInChart, yAxisTicks, type ChartPoint } from '@/lib/aurora';
+
+/** Display label for a provider marker ("fast_flights" → "Fast Flights"). */
+function providerLabel(provider: string): string {
+  const meta = PROVIDER_META[provider];
+  if (meta) return meta.label;
+  return provider
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Per-provider point marker (shape, not color, carries provider identity so it
+ * stays legible next to the series colors and for colorblind readers).
+ * Skiplagged = circle, Kiwi = square, Fast Flights = triangle. Mirrors the web
+ * trip-detail chart's ProviderMarker.
+ */
+function ProviderMarker({
+  cx,
+  cy,
+  provider,
+  color,
+  r,
+}: {
+  cx: number;
+  cy: number;
+  provider: string | null;
+  color: string;
+  r: number;
+}): React.JSX.Element {
+  const shape = provider ? PROVIDER_META[provider]?.shape : undefined;
+  const ring = { stroke: '#FFFFFF', strokeWidth: 1.5 } as const;
+  if (shape === 'square') {
+    return <Rect x={cx - r} y={cy - r} width={r * 2} height={r * 2} fill={color} {...ring} />;
+  }
+  if (shape === 'triangle') {
+    const pts = `${cx},${cy - r - 1} ${cx + r + 1},${cy + r} ${cx - r - 1},${cy + r}`;
+    return <Polygon points={pts} fill={color} {...ring} />;
+  }
+  return <Circle cx={cx} cy={cy} r={r} fill={color} {...ring} />;
+}
 
 /**
  * Price-history chart, mirroring the web trip-detail chart's series:
@@ -133,6 +183,10 @@ export function PriceChart({
 
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(hi, lo));
 
+  // Providers present in the plotted data — drives the per-point hero-line
+  // markers and the "Source" legend row.
+  const chartProviders = providersInChart(points);
+
   // Day labels for every point, evenly thinned (keeping both ends) once the
   // width can't fit them all without crowding. The end labels are clamped
   // inside the chart, which shifts them toward the middle — so also drop any
@@ -261,6 +315,20 @@ export function PriceChart({
             {!showHotel && !selectedFlightLine && heroLine ? (
               <Path d={heroLine} stroke={c.accentCyan} strokeWidth={2.5} strokeLinecap="round" fill="none" />
             ) : null}
+            {/* Per-day provider markers on the hero line: the shape names the
+                provider the day's snapshot came from (Source legend below). */}
+            {points.map((p, i) =>
+              p.provider ? (
+                <ProviderMarker
+                  key={`prov-${i}`}
+                  cx={x(i)}
+                  cy={y(heroValue(p))}
+                  provider={p.provider}
+                  color={showHotel ? c.primary : c.accentCyan}
+                  r={3.5}
+                />
+              ) : null,
+            )}
             {last ? (
               <Circle
                 cx={x(points.length - 1)}
@@ -358,7 +426,7 @@ export function PriceChart({
             ]}
           >
             <Text style={[styles.tooltipDay, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
-              {active.label}
+              {active.provider ? `${active.label} · via ${providerLabel(active.provider)}` : active.label}
             </Text>
             {series.map((s) => {
               const v = s.valueOf(active);
@@ -400,6 +468,26 @@ export function PriceChart({
           </View>
         ))}
       </View>
+      {chartProviders.length > 0 ? (
+        <View style={styles.legendRow} testID="provider-legend">
+          <Text style={[styles.legendSourceTitle, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
+            SOURCE
+          </Text>
+          {chartProviders.map((provider) => (
+            <View key={provider} style={styles.legendItem}>
+              <Svg width={10} height={10} viewBox="0 0 10 10">
+                <ProviderMarker cx={5} cy={5} provider={provider} color={c.textMuted} r={3.5} />
+              </Svg>
+              <Text
+                numberOfLines={1}
+                style={[styles.legendLabel, { color: c.textMuted, fontFamily: tokens.font[600] }]}
+              >
+                {providerLabel(provider)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -428,4 +516,5 @@ const styles = StyleSheet.create({
   legendKeyDashed: { width: 14, height: 2, flexDirection: 'row', justifyContent: 'space-between' },
   legendDash: { width: 5, height: 2, borderRadius: 1 },
   legendLabel: { fontSize: 10 },
+  legendSourceTitle: { fontSize: 8, letterSpacing: 0.5 },
 });

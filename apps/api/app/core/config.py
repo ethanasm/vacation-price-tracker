@@ -46,8 +46,13 @@ class Settings(BaseSettings):
     mock_skiplagged_api: bool = False  # Return mock data instead of calling Skiplagged MCP
 
     # Kiwi.com MCP (no auth required) — alternative flight provider, selected at
-    # runtime via the `kiwi_flights` feature flag (DB `feature_flags` table).
+    # runtime via the `flight_provider` app setting (DB `app_settings` table).
     kiwi_mcp_url: str = "https://mcp.kiwi.com/"
+
+    # fast-flights (Google Flights scraper) — third flight provider option.
+    # Optional outbound proxy for its requests (Google may block datacenter
+    # IPs); empty = direct.
+    fast_flights_proxy: str = ""
 
     # SearchAPI (Phase 4)
     searchapi_key: str = ""

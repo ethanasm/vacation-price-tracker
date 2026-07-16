@@ -74,6 +74,31 @@ and push the merge together with your fix. `main` moves while a PR is open;
 pushing onto a stale base ships a diff no one has validated against current
 `main` and leaves conflicts to be discovered at merge time.
 
+### 2.5 Cross-surface parity gate (web ↔ mobile)
+
+VPT ships user-visible features on **both** web (`apps/web`) and mobile
+(`apps/mobile`); asymmetric changes must never ship silently (see root
+CLAUDE.md → Cross-platform parity). Before opening the PR, run
+`git diff --name-only origin/main...HEAD` and check each trigger below. If a
+trigger matches on one surface but the diff has no matching change on the
+other, **stop and implement the twin** (including its tests) before opening
+the PR — or, if the work is deliberately single-surface, say so explicitly in
+the PR body and track the second surface durably (issue or TODO the user
+signed off on).
+
+| If the diff touches… | …the twin that must also change |
+|---|---|
+| Trip screens — `apps/web/src/app/trips/**` | `apps/mobile/app/**` (trip list/detail/new + `components/aurora/**`) |
+| Assistant chat — `apps/web/src/components/chat/**` | `apps/mobile/app/(tabs)/chat.tsx` |
+| Settings / notification-threshold rows — `apps/web/src/app/trips/settings/**` | `apps/mobile/app/settings.tsx` |
+| Chart / price-history rendering or data shaping — `apps/web/src/lib/price-history.ts`, chart components | `apps/mobile/lib/aurora.ts`, `apps/mobile/components/aurora/price-chart.tsx` |
+| Any `/v1/*` endpoint or schema (`apps/api/app/routers/**`, `app/schemas/**`) | regenerate **both** `apps/web/src/lib/api/types.ts` and `apps/mobile/lib/api/types.ts` (same `export_openapi.py` output), and extend **both** API clients (`apps/web/src/lib/api.ts` ↔ `apps/mobile/lib/api/client.ts`) if the feature calls it |
+| Web telemetry events — `apps/web/src/lib/telemetry.ts` | `apps/mobile/lib/telemetry.ts` |
+
+The same table read right-to-left applies to mobile-first changes. This gate
+exists because the harness naturally reaches for the web surface first; a
+"done" feature with no mobile twin is the failure mode this step stops.
+
 ### 3. Open the PR
 
 Use `mcp__github__create_pull_request` with

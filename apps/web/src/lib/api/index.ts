@@ -20,6 +20,10 @@ export type UserResponse = components["schemas"]["UserResponse"];
 export type FeatureFlagItem = components["schemas"]["FeatureFlagItem"];
 export type FeatureFlagsResponse = components["schemas"]["FeatureFlagsResponse"];
 
+// App settings (admin users, string-valued toggles like flight_provider)
+export type AppSettingItem = components["schemas"]["AppSettingItem"];
+export type AppSettingsResponse = components["schemas"]["AppSettingsResponse"];
+
 // Trip types
 export type TripStatus = components["schemas"]["TripStatus"];
 export type TripCreate = components["schemas"]["TripCreate"];

@@ -22,7 +22,6 @@ class FeatureFlags:
     SMS_NOTIFICATIONS = "sms_notifications"
     PUSH_NOTIFICATIONS = "push_notifications"
     BETA_OPTIMIZER = "beta_optimizer"
-    KIWI_FLIGHTS = "kiwi_flights"
 
 
 @dataclass(frozen=True)
@@ -53,13 +52,12 @@ KNOWN_FLAGS: tuple[FeatureFlagSpec, ...] = (
         "Enable the flexible-date optimizer (beta).",
         False,
     ),
-    FeatureFlagSpec(
-        FeatureFlags.KIWI_FLIGHTS,
-        "Use Kiwi.com as the flight search provider instead of Skiplagged "
-        "(hotels stay on Skiplagged).",
-        False,
-    ),
 )
+
+# The old boolean ``kiwi_flights`` flag was replaced by the string-valued
+# ``flight_provider`` app setting (see ``app.core.app_settings``) when
+# fast-flights became a third provider option. The migration that created
+# ``app_settings`` carried the live value over and deleted the flag row.
 
 _SPECS: dict[str, FeatureFlagSpec] = {spec.name: spec for spec in KNOWN_FLAGS}
 

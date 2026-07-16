@@ -72,15 +72,17 @@ usage, last refresh-run outcome (Temporal history), and Axiom error volume
 ### PriceCheckWorkflow
 Single trip, saga-style (Temporal handles retries/compensation):
 1. `search_flights_all` via the active flight provider — Skiplagged (up to
-   `max_pages=4`, ~300 results) or Kiwi (union of `COVERAGE_QUERIES` samples
+   `max_pages=4`, ~300 results), Kiwi (union of `COVERAGE_QUERIES` samples
    deduped by segment fingerprint — each stateless call returns a varying
-   ~15-pairing sample that can miss whole carriers), selected per-fetch by the
-   `kiwi_flights` feature flag (`fetch_flights_activity` reads the DB flag, so
-   a flip applies to the next refresh with no worker restart).
+   ~15-pairing sample that can miss whole carriers), or fast-flights (Google
+   Flights scraper; one ranked page per query) — selected per-fetch by the
+   `flight_provider` app setting (`fetch_flights_activity` reads the DB
+   setting, so a change applies to the next refresh with no worker restart).
 2. `search_hotels_all(max_pages=4)`, then `get_hotel_details` for the top 20
    cheapest hotels (parallel) for room-level data.
 3. `filter_results_activity` applies post-fetch filters (see below).
-4. Save `PriceSnapshot` (with `raw_data` JSONB for debugging).
+4. Save `PriceSnapshot` (with `raw_data` JSONB for debugging and a `provider`
+   marker naming the flight provider the data came from).
 5. Check `NotificationRule` thresholds, queue notification events.
 6. Push the update to the UI over SSE.
 
@@ -94,11 +96,12 @@ top 5 against live data. Gated behind the `beta_optimizer` feature flag (DB
 
 ## Post-fetch filtering (`activities/price_check.py`)
 
-Neither provider supports these filters natively, so both are applied in-memory
+No provider supports these filters natively, so both are applied in-memory
 after fetching:
 
 1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes:
    Kiwi offers carry structured `outbound`/`inbound` segments (read directly);
+   fast-flights offers carry an itinerary-level `carrier_codes` list;
    Skiplagged codes are parsed from the `id` field via `parse_flight_segments()`.
 2. **Room types / views** — match `preferred_room_types` and `preferred_views`
    against each room's `title` (from `get_hotel_details`) and the hotel's

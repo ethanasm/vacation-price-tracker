@@ -344,6 +344,96 @@ def _parse_kiwi_flight_offer_safe(item: dict, index: int) -> FlightOffer | None:
         return None
 
 
+def _parse_fast_flights_itinerary(segments: list) -> FlightItinerary:
+    """Build the outbound FlightItinerary from fast-flights structured segments.
+
+    fast-flights exposes airports, times, and durations per segment but no
+    flight numbers (Google's payload carries airline identity at itinerary
+    level only), so ``flight_number`` is absent on this provider's segments.
+    """
+    parsed: list[FlightSegment] = []
+    total_minutes = 0
+    have_all_durations = True
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        duration = seg.get("durationMinutes")
+        if isinstance(duration, int):
+            total_minutes += duration
+        else:
+            have_all_durations = False
+        parsed.append(FlightSegment(
+            carrier_code=_opt_str(seg.get("carrier")),
+            flight_number=None,
+            departure_airport=_opt_str(seg.get("from")),
+            arrival_airport=_opt_str(seg.get("to")),
+            departure_time=_opt_str(seg.get("departureTime")),
+            arrival_time=_opt_str(seg.get("arrivalTime")),
+            duration_minutes=duration if isinstance(duration, int) else None,
+        ))
+    return FlightItinerary(
+        direction="outbound",
+        segments=parsed,
+        total_duration_minutes=total_minutes if parsed and have_all_durations else None,
+        stops=max(0, len(parsed) - 1),
+    )
+
+
+def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
+    """Parse a fast-flights-shaped offer (structured ``segments`` list).
+
+    Round-trip snapshots from this provider list outbound options only, with
+    the round-trip total as the price — there is no return-leg payload.
+    """
+    price = _coerce_positive_price(_extract_price(item))
+    if price is None:
+        return None
+
+    segments = item.get("segments") if isinstance(item.get("segments"), list) else []
+    itinerary = _parse_fast_flights_itinerary(segments)
+
+    carrier_codes = item.get("carrier_codes")
+    first_code = None
+    if isinstance(carrier_codes, list) and carrier_codes:
+        first_code = _opt_str(carrier_codes[0])
+    airline_names = item.get("airline_names")
+    airline_name = (
+        ", ".join(str(n) for n in airline_names)
+        if isinstance(airline_names, list) and airline_names
+        else _opt_str(item.get("airlines")) or airline_display_name(first_code)
+    )
+
+    total_duration = item.get("duration_minutes")
+    return FlightOffer(
+        id=str(item.get("id") or index),
+        airline_code=first_code or _opt_str(item.get("carrier_code")),
+        flight_number=None,
+        airline_name=airline_name,
+        price=price,
+        departure_time=_opt_str(item.get("departure_time")),
+        arrival_time=_opt_str(item.get("arrival_time")),
+        duration_minutes=total_duration
+        if isinstance(total_duration, int)
+        else itinerary.total_duration_minutes,
+        stops=item.get("stops") if isinstance(item.get("stops"), int) else itinerary.stops,
+        return_flight=None,
+        itineraries=[itinerary] if itinerary.segments else [],
+    )
+
+
+def _parse_fast_flights_offer_safe(item: dict, index: int) -> FlightOffer | None:
+    """Parse a fast-flights offer, dropping (not raising on) malformed stored data."""
+    try:
+        return _parse_fast_flights_offer(item, index)
+    except Exception:  # noqa: BLE001 - one bad snapshot offer must not sink the response
+        logger.warning(
+            "Skipping unparseable fast-flights offer at index %d",
+            index,
+            extra={"event": "trips.fast_flights_offer.unparseable", "offer_index": index},
+        )
+        return None
+
+
 def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOffer | None:
     """Parse a single Skiplagged-shaped flight offer from raw data.
 
@@ -356,6 +446,10 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
     """
     if not isinstance(item, dict):
         return None
+
+    # fast-flights offers carry a flat structured ``segments`` list.
+    if item.get("provider") == "fast_flights":
+        return _parse_fast_flights_offer_safe(item, index)
 
     # Kiwi offers carry structured outbound/inbound legs with full segment
     # data — no flight-id string parsing needed.
@@ -390,33 +484,8 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
 
     return_flight_payload = None
     if return_segs:
-        return_raw = item.get("return_flight") or item.get("returnFlight") or {}
-        if not isinstance(return_raw, dict):
-            return_raw = {}
-        # Skiplagged nests times under departure/arrival sub-dicts
-        if "departure" in return_raw and isinstance(return_raw["departure"], dict):
-            return_raw.setdefault("departure_time", return_raw["departure"].get("dateTime"))
-            return_raw.setdefault("departure_airport", return_raw["departure"].get("airport"))
-        if "arrival" in return_raw and isinstance(return_raw["arrival"], dict):
-            return_raw.setdefault("arrival_time", return_raw["arrival"].get("dateTime"))
-            return_raw.setdefault("arrival_airport", return_raw["arrival"].get("airport"))
-        return_code, return_num = return_segs[0]
-        return_flight_payload = {
-            "flight_number": f"{return_code}{return_num}",
-            "departure_time": return_raw.get("departure_time"),
-            "arrival_time": return_raw.get("arrival_time"),
-            "duration_minutes": return_raw.get("duration_minutes"),
-            "stops": max(0, len(return_segs) - 1),
-        }
-        itineraries.append(_build_skiplagged_itinerary(
-            direction="return",
-            parsed_segs=return_segs,
-            departure_airport=return_raw.get("departure_airport"),
-            arrival_airport=return_raw.get("arrival_airport"),
-            departure_time=return_raw.get("departure_time"),
-            arrival_time=return_raw.get("arrival_time"),
-            duration_minutes=return_raw.get("duration_minutes"),
-        ))
+        return_flight_payload, return_itinerary = _build_skiplagged_return(item, return_segs)
+        itineraries.append(return_itinerary)
 
     return FlightOffer(
         id=str(flight_id),
@@ -431,6 +500,40 @@ def _parse_flight_offer(item: dict, index: int, flights_data: dict) -> FlightOff
         return_flight=return_flight_payload,
         itineraries=itineraries,
     )
+
+
+def _build_skiplagged_return(
+    item: dict, return_segs: list[tuple[str, str]]
+) -> tuple[dict, FlightItinerary]:
+    """Build the return-leg payload + itinerary for a Skiplagged-shaped offer."""
+    return_raw = item.get("return_flight") or item.get("returnFlight") or {}
+    if not isinstance(return_raw, dict):
+        return_raw = {}
+    # Skiplagged nests times under departure/arrival sub-dicts
+    if "departure" in return_raw and isinstance(return_raw["departure"], dict):
+        return_raw.setdefault("departure_time", return_raw["departure"].get("dateTime"))
+        return_raw.setdefault("departure_airport", return_raw["departure"].get("airport"))
+    if "arrival" in return_raw and isinstance(return_raw["arrival"], dict):
+        return_raw.setdefault("arrival_time", return_raw["arrival"].get("dateTime"))
+        return_raw.setdefault("arrival_airport", return_raw["arrival"].get("airport"))
+    return_code, return_num = return_segs[0]
+    return_flight_payload = {
+        "flight_number": f"{return_code}{return_num}",
+        "departure_time": return_raw.get("departure_time"),
+        "arrival_time": return_raw.get("arrival_time"),
+        "duration_minutes": return_raw.get("duration_minutes"),
+        "stops": max(0, len(return_segs) - 1),
+    }
+    return_itinerary = _build_skiplagged_itinerary(
+        direction="return",
+        parsed_segs=return_segs,
+        departure_airport=return_raw.get("departure_airport"),
+        arrival_airport=return_raw.get("arrival_airport"),
+        departure_time=return_raw.get("departure_time"),
+        arrival_time=return_raw.get("arrival_time"),
+        duration_minutes=return_raw.get("duration_minutes"),
+    )
+    return return_flight_payload, return_itinerary
 
 
 def _build_skiplagged_itinerary(
@@ -523,12 +626,20 @@ def _snapshot_to_response(snapshot: PriceSnapshot) -> PriceSnapshotResponse:
             if offer:
                 hotel_offers.append(offer)
 
+    # Rows predating the provider column fall back to the marker the worker
+    # has always stamped into raw_data["flights"]["provider"].
+    provider = snapshot.provider
+    if provider is None and isinstance(flights_data, dict):
+        raw_provider = flights_data.get("provider")
+        provider = raw_provider if isinstance(raw_provider, str) else None
+
     return PriceSnapshotResponse(
         id=snapshot.id,
         flight_price=snapshot.flight_price,
         hotel_price=snapshot.hotel_price,
         total_price=snapshot.total_price,
         created_at=snapshot.created_at,
+        provider=provider,
         flight_offers=flight_offers,
         hotel_offers=hotel_offers,
     )

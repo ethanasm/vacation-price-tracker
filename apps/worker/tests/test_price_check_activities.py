@@ -57,24 +57,24 @@ class DummySessionManager:
 
 
 class _FlagSession:
-    """Session double for the provider-flag read in fetch_flights_activity.
+    """Session double for the provider-setting read in fetch_flights_activity.
 
-    Returns a row with the given ``enabled`` state, or None (registry default:
-    Skiplagged) when ``enabled`` is None.
+    Returns a row with the given ``flight_provider`` value, or None (registry
+    default: Skiplagged) when ``provider`` is None.
     """
 
-    def __init__(self, enabled: bool | None = None) -> None:
-        self._enabled = enabled
+    def __init__(self, provider: str | None = None) -> None:
+        self._provider = provider
 
     async def get(self, _model, _name):
-        if self._enabled is None:
+        if self._provider is None:
             return None
-        return SimpleNamespace(enabled=self._enabled)
+        return SimpleNamespace(value=self._provider)
 
 
-def _patch_flag_session(monkeypatch, enabled: bool | None = None) -> None:
-    """Point the activity's AsyncSessionLocal at a flag-only session double."""
-    session = _FlagSession(enabled)
+def _patch_flag_session(monkeypatch, provider: str | None = None) -> None:
+    """Point the activity's AsyncSessionLocal at a setting-only session double."""
+    session = _FlagSession(provider)
     monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManager(session))
 
 
@@ -476,6 +476,42 @@ async def test_save_snapshot_activity(monkeypatch):
 
     assert snapshot_id
     assert session.added.total_price == Decimal("300.00")
+    # No provider marker in raw flights metadata → stored as NULL, not faked.
+    assert session.added.provider is None
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_activity_stamps_provider(monkeypatch):
+    """Every snapshot carries the provider marker the fetch stamped into raw data."""
+    for provider in ("skiplagged", "kiwi", "fast_flights"):
+        session = DummySessionWithDedup(None, [], recent_snapshot=None)
+        monkeypatch.setattr(
+            pc, "AsyncSessionLocal", lambda s=session: DummySessionManagerWithDedup(s)
+        )
+
+        payload = {
+            "trip_id": str(uuid.uuid4()),
+            "flights": [{"price": "100.00"}],
+            "hotels": [],
+            "raw_data": {"flights": {"provider": provider}},
+        }
+        assert await pc.save_snapshot_activity(payload)
+        assert session.added.provider == provider
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_activity_non_string_provider_stored_as_none(monkeypatch):
+    session = DummySessionWithDedup(None, [], recent_snapshot=None)
+    monkeypatch.setattr(pc, "AsyncSessionLocal", lambda: DummySessionManagerWithDedup(session))
+
+    payload = {
+        "trip_id": str(uuid.uuid4()),
+        "flights": [{"price": "100.00"}],
+        "hotels": [],
+        "raw_data": {"flights": {"provider": 42}},
+    }
+    assert await pc.save_snapshot_activity(payload)
+    assert session.added.provider is None
 
 
 @pytest.mark.asyncio
@@ -1288,7 +1324,7 @@ async def test_fetch_hotels_budget_trip_during_details_is_non_retryable(monkeypa
 
 
 # ---------------------------------------------------------------------------
-# Kiwi flight provider (kiwi_flights feature flag)
+# Provider selection (flight_provider app setting)
 # ---------------------------------------------------------------------------
 
 
@@ -1339,7 +1375,7 @@ async def test_fetch_flights_flag_on_uses_kiwi(monkeypatch):
     mock_kiwi.search_flights_all = AsyncMock(return_value=_kiwi_search_result())
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
-    _patch_flag_session(monkeypatch, enabled=True)
+    _patch_flag_session(monkeypatch, provider="kiwi")
     with (
         patch("worker.activities.price_check.KiwiClient", return_value=mock_kiwi),
         patch("worker.activities.price_check.SkiplaggedClient") as mock_sk,
@@ -1381,7 +1417,7 @@ async def test_fetch_flights_flag_off_uses_skiplagged(monkeypatch):
     mock_sk.search_flights_all = AsyncMock(return_value=mock_result)
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
-    _patch_flag_session(monkeypatch, enabled=False)
+    _patch_flag_session(monkeypatch, provider="skiplagged")
     with (
         patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_sk),
         patch("worker.activities.price_check.KiwiClient") as mock_kiwi,
@@ -1404,10 +1440,150 @@ async def test_fetch_flights_kiwi_error_propagates(monkeypatch):
     mock_kiwi.search_flights_all = AsyncMock(side_effect=KiwiConnectionError("kiwi down"))
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
-    _patch_flag_session(monkeypatch, enabled=True)
+    _patch_flag_session(monkeypatch, provider="kiwi")
     with patch("worker.activities.price_check.KiwiClient", return_value=mock_kiwi):
         with pytest.raises(KiwiConnectionError, match="kiwi down"):
             await pc.fetch_flights_activity(_trip_details())
+
+
+def _fast_flights_search_result():
+    from decimal import Decimal
+
+    from app.schemas.flight_search import FlightSearchFlight, FlightSearchResult
+
+    flight = FlightSearchFlight(
+        departure_airport="SFO",
+        arrival_airport="MCO",
+        airline_name="United",
+        carrier_code="UA",
+        duration_minutes=320,
+        stops=0,
+        price_amount=Decimal("187"),
+        price_currency="USD",
+        provider="fast_flights",
+        raw_data={
+            "provider": "fast_flights",
+            "price": 187,
+            "carrier_codes": ["UA"],
+            "airline_names": ["United"],
+            "segments": [{"carrier": "UA", "from": "SFO", "to": "MCO"}],
+        },
+    )
+    return FlightSearchResult(
+        flights=[flight],
+        origin="SFO",
+        destination="MCO",
+        departure_date="2026-02-01",
+        return_date="2026-02-08",
+        is_round_trip=True,
+        provider="fast_flights",
+        total_results=1,
+        currency="USD",
+        success=True,
+        error=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_setting_routes_to_fast_flights(monkeypatch):
+    """flight_provider=fast_flights routes the fetch to FastFlightsClient."""
+    from unittest.mock import AsyncMock, patch
+
+    mock_fast = AsyncMock()
+    mock_fast.search_flights_all = AsyncMock(return_value=_fast_flights_search_result())
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, provider="fast_flights")
+    with (
+        patch("worker.activities.price_check.FastFlightsClient", return_value=mock_fast),
+        patch("worker.activities.price_check.SkiplaggedClient") as mock_sk,
+        patch("worker.activities.price_check.KiwiClient") as mock_kiwi,
+    ):
+        result = await pc.fetch_flights_activity(_trip_details())
+
+    mock_fast.search_flights_all.assert_awaited_once()
+    mock_sk.assert_not_called()
+    mock_kiwi.assert_not_called()
+    assert mock_fast.search_flights_all.call_args.kwargs["cabin"] == "economy"
+    assert result["raw"]["provider"] == "fast_flights"
+    offer = result["offers"][0]
+    assert offer["provider"] == "fast_flights"
+    # Structured segments and carrier codes ride along for filtering/rendering
+    assert offer["carrier_codes"] == ["UA"]
+    assert offer["segments"][0]["carrier"] == "UA"
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_fast_flights_error_propagates(monkeypatch):
+    """FastFlightsError propagates so Temporal can retry the activity."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.clients.fast_flights import FastFlightsTransientError
+
+    mock_fast = AsyncMock()
+    mock_fast.search_flights_all = AsyncMock(
+        side_effect=FastFlightsTransientError("google blocked")
+    )
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, provider="fast_flights")
+    with patch("worker.activities.price_check.FastFlightsClient", return_value=mock_fast):
+        with pytest.raises(FastFlightsTransientError, match="google blocked"):
+            await pc.fetch_flights_activity(_trip_details())
+
+
+@pytest.mark.asyncio
+async def test_fetch_flights_stale_provider_value_uses_skiplagged(monkeypatch):
+    """A stored provider the registry no longer allows falls back to Skiplagged."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas.flight_search import FlightSearchResult
+
+    mock_sk = AsyncMock()
+    mock_sk.search_flights_all = AsyncMock(
+        return_value=FlightSearchResult(
+            flights=[],
+            origin="SFO",
+            destination="MCO",
+            departure_date="2026-02-01",
+            provider="skiplagged",
+            success=True,
+        )
+    )
+
+    monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
+    _patch_flag_session(monkeypatch, provider="retired_provider")
+    with (
+        patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_sk),
+        patch("worker.activities.price_check.FastFlightsClient") as mock_fast,
+    ):
+        result = await pc.fetch_flights_activity(_trip_details())
+
+    mock_sk.search_flights_all.assert_awaited_once()
+    mock_fast.assert_not_called()
+    assert result["raw"]["provider"] == "skiplagged"
+
+
+def test_extract_carrier_codes_fast_flights_list():
+    offer = {
+        "provider": "fast_flights",
+        "carrier_codes": ["ua", "AS", "UA"],
+        "segments": [{"carrier": "UA"}],
+    }
+    assert pc._extract_carrier_codes(offer) == ["UA", "AS"]
+
+
+def test_extract_carrier_codes_fast_flights_malformed_list_falls_through():
+    offer = {"provider": "fast_flights", "carrier_codes": "UA", "carrier_code": "AS"}
+    assert pc._extract_carrier_codes(offer) == ["AS"]
+
+
+def test_filter_flights_matches_fast_flights_offers():
+    offers = [
+        {"provider": "fast_flights", "carrier_codes": ["AS"]},
+        {"provider": "fast_flights", "carrier_codes": ["UA"]},
+    ]
+    assert pc._filter_flights(offers, {"airlines": ["ua"]}) == [offers[1]]
 
 
 def test_extract_carrier_codes_kiwi_structured_legs():

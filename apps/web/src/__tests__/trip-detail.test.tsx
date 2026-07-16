@@ -29,12 +29,28 @@ jest.mock("@/lib/sse-provider", () => ({
   useSSEContextOptional: () => mockSSEContext,
 }));
 
-// Mock recharts
+// Mock recharts. Line invokes a function-valued `dot` prop the way recharts
+// would (per-point, including a point with no coordinates yet) so the
+// provider-marker dot renderer is exercised.
 jest.mock("recharts", () => ({
   LineChart: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="line-chart">{children}</div>
   ),
-  Line: () => <div data-testid="chart-line" />,
+  Line: ({ dot }: { dot?: unknown }) => {
+    if (typeof dot === "function") {
+      const renderDot = dot as (props: unknown) => React.ReactNode;
+      return (
+        <div data-testid="chart-line">
+          {renderDot({ key: "d1", cx: 10, cy: 20, payload: { day: "2026-07-14", provider: "skiplagged" } })}
+          {renderDot({ key: "d2", cx: 30, cy: 25, payload: { day: "2026-07-15", provider: "kiwi" } })}
+          {renderDot({ key: "d3", cx: 50, cy: 15, payload: { day: "2026-07-16", provider: "fast_flights" } })}
+          {renderDot({ key: "d4", cx: 70, cy: 18, payload: { day: "2026-07-17", provider: null } })}
+          {renderDot({ payload: { day: "2026-07-18" } })}
+        </div>
+      );
+    }
+    return <div data-testid="chart-line" />;
+  },
   XAxis: () => null,
   YAxis: ({
     tickFormatter,
@@ -47,13 +63,26 @@ jest.mock("recharts", () => ({
   CartesianGrid: () => null,
 }));
 
-// Mock chart component
+// Mock chart component. ChartTooltip renders its `content` element and
+// ChartTooltipContent runs the injected formatter (hero row with a provider,
+// hero row without one, and a non-hero row) so the tooltip's provider hint is
+// exercised.
 jest.mock("@/components/ui/chart", () => ({
   ChartContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="chart-container">{children}</div>
   ),
-  ChartTooltip: () => null,
-  ChartTooltipContent: () => null,
+  ChartTooltip: ({ content }: { content?: React.ReactNode }) => content ?? null,
+  ChartTooltipContent: ({
+    formatter,
+  }: {
+    formatter?: (value: unknown, name: unknown, item: unknown) => React.ReactNode;
+  }) => (
+    <div data-testid="chart-tooltip-content">
+      {formatter?.(1200, "total", { payload: { provider: "fast_flights" } })}
+      {formatter?.(1100, "total", { payload: {} })}
+      {formatter?.(500, "minFlight", { payload: { provider: "skiplagged" } })}
+    </div>
+  ),
 }));
 
 // Mock CSS modules
@@ -1442,6 +1471,48 @@ describe("TripDetailPage", () => {
         expect(screen.getAllByText("Flight").length).toBeGreaterThan(0);
         expect(screen.getAllByText("Hotel").length).toBeGreaterThan(0);
       });
+    });
+
+    it("shows a Source legend naming each provider present in the history", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            { ...basePriceHistory[0], provider: "fast_flights" },
+            { ...basePriceHistory[1], provider: "skiplagged" },
+          ],
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        const legend = screen.getByTestId("provider-legend");
+        expect(legend).toHaveTextContent("Source");
+        expect(legend).toHaveTextContent("Skiplagged");
+        expect(legend).toHaveTextContent("Fast Flights");
+        expect(legend).not.toHaveTextContent("Kiwi");
+      });
+    });
+
+    it("omits the Source legend when no snapshot carries a provider marker", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: basePriceHistory,
+        },
+      });
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("chart-container")).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId("provider-legend")).not.toBeInTheDocument();
     });
   });
 

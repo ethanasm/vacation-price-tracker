@@ -1,9 +1,10 @@
-"""MCP tool for searching flights (Skiplagged or Kiwi, selected at runtime).
+"""MCP tool for searching flights (Skiplagged, Kiwi, or fast-flights, selected at runtime).
 
-The active provider is the ``kiwi_flights`` feature flag (DB ``feature_flags``
-table): enabled -> Kiwi.com MCP, disabled -> Skiplagged MCP. The module keeps
-its historical name because the tool registry and tests import it from here;
-the LLM-facing tool name stays ``search_flights`` either way.
+The active provider is the ``flight_provider`` app setting (DB ``app_settings``
+table): "skiplagged" -> Skiplagged MCP, "kiwi" -> Kiwi.com MCP,
+"fast_flights" -> Google Flights via the fast-flights scraper. The module
+keeps its historical name because the tool registry and tests import it from
+here; the LLM-facing tool name stays ``search_flights`` either way.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.fast_flights import FastFlightsClient, FastFlightsError, fast_flights_client
 from app.clients.kiwi import KiwiClient, KiwiMCPError, kiwi_client
 from app.clients.skiplagged import (
     SkiplaggedClient,
@@ -21,14 +23,18 @@ from app.clients.skiplagged import (
 )
 from app.schemas.flight_search import FlightSearchResult
 from app.schemas.mcp import ToolResult
-from app.services.flight_provider import PROVIDER_KIWI, get_flight_provider_name
+from app.services.flight_provider import (
+    PROVIDER_FAST_FLIGHTS,
+    PROVIDER_KIWI,
+    get_flight_provider_name,
+)
 from app.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
 class SearchFlightsSkiplaggedTool(BaseTool):
-    """Search for flights using the active flight-provider MCP server.
+    """Search for flights using the active flight-provider backend.
 
     Returns airline names, flight numbers, prices, durations, stops, and
     booking links.
@@ -44,9 +50,18 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         self,
         client: SkiplaggedClient | None = None,
         kiwi: KiwiClient | None = None,
+        fast_flights: FastFlightsClient | None = None,
     ) -> None:
         self._client = client or skiplagged_client
         self._kiwi = kiwi or kiwi_client
+        self._fast_flights = fast_flights or fast_flights_client
+
+    def _client_for(self, provider: str) -> SkiplaggedClient | KiwiClient | FastFlightsClient:
+        if provider == PROVIDER_KIWI:
+            return self._kiwi
+        if provider == PROVIDER_FAST_FLIGHTS:
+            return self._fast_flights
+        return self._client
 
     async def execute(
         self,
@@ -75,7 +90,7 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         offset = args.get("offset", 0)
 
         provider = await get_flight_provider_name(db)
-        client = self._kiwi if provider == PROVIDER_KIWI else self._client
+        client = self._client_for(provider)
 
         try:
             result = await client.search_flights(
@@ -95,7 +110,7 @@ class SearchFlightsSkiplaggedTool(BaseTool):
 
             formatted = self._format_results(result)
             return self.success(formatted)
-        except (SkiplaggedMCPError, KiwiMCPError) as e:
+        except (SkiplaggedMCPError, KiwiMCPError, FastFlightsError) as e:
             logger.warning(
                 "Flight search failed via %s: %s",
                 provider,

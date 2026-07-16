@@ -221,3 +221,58 @@ describe('PriceChart (hotel-tracking)', () => {
     assert.ok(labels.includes('$450'));
   });
 });
+
+describe('PriceChart provider markers', () => {
+  const providerPoints = [
+    { label: 'Jul 6', total: 185, hotel: 0, minFlight: 185, provider: 'skiplagged' },
+    { label: 'Jul 7', total: 262, hotel: 0, minFlight: 262, provider: 'fast_flights' },
+    { label: 'Jul 8', total: 240, hotel: 0, minFlight: 240, provider: 'kiwi' },
+    { label: 'Now', total: 240, hotel: 0, minFlight: 240 },
+  ];
+  const el = React.createElement(PriceChart, {
+    points: providerPoints,
+    nowLabel: 'Now $240',
+    showHotel: false,
+  });
+
+  it('draws one marker per provider-stamped point, shaped by provider', () => {
+    const r = render(el);
+    // Kiwi day → square, Fast Flights day → triangle (legend adds one of each
+    // shape too, so require at least one plot marker + one legend glyph).
+    assert.ok(r.root.findAllByType('svg-rect').length >= 2);
+    assert.ok(r.root.findAllByType('svg-polygon').length >= 2);
+    // The synthetic Now point carries no provider — no marker for it beyond
+    // the hero "current" dot; circles = skiplagged marker + legend + hero dot.
+    assert.ok(r.root.findAllByType('svg-circle').length >= 3);
+  });
+
+  it('renders a Source legend naming every provider present', () => {
+    const labels = texts(render(el));
+    assert.ok(labels.includes('SOURCE'));
+    assert.ok(labels.includes('Skiplagged'));
+    assert.ok(labels.includes('Kiwi'));
+    assert.ok(labels.includes('Fast Flights'));
+  });
+
+  it('omits the Source legend when no point carries a provider', () => {
+    const bare = providerPoints.map((p) => ({ ...p, provider: undefined }));
+    const r = render(
+      React.createElement(PriceChart, { points: bare, nowLabel: 'Now $240', showHotel: false }),
+    );
+    const labels = texts(r);
+    assert.ok(!labels.includes('SOURCE'));
+    assert.equal(r.root.findAllByType('svg-polygon').length, 0);
+  });
+
+  it('scrub popup names the provider the day was fetched from', () => {
+    const r = render(el);
+    const chart = r.root.findAll(
+      (node) => node.type === 'rn-view' && typeof node.props.onResponderGrant === 'function',
+    )[0];
+    TestRenderer.act(() => {
+      chart.props.onResponderGrant({ nativeEvent: { locationX: 34 } }); // x(0) → Jul 6
+    });
+    const labels = texts(r);
+    assert.ok(labels.some((t) => t.includes('via Skiplagged')));
+  });
+});

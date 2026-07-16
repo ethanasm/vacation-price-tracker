@@ -308,6 +308,9 @@ class PriceSnapshotResponse(BaseModel):
     hotel_price: Decimal | None = None
     total_price: Decimal | None = None
     created_at: datetime
+    # Which flight provider the snapshot was taken from
+    # ("skiplagged" / "kiwi" / "fast_flights"; None on rows predating the marker).
+    provider: str | None = None
     flight_offers: list[FlightOffer] = Field(default_factory=list)
     hotel_offers: list[HotelOffer] = Field(default_factory=list)
 

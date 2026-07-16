@@ -30,9 +30,9 @@ def mock_skiplagged_client():
 def mock_db():
     """Create a mock database session.
 
-    `session.get(FeatureFlag, name)` must return None so the provider flag
+    `session.get(AppSetting, name)` must return None so the provider setting
     falls back to its registry default (Skiplagged) — a bare AsyncMock would
-    return a truthy mock and silently flip the tool to the Kiwi client.
+    return a truthy mock whose value never matches a provider name.
     """
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)
@@ -350,21 +350,26 @@ class TestSearchFlightsSkiplaggedTool:
 
 
 # =============================================================================
-# Provider dispatch (kiwi_flights feature flag)
+# Provider dispatch (flight_provider app setting)
 # =============================================================================
 
 
+def _provider_db(provider: str):
+    """Mock DB session whose app-setting row selects the given provider."""
+    db = AsyncMock()
+    setting_row = MagicMock()
+    setting_row.value = provider
+    db.get = AsyncMock(return_value=setting_row)
+    return db
+
+
 class TestProviderDispatch:
-    """The tool routes to the Kiwi client when the kiwi_flights flag is on."""
+    """The tool routes to the client selected by the flight_provider setting."""
 
     @pytest.fixture
     def kiwi_flag_db(self):
-        """Mock DB session whose feature-flag row has enabled=True."""
-        db = AsyncMock()
-        flag_row = MagicMock()
-        flag_row.enabled = True
-        db.get = AsyncMock(return_value=flag_row)
-        return db
+        """Mock DB session whose setting row selects Kiwi."""
+        return _provider_db("kiwi")
 
     @pytest.mark.asyncio
     async def test_flag_on_routes_to_kiwi_client(self, mock_skiplagged_client, kiwi_flag_db):
@@ -385,6 +390,47 @@ class TestProviderDispatch:
         kiwi.search_flights.assert_awaited_once()
         mock_skiplagged_client.search_flights.assert_not_called()
         assert result.data["provider"] == "kiwi"
+
+    @pytest.mark.asyncio
+    async def test_fast_flights_setting_routes_to_fast_flights_client(
+        self, mock_skiplagged_client
+    ):
+        fast = MagicMock()
+        fast.search_flights = AsyncMock(
+            return_value=_make_result(flights=[_make_flight()], provider="fast_flights")
+        )
+        mock_skiplagged_client.search_flights = AsyncMock()
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client, fast_flights=fast)
+        result = await tool.execute(
+            args={"origin": "SFO", "destination": "RDM", "departure_date": "2026-08-22"},
+            user_id="test-user",
+            db=_provider_db("fast_flights"),
+        )
+
+        assert result.success is True
+        fast.search_flights.assert_awaited_once()
+        mock_skiplagged_client.search_flights.assert_not_called()
+        assert result.data["provider"] == "fast_flights"
+
+    @pytest.mark.asyncio
+    async def test_fast_flights_error_returns_tool_error(self, mock_skiplagged_client):
+        from app.clients.fast_flights import FastFlightsTransientError
+
+        fast = MagicMock()
+        fast.search_flights = AsyncMock(
+            side_effect=FastFlightsTransientError("google blocked us")
+        )
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client, fast_flights=fast)
+        result = await tool.execute(
+            args={"origin": "SFO", "destination": "RDM", "departure_date": "2026-08-22"},
+            user_id="test-user",
+            db=_provider_db("fast_flights"),
+        )
+
+        assert result.success is False
+        assert "google blocked us" in result.error
 
     @pytest.mark.asyncio
     async def test_flag_off_routes_to_skiplagged_client(self, mock_skiplagged_client, mock_db):

@@ -22,6 +22,7 @@ module.exports = {
   LinearGradient: svgHost('svg-lineargradient'),
   Stop: svgHost('svg-stop'),
   Rect: svgHost('svg-rect'),
+  Polygon: svgHost('svg-polygon'),
   G: svgHost('svg-g'),
   Text: svgHost('svg-text'),
 };

@@ -32,7 +32,9 @@
       "!**/node_modules",
       "!**/out",
       "!**/coverage",
-      "!**/.pnpm-store"
+      "!**/.pnpm-store",
+      "!**/playwright-report",
+      "!**/test-results"
     ]
   }
 }
