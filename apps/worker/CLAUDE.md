@@ -101,7 +101,8 @@ after fetching:
 
 1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes:
    Kiwi offers carry structured `outbound`/`inbound` segments (read directly);
-   fast-flights offers carry an itinerary-level `carrier_codes` list;
+   fast-flights offers carry a `carrier_codes` list spanning outbound + any
+   attached return options;
    Skiplagged codes are parsed from the `id` field via `parse_flight_segments()`.
 2. **Room types / views** — match `preferred_room_types` and `preferred_views`
    against each room's `title` (from `get_hotel_details`) and the hotel's

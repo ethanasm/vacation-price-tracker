@@ -124,6 +124,13 @@ export function FlightRow({
         <Text numberOfLines={1} style={[styles.summary, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
           {`Return · ${returnLine}`}
         </Text>
+      ) : offer.round_trip_total ? (
+        // Round-trip price without an itemized return leg (e.g. Google
+        // Flights lists departing options at the round-trip total): say the
+        // return is included instead of silently showing outbound only.
+        <Text numberOfLines={1} style={[styles.summary, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
+          Return · included in price
+        </Text>
       ) : null}
 
       {expanded ? (
@@ -183,6 +190,28 @@ export function FlightRow({
               </View>
             );
           })}
+          {offer.round_trip_total && !legs.some((l) => l.label === 'RETURN') ? (
+            <View
+              testID={`flight-return-included-${offer.id}`}
+              style={[styles.itinerary, { borderTopColor: c.hairline }]}
+            >
+              <Text style={[styles.detailHeading, { color: c.textMuted, fontFamily: tokens.font[700] }]}>
+                RETURN
+              </Text>
+              <Text style={[styles.summary, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
+                Included in the round-trip price — this source doesn&apos;t itemize return
+                flight details.
+              </Text>
+            </View>
+          ) : null}
+          {offer.round_trip_total && legs.some((l) => l.label === 'RETURN') ? (
+            <Text
+              testID={`flight-return-qualifier-${offer.id}`}
+              style={[styles.summary, { color: c.textMuted, fontFamily: tokens.font[500] }]}
+            >
+              Same-airline return option — Google prices this trip as a round-trip total.
+            </Text>
+          ) : null}
           {multiCarrier ? (
             <Text style={[styles.subtitle, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
               {multiCarrierSubtitle(codes.map(carrierName)) ?? ''}

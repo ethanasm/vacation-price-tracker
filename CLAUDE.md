@@ -70,12 +70,13 @@ switch — no redeploy):
   durations, stops, cabin class) but no server-side pagination (~15 itineraries
   per search; stops/sort/limit applied client-side). Added when Skiplagged's
   flight-search backend began returning sustained 429s (July 2026).
-- **fast-flights** (Google Flights scraper, `fast-flights` PyPI package): no
-  API key; one ranked page per query (no pagination), structured segments
-  (airports, times, durations) but **no flight numbers** and airline identity
-  at itinerary level only; round-trip searches list outbound options priced at
-  the round-trip total. Optional `FAST_FLIGHTS_PROXY` env for its outbound
-  requests.
+- **fast-flights** (Google Flights scraper via the `fast-flights` PyPI
+  fetcher + our extended page parser): no API key; one ranked page per query
+  (both page sections parsed), structured segments **with real flight
+  numbers**; round-trip searches list outbound options priced at the
+  round-trip total, so the tracking path adds a reverse one-way query and
+  attaches same-airline return options per offer (2 calls per round-trip
+  refresh). Optional `FAST_FLIGHTS_PROXY` env for its outbound requests.
 
 Every `price_snapshots` row carries a `provider` marker naming the flight
 provider it was fetched from, exposed on `/v1/trips/{id}` snapshots; the web

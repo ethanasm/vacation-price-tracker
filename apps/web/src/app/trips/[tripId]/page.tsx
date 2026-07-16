@@ -753,6 +753,19 @@ function FlightRow({
             <span />
           </div>
         )}
+        {/* Round-trip price without an itemized return leg (e.g. Google
+            Flights lists departing options at the round-trip total): say the
+            return is included instead of silently showing outbound only. */}
+        {!returnFirstSegment && flight.round_trip_total && (
+          <div className={`${styles.cardHeaderRowMain} ${styles.cardHeaderRowReturn}`}>
+            <span />
+            <span className={styles.headerReturnLabel}>Return</span>
+            <span className={styles.headerReturnIncluded}>Included in price</span>
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
       </button>
 
       {isExpanded && (
@@ -762,6 +775,27 @@ function FlightRow({
             <>
               <div className={styles.itineraryDivider} />
               <ItinerarySection itinerary={returnItinerary} isReturn />
+              {flight.round_trip_total && (
+                <p
+                  data-testid="return-option-qualifier"
+                  className={styles.returnIncludedNote}
+                >
+                  Same-airline return option — Google prices this trip as a
+                  round-trip total.
+                </p>
+              )}
+            </>
+          )}
+          {!returnItinerary && flight.round_trip_total && (
+            <>
+              <div className={styles.itineraryDivider} />
+              <div data-testid="return-included-note">
+                <span className={styles.itineraryLabel}>Return</span>
+                <p className={styles.returnIncludedNote}>
+                  Included in the round-trip price — this source doesn&apos;t
+                  itemize return flight details.
+                </p>
+              </div>
             </>
           )}
         </div>

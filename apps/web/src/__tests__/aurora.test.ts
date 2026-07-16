@@ -16,11 +16,11 @@ const seg = (over: Partial<ApiFlightSegment>): ApiFlightSegment => ({
 });
 
 const nonstop: ApiFlightOffer = {
-  id: "as1", airline_code: "AS", price: "177", stops: 0,
+  id: "as1", airline_code: "AS", price: "177", stops: 0, round_trip_total: false,
   itineraries: [{ direction: "outbound", stops: 0, segments: [seg({ carrier_code: "AS", flight_number: "AS1", arrival_airport: "RDM" })] }],
 };
 const oneStopMulti: ApiFlightOffer = {
-  id: "ua1", airline_code: "UA", price: "154", stops: 1,
+  id: "ua1", airline_code: "UA", price: "154", stops: 1, round_trip_total: false,
   itineraries: [{ direction: "outbound", stops: 1, segments: [
     seg({ carrier_code: "UA", flight_number: "UA508", arrival_airport: "DEN", arrival_time: "2025-08-22T10:30:00" }),
     seg({ carrier_code: "AS", flight_number: "AS2201", departure_airport: "DEN", arrival_airport: "RDM", departure_time: "2025-08-22T11:40:00" }),

@@ -960,6 +960,11 @@ export interface components {
             } | null;
             /** Itineraries */
             itineraries?: components["schemas"]["FlightItinerary"][];
+            /**
+             * Round Trip Total
+             * @default false
+             */
+            round_trip_total: boolean;
         };
         /**
          * FlightPrefs

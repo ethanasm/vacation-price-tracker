@@ -287,6 +287,12 @@ class FlightOffer(BaseModel):
     stops: int = 0
     return_flight: dict | None = None
     itineraries: list[FlightItinerary] = Field(default_factory=list)
+    # True when the price covers a round trip whose return leg the provider
+    # does not itemize (fast-flights: Google's ranked page lists departing
+    # flights at the round-trip total, and its query protobuf cannot select an
+    # outbound to fetch the paired returns). Clients render "return included"
+    # instead of a return itinerary.
+    round_trip_total: bool = False
 
 
 class HotelOffer(BaseModel):
