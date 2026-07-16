@@ -103,6 +103,18 @@ updates:
       # TS 7 (or after migrating jest.config.ts off ts-node).
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # nx / @nx/next 23.1.x break the web production build: the (deprecated)
+      # `@nx/next:build` executor's build under 23.1.0 dies prerendering
+      # /_not-found with Next's "Invariant: Expected workStore to be
+      # initialized" (PR #140; 23.0.1 builds the same tree fine). They must
+      # move in lockstep, so both are held. Re-enable when a fixed 23.2+
+      # ships — or after migrating web off the deprecated executor to the
+      # inferred `next build` target (`nx g @nx/next:convert-to-inferred`),
+      # which is the durable fix.
+      - dependency-name: "nx"
+        versions: ["23.1.x"]
+      - dependency-name: "@nx/next"
+        versions: ["23.1.x"]
 
   # ---- Python: root uv project (apps/api FastAPI + apps/worker Temporal) ----
   - package-ecosystem: "uv"
