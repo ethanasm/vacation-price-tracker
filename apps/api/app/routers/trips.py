@@ -401,6 +401,28 @@ def _parse_fast_flights_return(item: dict) -> tuple[FlightItinerary | None, dict
     }
 
 
+def _fast_flights_airline_identity(
+    item: dict, outbound_first: FlightSegment | None
+) -> tuple[str | None, str | None]:
+    """Resolve (airline_code, airline_name) for a fast-flights offer."""
+    carrier_codes = item.get("carrier_codes")
+    first_code = None
+    if isinstance(carrier_codes, list) and carrier_codes:
+        first_code = _opt_str(carrier_codes[0])
+    airline_names = item.get("airline_names")
+    airline_name = (
+        ", ".join(str(n) for n in airline_names)
+        if isinstance(airline_names, list) and airline_names
+        else _opt_str(item.get("airlines")) or airline_display_name(first_code)
+    )
+    airline_code = (
+        (outbound_first.carrier_code if outbound_first else None)
+        or first_code
+        or _opt_str(item.get("carrier_code"))
+    )
+    return airline_code, airline_name
+
+
 def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     """Parse a fast-flights-shaped offer (structured ``segments`` list).
 
@@ -421,24 +443,13 @@ def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     if return_itinerary is not None:
         itineraries.append(return_itinerary)
 
-    carrier_codes = item.get("carrier_codes")
-    first_code = None
-    if isinstance(carrier_codes, list) and carrier_codes:
-        first_code = _opt_str(carrier_codes[0])
     outbound_first = itinerary.segments[0] if itinerary.segments else None
-    airline_names = item.get("airline_names")
-    airline_name = (
-        ", ".join(str(n) for n in airline_names)
-        if isinstance(airline_names, list) and airline_names
-        else _opt_str(item.get("airlines")) or airline_display_name(first_code)
-    )
+    airline_code, airline_name = _fast_flights_airline_identity(item, outbound_first)
 
     total_duration = item.get("duration_minutes")
     return FlightOffer(
         id=str(item.get("id") or index),
-        airline_code=(outbound_first.carrier_code if outbound_first else None)
-        or first_code
-        or _opt_str(item.get("carrier_code")),
+        airline_code=airline_code,
         flight_number=outbound_first.flight_number if outbound_first else None,
         airline_name=airline_name,
         price=price,
