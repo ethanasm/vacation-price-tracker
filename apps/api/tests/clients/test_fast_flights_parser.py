@@ -85,8 +85,9 @@ def test_empty_page_yields_no_itineraries():
 
 
 def test_error_page_raises_flights_not_found():
+    html = error_page_html()
     with pytest.raises(FlightsNotFound):
-        parse_flights_page(error_page_html())
+        parse_flights_page(html)
 
 
 def test_missing_script_raises_value_error():

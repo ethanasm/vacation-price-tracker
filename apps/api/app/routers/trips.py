@@ -377,6 +377,30 @@ def _parse_fast_flights_itinerary(direction: str, segments: list) -> FlightItine
     )
 
 
+def _parse_fast_flights_return(item: dict) -> tuple[FlightItinerary | None, dict | None]:
+    """Build the return itinerary + summary payload from ``return_segments``."""
+    return_segments = (
+        item.get("return_segments") if isinstance(item.get("return_segments"), list) else []
+    )
+    if not return_segments:
+        return None, None
+    return_itinerary = _parse_fast_flights_itinerary("return", return_segments)
+    if not return_itinerary.segments:
+        return None, None
+    ret_first = return_itinerary.segments[0]
+    ret_last = return_itinerary.segments[-1]
+    ret_duration = item.get("return_duration_minutes")
+    return return_itinerary, {
+        "flight_number": ret_first.flight_number,
+        "departure_time": ret_first.departure_time,
+        "arrival_time": ret_last.arrival_time,
+        "duration_minutes": ret_duration
+        if isinstance(ret_duration, int)
+        else return_itinerary.total_duration_minutes,
+        "stops": return_itinerary.stops,
+    }
+
+
 def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     """Parse a fast-flights-shaped offer (structured ``segments`` list).
 
@@ -393,26 +417,9 @@ def _parse_fast_flights_offer(item: dict, index: int) -> FlightOffer | None:
     itinerary = _parse_fast_flights_itinerary("outbound", segments)
     itineraries = [itinerary] if itinerary.segments else []
 
-    return_segments = (
-        item.get("return_segments") if isinstance(item.get("return_segments"), list) else []
-    )
-    return_flight_payload = None
-    if return_segments:
-        return_itinerary = _parse_fast_flights_itinerary("return", return_segments)
-        if return_itinerary.segments:
-            itineraries.append(return_itinerary)
-            ret_first = return_itinerary.segments[0]
-            ret_last = return_itinerary.segments[-1]
-            ret_duration = item.get("return_duration_minutes")
-            return_flight_payload = {
-                "flight_number": ret_first.flight_number,
-                "departure_time": ret_first.departure_time,
-                "arrival_time": ret_last.arrival_time,
-                "duration_minutes": ret_duration
-                if isinstance(ret_duration, int)
-                else return_itinerary.total_duration_minutes,
-                "stops": return_itinerary.stops,
-            }
+    return_itinerary, return_flight_payload = _parse_fast_flights_return(item)
+    if return_itinerary is not None:
+        itineraries.append(return_itinerary)
 
     carrier_codes = item.get("carrier_codes")
     first_code = None

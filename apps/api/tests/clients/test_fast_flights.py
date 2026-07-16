@@ -387,12 +387,13 @@ class TestReturnOptions:
 
         outbound_page = page_html(best=[_as_direct(1585)])
         budget = AsyncMock(side_effect=[(True, 1), (False, 50_001)])
+        client = _client()
         with (
             patch("app.clients.fast_flights.incr_and_check_global_budget", new=budget),
             _patch_fetch(return_value=outbound_page),
         ):
             with pytest.raises(GlobalBudgetExceeded):
-                await _client().search_flights_all(
+                await client.search_flights_all(
                     "SFO", "OGG", "2026-12-11", return_date="2026-12-18"
                 )
 
