@@ -6,39 +6,34 @@
   "tags": ["scope:web", "type:app"],
   "targets": {
     "build": {
-      "executor": "@nx/next:build",
+      "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.next"],
       "cache": true,
-      "defaultConfiguration": "production",
       "options": {
-        "outputPath": "apps/web/.next"
-      },
-      "configurations": {
-        "development": {},
-        "production": {}
+        "command": "next build",
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "dev": {
-      "executor": "@nx/next:server",
-      "defaultConfiguration": "development",
+      "executor": "nx:run-commands",
       "options": {
-        "buildTarget": "web:build",
-        "dev": true,
-        "port": 3000
+        "command": "node server.js",
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       },
       "configurations": {
-        "development": {},
-        "production": {
-          "dev": false
+        "development": {
+          "command": "next dev --port 3000"
         }
       }
     },
     "start": {
-      "executor": "@nx/next:server",
+      "executor": "nx:run-commands",
       "options": {
-        "buildTarget": "web:build",
-        "dev": false,
-        "port": 3000
+        "command": "next start --port 3000",
+        "cwd": "apps/web",
+        "forwardAllArgs": false
       }
     },
     "lint": {
