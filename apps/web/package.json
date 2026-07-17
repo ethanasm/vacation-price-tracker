@@ -48,9 +48,9 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.3",
+    "@biomejs/biome": "2.5.4",
     "@playwright/test": "^1.61.1",
-    "@tailwindcss/postcss": "^4.3.2",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -59,13 +59,13 @@
     "@types/node": "26.1.1",
     "@types/react": "19.2.8",
     "@types/react-dom": "19.2.3",
-    "autoprefixer": "^10.5.2",
+    "autoprefixer": "^10.5.4",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "openapi-typescript": "^7.13.0",
-    "postcss": "^8.5.16",
+    "postcss": "^8.5.19",
     "shadcn": "^4.13.0",
-    "tailwindcss": "^4.3.2",
+    "tailwindcss": "^4.3.3",
     "ts-node": "^10.9.2",
     "typescript": "6.0.3"
   },
