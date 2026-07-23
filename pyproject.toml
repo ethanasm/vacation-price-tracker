@@ -31,7 +31,7 @@ dependencies = [
     "fast-flights>=3.0.2",
     "groq>=1.5.0",
     "tiktoken>=0.13.0",
-    "langfuse>=4.14.0,<5",
+    "langfuse>=4.14.1,<5",
     "axiom-py>=0.12.0",
 ]
 
