@@ -632,7 +632,7 @@ wheels = [
 
 [[package]]
 name = "groq"
-version = "1.5.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -642,9 +642,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/3a/31c54e35d694ba9c263939ecae0874c78fc51f22b9fb13d2dab50edf6e3c/groq-1.5.0.tar.gz", hash = "sha256:8648388f8668629490bb0eab11252b4cc43316149fda9c6343e9a9577fe7df88", size = 158239, upload-time = "2026-06-21T22:57:30.202Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/3e/687064918e861082cb02165872bbda31269126a108a78794dae86ddadae2/groq-1.6.0.tar.gz", hash = "sha256:c4237ecf0053ba85fd926bb31cb4b178996310474b4618867994e3e40d8e3c02", size = 158424, upload-time = "2026-07-24T17:25:49.517Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ce/c3/cac2aee75198c0382a2e6070619a798de2288e01850abb6e999746bb92e3/groq-1.5.0-py3-none-any.whl", hash = "sha256:a927fd75b4a60cb066c408cb4f9647536caf74e241ea75bc57d1810501b8203f", size = 143690, upload-time = "2026-06-21T22:57:29.213Z" },
+    { url = "https://files.pythonhosted.org/packages/20/40/164338d796cf41ea5930a42023e986d8c993720bed670d5aa143e5854873/groq-1.6.0-py3-none-any.whl", hash = "sha256:fa16db582455db324adcff1b5908519474736872e28cd5c8fa2b8bef6860e12a", size = 143693, upload-time = "2026-07-24T17:25:48.2Z" },
 ]
 
 [[package]]
@@ -2001,7 +2001,7 @@ requires-dist = [
     { name = "fast-flights", specifier = ">=3.0.2" },
     { name = "fastapi", specifier = ">=0.139.2" },
     { name = "greenlet" },
-    { name = "groq", specifier = ">=1.5.0" },
+    { name = "groq", specifier = ">=1.6.0" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.15" },
     { name = "itsdangerous" },
