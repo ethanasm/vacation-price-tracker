@@ -31,9 +31,12 @@ import { buildTripUpdate, seedThreshold } from '@/lib/trip-edit';
 import {
   MAX_DATE_DAYS_OUT,
   addDaysIso,
+  adjustReturnDate,
+  hasNoErrors,
   sanitizeDecimal,
   todayIso,
-  validateTripForm,
+  validateTripFormFields,
+  type TripFormErrors,
 } from '@/lib/trip-form';
 import { AuroraCard, GradientButton, SegmentedControl, type SegmentedOption } from '@/components/aurora';
 import { FormField } from '@/components/aurora/form-field';
@@ -51,11 +54,29 @@ const CABIN_OPTIONS: SegmentedOption<Cabin>[] = [
   { value: 'first', label: 'First' },
 ];
 
+type TripType = 'round_trip' | 'one_way';
+const TRIP_TYPE_OPTIONS: SegmentedOption<TripType>[] = [
+  { value: 'round_trip', label: 'Round trip' },
+  { value: 'one_way', label: 'One-way' },
+];
+
 // 1–9 adults, matching the API bound and web's traveler select.
 const ADULT_OPTIONS = Array.from({ length: 9 }, (_, i) => ({
   value: String(i + 1),
   label: i === 0 ? '1 Adult' : `${i + 1} Adults`,
 }));
+
+/** Which form card a validation error belongs to, for scroll-to-first-error. */
+type ErrorCard = 'details' | 'flight' | 'hotel';
+const ERROR_CARD: Record<keyof TripFormErrors, ErrorCard> = {
+  name: 'details',
+  origin: 'details',
+  destination: 'details',
+  departDate: 'details',
+  returnDate: 'details',
+  tracking: 'flight',
+  hotelCity: 'hotel',
+};
 
 export default function EditTripScreen(): React.JSX.Element {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -119,23 +140,35 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
   const [nonStopOnly, setNonStopOnly] = React.useState(trip.flight_prefs?.stops_mode === 'nonstop');
 
   const [hotelEnabled, setHotelEnabled] = React.useState(trip.track_hotels);
-  const [hotelExpanded, setHotelExpanded] = React.useState(false);
   const [hotelCity, setHotelCity] = React.useState(trip.hotel_prefs?.city ?? '');
 
   const [threshold, setThreshold] = React.useState(() => seedThreshold(trip));
 
-  const [validationError, setValidationError] = React.useState<string | null>(null);
+  const [errors, setErrors] = React.useState<TripFormErrors>({});
+
+  const scrollRef = React.useRef<ScrollView>(null);
+  const cardYs = React.useRef<Partial<Record<ErrorCard, number>>>({});
+
+  function clearError(field: keyof TripFormErrors): void {
+    setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
 
   function swap(): void {
     setOrigin(destination);
     setDestination(origin);
+    clearError('origin');
+    clearError('destination');
   }
 
   function onDepartChange(iso: string): void {
+    const prevDepart = departDate;
     setDepartDate(iso);
-    // A return on/before the new departure can never be valid — clear it so
-    // the return picker reopens on the departure month for a fresh pick.
-    if (returnDate && returnDate <= iso) setReturnDate('');
+    // Keep the trip length when the departure moves instead of silently
+    // clearing the return (adjustReturnDate leaves an explicitly-valid
+    // return untouched).
+    setReturnDate(adjustReturnDate(prevDepart, iso, returnDate, maxDate));
+    clearError('departDate');
+    clearError('returnDate');
   }
 
   const mutation = useMutation({
@@ -166,21 +199,25 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
   });
 
   function onSubmit(): void {
-    const err = validateTripForm(
+    const next = validateTripFormFields(
       { name, origin, destination, isRoundTrip, departDate, returnDate, flightEnabled, hotelEnabled, hotelCity },
       minDepart,
     );
-    setValidationError(err);
-    if (err) return;
+    setErrors(next);
+    if (!hasNoErrors(next)) {
+      const firstField = (Object.keys(ERROR_CARD) as (keyof TripFormErrors)[]).find((key) => next[key]);
+      const y = firstField ? cardYs.current[ERROR_CARD[firstField]] : undefined;
+      scrollRef.current?.scrollTo({ y: Math.max(0, (y ?? 0) - 12), animated: true });
+      return;
+    }
     mutation.mutate();
   }
 
-  const submitError = validationError
-    ?? (mutation.error instanceof ApiError
-      ? mutation.error.detail
-      : mutation.error
-        ? 'Could not save changes. Please try again.'
-        : null);
+  const submitError = mutation.error instanceof ApiError
+    ? mutation.error.detail
+    : mutation.error
+      ? 'Could not save changes. Please try again.'
+      : null;
 
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: tokens.color.pageBg }]} edges={['top', 'bottom']}>
@@ -194,128 +231,148 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <AuroraCard style={styles.card}>
-            <Text style={[styles.sectionTitle, { color: tokens.color.textStrong, fontFamily: tokens.font[700] }]}>Trip details</Text>
-            <FormField
-              label="Trip name"
-              value={name}
-              onChangeText={setName}
-              placeholder="Summer in Bend"
-              testID="edit-trip-name-input"
-              autoCapitalize="words"
-              maxLength={100}
-            />
-            <AirportField
-              label="From"
-              value={origin}
-              onChangeText={setOrigin}
-              placeholder="Search airports…"
-              testID="edit-trip-origin-input"
-              accessibilityLabel="From (origin)"
-              right={
-                <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="edit-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
-                  <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
-                </Pressable>
-              }
-            />
-            <AirportField
-              label="To"
-              value={destination}
-              onChangeText={setDestination}
-              placeholder="Search airports…"
-              testID="edit-trip-destination-input"
-              accessibilityLabel="To (destination)"
-            />
-            <View style={styles.dateRow}>
-              <View style={styles.dateCol}>
-                <DateField
-                  label="Depart"
-                  value={departDate}
-                  onChange={onDepartChange}
-                  minDate={minDepart}
-                  maxDate={maxDate}
-                  placeholder="Select date"
-                  testID="edit-trip-depart-input"
-                  accessibilityLabel="Departure date"
-                />
-              </View>
-              {isRoundTrip ? (
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View onLayout={(e) => { cardYs.current.details = e.nativeEvent.layout.y; }}>
+            <AuroraCard style={styles.card}>
+              <Text style={[styles.sectionTitle, { color: tokens.color.textStrong, fontFamily: tokens.font[700] }]}>Trip details</Text>
+              <Text style={[styles.subLabel, { color: tokens.color.textBodyAlt, fontFamily: tokens.font[700] }]}>TRIP TYPE</Text>
+              <SegmentedControl
+                options={TRIP_TYPE_OPTIONS}
+                value={isRoundTrip ? 'round_trip' : 'one_way'}
+                onChange={(v) => {
+                  setIsRoundTrip(v === 'round_trip');
+                  clearError('returnDate');
+                }}
+                testID="edit-trip-round-trip"
+              />
+              <View style={{ height: 14 }} />
+              <AirportField
+                label="From"
+                value={origin}
+                onChangeText={(v) => { setOrigin(v); clearError('origin'); }}
+                placeholder="Search airports…"
+                testID="edit-trip-origin-input"
+                accessibilityLabel="From (origin)"
+                error={errors.origin}
+                right={
+                  <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="edit-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
+                    <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
+                  </Pressable>
+                }
+              />
+              <AirportField
+                label="To"
+                value={destination}
+                onChangeText={(v) => { setDestination(v); clearError('destination'); }}
+                placeholder="Search airports…"
+                testID="edit-trip-destination-input"
+                accessibilityLabel="To (destination)"
+                error={errors.destination}
+              />
+              <View style={styles.dateRow}>
                 <View style={styles.dateCol}>
                   <DateField
-                    label="Return"
-                    value={returnDate}
-                    onChange={setReturnDate}
-                    minDate={departDate ? addDaysIso(departDate, 1) : minDepart}
+                    label="Depart"
+                    value={departDate}
+                    onChange={onDepartChange}
+                    minDate={minDepart}
                     maxDate={maxDate}
-                    initialMonthDate={departDate || undefined}
                     placeholder="Select date"
-                    testID="edit-trip-return-input"
-                    accessibilityLabel="Return date"
+                    testID="edit-trip-depart-input"
+                    accessibilityLabel="Departure date"
+                    error={errors.departDate}
+                  />
+                </View>
+                {isRoundTrip ? (
+                  <View style={styles.dateCol}>
+                    <DateField
+                      label="Return"
+                      value={returnDate}
+                      onChange={(iso) => { setReturnDate(iso); clearError('returnDate'); }}
+                      minDate={departDate ? addDaysIso(departDate, 1) : minDepart}
+                      maxDate={maxDate}
+                      initialMonthDate={departDate || undefined}
+                      placeholder="Select date"
+                      testID="edit-trip-return-input"
+                      accessibilityLabel="Return date"
+                      error={errors.returnDate}
+                    />
+                  </View>
+                ) : null}
+              </View>
+              <SelectField
+                label="Adults"
+                value={adults}
+                options={ADULT_OPTIONS}
+                onChange={setAdults}
+                testID="edit-trip-adults"
+              />
+              <FormField
+                label="Trip name"
+                value={name}
+                onChangeText={(v) => { setName(v); clearError('name'); }}
+                placeholder="Summer in Bend"
+                testID="edit-trip-name-input"
+                autoCapitalize="words"
+                maxLength={100}
+                error={errors.name}
+              />
+            </AuroraCard>
+          </View>
+
+          <View onLayout={(e) => { cardYs.current.flight = e.nativeEvent.layout.y; }}>
+            <AuroraCard style={styles.card}>
+              <CollapsibleSection
+                title="Flight preferences"
+                enabled={flightEnabled}
+                onEnabledChange={(v) => { setFlightEnabled(v); clearError('tracking'); }}
+                expanded={flightExpanded}
+                onToggleExpanded={() => setFlightExpanded((e) => !e)}
+                testID="edit-trip-flight-prefs"
+              >
+                <Text style={[styles.subLabel, { color: tokens.color.textBodyAlt, fontFamily: tokens.font[700] }]}>CABIN</Text>
+                <SegmentedControl options={CABIN_OPTIONS} value={cabin} onChange={setCabin} testID="edit-trip-cabin" />
+                <View style={{ height: 6 }} />
+                <ToggleRow title="Non-stop only" subtitle="Only track non-stop flights" value={nonStopOnly} onValueChange={setNonStopOnly} testID="edit-trip-nonstop" />
+              </CollapsibleSection>
+              {errors.tracking ? (
+                <Text testID="edit-trip-tracking-error" style={{ color: tokens.color.warning, fontFamily: tokens.font[600], fontSize: 12, marginTop: 6 }}>
+                  {errors.tracking}
+                </Text>
+              ) : null}
+            </AuroraCard>
+          </View>
+
+          <View onLayout={(e) => { cardYs.current.hotel = e.nativeEvent.layout.y; }}>
+            <AuroraCard style={styles.card}>
+              <ToggleRow
+                title="Hotel tracking"
+                subtitle={
+                  hotelEnabled
+                    ? 'Room count, room types, and views keep your saved preferences'
+                    : 'Off — this trip tracks flight prices only'
+                }
+                value={hotelEnabled}
+                onValueChange={(v) => { setHotelEnabled(v); clearError('tracking'); clearError('hotelCity'); }}
+                testID="edit-trip-hotel-prefs"
+              />
+              {hotelEnabled ? (
+                <View style={styles.hotelCity}>
+                  <FormField
+                    label="Hotel city"
+                    value={hotelCity}
+                    onChangeText={(v) => { setHotelCity(v); clearError('hotelCity'); }}
+                    placeholder="Maui"
+                    testID="edit-trip-hotel-city-input"
+                    accessibilityLabel="Hotel city"
+                    autoCapitalize="words"
+                    maxLength={200}
+                    error={errors.hotelCity}
                   />
                 </View>
               ) : null}
-            </View>
-            <SelectField
-              label="Adults"
-              value={adults}
-              options={ADULT_OPTIONS}
-              onChange={setAdults}
-              testID="edit-trip-adults"
-            />
-            <ToggleRow
-              title="Round trip"
-              subtitle="Track a return flight too"
-              value={isRoundTrip}
-              onValueChange={setIsRoundTrip}
-              testID="edit-trip-round-trip"
-            />
-          </AuroraCard>
-
-          <AuroraCard style={styles.card}>
-            <CollapsibleSection
-              title="Flight preferences"
-              enabled={flightEnabled}
-              onEnabledChange={setFlightEnabled}
-              expanded={flightExpanded}
-              onToggleExpanded={() => setFlightExpanded((e) => !e)}
-              testID="edit-trip-flight-prefs"
-            >
-              <Text style={[styles.subLabel, { color: tokens.color.textBodyAlt, fontFamily: tokens.font[700] }]}>CABIN</Text>
-              <SegmentedControl options={CABIN_OPTIONS} value={cabin} onChange={setCabin} testID="edit-trip-cabin" />
-              <View style={{ height: 6 }} />
-              <ToggleRow title="Non-stop only" subtitle="Only track non-stop flights" value={nonStopOnly} onValueChange={setNonStopOnly} testID="edit-trip-nonstop" />
-            </CollapsibleSection>
-          </AuroraCard>
-
-          <AuroraCard style={styles.card}>
-            <CollapsibleSection
-              title="Hotel preferences"
-              enabled={hotelEnabled}
-              onEnabledChange={setHotelEnabled}
-              expanded={hotelExpanded}
-              onToggleExpanded={() => setHotelExpanded((e) => !e)}
-              testID="edit-trip-hotel-prefs"
-            >
-              <Text style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 13 }}>
-                Room count, room types, and views carry over from your saved preferences.
-              </Text>
-            </CollapsibleSection>
-            {hotelEnabled ? (
-              <View style={styles.hotelCity}>
-                <FormField
-                  label="Hotel city"
-                  value={hotelCity}
-                  onChangeText={setHotelCity}
-                  placeholder="Maui"
-                  testID="edit-trip-hotel-city-input"
-                  accessibilityLabel="Hotel city"
-                  autoCapitalize="words"
-                  maxLength={200}
-                />
-              </View>
-            ) : null}
-          </AuroraCard>
+            </AuroraCard>
+          </View>
 
           <AuroraCard style={styles.card}>
             <Text style={[styles.sectionTitle, { color: tokens.color.textStrong, fontFamily: tokens.font[700] }]}>Alert me when…</Text>

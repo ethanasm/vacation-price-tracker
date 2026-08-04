@@ -116,39 +116,162 @@ export interface TripFormValues {
   hotelCity: string;
 }
 
+/** Per-field validation errors; a key is present only when that field is invalid. */
+export interface TripFormErrors {
+  name?: string;
+  origin?: string;
+  destination?: string;
+  departDate?: string;
+  returnDate?: string;
+  tracking?: string;
+  hotelCity?: string;
+}
+
+/** Field order used to pick the "first" error for the legacy single-message API. */
+const ERROR_FIELD_ORDER: (keyof TripFormErrors)[] = [
+  'name', 'origin', 'destination', 'departDate', 'returnDate', 'tracking', 'hotelCity',
+];
+
 /**
- * First validation error for the trip form, or null when valid. Mirrors
- * web's validateTripForm messages. `minDepartIso` is today for the create
- * form; the edit form passes min(today, saved depart) so a trip that already
- * departed can still be renamed without touching its dates.
+ * Validate every trip-form field at once and return the full error map, so
+ * the form can highlight each invalid field inline instead of surfacing one
+ * bottom-anchored message per submit. Constraints mirror web's trip-form
+ * rules (3-letter IATA codes, departure within [today, today + 359 days],
+ * return strictly after departure); the airport copy is phrased around the
+ * typeahead ("choose … from the list") rather than raw IATA codes.
+ * `minDepartIso` is today for the create form; the edit form passes
+ * min(today, saved depart) so a trip that already departed can still be
+ * renamed without touching its dates.
  */
-export function validateTripForm(values: TripFormValues, minDepartIso: string): string | null {
-  if (!values.name.trim()) return 'Trip name is required.';
-  if (values.name.trim().length > 100) return 'Trip name must be 100 characters or less.';
+export function validateTripFormFields(values: TripFormValues, minDepartIso: string): TripFormErrors {
+  const errors: TripFormErrors = {};
+
+  if (!values.name.trim()) errors.name = 'Trip name is required.';
+  else if (values.name.trim().length > 100) errors.name = 'Trip name must be 100 characters or less.';
+
   if (!AIRPORT_CODE_RE.test(values.origin.trim().toUpperCase())) {
-    return 'Enter a valid 3-letter airport code for From (origin).';
+    errors.origin = 'Choose an origin airport from the list.';
   }
   if (!AIRPORT_CODE_RE.test(values.destination.trim().toUpperCase())) {
-    return 'Enter a valid 3-letter airport code for To (destination).';
+    errors.destination = 'Choose a destination airport from the list.';
   }
 
   const depart = values.departDate.trim();
-  if (!parseIsoDate(depart)) return 'Departure date is required.';
-  if (depart < minDepartIso) return 'Departure date cannot be in the past.';
   const maxIso = addDaysIso(todayIso(), MAX_DATE_DAYS_OUT);
-  if (depart > maxIso) return `Departure date cannot be more than ${MAX_DATE_DAYS_OUT} days out.`;
+  if (!parseIsoDate(depart)) errors.departDate = 'Departure date is required.';
+  else if (depart < minDepartIso) errors.departDate = 'Departure date cannot be in the past.';
+  else if (depart > maxIso) errors.departDate = `Departure date cannot be more than ${MAX_DATE_DAYS_OUT} days out.`;
 
   if (values.isRoundTrip) {
     const ret = values.returnDate.trim();
-    if (!parseIsoDate(ret)) return 'Return date is required for a round trip.';
-    if (ret <= depart) return 'Return date must be after departure.';
-    if (ret > maxIso) return `Return date cannot be more than ${MAX_DATE_DAYS_OUT} days out.`;
+    if (!parseIsoDate(ret)) errors.returnDate = 'Return date is required for a round trip.';
+    else if (!errors.departDate && ret <= depart) errors.returnDate = 'Return date must be after departure.';
+    else if (ret > maxIso) errors.returnDate = `Return date cannot be more than ${MAX_DATE_DAYS_OUT} days out.`;
   }
 
-  if (!values.flightEnabled && !values.hotelEnabled) return 'Track at least flights or hotels.';
+  if (!values.flightEnabled && !values.hotelEnabled) {
+    errors.tracking = 'Track at least flights or hotels.';
+  }
   if (values.hotelEnabled) {
-    if (!values.hotelCity.trim()) return 'Hotel city is required when tracking hotels.';
-    if (values.hotelCity.trim().length > 200) return 'Hotel city must be 200 characters or less.';
+    if (!values.hotelCity.trim()) errors.hotelCity = 'Hotel city is required when tracking hotels.';
+    else if (values.hotelCity.trim().length > 200) errors.hotelCity = 'Hotel city must be 200 characters or less.';
+  }
+  return errors;
+}
+
+/** True when the error map has no entries. */
+export function hasNoErrors(errors: TripFormErrors): boolean {
+  return ERROR_FIELD_ORDER.every((key) => !errors[key]);
+}
+
+/**
+ * First validation error for the trip form, or null when valid — the legacy
+ * single-message wrapper over validateTripFormFields.
+ */
+export function validateTripForm(values: TripFormValues, minDepartIso: string): string | null {
+  const errors = validateTripFormFields(values, minDepartIso);
+  for (const key of ERROR_FIELD_ORDER) {
+    const message = errors[key];
+    if (message) return message;
   }
   return null;
+}
+
+/** Whole days between two ISO dates (b - a); null when either is malformed. */
+export function diffDaysIso(aIso: string, bIso: string): number | null {
+  const a = parseIsoDate(aIso);
+  const b = parseIsoDate(bIso);
+  if (!a || !b) return null;
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+/**
+ * Recompute the return date after the departure moves. A return that is still
+ * after the new departure is the user's explicit pick — keep it. Otherwise
+ * preserve the trip's previous length (return − old departure, min 1 night)
+ * instead of silently clearing the field; fall back to clearing only when the
+ * preserved date would land past `maxIso` or the inputs are malformed.
+ */
+export function adjustReturnDate(
+  prevDepartIso: string,
+  newDepartIso: string,
+  returnIso: string,
+  maxIso: string,
+): string {
+  if (!returnIso) return '';
+  if (!parseIsoDate(newDepartIso)) return returnIso;
+  if (returnIso > newDepartIso) return returnIso;
+  const nights = diffDaysIso(prevDepartIso, returnIso);
+  const preserved = addDaysIso(newDepartIso, Math.max(1, nights ?? 1));
+  if (!parseIsoDate(preserved) || preserved > maxIso) return '';
+  return preserved;
+}
+
+/**
+ * Hotel occupancy derived from the trip's traveler count instead of a
+ * hardcoded 2-adult double: one room up to the API's 4-adults-per-room cap,
+ * then as few extra rooms as fit everyone.
+ */
+export function hotelOccupancy(adults: number): { rooms: number; adultsPerRoom: number } {
+  const total = Math.min(9, Math.max(1, Math.trunc(adults) || 1));
+  const adultsPerRoom = Math.min(4, total);
+  return { rooms: Math.ceil(total / adultsPerRoom), adultsPerRoom };
+}
+
+/** Human summary of hotelOccupancy: "1 room · 2 adults", "2 rooms · 4 adults each". */
+export function describeHotelOccupancy(adults: number): string {
+  const { rooms, adultsPerRoom } = hotelOccupancy(adults);
+  const roomsLabel = rooms === 1 ? '1 room' : `${rooms} rooms`;
+  const adultsLabel = adultsPerRoom === 1 ? '1 adult' : `${adultsPerRoom} adults${rooms > 1 ? ' each' : ''}`;
+  return `${roomsLabel} · ${adultsLabel}`;
+}
+
+/** 'Aug 20' short date for name suggestions. */
+function shortDate(iso: string): string {
+  const date = parseIsoDate(iso);
+  if (!date) return '';
+  return `${MONTHS[date.getMonth()].slice(0, 3)} ${date.getDate()}`;
+}
+
+/**
+ * Suggested trip name from the destination + dates, e.g. "Maui · Aug 20–27",
+ * "Kahului · Aug 28 – Sep 3" across months, or "Maui · Aug 20" one-way.
+ * Empty when there is no destination to name the trip after.
+ */
+export function suggestTripName(
+  destinationLabel: string,
+  departIso: string,
+  returnIso: string,
+  isRoundTrip: boolean,
+): string {
+  const place = destinationLabel.trim();
+  if (!place) return '';
+  const depart = parseIsoDate(departIso);
+  if (!depart) return place;
+  const departLabel = shortDate(departIso);
+  const ret = isRoundTrip ? parseIsoDate(returnIso) : null;
+  if (!ret) return `${place} · ${departLabel}`;
+  const sameMonth = depart.getMonth() === ret.getMonth() && depart.getFullYear() === ret.getFullYear();
+  const range = sameMonth ? `${departLabel}–${ret.getDate()}` : `${departLabel} – ${shortDate(returnIso)}`;
+  return `${place} · ${range}`.slice(0, 100);
 }

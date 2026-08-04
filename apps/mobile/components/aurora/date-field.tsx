@@ -35,6 +35,7 @@ export function DateField({
   placeholder = 'Select date',
   testID,
   accessibilityLabel,
+  error,
 }: {
   label: string;
   /** Selected date as YYYY-MM-DD, or '' for none. */
@@ -49,6 +50,8 @@ export function DateField({
   placeholder?: string;
   testID?: string;
   accessibilityLabel?: string;
+  /** Inline validation message; tints the field and renders below it. */
+  error?: string | null;
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
@@ -60,12 +63,14 @@ export function DateField({
     ? {
         backgroundColor: 'transparent',
         borderBottomWidth: 2,
-        borderBottomColor: tokens.color.primary,
+        borderBottomColor: error ? tokens.color.warning : tokens.color.primary,
         paddingHorizontal: 0,
       }
     : {
         backgroundColor: tokens.color.surface,
         borderRadius: tokens.radius.inner,
+        borderWidth: error ? 1.5 : 0,
+        borderColor: error ? tokens.color.warning : 'transparent',
       };
 
   function openSheet(): void {
@@ -116,6 +121,14 @@ export function DateField({
           {value ? formatDisplayDate(value) : placeholder}
         </Text>
       </Pressable>
+      {error ? (
+        <Text
+          testID={testID ? `${testID}-error` : undefined}
+          style={{ color: tokens.color.warning, fontFamily: tokens.font[600], fontSize: 12, marginTop: 5 }}
+        >
+          {error}
+        </Text>
+      ) : null}
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.fill}>
