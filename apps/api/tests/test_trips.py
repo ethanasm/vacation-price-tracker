@@ -1210,6 +1210,25 @@ def test_parse_hotel_offer_no_price_returns_none():
     assert trips_module._parse_hotel_offer({"id": "test", "name": "no-price"}, 0) is None
 
 
+def test_parse_hotel_offer_coerces_raw_rating_dict():
+    """Skiplagged-raw rating ({"stars": 5, "text": ...}) coerces to the int."""
+    offer = trips_module._parse_hotel_offer(
+        {"id": "h1", "name": "Inn", "price": 120, "rating": {"stars": 5, "text": "5 stars"}}, 0
+    )
+    assert offer is not None
+    assert offer.rating == 5
+
+
+def test_parse_hotel_offer_drops_unusable_rating_shapes():
+    """A rating that is neither an int nor a stars dict becomes None."""
+    for rating in ({"text": "no stars key"}, "five", 4.5):
+        offer = trips_module._parse_hotel_offer(
+            {"id": "h1", "name": "Inn", "price": 120, "rating": rating}, 0
+        )
+        assert offer is not None
+        assert offer.rating is None
+
+
 def test_parse_flight_offer_return_flight_non_dict():
     """return_flight that is not a dict should be replaced with empty dict."""
     item = {
