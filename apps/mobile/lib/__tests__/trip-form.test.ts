@@ -276,14 +276,24 @@ describe('hotelOccupancy', () => {
     assert.deepEqual(hotelOccupancy(1), { rooms: 1, adultsPerRoom: 1 });
     assert.deepEqual(hotelOccupancy(2), { rooms: 1, adultsPerRoom: 2 });
     assert.deepEqual(hotelOccupancy(4), { rooms: 1, adultsPerRoom: 4 });
-    assert.deepEqual(hotelOccupancy(5), { rooms: 2, adultsPerRoom: 4 });
-    assert.deepEqual(hotelOccupancy(9), { rooms: 3, adultsPerRoom: 4 });
+    assert.deepEqual(hotelOccupancy(5), { rooms: 2, adultsPerRoom: 3 });
+    assert.deepEqual(hotelOccupancy(9), { rooms: 3, adultsPerRoom: 3 });
+  });
+
+  it('never books meaningfully past the party size', () => {
+    for (let adults = 1; adults <= 9; adults += 1) {
+      const { rooms, adultsPerRoom } = hotelOccupancy(adults);
+      const capacity = rooms * adultsPerRoom;
+      assert.ok(capacity >= adults, `capacity ${capacity} fits ${adults}`);
+      assert.ok(capacity - adults < rooms, `capacity ${capacity} not inflated for ${adults}`);
+      assert.ok(adultsPerRoom >= 1 && adultsPerRoom <= 4);
+    }
   });
 
   it('clamps nonsense input into the 1–9 adult range', () => {
     assert.deepEqual(hotelOccupancy(0), { rooms: 1, adultsPerRoom: 1 });
     assert.deepEqual(hotelOccupancy(-3), { rooms: 1, adultsPerRoom: 1 });
-    assert.deepEqual(hotelOccupancy(42), { rooms: 3, adultsPerRoom: 4 });
+    assert.deepEqual(hotelOccupancy(42), { rooms: 3, adultsPerRoom: 3 });
     assert.deepEqual(hotelOccupancy(Number.NaN), { rooms: 1, adultsPerRoom: 1 });
   });
 });
@@ -292,7 +302,7 @@ describe('describeHotelOccupancy', () => {
   it('renders singular, plural, and multi-room forms', () => {
     assert.equal(describeHotelOccupancy(1), '1 room · 1 adult');
     assert.equal(describeHotelOccupancy(2), '1 room · 2 adults');
-    assert.equal(describeHotelOccupancy(5), '2 rooms · 4 adults each');
+    assert.equal(describeHotelOccupancy(5), '2 rooms · 3 adults each');
   });
 });
 
@@ -315,8 +325,10 @@ describe('suggestTripName', () => {
     assert.equal(suggestTripName('  ', '2026-08-20', '2026-08-27', true), '');
   });
 
-  it('caps the suggestion at the 100-character name limit', () => {
-    const suggested = suggestTripName('x'.repeat(120), '2026-08-20', '2026-08-27', true);
-    assert.equal(suggested.length, 100);
+  it('caps every branch at the 100-character name limit', () => {
+    const longPlace = 'x'.repeat(120);
+    assert.equal(suggestTripName(longPlace, '2026-08-20', '2026-08-27', true).length, 100);
+    assert.equal(suggestTripName(longPlace, '2026-08-20', '', true).length, 100);
+    assert.equal(suggestTripName(longPlace, '', '', true).length, 100);
   });
 });

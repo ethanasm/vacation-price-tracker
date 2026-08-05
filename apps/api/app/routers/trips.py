@@ -637,11 +637,13 @@ def _parse_hotel_offer(item: dict, index: int) -> HotelOffer | None:
             if titles:
                 description = ", ".join(titles[:3])
     # Rating arrives either normalized (star_rating int) or Skiplagged-raw
-    # ({"stars": 5, "text": "5 stars"}); coerce both to a plain int.
+    # ({"stars": 5, "text": "5 stars"}); coerce both to a plain int. bool is
+    # excluded explicitly — isinstance(True, int) holds in Python, and a stray
+    # boolean must not become a 1-star rating.
     rating = item.get("rating") or item.get("star_rating")
     if isinstance(rating, dict):
         rating = rating.get("stars")
-    if not isinstance(rating, int):
+    if isinstance(rating, bool) or not isinstance(rating, int):
         rating = None
     return HotelOffer(
         id=str(item.get("id") or item.get("hotelId") or index),

@@ -16,9 +16,10 @@ const MAX_SUGGESTIONS = 5;
  * The suggestion list renders as an absolutely-positioned overlay below the
  * input (not inline) so opening it never reflows the fields underneath —
  * an inline list used to shift the To field mid-tap, sending keystrokes into
- * the still-focused From input. While blurred, a recognized code displays as
- * "SEA — Seattle–Tacoma International Airport" for confirmation; focusing
- * reverts to the raw code for editing.
+ * the still-focused From input. A recognized code shows the airport's full
+ * name as a caption under the field; the input itself always holds the raw
+ * code (swapping a pretty label through the controlled value would let a
+ * fast keystroke feed the label back into form state).
  *
  * testID contract (Maestro): the input is `testID`; each suggestion row is
  * `${testID}-option-<CODE>`.
@@ -47,7 +48,6 @@ export function AirportField({
   const { tokens } = useTheme();
   const [results, setResults] = React.useState<LocationResult[]>([]);
   const [open, setOpen] = React.useState(false);
-  const [focused, setFocused] = React.useState(false);
   const blurTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => () => {
@@ -75,19 +75,16 @@ export function AirportField({
   }
 
   function handleFocus(): void {
-    setFocused(true);
     setOpen(results.length > 0 && value.trim().length >= 2);
   }
 
   function handleBlur(): void {
-    setFocused(false);
     // Delay so a suggestion tap (onPressIn) lands before the list unmounts.
     blurTimer.current = setTimeout(() => setOpen(false), 150);
   }
 
-  // Blurred confirmation label for a recognized code ("SEA — Seattle–Tacoma…").
-  const selectedAirport = !focused && !open ? findAirportByCode(value) : null;
-  const displayValue = selectedAirport ? `${selectedAirport.code} — ${selectedAirport.name}` : value;
+  // Confirmation caption for a recognized code, rendered under the field.
+  const selectedAirport = !open ? findAirportByCode(value) : null;
 
   const isAndroid = Platform.OS === 'android';
   const inputStyle = isAndroid
@@ -129,7 +126,7 @@ export function AirportField({
           <TextInput
             testID={testID}
             accessibilityLabel={accessibilityLabel ?? label}
-            value={displayValue}
+            value={value}
             onChangeText={handleChange}
             onFocus={handleFocus}
             onBlur={handleBlur}
@@ -184,7 +181,18 @@ export function AirportField({
           </View>
         ) : null}
       </View>
-      {error ? (
+      {/* The open dropdown overlays this space — suppress the caption/error
+          until it closes so they never paint through the list. */}
+      {!open && selectedAirport ? (
+        <Text
+          numberOfLines={1}
+          testID={testID ? `${testID}-selected-name` : undefined}
+          style={{ color: tokens.color.textMuted, fontFamily: tokens.font[500], fontSize: 12, marginTop: 5 }}
+        >
+          {selectedAirport.name}
+        </Text>
+      ) : null}
+      {!open && error ? (
         <Text
           testID={testID ? `${testID}-error` : undefined}
           style={{ color: tokens.color.warning, fontFamily: tokens.font[600], fontSize: 12, marginTop: 5 }}

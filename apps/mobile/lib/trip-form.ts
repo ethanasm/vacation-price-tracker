@@ -229,13 +229,15 @@ export function adjustReturnDate(
 
 /**
  * Hotel occupancy derived from the trip's traveler count instead of a
- * hardcoded 2-adult double: one room up to the API's 4-adults-per-room cap,
- * then as few extra rooms as fit everyone.
+ * hardcoded 2-adult double: as few rooms as the API's 4-adults-per-room cap
+ * allows, then the smallest per-room count that still fits everyone — so
+ * rooms × adultsPerRoom never books meaningfully past the party size
+ * (5 adults → 2 rooms × 3, not 2 × 4).
  */
 export function hotelOccupancy(adults: number): { rooms: number; adultsPerRoom: number } {
   const total = Math.min(9, Math.max(1, Math.trunc(adults) || 1));
-  const adultsPerRoom = Math.min(4, total);
-  return { rooms: Math.ceil(total / adultsPerRoom), adultsPerRoom };
+  const rooms = Math.ceil(total / 4);
+  return { rooms, adultsPerRoom: Math.ceil(total / rooms) };
 }
 
 /** Human summary of hotelOccupancy: "1 room · 2 adults", "2 rooms · 4 adults each". */
@@ -267,10 +269,10 @@ export function suggestTripName(
   const place = destinationLabel.trim();
   if (!place) return '';
   const depart = parseIsoDate(departIso);
-  if (!depart) return place;
+  if (!depart) return place.slice(0, 100);
   const departLabel = shortDate(departIso);
   const ret = isRoundTrip ? parseIsoDate(returnIso) : null;
-  if (!ret) return `${place} · ${departLabel}`;
+  if (!ret) return `${place} · ${departLabel}`.slice(0, 100);
   const sameMonth = depart.getMonth() === ret.getMonth() && depart.getFullYear() === ret.getFullYear();
   const range = sameMonth ? `${departLabel}–${ret.getDate()}` : `${departLabel} – ${shortDate(returnIso)}`;
   return `${place} · ${range}`.slice(0, 100);

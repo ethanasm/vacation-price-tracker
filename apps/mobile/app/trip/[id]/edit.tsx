@@ -148,6 +148,9 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
 
   const scrollRef = React.useRef<ScrollView>(null);
   const cardYs = React.useRef<Partial<Record<ErrorCard, number>>>({});
+  // Per-field offsets within their card, so a submit scrolls to the invalid
+  // *field* (the details card is taller than small screens), not just its card.
+  const fieldYs = React.useRef<Partial<Record<keyof TripFormErrors, number>>>({});
 
   function clearError(field: keyof TripFormErrors): void {
     setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
@@ -206,18 +209,26 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
     setErrors(next);
     if (!hasNoErrors(next)) {
       const firstField = (Object.keys(ERROR_CARD) as (keyof TripFormErrors)[]).find((key) => next[key]);
-      const y = firstField ? cardYs.current[ERROR_CARD[firstField]] : undefined;
-      scrollRef.current?.scrollTo({ y: Math.max(0, (y ?? 0) - 12), animated: true });
+      const cardY = firstField ? cardYs.current[ERROR_CARD[firstField]] : undefined;
+      const fieldY = firstField ? fieldYs.current[firstField] : undefined;
+      scrollRef.current?.scrollTo({ y: Math.max(0, (cardY ?? 0) + (fieldY ?? 0) - 24), animated: true });
       return;
     }
     mutation.mutate();
   }
 
-  const submitError = mutation.error instanceof ApiError
-    ? mutation.error.detail
-    : mutation.error
-      ? 'Could not save changes. Please try again.'
-      : null;
+  // Summary near the submit button: the first inline error (the flagged field
+  // may sit scrolled out of view), else the mutation failure.
+  const firstErrorMessage =
+    (Object.keys(ERROR_CARD) as (keyof TripFormErrors)[])
+      .map((key) => errors[key])
+      .find(Boolean) ?? null;
+  const submitError = firstErrorMessage
+    ?? (mutation.error instanceof ApiError
+      ? mutation.error.detail
+      : mutation.error
+        ? 'Could not save changes. Please try again.'
+        : null);
 
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: tokens.color.pageBg }]} edges={['top', 'bottom']}>
@@ -232,7 +243,9 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
         </View>
 
         <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View onLayout={(e) => { cardYs.current.details = e.nativeEvent.layout.y; }}>
+          {/* zIndex keeps the airport dropdown overlay above the sibling cards
+              below on Android, where elevation stacks per-parent. */}
+          <View style={styles.detailsCardWrap} onLayout={(e) => { cardYs.current.details = e.nativeEvent.layout.y; }}>
             <AuroraCard style={styles.card}>
               <Text style={[styles.sectionTitle, { color: tokens.color.textStrong, fontFamily: tokens.font[700] }]}>Trip details</Text>
               <Text style={[styles.subLabel, { color: tokens.color.textBodyAlt, fontFamily: tokens.font[700] }]}>TRIP TYPE</Text>
@@ -246,30 +259,40 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
                 testID="edit-trip-round-trip"
               />
               <View style={{ height: 14 }} />
-              <AirportField
-                label="From"
-                value={origin}
-                onChangeText={(v) => { setOrigin(v); clearError('origin'); }}
-                placeholder="Search airports…"
-                testID="edit-trip-origin-input"
-                accessibilityLabel="From (origin)"
-                error={errors.origin}
-                right={
-                  <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="edit-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
-                    <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
-                  </Pressable>
-                }
-              />
-              <AirportField
-                label="To"
-                value={destination}
-                onChangeText={(v) => { setDestination(v); clearError('destination'); }}
-                placeholder="Search airports…"
-                testID="edit-trip-destination-input"
-                accessibilityLabel="To (destination)"
-                error={errors.destination}
-              />
-              <View style={styles.dateRow}>
+              <View style={styles.originFieldWrap} onLayout={(e) => { fieldYs.current.origin = e.nativeEvent.layout.y; }}>
+                <AirportField
+                  label="From"
+                  value={origin}
+                  onChangeText={(v) => { setOrigin(v); clearError('origin'); }}
+                  placeholder="Search airports…"
+                  testID="edit-trip-origin-input"
+                  accessibilityLabel="From (origin)"
+                  error={errors.origin}
+                  right={
+                    <Pressable accessibilityRole="button" accessibilityLabel="Swap origin and destination" testID="edit-trip-swap" onPress={swap} hitSlop={8} style={[styles.swap, { backgroundColor: tokens.color.chipBg, borderRadius: tokens.radius.inner }]}>
+                      <Text style={{ color: tokens.color.primary, fontFamily: tokens.font[700], fontSize: 16 }}>⇄</Text>
+                    </Pressable>
+                  }
+                />
+              </View>
+              <View style={styles.destinationFieldWrap} onLayout={(e) => { fieldYs.current.destination = e.nativeEvent.layout.y; }}>
+                <AirportField
+                  label="To"
+                  value={destination}
+                  onChangeText={(v) => { setDestination(v); clearError('destination'); }}
+                  placeholder="Search airports…"
+                  testID="edit-trip-destination-input"
+                  accessibilityLabel="To (destination)"
+                  error={errors.destination}
+                />
+              </View>
+              <View
+                style={styles.dateRow}
+                onLayout={(e) => {
+                  fieldYs.current.departDate = e.nativeEvent.layout.y;
+                  fieldYs.current.returnDate = e.nativeEvent.layout.y;
+                }}
+              >
                 <View style={styles.dateCol}>
                   <DateField
                     label="Depart"
@@ -307,16 +330,18 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
                 onChange={setAdults}
                 testID="edit-trip-adults"
               />
-              <FormField
-                label="Trip name"
-                value={name}
-                onChangeText={(v) => { setName(v); clearError('name'); }}
-                placeholder="Summer in Bend"
-                testID="edit-trip-name-input"
-                autoCapitalize="words"
-                maxLength={100}
-                error={errors.name}
-              />
+              <View onLayout={(e) => { fieldYs.current.name = e.nativeEvent.layout.y; }}>
+                <FormField
+                  label="Trip name"
+                  value={name}
+                  onChangeText={(v) => { setName(v); clearError('name'); }}
+                  placeholder="Summer in Bend"
+                  testID="edit-trip-name-input"
+                  autoCapitalize="words"
+                  maxLength={100}
+                  error={errors.name}
+                />
+              </View>
             </AuroraCard>
           </View>
 
@@ -357,7 +382,7 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
                 testID="edit-trip-hotel-prefs"
               />
               {hotelEnabled ? (
-                <View style={styles.hotelCity}>
+                <View style={styles.hotelCity} onLayout={(e) => { fieldYs.current.hotelCity = e.nativeEvent.layout.y; }}>
                   <FormField
                     label="Hotel city"
                     value={hotelCity}
@@ -417,6 +442,12 @@ function EditTripForm({ trip }: { trip: TripDetail }): React.JSX.Element {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  detailsCardWrap: { zIndex: 20, elevation: 20 },
+  // Static stacking order so each airport dropdown paints over the
+  // sibling fields below it (the onLayout wrappers would otherwise
+  // reset the fields' own zIndex raise to source order).
+  originFieldWrap: { zIndex: 6, elevation: 6 },
+  destinationFieldWrap: { zIndex: 5, elevation: 5 },
   center: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 14 },
   retryWrap: { minWidth: 160 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
