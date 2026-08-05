@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.admins import is_admin_email
-from app.core.auth_allowlist import parse_allowlist, should_allow_sign_in
+from app.core.auth_allowlist import is_email_allowed, parse_allowlist, should_allow_sign_in
 from app.core.cache_keys import CacheKeys, CacheTTL
 from app.core.config import settings
 from app.core.constants import CookieNames, JWTClaims, TokenType
@@ -89,6 +89,28 @@ oauth.register(
 
 def _build_jwt_data(user_id: uuid.UUID) -> dict:
     return {JWTClaims.SUBJECT: str(user_id)}
+
+
+def _is_still_allowed(email: str | None) -> bool:
+    """Re-check an already-signed-in user against the live sign-in allowlist.
+
+    ``should_allow_sign_in`` only runs at sign-in (OAuth callback / mobile-token
+    bridge). Without a per-request re-check, removing someone from
+    ``AUTH_ALLOWED_EMAILS`` / ``AUTH_ALLOWED_DOMAINS`` never revokes them: the
+    access token is validated on signature alone, and ``/v1/auth/refresh`` mints
+    a replacement with a *fresh* 30-day expiry every rotation, so an active
+    client stays signed in indefinitely. The allowlist is this app's only
+    membership concept, so that made "remove access" a no-op.
+
+    Only the allowlist is re-evaluated, not ``email_verified`` — that is a
+    property of the Google assertion at sign-in time and isn't available here.
+    Mirrors showbook's ``resolveTrpcSession``, which re-checks on every decode.
+    """
+    return is_email_allowed(
+        email,
+        emails=parse_allowlist(settings.auth_allowed_emails),
+        domains=parse_allowlist(settings.auth_allowed_domains),
+    )
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -399,18 +421,31 @@ async def refresh_token(
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
-    if user:
-        logger.info(
-            "User token refresh replayed within grace" if replayed else "User token refreshed",
-            extra={
-                "event": "auth.token.refresh_replayed" if replayed else "auth.token.refresh",
-                "user_id": str(user.id),
-            },
+
+    # A refresh mints a replacement with a fresh 30-day expiry, so this is the
+    # hop that would otherwise let a removed user stay signed in forever. Reject
+    # before handing out new credentials, and drop the stored session so the
+    # rotation we just performed can't be reused either.
+    if user is None or not _is_still_allowed(user.email):
+        await redis_client.delete(
+            _refresh_token_key(user_id, payload),
+            _grace_key(user_id, payload),
         )
+        logger.warning(
+            "Refresh denied by allowlist",
+            extra={"event": "auth.token.refresh_deallowlisted", "user_id": str(user_id)},
+        )
+        raise AuthenticationRequired("Refresh token has been rotated or invalidated.")
+
+    logger.info(
+        "User token refresh replayed within grace" if replayed else "User token refreshed",
+        extra={
+            "event": "auth.token.refresh_replayed" if replayed else "auth.token.refresh",
+            "user_id": str(user.id),
+        },
+    )
 
     if body_mode:
-        if user is None:  # pragma: no cover - the refresh token's user must exist
-            raise AuthenticationRequired("User not found")
         return MobileTokenResponse(
             access_token=new_access_token,
             refresh_token=new_refresh_token,
@@ -627,5 +662,14 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
 
     if not user:
         raise AuthenticationRequired("User not found")
+
+    # Deauthorization takes effect on the next request, not when the token
+    # happens to expire. See _is_still_allowed.
+    if not _is_still_allowed(user.email):
+        logger.warning(
+            "Access denied by allowlist for an existing session",
+            extra={"event": "auth.session.deallowlisted", "user_id": str(user.id)},
+        )
+        raise AuthenticationRequired("Not authenticated")
 
     return _user_response(user)

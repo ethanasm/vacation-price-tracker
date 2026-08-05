@@ -4,9 +4,19 @@ This module provides:
 - MCPRouter: Central dispatcher for MCP tool execution
 - Tool call validation against JSON schemas
 - User context injection for authorization
-- Input sanitization for LLM-generated arguments
 - Audit logging for all tool calls
 - Error handling and result formatting
+
+Tool arguments are **validated** against each tool's JSON schema
+(``validate_tool_args``) and then passed through unmodified. They are never
+rewritten: an earlier ``InputSanitizer`` pass regex-stripped "dangerous"
+substrings from every string argument, which silently corrupted ordinary trip
+names ("Su Casa Resort" -> "Casa Resort", "Bed & Breakfast" -> "Bed  Breakfast")
+while protecting against injection classes this architecture does not have —
+every query is a bound-parameter SQLAlchemy call, there is no NoSQL, and no tool
+shells out. Removal-based filtering is also self-defeating ("....//" -> "../").
+If argument content ever needs constraining, constrain it in the tool's schema
+so the call is *rejected*, not silently altered.
 """
 
 from __future__ import annotations
@@ -21,7 +31,6 @@ from typing import Any, Protocol, runtime_checkable
 from app.core.telemetry import langfuse_context, observe
 from app.schemas.mcp import ToolResult, get_tool_schema
 from app.services.audit_log import audit_logger
-from app.services.input_sanitizer import input_sanitizer
 
 logger = logging.getLogger(__name__)
 
@@ -288,23 +297,6 @@ class MCPRouter:
         """
         return tool_name in self._tools
 
-    def _sanitize_arguments(
-        self,
-        arguments: dict[str, Any],
-        user_id: str,
-        tool_name: str,
-    ) -> dict[str, Any]:
-        """Sanitize LLM-generated arguments and log if modified."""
-        sanitization_result = input_sanitizer.sanitize(arguments)
-        if sanitization_result.was_modified:
-            audit_logger.log_input_sanitized(
-                user_id=user_id,
-                tool_name=tool_name,
-                sanitized_fields=sanitization_result.sanitized_fields,
-                original_patterns=sanitization_result.detected_patterns,
-            )
-        return sanitization_result.sanitized_data
-
     def _validate_arguments(
         self,
         tool_name: str,
@@ -381,17 +373,15 @@ class MCPRouter:
         db: Any = None,
         *,
         skip_validation: bool = False,
-        skip_sanitization: bool = False,
     ) -> ToolResult:
         """Execute a tool with the given arguments.
 
         Args:
             tool_name: Name of the tool to execute.
-            arguments: Tool arguments (will be validated and sanitized).
+            arguments: Tool arguments (validated against the tool's schema).
             user_id: UUID of the authenticated user.
             db: Database session for tool execution.
             skip_validation: If True, skip argument validation (for testing).
-            skip_sanitization: If True, skip input sanitization (for testing).
 
         Returns:
             ToolResult with success status and data/error.
@@ -422,20 +412,16 @@ class MCPRouter:
             langfuse_context.update_current_observation(output=result, level="WARNING")
             return result
 
-        sanitized_arguments = arguments
-        if not skip_sanitization:
-            sanitized_arguments = self._sanitize_arguments(arguments, user_id, tool_name)
-
-        audit_logger.log_tool_call(user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments)
+        audit_logger.log_tool_call(user_id=user_id, tool_name=tool_name, arguments=arguments)
 
         if not skip_validation:
-            validation_error = self._validate_arguments(tool_name, sanitized_arguments, user_id)
+            validation_error = self._validate_arguments(tool_name, arguments, user_id)
             if validation_error:
                 langfuse_context.update_current_observation(output=validation_error, level="WARNING")
                 return validation_error
 
         try:
-            result = await self._execute_handler(handler, sanitized_arguments, user_id, db)
+            result = await self._execute_handler(handler, arguments, user_id, db)
             logger.info(
                 "Tool %s executed successfully: success=%s",
                 tool_name,
@@ -446,7 +432,7 @@ class MCPRouter:
                     "success": bool(result.success),
                 },
             )
-            self._log_result(tool_name, result, user_id, sanitized_arguments)
+            self._log_result(tool_name, result, user_id, arguments)
             langfuse_context.update_current_observation(output=result)
             return result
         except Exception as e:
@@ -457,7 +443,7 @@ class MCPRouter:
                 extra={"event": "mcp.tool_call.failed", "tool_name": tool_name},
             )
             audit_logger.log_tool_failure(
-                user_id=user_id, tool_name=tool_name, arguments=sanitized_arguments, error=str(e)
+                user_id=user_id, tool_name=tool_name, arguments=arguments, error=str(e)
             )
             langfuse_context.update_current_observation(level="ERROR", status_message=str(e))
             return ToolResult(success=False, error=f"Tool execution failed: {e!s}")

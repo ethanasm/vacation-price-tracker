@@ -33,7 +33,6 @@ Defense in depth (deepest-first):
 from __future__ import annotations
 
 import hmac
-import ipaddress
 import json
 import logging
 import math
@@ -60,6 +59,7 @@ from app.core.config import settings
 from app.core.feature_flags import canonical_flag_name, list_feature_flags, set_feature_flag
 from app.db.deps import get_db
 from app.db.redis import redis_client
+from app.middleware.rate_limit import _get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -173,22 +173,21 @@ def _classify_db_error(exc: Exception) -> str:
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP for rate-limit keys and log fields.
+    """Client IP for rate-limit keys and log fields.
 
-    Proxy headers are client-controlled, so a candidate is only used if it
-    parses as a real IP address — anything else (e.g. a log-injection payload
-    in ``X-Forwarded-For``, CWE-117) falls through to the socket peer.
+    Delegates to the shared resolver in ``middleware.rate_limit``, which honours
+    ``TRUSTED_PROXY_COUNT`` and reads the Nth ``X-Forwarded-For`` entry **from
+    the right**.
+
+    This used to read the *leftmost* XFF entry (and to trust ``X-Real-IP``).
+    Both are client-supplied: proxies append, so the leftmost entry is whatever
+    the caller sent, and rotating it minted a fresh rate-limit bucket per
+    request — defeating defense-in-depth layer 6 in this module's docstring
+    ("so a leaked token can't be used to hammer the database"). The IP was
+    validated as parseable, which stopped log injection but not forgery: a
+    *valid* forged address is exactly what's needed to rotate buckets.
     """
-    for header in ("x-forwarded-for", "x-real-ip"):
-        value = request.headers.get(header)
-        if not value:
-            continue
-        candidate = value.split(",")[0].strip()
-        try:
-            return str(ipaddress.ip_address(candidate))
-        except ValueError:
-            continue
-    return request.client.host if request.client else "anonymous"
+    return _get_client_ip(request)
 
 
 async def _is_rate_limited(ip: str) -> bool:
