@@ -154,7 +154,8 @@ async def test_paging_flag_selects_the_method_and_page_args():
     assert result == "single-result"
     assert (chat.single["sort"], chat.single["limit"], chat.single["offset"]) == ("value", 10, 5)
     assert tracking.all_pages is not None
-    assert "limit" not in tracking.all_pages and "offset" not in tracking.all_pages
+    assert "limit" not in tracking.all_pages
+    assert "offset" not in tracking.all_pages
 
 
 @pytest.mark.anyio
