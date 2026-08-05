@@ -90,3 +90,41 @@ def test_flush_skipped_when_disabled(monkeypatch):
     telemetry.flush()
 
     fake_client.flush.assert_not_called()
+
+
+class TestContextValueScrubbing:
+    """Allowlisted context *values* are scrubbed, not just the keys.
+
+    The allowlist bounds which fields exist; it says nothing about their
+    contents, so a newline-bearing value used to reach the logger intact — the
+    same CWE-117 vector `message` and `event` were already scrubbed for.
+    """
+
+    def test_control_characters_are_stripped_from_context_values(self, client, caplog):
+        resp = client.post(
+            "/v1/telemetry/client",
+            json={
+                "event": "checkout.failed",
+                "message": "boom",
+                "context": {"reason": "ok\r\n2026-01-01 ERROR forged-entry"},
+            },
+        )
+        assert resp.status_code == 200
+        record = next(r for r in caplog.records if getattr(r, "event", "") == "web.checkout.failed")
+        assert "\n" not in record.reason
+        assert "\r" not in record.reason
+        assert "forged-entry" in record.reason  # scrubbed, not dropped
+
+    def test_non_string_context_values_pass_through(self, client, caplog):
+        resp = client.post(
+            "/v1/telemetry/client",
+            json={
+                "event": "req.slow",
+                "message": "slow",
+                "context": {"http_status": 503, "elapsed_ms": 1234},
+            },
+        )
+        assert resp.status_code == 200
+        record = next(r for r in caplog.records if getattr(r, "event", "") == "web.req.slow")
+        assert record.http_status == 503
+        assert record.elapsed_ms == 1234

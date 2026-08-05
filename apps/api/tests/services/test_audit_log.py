@@ -80,7 +80,6 @@ def test_audit_event_type_values():
     assert AuditEventType.TOOL_CALL_FAILURE.value == "tool_call_failure"
     assert AuditEventType.SECURITY_VIOLATION.value == "security_violation"
     assert AuditEventType.RATE_LIMIT_EXCEEDED.value == "rate_limit_exceeded"
-    assert AuditEventType.INPUT_SANITIZED.value == "input_sanitized"
 
 
 # =============================================================================
@@ -243,42 +242,6 @@ def test_log_security_violation_logs_error(caplog):
 
     assert "AUDIT" in caplog.text
     assert "security_violation" in caplog.text
-
-
-# =============================================================================
-# Tests for AuditLogger.log_input_sanitized
-# =============================================================================
-
-
-def test_log_input_sanitized_creates_entry():
-    """log_input_sanitized should create an INPUT_SANITIZED entry."""
-    logger = AuditLogger()
-
-    entry = logger.log_input_sanitized(
-        user_id="user-123",
-        tool_name="create_trip",
-        sanitized_fields=["name", "description"],
-        original_patterns=["sql_keyword", "cmd_metachar"],
-    )
-
-    assert entry.event_type == AuditEventType.INPUT_SANITIZED
-    assert entry.sanitized_fields == ["name", "description"]
-    assert entry.metadata["original_patterns"] == ["sql_keyword", "cmd_metachar"]
-
-
-def test_log_input_sanitized_logs_warning(caplog):
-    """log_input_sanitized should log at WARNING level."""
-    logger = AuditLogger()
-
-    with caplog.at_level(logging.WARNING):
-        logger.log_input_sanitized(
-            user_id="user-123",
-            tool_name="test",
-            sanitized_fields=["field1"],
-        )
-
-    assert "AUDIT" in caplog.text
-    assert "input_sanitized" in caplog.text
 
 
 # =============================================================================

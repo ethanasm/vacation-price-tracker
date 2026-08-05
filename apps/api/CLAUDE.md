@@ -66,6 +66,18 @@ the SQLite test DB.
 ## Auth, CORS, CSRF
 
 - Google OAuth 2.0 only — users keyed by `google_sub`, no local passwords.
+- **Sign-in allowlist is enforced continuously, not just at sign-in.**
+  `AUTH_ALLOWED_EMAILS` / `AUTH_ALLOWED_DOMAINS` are re-read by `get_current_user`
+  on **every authenticated request** and by `/v1/auth/refresh` before it mints a
+  replacement token (which also drops the stored session). Removing an address
+  therefore revokes that user on their next request. This matters because a
+  refresh rotates in a *fresh* 30-day expiry every time: without the re-check a
+  removed user stayed signed in indefinitely, and the allowlist is the app's only
+  membership concept. Mirrors showbook's `resolveTrpcSession`.
+- The Authlib OAuth `state`/`nonce` cookie (`vpt_oauth_session`) is configured
+  explicitly rather than on Starlette's defaults: `Secure` in production,
+  10-minute lifetime, and signed with `OAUTH_SESSION_SECRET_KEY` when set so it
+  doesn't share `SECRET_KEY` with the JWTs.
 - OAuth callbacks need a public URL (home server has no port forwarding) — a
   Cloudflare Tunnel fronts ingress; callback URL is
   `https://<domain>/v1/auth/google/callback`.
@@ -221,6 +233,18 @@ layer so web/mobile render `/v1/*` fields as-is and never re-derive them
 
 - Chat uses Groq (`groq_model` default `openai/gpt-oss-120b`) via `clients/groq.py`.
 - MCP tool routing in `services/mcp_router.py`; tool implementations in `tools/`.
+- **Tool arguments are validated, never rewritten.** `validate_tool_args` checks
+  them against each tool's JSON schema and they are then passed through as-is.
+  Do not reintroduce a regex "sanitizer" that strips substrings: the removed one
+  silently mangled ordinary input (`Su Casa Resort` → `Casa Resort`, `Bed &
+  Breakfast` → `Bed  Breakfast`) while defending injection classes this stack
+  doesn't have (bound-parameter SQLAlchemy everywhere, no NoSQL, no shell), and
+  removal-based filtering rebuilds its own payloads (`....//` → `../`). If an
+  argument needs constraining, constrain it in the schema so the call is
+  **rejected**.
+- Every tool takes `user_id` from the **session**, never from model-supplied
+  arguments, and filters on it — that is what keeps a prompt-injected tool call
+  scoped to the caller's own data.
 - Trip-management tools: `create_trip`, `list_trips`, `get_trip_details`,
   `set_notification`, `pause_trip`/`resume_trip`, `trigger_refresh`. Chat search
   tools: `search_flights`, `search_hotels`.
@@ -261,7 +285,13 @@ Errors: `401` unauthorized · `400` bad_request · `422` query_rejected ·
 4. Prefix allowlist (`SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES`, single
    statement) for friendly early rejection — courtesy, not the boundary.
 5. Row cap (1000) so `SELECT *` from a huge table can't exhaust memory.
-6. Per-IP Redis rate limit (30/min, fails open — the bearer token is still required).
+6. Per-IP Redis rate limit (30/min, fails open — the bearer token is still
+   required). The IP comes from the **shared** `_get_client_ip` in
+   `middleware/rate_limit.py`, so it honours `TRUSTED_PROXY_COUNT` and reads XFF
+   from the right. Never resolve the IP locally here: this endpoint used to read
+   the leftmost (client-appendable) entry, which let a caller mint a fresh bucket
+   per request and made this layer a no-op against the leaked-token case it
+   exists for.
 
 **Config** (`core/config.py`): `admin_query_token`, and optional
 `admin_query_database_url` to point at a dedicated read-only role (`vpt_query`);

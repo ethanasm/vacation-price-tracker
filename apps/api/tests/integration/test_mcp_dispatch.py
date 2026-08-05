@@ -117,7 +117,7 @@ class TestMCPRouterExecution:
             arguments={"key": "value"},
             user_id="user-123",
             skip_validation=True,
-            skip_sanitization=True,
+
         )
 
         assert result.success is True
@@ -152,7 +152,7 @@ class TestMCPRouterExecution:
             arguments={"x": 1},
             user_id="user-456",
             skip_validation=True,
-            skip_sanitization=True,
+
         )
 
         assert result.success is True
@@ -170,7 +170,7 @@ class TestMCPRouterExecution:
             arguments={},
             user_id="user-123",
             skip_validation=True,
-            skip_sanitization=True,
+
         )
 
         assert result.success is False
@@ -191,7 +191,7 @@ class TestMCPRouterValidation:
             tool_name="get_trip_details",
             arguments={},  # Missing required trip_id
             user_id="user-123",
-            skip_sanitization=True,
+
         )
 
         assert result.success is False
@@ -209,7 +209,7 @@ class TestMCPRouterValidation:
                 "trip_id": "550e8400-e29b-41d4-a716-446655440000",
             },
             user_id="user-123",
-            skip_sanitization=True,
+
         )
 
         assert result.success is True
@@ -227,7 +227,7 @@ class TestMCPRouterValidation:
                 "threshold_value": "not-a-number",  # Should be number
             },
             user_id="user-123",
-            skip_sanitization=True,
+
         )
 
         assert result.success is False
@@ -295,7 +295,7 @@ class TestMCPRouterUserContext:
 
         router.register("capture_tool", capture_user_id)
 
-        await router.execute("capture_tool", {}, "unique-user-id-xyz", skip_validation=True, skip_sanitization=True)
+        await router.execute("capture_tool", {}, "unique-user-id-xyz", skip_validation=True)
 
         assert received_user_ids == ["unique-user-id-xyz"]
 
@@ -310,9 +310,9 @@ class TestMCPRouterUserContext:
 
         router.register("track_tool", track_user)
 
-        await router.execute("track_tool", {}, "user-a", skip_validation=True, skip_sanitization=True)
-        await router.execute("track_tool", {}, "user-b", skip_validation=True, skip_sanitization=True)
-        await router.execute("track_tool", {}, "user-a", skip_validation=True, skip_sanitization=True)
+        await router.execute("track_tool", {}, "user-a", skip_validation=True)
+        await router.execute("track_tool", {}, "user-b", skip_validation=True)
+        await router.execute("track_tool", {}, "user-a", skip_validation=True)
 
         assert calls_by_user == {"user-a": 2, "user-b": 1}
 
@@ -422,7 +422,7 @@ class TestMCPRouterWithRealTools:
             user_id=str(user.id),
             db=db,  # Pass db session
             skip_validation=True,
-            skip_sanitization=True,
+
         )
 
         assert result.success is True
@@ -479,11 +479,11 @@ class TestMCPRouterWithRealTools:
         router.register("list_trips", db_handler)
 
         # User1 should only see their trip
-        result1 = await router.execute("list_trips", {}, str(user1.id), db=db, skip_validation=True, skip_sanitization=True)
+        result1 = await router.execute("list_trips", {}, str(user1.id), db=db, skip_validation=True)
         assert len(result1.data["trips"]) == 1
         assert result1.data["trips"][0]["name"] == "User1 Trip"
 
         # User2 should only see their trip
-        result2 = await router.execute("list_trips", {}, str(user2.id), db=db, skip_validation=True, skip_sanitization=True)
+        result2 = await router.execute("list_trips", {}, str(user2.id), db=db, skip_validation=True)
         assert len(result2.data["trips"]) == 1
         assert result2.data["trips"][0]["name"] == "User2 Trip"

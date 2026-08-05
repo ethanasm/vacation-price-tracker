@@ -258,3 +258,42 @@ def test_readiness_check_reports_temporal_error(client: TestClient, monkeypatch)
     assert response.status_code == 503
     payload = response.json()
     assert payload["checks"]["temporal"] == "error"
+
+
+class TestOAuthSessionCookie:
+    """The Authlib OAuth state cookie must not inherit Starlette's defaults.
+
+    Starlette's SessionMiddleware defaults to `https_only=False` (no Secure flag,
+    unlike our own auth cookies) and a 14-day lifetime for a value that only has
+    to survive one redirect.
+    """
+
+    def test_secret_falls_back_to_secret_key(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "oauth_session_secret_key", "")
+        assert settings.oauth_session_secret == settings.secret_key
+
+    def test_dedicated_secret_is_preferred(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "oauth_session_secret_key", "a-dedicated-oauth-key")
+        assert settings.oauth_session_secret == "a-dedicated-oauth-key"
+        assert settings.oauth_session_secret != settings.secret_key
+
+    def test_lifetime_is_minutes_not_weeks(self):
+        from app.core.config import settings
+
+        assert settings.oauth_session_max_age_seconds <= 3600
+
+    def test_middleware_is_configured_secure_in_production(self):
+        """The session cookie is wired from settings, not Starlette defaults."""
+        from app.main import app
+        from starlette.middleware.sessions import SessionMiddleware
+
+        entry = next(m for m in app.user_middleware if m.cls is SessionMiddleware)
+        kwargs = entry.kwargs
+        assert kwargs["session_cookie"] == "vpt_oauth_session"
+        assert kwargs["max_age"] == 600
+        assert kwargs["same_site"] == "lax"
+        assert "https_only" in kwargs

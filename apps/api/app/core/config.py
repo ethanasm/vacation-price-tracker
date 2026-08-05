@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
 
+    # Signing key for the short-lived OAuth `state`/`nonce` session cookie.
+    # Falls back to `secret_key` when unset so existing deployments keep working,
+    # but set it in prod: it keeps the OAuth store from sharing a key with the
+    # access/refresh/unsubscribe JWTs.
+    oauth_session_secret_key: str = ""
+    # The cookie only has to survive the Google redirect round-trip. Starlette's
+    # default is 14 days; 10 minutes is the actual requirement.
+    oauth_session_max_age_seconds: int = 600
+
     # Sign-in allowlist (comma-separated). Both blank → open sign-up; if either
     # is set, the OAuth callback denies anyone not on the list.
     auth_allowed_emails: str = ""
@@ -184,6 +193,11 @@ class Settings(BaseSettings):
     def refresh_token_expire_seconds(self) -> int:
         """Refresh-token lifetime in seconds (cookie max_age + Redis TTL)."""
         return self.refresh_token_expire_days * 24 * 60 * 60
+
+    @property
+    def oauth_session_secret(self) -> str:
+        """Key for the OAuth state cookie — dedicated when set, else SECRET_KEY."""
+        return self.oauth_session_secret_key or self.secret_key
 
     @property
     def is_production(self) -> bool:

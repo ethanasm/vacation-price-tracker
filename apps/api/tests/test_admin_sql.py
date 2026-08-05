@@ -172,31 +172,51 @@ class TestClassifyDbError:
 # Client-IP resolution (header precedence)
 # ---------------------------------------------------------------------------
 class TestClientIp:
+    """`_client_ip` delegates to the shared `middleware.rate_limit` resolver.
+
+    The key property is that a *client-supplied* proxy header can no longer pick
+    the rate-limit bucket. `X-Forwarded-For` is appendable, so with the default
+    TRUSTED_PROXY_COUNT=1 only the last entry (written by our own trusted hop)
+    is honoured; anything the caller prepends is ignored, and `X-Real-IP` — also
+    client-settable — is not consulted at all.
+    """
+
     def _request(self, headers, *, client_host="1.2.3.4"):
         client = SimpleNamespace(host=client_host) if client_host is not None else None
         return SimpleNamespace(headers=headers, client=client)
 
-    def test_prefers_x_forwarded_for(self):
+    def test_uses_rightmost_forwarded_entry_not_leftmost(self):
         from app.routers.admin import _client_ip
 
+        # "9.9.9.9" is attacker-prepended; "8.8.8.8" is what our trusted hop saw.
         req = self._request({"x-forwarded-for": "9.9.9.9, 8.8.8.8"})
-        assert _client_ip(req) == "9.9.9.9"
+        assert _client_ip(req) == "8.8.8.8"
 
-    def test_falls_back_to_x_real_ip(self):
+    def test_forged_leftmost_entries_cannot_rotate_the_bucket(self):
         from app.routers.admin import _client_ip
 
-        req = self._request({"x-real-ip": "  7.7.7.7  "})
-        assert _client_ip(req) == "7.7.7.7"
+        peer = "8.8.8.8"
+        keys = {
+            _client_ip(self._request({"x-forwarded-for": f"{forged}, {peer}"}))
+            for forged in ("1.1.1.1", "2.2.2.2", "3.3.3.3", "203.0.113.7")
+        }
+        assert keys == {peer}, "rotating XFF must not mint new rate-limit buckets"
+
+    def test_x_real_ip_is_not_trusted(self):
+        from app.routers.admin import _client_ip
+
+        req = self._request({"x-real-ip": "7.7.7.7"}, client_host="5.5.5.5")
+        assert _client_ip(req) == "5.5.5.5"
 
     def test_falls_back_to_client_host(self):
         from app.routers.admin import _client_ip
 
         assert _client_ip(self._request({}, client_host="5.5.5.5")) == "5.5.5.5"
 
-    def test_anonymous_when_no_client(self):
+    def test_unknown_when_no_client(self):
         from app.routers.admin import _client_ip
 
-        assert _client_ip(self._request({}, client_host=None)) == "anonymous"
+        assert _client_ip(self._request({}, client_host=None)) == "unknown"
 
     def test_non_ip_forwarded_value_is_ignored(self):
         """A log-injection payload in the proxy header must never come back."""
@@ -205,14 +225,12 @@ class TestClientIp:
         req = self._request({"x-forwarded-for": "evil\nINFO fake-entry"})
         assert _client_ip(req) == "1.2.3.4"
 
-    def test_invalid_forwarded_falls_through_to_real_ip(self):
-        from app.routers.admin import _client_ip
-
-        req = self._request({"x-forwarded-for": "not-an-ip", "x-real-ip": "7.7.7.7"})
-        assert _client_ip(req) == "7.7.7.7"
-
     def test_ipv6_accepted(self):
         from app.routers.admin import _client_ip
+
+        req = self._request({"x-forwarded-for": "2001:db8::1"})
+        assert _client_ip(req) == "2001:db8::1"
+
 
         req = self._request({"x-forwarded-for": "2001:db8::1"})
         assert _client_ip(req) == "2001:db8::1"

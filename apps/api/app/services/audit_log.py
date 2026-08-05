@@ -28,7 +28,6 @@ class AuditEventType(StrEnum):
     TOOL_CALL_FAILURE = "tool_call_failure"
     SECURITY_VIOLATION = "security_violation"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
-    INPUT_SANITIZED = "input_sanitized"
 
 
 class AuditLogEntry(BaseModel):
@@ -41,7 +40,6 @@ class AuditLogEntry(BaseModel):
     arguments: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
-    sanitized_fields: list[str] | None = None
     metadata: dict[str, Any] | None = None
 
     model_config = {"frozen": True}
@@ -188,41 +186,6 @@ class AuditLogger:
             metadata=metadata,
         )
         self._emit_log(entry, level=logging.ERROR)
-        return entry
-
-    def log_input_sanitized(
-        self,
-        user_id: str | UUID,
-        tool_name: str,
-        sanitized_fields: list[str],
-        *,
-        original_patterns: list[str] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> AuditLogEntry:
-        """Log when input was sanitized.
-
-        Args:
-            user_id: UUID of the authenticated user.
-            tool_name: Name of the tool.
-            sanitized_fields: List of field names that were sanitized.
-            original_patterns: Patterns that were detected and removed.
-            metadata: Optional additional context.
-
-        Returns:
-            The created audit log entry.
-        """
-        entry = AuditLogEntry(
-            timestamp=datetime.now(UTC),
-            event_type=AuditEventType.INPUT_SANITIZED,
-            user_id=str(user_id),
-            tool_name=tool_name,
-            sanitized_fields=sanitized_fields,
-            metadata={
-                **(metadata or {}),
-                "original_patterns": original_patterns or [],
-            },
-        )
-        self._emit_log(entry, level=logging.WARNING)
         return entry
 
     def _emit_log(self, entry: AuditLogEntry, level: int = logging.INFO) -> None:

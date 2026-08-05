@@ -350,3 +350,79 @@ class TestE2eMintToken:
         monkeypatch.setattr(settings, "vpt_e2e_backend_token", "")
         resp = client.post("/v1/e2e/mint-token", headers={"X-E2E-Token": "anything"})
         assert resp.status_code == 500
+
+
+class TestAllowlistRevocation:
+    """Removing a user from the allowlist must revoke an existing session.
+
+    `should_allow_sign_in` only runs at sign-in. Without a per-request re-check,
+    an access token stayed valid on signature alone and `/v1/auth/refresh` minted
+    a replacement with a *fresh* 30-day expiry on every rotation — so a removed
+    user kept access indefinitely. The allowlist is this app's only membership
+    concept, so "remove access" was a no-op.
+    """
+
+    @staticmethod
+    def _deny_all(monkeypatch):
+        monkeypatch.setattr(settings, "auth_allowed_emails", "someone-else@example.com")
+        monkeypatch.setattr(settings, "auth_allowed_domains", "")
+
+    @pytest.mark.asyncio
+    async def test_me_rejects_a_deallowlisted_user(self, client, test_session, monkeypatch):
+        user = await _make_user(test_session)
+        token = create_access_token(data={JWTClaims.SUBJECT: str(user.id)})
+
+        assert client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+
+        self._deny_all(monkeypatch)
+        assert client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_me_still_allows_a_listed_user(self, client, test_session, monkeypatch):
+        user = await _make_user(test_session)
+        monkeypatch.setattr(settings, "auth_allowed_emails", user.email)
+        monkeypatch.setattr(settings, "auth_allowed_domains", "")
+        token = create_access_token(data={JWTClaims.SUBJECT: str(user.id)})
+
+        resp = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_me_open_signup_when_no_allowlist_configured(self, client, test_session, monkeypatch):
+        user = await _make_user(test_session)
+        monkeypatch.setattr(settings, "auth_allowed_emails", "")
+        monkeypatch.setattr(settings, "auth_allowed_domains", "")
+        token = create_access_token(data={JWTClaims.SUBJECT: str(user.id)})
+
+        assert client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_refresh_rejects_and_revokes_a_deallowlisted_session(
+        self, client, test_session, mock_redis, monkeypatch
+    ):
+        user = await _make_user(test_session)
+        rt = auth_module.create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get = AsyncMock(return_value=rt)
+        mock_redis.delete = AsyncMock()
+
+        self._deny_all(monkeypatch)
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": rt})
+
+        assert resp.status_code == 401
+        # The stored session is dropped too, so the rotation we just performed
+        # can't be replayed via the grace record.
+        mock_redis.delete.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_refresh_still_works_for_a_listed_user(
+        self, client, test_session, mock_redis, monkeypatch
+    ):
+        user = await _make_user(test_session)
+        monkeypatch.setattr(settings, "auth_allowed_emails", user.email)
+        monkeypatch.setattr(settings, "auth_allowed_domains", "")
+        rt = auth_module.create_refresh_token(data={JWTClaims.SUBJECT: str(user.id)})
+        mock_redis.get = AsyncMock(return_value=rt)
+
+        resp = client.post("/v1/auth/refresh", json={"refresh_token": rt})
+        assert resp.status_code == 200
+        assert resp.json()["access_token"]
