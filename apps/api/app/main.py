@@ -132,7 +132,20 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token", "X-Idempotency-Key", "Authorization"],
 )
-app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+# Authlib's OAuth `state`/`nonce` store. Starlette's defaults are wrong for this
+# use: `https_only=False` (so no Secure flag, unlike our own auth cookies, which
+# set it via get_cookie_params) and a 14-day lifetime for something that only has
+# to survive one redirect. Sign it with a dedicated key when one is configured so
+# the OAuth store isn't sharing SECRET_KEY with the access/refresh/unsubscribe
+# JWTs.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.oauth_session_secret,
+    session_cookie="vpt_oauth_session",
+    max_age=settings.oauth_session_max_age_seconds,
+    same_site="lax",
+    https_only=settings.is_production,
+)
 
 # Registered last so it is the outermost layer: baseline security headers land on
 # every response, including CORS preflight and error responses.

@@ -86,7 +86,11 @@ def _sanitize_context(context: dict | None) -> dict:
     dropped = 0
     for key, value in context.items():
         if key in ALLOWED_CONTEXT_KEYS:
-            picked[key] = value
+            # Scrub values too, not just the keys. The allowlist bounds *which*
+            # fields exist; it says nothing about what's in them, so a value like
+            # "ok\n2026-01-01 ERROR forged" would reach the logger intact — the
+            # same CWE-117 vector `message` and `event` are already scrubbed for.
+            picked[key] = _scrub_for_log(value) if isinstance(value, str) else value
         else:
             dropped += 1
     if dropped:
