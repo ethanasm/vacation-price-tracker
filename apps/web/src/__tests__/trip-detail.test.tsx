@@ -148,7 +148,7 @@ jest.mock("@/lib/format", () => ({
   },
   getAirlineName: (carrierCode: string | null | undefined) => {
     if (!carrierCode) return "—";
-    const names: Record<string, string> = { UA: "United", AA: "American", DL: "Delta" };
+    const names: Record<string, string> = { UA: "United", AA: "American", DL: "Delta", AS: "Alaska" };
     return names[carrierCode.toUpperCase()] || carrierCode;
   },
 }));
@@ -880,6 +880,84 @@ describe("TripDetailPage", () => {
         expect(screen.getByText("UA100")).toBeInTheDocument();
         expect(screen.getByText("UA200")).toBeInTheDocument();
         expect(screen.getByText(/layover in Denver \(DEN\)/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows the multi-carrier subtitle with a tooltip and an expanded explainer", async () => {
+      mockGetDetails.mockResolvedValue({
+        data: {
+          trip: baseTripData,
+          price_history: [
+            {
+              id: "ph1",
+              flight_price: "350.00",
+              hotel_price: "600.00",
+              total_price: "950.00",
+              created_at: "2025-01-21T10:30:00Z",
+              flight_offers: [
+                {
+                  id: "f1",
+                  airline_code: "UA",
+                  airline_name: "United",
+                  price: "350.00",
+                  departure_time: "2025-06-15T08:00:00",
+                  arrival_time: "2025-06-15T16:00:00",
+                  duration_minutes: 480,
+                  stops: 1,
+                  itineraries: [
+                    {
+                      segments: [
+                        {
+                          flight_number: "UA100",
+                          carrier_code: "UA",
+                          departure_airport: "SFO",
+                          arrival_airport: "DEN",
+                          departure_time: "2025-06-15T08:00:00",
+                          arrival_time: "2025-06-15T11:30:00",
+                          duration_minutes: 210,
+                        },
+                        {
+                          flight_number: "AS200",
+                          carrier_code: "AS",
+                          departure_airport: "DEN",
+                          arrival_airport: "LAX",
+                          departure_time: "2025-06-15T13:00:00",
+                          arrival_time: "2025-06-15T16:00:00",
+                          duration_minutes: 180,
+                        },
+                      ],
+                      total_duration_minutes: 480,
+                    },
+                  ],
+                },
+              ],
+              hotel_offers: [],
+            },
+          ],
+        },
+      });
+
+      const user = userEvent.setup();
+
+      await act(async () => {
+        render(<TestWrapper tripId="test-trip" />);
+      });
+
+      // Collapsed header: full subtitle text, plus a title tooltip carrying the
+      // same string for the widths where CSS still clamps it.
+      const subtitle = await screen.findByText("Operated by United & Alaska");
+      expect(subtitle).toHaveAttribute("title", "Operated by United & Alaska");
+
+      // Expanding spells out what "operated by" means.
+      const cardHeader = subtitle.closest("button");
+      expect(cardHeader).toBeTruthy();
+      if (cardHeader) {
+        await user.click(cardHeader);
+      }
+      await waitFor(() => {
+        expect(screen.getByTestId("operated-by-note")).toHaveTextContent(
+          "Operated by United & Alaska — segments of this itinerary are flown by different airlines.",
+        );
       });
     });
 

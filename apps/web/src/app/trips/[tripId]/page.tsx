@@ -731,7 +731,11 @@ function FlightRow({
             <AirlineChip carrierCode={primaryCode} secondaryCode={secondary} />
             <span className={styles.headerAirlineText}>
               <span className={styles.headerAirline}>{airlineName}</span>
-              {subtitle && <span className={styles.headerSubtitle}>{subtitle}</span>}
+              {subtitle && (
+                <span className={styles.headerSubtitle} title={subtitle}>
+                  {subtitle}
+                </span>
+              )}
             </span>
           </span>
           <span className={styles.headerTimes}>{outboundTimes}</span>
@@ -797,6 +801,12 @@ function FlightRow({
                 </p>
               </div>
             </>
+          )}
+          {subtitle && (
+            <p data-testid="operated-by-note" className={styles.operatedByNote}>
+              {subtitle} — segments of this itinerary are flown by different
+              airlines.
+            </p>
           )}
         </div>
       )}
