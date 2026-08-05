@@ -22,6 +22,7 @@ export function FormField({
   autoCapitalize = 'none',
   autoCorrect = false,
   maxLength,
+  error,
 }: {
   label: string;
   value: string;
@@ -34,6 +35,8 @@ export function FormField({
   autoCapitalize?: TextInputProps['autoCapitalize'];
   autoCorrect?: boolean;
   maxLength?: number;
+  /** Inline validation message; tints the field and renders below it. */
+  error?: string | null;
 }): React.JSX.Element {
   const { tokens } = useTheme();
   const isAndroid = Platform.OS === 'android';
@@ -41,7 +44,7 @@ export function FormField({
     ? {
         backgroundColor: 'transparent',
         borderBottomWidth: 2,
-        borderBottomColor: tokens.color.primary,
+        borderBottomColor: error ? tokens.color.warning : tokens.color.primary,
         paddingHorizontal: 0,
         color: tokens.color.textStrong,
         fontFamily: tokens.font[600],
@@ -49,6 +52,8 @@ export function FormField({
     : {
         backgroundColor: tokens.color.surface,
         borderRadius: tokens.radius.inner,
+        borderWidth: error ? 1.5 : 0,
+        borderColor: error ? tokens.color.warning : 'transparent',
         color: tokens.color.textStrong,
         fontFamily: tokens.font[600],
       };
@@ -82,6 +87,14 @@ export function FormField({
         />
         {right ? <View style={styles.right}>{right}</View> : null}
       </View>
+      {error ? (
+        <Text
+          testID={testID ? `${testID}-error` : undefined}
+          style={{ color: tokens.color.warning, fontFamily: tokens.font[600], fontSize: 12, marginTop: 5 }}
+        >
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

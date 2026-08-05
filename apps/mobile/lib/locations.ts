@@ -63,3 +63,18 @@ export function searchAirports(query: string): LocationResult[] {
     type: 'AIRPORT' as const,
   }));
 }
+
+/** Exact IATA-code lookup (case-insensitive); null when unknown. */
+export function findAirportByCode(code: string): LocationResult | null {
+  const normalized = code.trim().toUpperCase();
+  if (normalized.length !== 3) return null;
+  const airport = airports.find((a) => a.code === normalized);
+  if (!airport) return null;
+  return {
+    code: airport.code,
+    name: airport.name,
+    city: airport.city || '',
+    country: airport.country,
+    type: 'AIRPORT',
+  };
+}
