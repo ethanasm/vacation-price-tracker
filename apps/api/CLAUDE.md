@@ -97,7 +97,11 @@ the SQLite test DB.
 
 ## Rate limiting & caching
 
-- 24h Redis cache for identical Skiplagged route/date queries.
+- **No response cache.** `CacheKeys.flight_cache` / `hotel_cache` / `price_cache`
+  and `CacheTTL.PRICE_CACHE` are defined and unit-tested but have **no call
+  sites**; the "24h Redis cache for identical route/date queries" this file used
+  to claim has never existed. Redis holds idempotency keys, rate-limit buckets,
+  quota counters, and refresh tokens — not provider responses.
 - Per-user token-bucket throttling so no single user can hammer Skiplagged MCP.
 - `rate_limit_per_minute` (default 100) and `chat_rate_limit_per_minute` (default 10).
 - **Client identity for limiting** (`middleware/rate_limit.py`): authenticated
@@ -178,6 +182,20 @@ display names come from the static map in `app/core/airlines.py`.
 
 Which provider serves flights is the `flight_provider` app setting
 (`app/services/flight_provider.py` dispatches; hotels always Skiplagged).
+
+**One dispatch, one request shape.** `flight_provider.search_flights(provider,
+FlightSearchRequest, client=..., all_pages=...)` is the only place that knows
+each provider's parameter set. `all_pages=True` is the worker's tracking sweep
+(`search_flights_all`, `max_pages=TRACKING_MAX_PAGES` where supported);
+`all_pages=False` is the chat tool's single page (`sort`/`limit`/`offset`). The
+`client` is passed in rather than resolved so callers keep the instance they
+hold — the chat tool's injected doubles, the worker's freshly constructed
+client. `CAPABILITIES` declares what each provider can honor, and
+`dropped_constraints()` reports what a given request would lose; an unhonored
+constraint logs `flight_provider.constraint_dropped` at WARNING instead of
+silently changing what the returned price is a price *for*. Skiplagged has no
+`cabin` parameter, so a business-class trip tracked on Skiplagged is priced in
+economy — visible in logs now rather than only in a user's bug report.
 Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 `GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
 

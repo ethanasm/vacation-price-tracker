@@ -20,8 +20,10 @@ from app.models.trip_prefs import TripFlightPrefs, TripHotelPrefs
 from app.services.flight_provider import (
     PROVIDER_FAST_FLIGHTS,
     PROVIDER_KIWI,
+    FlightSearchRequest,
     get_flight_provider_name,
 )
+from app.services.flight_provider import search_flights as run_flight_search
 from sqlmodel import select
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -180,37 +182,28 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
     non_stop = trip["flight_prefs"]["stops_mode"] == "nonstop"
     max_stops = "none" if non_stop else None
 
+    # One request shape, one dispatch. Which arguments each provider actually
+    # accepts is described once in `app.services.flight_provider` — including
+    # the ones it cannot honor, which are dropped loudly rather than silently.
+    request = FlightSearchRequest(
+        origin=trip["origin_airport"],
+        destination=trip["destination_code"],
+        departure_date=trip["depart_date"],
+        return_date=trip["return_date"] if trip["is_round_trip"] else None,
+        adults=trip["adults"],
+        max_stops=max_stops,
+        cabin=trip["flight_prefs"].get("cabin"),
+    )
+
+    if provider == PROVIDER_KIWI:
+        client = KiwiClient()
+    elif provider == PROVIDER_FAST_FLIGHTS:
+        client = FastFlightsClient()
+    else:
+        client = SkiplaggedClient()
+
     try:
-        if provider == PROVIDER_KIWI:
-            result = await KiwiClient().search_flights_all(
-                origin=trip["origin_airport"],
-                destination=trip["destination_code"],
-                departure_date=trip["depart_date"],
-                return_date=trip["return_date"] if trip["is_round_trip"] else None,
-                adults=trip["adults"],
-                max_stops=max_stops,
-                cabin=trip["flight_prefs"].get("cabin"),
-            )
-        elif provider == PROVIDER_FAST_FLIGHTS:
-            result = await FastFlightsClient().search_flights_all(
-                origin=trip["origin_airport"],
-                destination=trip["destination_code"],
-                departure_date=trip["depart_date"],
-                return_date=trip["return_date"] if trip["is_round_trip"] else None,
-                adults=trip["adults"],
-                max_stops=max_stops,
-                cabin=trip["flight_prefs"].get("cabin"),
-            )
-        else:
-            result = await SkiplaggedClient().search_flights_all(
-                origin=trip["origin_airport"],
-                destination=trip["destination_code"],
-                departure_date=trip["depart_date"],
-                return_date=trip["return_date"] if trip["is_round_trip"] else None,
-                adults=trip["adults"],
-                max_stops=max_stops,
-                max_pages=4,
-            )
+        result = await run_flight_search(provider, request, client=client, all_pages=True)
     except GlobalBudgetExceeded as exc:
         raise _budget_application_error(exc) from exc
     except (SkiplaggedMCPError, KiwiMCPError, FastFlightsError) as exc:

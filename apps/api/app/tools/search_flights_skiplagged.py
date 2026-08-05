@@ -26,8 +26,12 @@ from app.schemas.mcp import ToolResult
 from app.services.flight_provider import (
     PROVIDER_FAST_FLIGHTS,
     PROVIDER_KIWI,
+    PROVIDER_SKIPLAGGED,
+    FlightSearchRequest,
+    get_flight_client,
     get_flight_provider_name,
 )
+from app.services.flight_provider import search_flights as run_flight_search
 from app.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -57,11 +61,17 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         self._fast_flights = fast_flights or fast_flights_client
 
     def _client_for(self, provider: str) -> SkiplaggedClient | KiwiClient | FastFlightsClient:
-        if provider == PROVIDER_KIWI:
-            return self._kiwi
-        if provider == PROVIDER_FAST_FLIGHTS:
-            return self._fast_flights
-        return self._client
+        """Resolve the injected double for ``provider``, else the shared instance.
+
+        Constructor injection exists for tests; the provider→client mapping
+        itself lives in `flight_provider.get_flight_client`, not here.
+        """
+        injected = {
+            PROVIDER_KIWI: self._kiwi,
+            PROVIDER_FAST_FLIGHTS: self._fast_flights,
+            PROVIDER_SKIPLAGGED: self._client,
+        }.get(provider)
+        return injected or get_flight_client(provider)
 
     async def execute(
         self,
@@ -93,16 +103,21 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         client = self._client_for(provider)
 
         try:
-            result = await client.search_flights(
-                origin=origin,
-                destination=destination,
-                departure_date=departure_date,
-                return_date=return_date,
-                adults=adults,
-                max_stops=max_stops,
-                sort=sort,
-                limit=limit,
-                offset=offset,
+            result = await run_flight_search(
+                provider,
+                FlightSearchRequest(
+                    origin=origin,
+                    destination=destination,
+                    departure_date=departure_date,
+                    return_date=return_date,
+                    adults=adults,
+                    max_stops=max_stops,
+                    sort=sort,
+                    limit=limit,
+                    offset=offset,
+                    cabin=args.get("cabin"),
+                ),
+                client=client,
             )
 
             if not result.success:
