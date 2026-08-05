@@ -2,16 +2,21 @@
 .env
 .env.prod
 .env.e2e
+.env.local
 .env.*.local
+/apps/*/.env.local
 /backups
 /node_modules
 .coverage
 /apps/*/coverage*
 /apps/web/node_modules
+/apps/web/pnpm-lock.yaml
 /apps/web/.next
 /apps/web/.pnpm-store
 /apps/mobile/node_modules
 /apps/mobile/.expo
+/apps/mobile/vpt-release-deploy
+/apps/mobile/vpt-release-deploy.pub
 # Python bytecode (anywhere in the tree)
 __pycache__/
 *.pyc
