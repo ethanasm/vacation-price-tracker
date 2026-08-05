@@ -170,6 +170,25 @@ def test_dispatch_kwargs_bind_against_every_real_client_signature():
 
 
 @pytest.mark.anyio
+async def test_omitting_the_client_resolves_the_shared_instance(monkeypatch):
+    """`get_flight_client` is reached through the dispatcher, not just re-declared.
+
+    This branch is the reason the provider→client mapping lives in one place;
+    untested, it could regress back to three call sites without anything failing.
+    """
+    recorder = RecordingClient()
+    monkeypatch.setattr(
+        "app.services.flight_provider.get_flight_client",
+        lambda provider: recorder,
+    )
+
+    result = await search_flights(PROVIDER_KIWI, _request())
+
+    assert result == "single-result"
+    assert recorder.single is not None, "the resolved client was actually called"
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("provider", [PROVIDER_KIWI, PROVIDER_FAST_FLIGHTS])
 async def test_cabin_is_forwarded_to_providers_that_support_it(provider):
     client = RecordingClient()
