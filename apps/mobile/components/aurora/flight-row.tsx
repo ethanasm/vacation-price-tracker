@@ -214,7 +214,7 @@ export function FlightRow({
           ) : null}
           {multiCarrier ? (
             <Text style={[styles.subtitle, { color: c.textBodyAlt, fontFamily: tokens.font[500] }]}>
-              {multiCarrierSubtitle(codes.map(carrierName)) ?? ''}
+              {`${multiCarrierSubtitle(codes.map(carrierName)) ?? ''} — segments of this itinerary are flown by different airlines.`}
             </Text>
           ) : null}
         </View>

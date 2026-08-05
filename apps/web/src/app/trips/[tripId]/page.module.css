@@ -366,9 +366,12 @@
 .headerSubtitle {
   font-size: 10px;
   color: var(--aurora-layover);
-  white-space: nowrap;
+  text-align: left;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .stopsBadge {
@@ -622,7 +625,7 @@
    .cardHeaderRowMain (defined below) so columns align down the list. */
 .flightsHeaderRow {
   display: grid;
-  grid-template-columns: 24px 110px minmax(180px, 1fr) 110px 96px 20px;
+  grid-template-columns: 24px 150px minmax(180px, 1fr) 110px 96px 20px;
   column-gap: 12px;
   align-items: center;
   padding: 6px 12px 8px;
@@ -714,7 +717,7 @@
    template shared with .flightsHeaderRow so columns align down the list. */
 .cardHeaderRowMain {
   display: grid;
-  grid-template-columns: 24px 110px minmax(180px, 1fr) 110px 96px 20px;
+  grid-template-columns: 24px 150px minmax(180px, 1fr) 110px 96px 20px;
   align-items: center;
   row-gap: 0;
   column-gap: 12px;
@@ -783,6 +786,14 @@
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+/* Expanded-card multi-carrier note — the full "Operated by …" text, mirroring
+   the mobile app's expanded detail (the collapsed header may clamp it). */
+.operatedByNote {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--aurora-layover);
 }
 
 .directBadge {
