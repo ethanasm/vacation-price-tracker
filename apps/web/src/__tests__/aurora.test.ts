@@ -27,6 +27,15 @@ const oneStopMulti: ApiFlightOffer = {
   ] }],
 };
 
+const twoStopMulti: ApiFlightOffer = {
+  id: "ua2", airline_code: "UA", price: "301", stops: 2, round_trip_total: false,
+  itineraries: [{ direction: "outbound", stops: 2, segments: [
+    seg({ carrier_code: "UA", flight_number: "UA508", arrival_airport: "DEN", arrival_time: "2025-08-22T10:30:00" }),
+    seg({ carrier_code: "AS", flight_number: "AS2201", departure_airport: "DEN", arrival_airport: "SEA", departure_time: "2025-08-22T11:40:00" }),
+    seg({ carrier_code: "DL", flight_number: "DL77", departure_airport: "SEA", arrival_airport: "RDM", departure_time: "2025-08-22T14:15:00" }),
+  ] }],
+};
+
 describe("airlineChip", () => {
   it("maps AS/UA/DL to their gradients", () => {
     expect(airlineChip("AS")).toEqual({ initials: "AS", gradient: "linear-gradient(135deg,#10617F,#093247)" });
@@ -60,6 +69,12 @@ describe("operatingCarriers + multiCarrierSubtitle", () => {
   it("two carriers → 'Operated by United & Alaska'", () => {
     expect(operatingCarriers(oneStopMulti)).toEqual(["United", "Alaska"]);
     expect(multiCarrierSubtitle(oneStopMulti)).toBe("Operated by United & Alaska");
+  });
+  // Must stay byte-identical to the mobile helper's 3+ carrier phrasing
+  // (apps/mobile/lib/__tests__/aurora.test.ts asserts the same string).
+  it("three carriers → comma list with a final '&'", () => {
+    expect(operatingCarriers(twoStopMulti)).toEqual(["United", "Alaska", "Delta"]);
+    expect(multiCarrierSubtitle(twoStopMulti)).toBe("Operated by United, Alaska & Delta");
   });
 });
 

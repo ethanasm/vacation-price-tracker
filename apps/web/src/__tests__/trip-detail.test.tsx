@@ -939,6 +939,9 @@ describe("TripDetailPage", () => {
 
       const user = userEvent.setup();
 
+      // The act() wrapper is load-bearing: it flushes the mocked getDetails
+      // promise chain, without which the offers never render. (Sonar's S8980
+      // reads it as redundant; removing it fails this test.)
       await act(async () => {
         render(<TestWrapper tripId="test-trip" />);
       });

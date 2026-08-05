@@ -69,10 +69,17 @@ export function operatingCarriers(flight: ApiFlightOffer): string[] {
   return names;
 }
 
+/**
+ * "Operated by United & Alaska" / "Operated by United, Alaska & Delta".
+ * The 3+ carrier phrasing is a comma list with a final "&" — it must stay
+ * byte-identical to the mobile helper (apps/mobile/lib/aurora.ts), which the
+ * flight card renders alongside the same explainer copy on both surfaces.
+ */
 export function multiCarrierSubtitle(flight: ApiFlightOffer): string | null {
   const names = operatingCarriers(flight);
   if (names.length <= 1) return null;
-  return `Operated by ${names.join(" & ")}`;
+  if (names.length === 2) return `Operated by ${names[0]} & ${names[1]}`;
+  return `Operated by ${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
 }
 
 export function stopsBadge(
