@@ -26,8 +26,10 @@ from app.schemas.mcp import ToolResult
 from app.services.flight_provider import (
     PROVIDER_FAST_FLIGHTS,
     PROVIDER_KIWI,
+    FlightSearchRequest,
     get_flight_provider_name,
 )
+from app.services.flight_provider import search_flights as run_flight_search
 from app.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -93,16 +95,21 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         client = self._client_for(provider)
 
         try:
-            result = await client.search_flights(
-                origin=origin,
-                destination=destination,
-                departure_date=departure_date,
-                return_date=return_date,
-                adults=adults,
-                max_stops=max_stops,
-                sort=sort,
-                limit=limit,
-                offset=offset,
+            result = await run_flight_search(
+                provider,
+                FlightSearchRequest(
+                    origin=origin,
+                    destination=destination,
+                    departure_date=departure_date,
+                    return_date=return_date,
+                    adults=adults,
+                    max_stops=max_stops,
+                    sort=sort,
+                    limit=limit,
+                    offset=offset,
+                    cabin=args.get("cabin"),
+                ),
+                client=client,
             )
 
             if not result.success:

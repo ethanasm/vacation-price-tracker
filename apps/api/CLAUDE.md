@@ -166,6 +166,20 @@ display names come from the static map in `app/core/airlines.py`.
 
 Which provider serves flights is the `flight_provider` app setting
 (`app/services/flight_provider.py` dispatches; hotels always Skiplagged).
+
+**One dispatch, one request shape.** `flight_provider.search_flights(provider,
+FlightSearchRequest, client=..., all_pages=...)` is the only place that knows
+each provider's parameter set. `all_pages=True` is the worker's tracking sweep
+(`search_flights_all`, `max_pages=TRACKING_MAX_PAGES` where supported);
+`all_pages=False` is the chat tool's single page (`sort`/`limit`/`offset`). The
+`client` is passed in rather than resolved so callers keep the instance they
+hold — the chat tool's injected doubles, the worker's freshly constructed
+client. `CAPABILITIES` declares what each provider can honor, and
+`dropped_constraints()` reports what a given request would lose; an unhonored
+constraint logs `flight_provider.constraint_dropped` at WARNING instead of
+silently changing what the returned price is a price *for*. Skiplagged has no
+`cabin` parameter, so a business-class trip tracked on Skiplagged is priced in
+economy — visible in logs now rather than only in a user's bug report.
 Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 `GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
 

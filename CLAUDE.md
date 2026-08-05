@@ -96,9 +96,23 @@ quirk in the web/mobile UI: clients render fields as-is. Canonical example:
 (`"AS3361"`); clients must not concatenate `carrier_code` with it (that
 renders "AS AS3361").
 
-A 24-hour Redis cache for identical route/date queries stays in place as a courtesy
-and for performance. `MOCK_SKIPLAGGED_API=true` returns mock data in dev (takes
-precedence over the provider flag).
+**Provider dispatch is centralized.** Both call sites — the chat tool's single
+page and the worker's full tracking sweep — go through
+`search_flights()` in `apps/api/app/services/flight_provider.py`, which takes one
+provider-agnostic `FlightSearchRequest` and passes each provider only the
+arguments it accepts. The clients are interface-compatible on their *results*
+but not their *inputs* (`CAPABILITIES` records the gaps: Skiplagged has no
+`cabin` parameter; Kiwi and fast-flights ignore `max_pages`), and those gaps are
+silent at the client boundary — a dropped `cabin` returns a price for a
+different cabin rather than an error. A constraint the active provider cannot
+honor is therefore logged as `flight_provider.constraint_dropped` (WARNING).
+Add a new provider's parameter set to `CAPABILITIES`, not to a call site.
+
+There is **no** response cache. `CacheKeys.flight_cache` / `hotel_cache` /
+`price_cache` and `CacheTTL.PRICE_CACHE` exist but have no call sites; this file
+previously claimed a 24-hour Redis cache was in place, which was never true.
+`MOCK_SKIPLAGGED_API=true` returns mock data in dev (takes precedence over the
+provider flag).
 
 ## Core Architectural Patterns
 
