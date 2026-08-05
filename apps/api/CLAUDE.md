@@ -97,7 +97,11 @@ the SQLite test DB.
 
 ## Rate limiting & caching
 
-- 24h Redis cache for identical Skiplagged route/date queries.
+- **No response cache.** `CacheKeys.flight_cache` / `hotel_cache` / `price_cache`
+  and `CacheTTL.PRICE_CACHE` are defined and unit-tested but have **no call
+  sites**; the "24h Redis cache for identical route/date queries" this file used
+  to claim has never existed. Redis holds idempotency keys, rate-limit buckets,
+  quota counters, and refresh tokens — not provider responses.
 - Per-user token-bucket throttling so no single user can hammer Skiplagged MCP.
 - `rate_limit_per_minute` (default 100) and `chat_rate_limit_per_minute` (default 10).
 - **Client identity for limiting** (`middleware/rate_limit.py`): authenticated

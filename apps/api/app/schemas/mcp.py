@@ -315,6 +315,14 @@ SEARCH_FLIGHTS_TOOL = _make_tool(
             "description": "Sort order (default: 'value')",
             "enum": ["price", "duration", "value"],
         },
+        "cabin": {
+            "type": "string",
+            "description": (
+                "Cabin class (optional). Not all flight providers can honor this; "
+                "when the active provider cannot, the search runs without it."
+            ),
+            "enum": ["economy", "premium_economy", "business", "first"],
+        },
     },
     required=["origin", "destination", "departure_date"],
 )

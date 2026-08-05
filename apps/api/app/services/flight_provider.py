@@ -20,6 +20,7 @@ from app.clients.fast_flights import FastFlightsClient, fast_flights_client
 from app.clients.kiwi import KiwiClient, kiwi_client
 from app.clients.skiplagged import SkiplaggedClient, skiplagged_client
 from app.core.app_settings import AppSettings, get_app_setting
+from app.core.constants import CabinClass
 from app.schemas.flight_search import FlightSearchResult
 
 logger = logging.getLogger(__name__)
@@ -53,9 +54,22 @@ class ProviderCapabilities:
     paginates: bool
     """Whether the provider walks multiple result pages (``max_pages``)."""
 
+    implicit_cabin: str | None = None
+    """The cabin this provider prices when it cannot be asked for one.
+
+    Skiplagged has no cabin parameter but its fares *are* economy, so an
+    economy request is honored — just implicitly. Without this distinction the
+    "constraint dropped" signal fires on every tracked trip on every refresh
+    (``cabin`` defaults to ``economy`` on ``TripFlightPrefs``, and the worker
+    always sends it), which would make the warning pure noise on the default
+    provider and train everyone to ignore it.
+    """
+
 
 CAPABILITIES: dict[str, ProviderCapabilities] = {
-    PROVIDER_SKIPLAGGED: ProviderCapabilities(cabin=False, paginates=True),
+    PROVIDER_SKIPLAGGED: ProviderCapabilities(
+        cabin=False, paginates=True, implicit_cabin=CabinClass.ECONOMY.value
+    ),
     PROVIDER_KIWI: ProviderCapabilities(cabin=True, paginates=False),
     PROVIDER_FAST_FLIGHTS: ProviderCapabilities(cabin=True, paginates=False),
 }
@@ -106,14 +120,19 @@ def capabilities_for(provider: str) -> ProviderCapabilities:
 
 
 def dropped_constraints(provider: str, request: FlightSearchRequest) -> tuple[str, ...]:
-    """Constraints in ``request`` that ``provider`` will not honor.
+    """Constraints in ``request`` that ``provider`` will genuinely not honor.
 
-    Empty for the common case. A non-empty result means the answer will be a
-    price for something other than exactly what was asked for.
+    Empty for the common case — including the very common one where the
+    requested cabin happens to be what the provider prices anyway. A non-empty
+    result means the answer will be a price for something other than what was
+    asked for.
+
+    Returns code-defined constraint names, never request values, so callers can
+    log the result directly (CWE-117).
     """
     caps = capabilities_for(provider)
     dropped: list[str] = []
-    if request.cabin and not caps.cabin:
+    if request.cabin and not caps.cabin and request.cabin != caps.implicit_cabin:
         dropped.append("cabin")
     return tuple(dropped)
 
@@ -122,7 +141,7 @@ async def search_flights(
     provider: str,
     request: FlightSearchRequest,
     *,
-    client: FlightClient,
+    client: FlightClient | None = None,
     all_pages: bool = False,
 ) -> FlightSearchResult:
     """Run one flight search, passing only the arguments ``provider`` accepts.
@@ -132,11 +151,13 @@ async def search_flights(
     through here so a provider's quirks are described once rather than
     re-derived per caller.
 
-    ``client`` is passed in rather than resolved here so callers keep whatever
-    instance they already hold — the chat tool's injected test doubles, the
-    worker's freshly constructed client.
+    ``client`` defaults to the shared instance for ``provider``; pass one to
+    keep an instance you already hold — the chat tool's injected test doubles,
+    or the worker's per-activity client.
     """
     caps = capabilities_for(provider)
+    if client is None:
+        client = get_flight_client(provider)
 
     kwargs: dict[str, Any] = {
         "origin": request.origin,
@@ -149,17 +170,20 @@ async def search_flights(
 
     if caps.cabin:
         kwargs["cabin"] = request.cabin
-    elif request.cabin:
+
+    for constraint in dropped_constraints(provider, request):
         # Not an error — the operator picked this provider — but it must not be
-        # invisible: the returned price is for a different cabin than requested.
+        # invisible: the returned price is for something other than what was
+        # asked for. Only the code-defined constraint *name* is logged, never
+        # the requested value, which can originate from LLM tool args (CWE-117).
         logger.warning(
-            "Provider %s cannot honor cabin=%s; searching without it",
+            "Provider %s cannot honor the requested %s; searching without it",
             provider,
-            request.cabin,
+            constraint,
             extra={
                 "event": "flight_provider.constraint_dropped",
                 "provider": provider,
-                "constraint": "cabin",
+                "constraint": constraint,
             },
         )
 
