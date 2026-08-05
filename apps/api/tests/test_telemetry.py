@@ -111,7 +111,8 @@ class TestContextValueScrubbing:
         )
         assert resp.status_code == 200
         record = next(r for r in caplog.records if getattr(r, "event", "") == "web.checkout.failed")
-        assert "\n" not in record.reason and "\r" not in record.reason
+        assert "\n" not in record.reason
+        assert "\r" not in record.reason
         assert "forged-entry" in record.reason  # scrubbed, not dropped
 
     def test_non_string_context_values_pass_through(self, client, caplog):
