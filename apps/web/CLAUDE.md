@@ -42,6 +42,21 @@ apps/web/src/
 `apps/web/` — it generates a stray `apps/web/pnpm-lock.yaml` that breaks the
 frozen-lockfile CI step.
 
+## shadcn CLI — run it, don't install it
+
+Add or update shadcn/ui primitives with `npx shadcn@latest add <component>` (the
+same invocation `.mcp.json` uses for the shadcn MCP server). **Do not add
+`shadcn` to `devDependencies`** in either manifest: the CLI drags in
+`@modelcontextprotocol/sdk` → `express` / `hono` / `undici` / `ip-address`, a
+subtree that contributed 11 Dependabot alerts while nothing in the repo imported
+or scripted it. Generated components are checked into `src/components/ui/`, so
+the CLI is only ever needed ad hoc.
+
+Run it **from the repo root**, not from `apps/web/`: `shadcn add` installs any
+missing Radix peer itself, and a bare install inside `apps/web/` trips the
+lockfile rule above (stray `apps/web/pnpm-lock.yaml` → frozen-lockfile CI
+failure). Check `git status` for one after adding a component.
+
 ## Flight offer rendering
 
 Each flight offer card must show **all segments** of the complete itinerary,

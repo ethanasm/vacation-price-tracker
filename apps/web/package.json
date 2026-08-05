@@ -64,7 +64,6 @@
     "jest-environment-jsdom": "^30.4.1",
     "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.22",
-    "shadcn": "^4.14.0",
     "tailwindcss": "^4.3.3",
     "ts-node": "^10.9.2",
     "typescript": "6.0.3"
