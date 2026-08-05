@@ -65,8 +65,10 @@ tags:
 # defaults to a valid round trip (tomorrow → +8 days); re-pick the departure
 # as the 15th of NEXT month so the flow exercises the picker deterministically
 # on any run date (always within the today…today+359 window). Moving the
-# departure past the default return clears the return, so pick the 20th of the
-# same month right after — the return calendar opens on the departure month.
+# departure past the default return now carries the return forward by the
+# trip's prior length (7 nights → the 22nd), so re-picking the 20th of the
+# same month exercises an explicit return change; the return calendar opens
+# on the departure month either way.
 - tapOn:
     id: "create-trip-depart-input"
 - tapOn:
@@ -81,7 +83,10 @@ tags:
 
 # Hotel city is REQUIRED by the API when track_hotels is on (it 422s otherwise:
 # "hotel_prefs.city is required") — mirrors the web create form. The field sits
-# in the Hotel preferences card below the fold, so scroll it into view first.
+# in the Hotel tracking card below the fold, so scroll it into view first.
+# Picking the OGG destination prefills the city ("Kahului"); erase that before
+# typing so the flow submits exactly "Maui" and exercises overriding the
+# prefill (inputText appends to existing content).
 - scrollUntilVisible:
     element:
       id: "create-trip-hotel-city-input"
@@ -90,6 +95,7 @@ tags:
     timeout: 20000
 - tapOn:
     id: "create-trip-hotel-city-input"
+- eraseText
 - inputText: "Maui"
 
 # Dismiss the IME before submitting so Gboard's content-description elements

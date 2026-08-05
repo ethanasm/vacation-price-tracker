@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { searchAirports } from '../locations';
+import { findAirportByCode, searchAirports } from '../locations';
 
 describe('searchAirports', () => {
   it('returns nothing for queries under 2 characters', () => {
@@ -46,5 +46,22 @@ describe('searchAirports', () => {
       assert.equal(typeof r.city, 'string');
       assert.equal(typeof r.country, 'string');
     }
+  });
+});
+
+describe('findAirportByCode', () => {
+  it('resolves exact codes case-insensitively', () => {
+    const ogg = findAirportByCode('ogg');
+    assert.ok(ogg);
+    assert.equal(ogg.code, 'OGG');
+    assert.equal(typeof ogg.city, 'string');
+    assert.equal(findAirportByCode(' sea ')?.code, 'SEA');
+  });
+
+  it('returns null for unknown or non-3-letter input', () => {
+    assert.equal(findAirportByCode(''), null);
+    assert.equal(findAirportByCode('SE'), null);
+    assert.equal(findAirportByCode('SEAT'), null);
+    assert.equal(findAirportByCode('ZZZ'), null);
   });
 });

@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import {
   MAX_DATE_DAYS_OUT,
   addDaysIso,
+  adjustReturnDate,
+  describeHotelOccupancy,
+  diffDaysIso,
   formatDisplayDate,
+  hasNoErrors,
+  hotelOccupancy,
   isoDate,
   monthGrid,
   monthInRange,
@@ -12,8 +17,10 @@ import {
   parseIsoDate,
   sanitizeDecimal,
   shiftMonth,
+  suggestTripName,
   todayIso,
   validateTripForm,
+  validateTripFormFields,
   type TripFormValues,
 } from '../trip-form';
 
@@ -134,8 +141,8 @@ describe('validateTripForm', () => {
   });
 
   it('requires 3-letter IATA codes, normalizing case and whitespace', () => {
-    assert.match(validateTripForm({ ...valid, origin: 'SF' }, today) ?? '', /From \(origin\)/);
-    assert.match(validateTripForm({ ...valid, destination: 'Redmond' }, today) ?? '', /To \(destination\)/);
+    assert.match(validateTripForm({ ...valid, origin: 'SF' }, today) ?? '', /origin airport/);
+    assert.match(validateTripForm({ ...valid, destination: 'Redmond' }, today) ?? '', /destination airport/);
     assert.equal(validateTripForm({ ...valid, origin: ' sfo ' }, today), null);
   });
 
@@ -181,5 +188,147 @@ describe('validateTripForm', () => {
       /200 characters/,
     );
     assert.equal(validateTripForm({ ...valid, hotelEnabled: false, hotelCity: '' }, today), null);
+  });
+});
+
+describe('validateTripFormFields', () => {
+  const today = todayIso();
+  const valid: TripFormValues = {
+    name: 'Summer in Bend',
+    origin: 'SFO',
+    destination: 'RDM',
+    isRoundTrip: true,
+    departDate: addDaysIso(today, 10),
+    returnDate: addDaysIso(today, 15),
+    flightEnabled: true,
+    hotelEnabled: true,
+    hotelCity: 'Bend',
+  };
+
+  it('returns an empty map for a valid form', () => {
+    const errors = validateTripFormFields(valid, today);
+    assert.equal(hasNoErrors(errors), true);
+    assert.deepEqual(errors, {});
+  });
+
+  it('flags every invalid field at once', () => {
+    const errors = validateTripFormFields(
+      { ...valid, name: '', origin: '', destination: '', departDate: '', returnDate: '', hotelCity: '' },
+      today,
+    );
+    assert.equal(hasNoErrors(errors), false);
+    assert.match(errors.name ?? '', /required/i);
+    assert.match(errors.origin ?? '', /origin airport/);
+    assert.match(errors.destination ?? '', /destination airport/);
+    assert.match(errors.departDate ?? '', /required/i);
+    assert.match(errors.returnDate ?? '', /required/i);
+    assert.match(errors.hotelCity ?? '', /required/i);
+  });
+
+  it('skips the after-departure return check while the departure itself is invalid', () => {
+    const errors = validateTripFormFields({ ...valid, departDate: '', returnDate: addDaysIso(today, 5) }, today);
+    assert.match(errors.departDate ?? '', /required/i);
+    assert.equal(errors.returnDate, undefined);
+  });
+
+  it('flags tracking when both flights and hotels are off', () => {
+    const errors = validateTripFormFields({ ...valid, flightEnabled: false, hotelEnabled: false, hotelCity: '' }, today);
+    assert.match(errors.tracking ?? '', /at least flights or hotels/);
+    assert.equal(errors.hotelCity, undefined);
+  });
+});
+
+describe('adjustReturnDate', () => {
+  it('keeps a return that is still after the new departure', () => {
+    assert.equal(adjustReturnDate('2026-08-20', '2026-08-22', '2026-08-27', '2027-08-01'), '2026-08-27');
+  });
+
+  it('preserves the trip length when the departure moves past the return', () => {
+    // 7-night trip moved from Aug 20 to Sep 10 keeps 7 nights.
+    assert.equal(adjustReturnDate('2026-08-20', '2026-09-10', '2026-08-27', '2027-08-01'), '2026-09-17');
+  });
+
+  it('falls back to one night when the previous departure is malformed', () => {
+    assert.equal(adjustReturnDate('', '2026-09-10', '2026-08-27', '2027-08-01'), '2026-09-11');
+  });
+
+  it('clears the return when the preserved date would exceed maxIso', () => {
+    assert.equal(adjustReturnDate('2026-08-20', '2026-09-10', '2026-08-27', '2026-09-12'), '');
+  });
+
+  it('passes through empty returns and malformed new departures', () => {
+    assert.equal(adjustReturnDate('2026-08-20', '2026-09-10', '', '2027-08-01'), '');
+    assert.equal(adjustReturnDate('2026-08-20', 'nope', '2026-08-27', '2027-08-01'), '2026-08-27');
+  });
+});
+
+describe('diffDaysIso', () => {
+  it('returns whole-day differences and null on malformed input', () => {
+    assert.equal(diffDaysIso('2026-08-20', '2026-08-27'), 7);
+    assert.equal(diffDaysIso('2026-08-27', '2026-08-20'), -7);
+    assert.equal(diffDaysIso('2026-12-31', '2027-01-01'), 1);
+    assert.equal(diffDaysIso('nope', '2026-08-20'), null);
+  });
+});
+
+describe('hotelOccupancy', () => {
+  it('books one room up to four adults, then splits into more rooms', () => {
+    assert.deepEqual(hotelOccupancy(1), { rooms: 1, adultsPerRoom: 1 });
+    assert.deepEqual(hotelOccupancy(2), { rooms: 1, adultsPerRoom: 2 });
+    assert.deepEqual(hotelOccupancy(4), { rooms: 1, adultsPerRoom: 4 });
+    assert.deepEqual(hotelOccupancy(5), { rooms: 2, adultsPerRoom: 3 });
+    assert.deepEqual(hotelOccupancy(9), { rooms: 3, adultsPerRoom: 3 });
+  });
+
+  it('never books meaningfully past the party size', () => {
+    for (let adults = 1; adults <= 9; adults += 1) {
+      const { rooms, adultsPerRoom } = hotelOccupancy(adults);
+      const capacity = rooms * adultsPerRoom;
+      assert.ok(capacity >= adults, `capacity ${capacity} fits ${adults}`);
+      assert.ok(capacity - adults < rooms, `capacity ${capacity} not inflated for ${adults}`);
+      assert.ok(adultsPerRoom >= 1 && adultsPerRoom <= 4);
+    }
+  });
+
+  it('clamps nonsense input into the 1–9 adult range', () => {
+    assert.deepEqual(hotelOccupancy(0), { rooms: 1, adultsPerRoom: 1 });
+    assert.deepEqual(hotelOccupancy(-3), { rooms: 1, adultsPerRoom: 1 });
+    assert.deepEqual(hotelOccupancy(42), { rooms: 3, adultsPerRoom: 3 });
+    assert.deepEqual(hotelOccupancy(Number.NaN), { rooms: 1, adultsPerRoom: 1 });
+  });
+});
+
+describe('describeHotelOccupancy', () => {
+  it('renders singular, plural, and multi-room forms', () => {
+    assert.equal(describeHotelOccupancy(1), '1 room · 1 adult');
+    assert.equal(describeHotelOccupancy(2), '1 room · 2 adults');
+    assert.equal(describeHotelOccupancy(5), '2 rooms · 3 adults each');
+  });
+});
+
+describe('suggestTripName', () => {
+  it('renders same-month ranges compactly', () => {
+    assert.equal(suggestTripName('Maui', '2026-08-20', '2026-08-27', true), 'Maui · Aug 20–27');
+  });
+
+  it('spells out cross-month ranges', () => {
+    assert.equal(suggestTripName('Kahului', '2026-08-28', '2026-09-03', true), 'Kahului · Aug 28 – Sep 3');
+  });
+
+  it('uses only the departure for one-way trips or a missing return', () => {
+    assert.equal(suggestTripName('Maui', '2026-08-20', '2026-08-27', false), 'Maui · Aug 20');
+    assert.equal(suggestTripName('Maui', '2026-08-20', '', true), 'Maui · Aug 20');
+  });
+
+  it('degrades to the bare place, and to empty without a destination', () => {
+    assert.equal(suggestTripName('Maui', '', '', true), 'Maui');
+    assert.equal(suggestTripName('  ', '2026-08-20', '2026-08-27', true), '');
+  });
+
+  it('caps every branch at the 100-character name limit', () => {
+    const longPlace = 'x'.repeat(120);
+    assert.equal(suggestTripName(longPlace, '2026-08-20', '2026-08-27', true).length, 100);
+    assert.equal(suggestTripName(longPlace, '2026-08-20', '', true).length, 100);
+    assert.equal(suggestTripName(longPlace, '', '', true).length, 100);
   });
 });
