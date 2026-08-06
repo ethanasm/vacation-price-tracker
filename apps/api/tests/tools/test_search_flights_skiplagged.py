@@ -244,7 +244,33 @@ class TestSearchFlightsSkiplaggedTool:
             sort="price",
             limit=50,
             offset=75,
+            cabin=None,
         )
+
+    @pytest.mark.asyncio
+    async def test_execute_forwards_cabin_to_skiplagged(
+        self, mock_skiplagged_client, mock_db
+    ):
+        """Skiplagged honors cabin via `fareClass`, so the chat tool must pass it on.
+
+        Until 2026-08-06 the client had no cabin parameter at all and every
+        search silently took the API's economy default.
+        """
+        mock_skiplagged_client.search_flights = AsyncMock(return_value=_make_result())
+
+        tool = SearchFlightsSkiplaggedTool(client=mock_skiplagged_client)
+        await tool.execute(
+            args={
+                "origin": "SFO",
+                "destination": "CDG",
+                "departure_date": "2026-06-15",
+                "cabin": "business",
+            },
+            user_id="test-user",
+            db=mock_db,
+        )
+
+        assert mock_skiplagged_client.search_flights.call_args.kwargs["cabin"] == "business"
 
     @pytest.mark.asyncio
     async def test_execute_client_returns_failure(self, mock_skiplagged_client, mock_db):

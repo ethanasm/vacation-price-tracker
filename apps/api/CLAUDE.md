@@ -193,9 +193,16 @@ hold — the chat tool's injected doubles, the worker's freshly constructed
 client. `CAPABILITIES` declares what each provider can honor, and
 `dropped_constraints()` reports what a given request would lose; an unhonored
 constraint logs `flight_provider.constraint_dropped` at WARNING instead of
-silently changing what the returned price is a price *for*. Skiplagged has no
-`cabin` parameter, so a business-class trip tracked on Skiplagged is priced in
-economy — visible in logs now rather than only in a user's bug report.
+silently changing what the returned price is a price *for*. All three providers
+honor cabin today, so that list is empty in practice — the check remains for
+the next provider that differs.
+
+**A capability must describe the provider, not this repo's client.** Skiplagged
+was briefly recorded as `cabin=False` because `SkiplaggedClient` never sent the
+parameter; the MCP had exposed `fareClass` from the start, and the consequence
+was that every tracked trip took the API's `economy` default no matter what
+cabin the user picked. Check the provider's own `tools/list` schema before
+declaring something unsupported.
 Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 `GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
 
