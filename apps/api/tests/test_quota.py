@@ -1,4 +1,13 @@
-"""Tests for cost/abuse ceiling helpers (per-user daily quota + global budget)."""
+"""Tests for the cost/abuse ceiling adapter over mcp-budget-governor.
+
+The Lua, the key scheme, and the gated/ungated counter semantics are the
+library's and are tested there (fakeredis executing the scripts for real, plus a
+real-Redis CI job). What vpt owns — and what these tests pin — is the adapter
+contract: the public signatures and return shapes the middleware and the
+provider clients rely on, the fail-open behaviour, the preserved Axiom events,
+and the exact keys the counters land under (a silently changed key is a silently
+reset quota).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +17,9 @@ from unittest.mock import AsyncMock
 import pytest
 from app.core import quota
 from app.core.cache_keys import CacheTTL
+from mcp_budget_governor import AccumulateResult, ConsumeResult
+
+NOON = datetime(2026, 6, 23, 12, 0, 0, tzinfo=UTC)
 
 # =============================================================================
 # _seconds_to_utc_midnight / _day_bucket
@@ -15,9 +27,7 @@ from app.core.cache_keys import CacheTTL
 
 
 def test_seconds_to_utc_midnight_midday():
-    now = datetime(2026, 6, 23, 12, 0, 0, tzinfo=UTC)
-    # 12 hours to midnight.
-    assert quota._seconds_to_utc_midnight(now) == 12 * 3600
+    assert quota._seconds_to_utc_midnight(NOON) == 12 * 3600
 
 
 def test_seconds_to_utc_midnight_floor_near_midnight():
@@ -38,96 +48,90 @@ def test_day_bucket_is_utc_yyyymmdd():
 
 @pytest.mark.asyncio
 async def test_daily_quota_allowed(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=[1, 41, 0]))
+    consume = AsyncMock(return_value=ConsumeResult(allowed=True, total=1, remaining=41))
+    monkeypatch.setattr(quota._backend, "consume", consume)
+
     allowed, remaining, retry_after = await quota.check_and_incr_daily_quota(
-        "user:abc", "chat", 42
+        "user:abc", "chat", 42, now=NOON
     )
-    assert allowed is True
-    assert remaining == 41
-    assert retry_after == 0
+    assert (allowed, remaining, retry_after) == (True, 41, 0)
+
+
+@pytest.mark.asyncio
+async def test_daily_quota_key_is_the_library_scheme(monkeypatch):
+    """The exact key matters: changing it silently resets everyone's quota.
+
+    Pinned here so a library upgrade that moves the scheme fails a vpt test
+    instead of resetting production counters unnoticed.
+    """
+    consume = AsyncMock(return_value=ConsumeResult(allowed=True, total=1, remaining=1))
+    monkeypatch.setattr(quota._backend, "consume", consume)
+
+    await quota.check_and_incr_daily_quota("user:abc", "chat", 42, now=NOON)
+
+    key, amount, cap, ttl = consume.await_args.args
+    assert key == "mcpbg:daily_chat:user=user:abc:20260623"
+    assert (amount, cap) == (1, 42)
+    assert ttl == 12 * 3600  # to UTC midnight
 
 
 @pytest.mark.asyncio
 async def test_daily_quota_exceeded_returns_retry_after(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=[0, 0, 3600]))
+    consume = AsyncMock(return_value=ConsumeResult(allowed=False, total=42, remaining=0))
+    monkeypatch.setattr(quota._backend, "consume", consume)
+
     allowed, remaining, retry_after = await quota.check_and_incr_daily_quota(
-        "user:abc", "chat", 42
+        "user:abc", "chat", 42, now=NOON
     )
     assert allowed is False
     assert remaining == 0
-    assert retry_after == 3600
+    # Not floored: the caller is told the real seconds to midnight.
+    assert retry_after == 12 * 3600
 
 
 @pytest.mark.asyncio
-async def test_daily_quota_fails_open_on_redis_error(monkeypatch, caplog):
+async def test_daily_quota_fails_open_on_redis_error(monkeypatch):
     monkeypatch.setattr(
-        quota.redis_client, "eval", AsyncMock(side_effect=RuntimeError("redis down"))
+        quota._backend, "consume", AsyncMock(side_effect=RuntimeError("redis down"))
     )
-    with caplog.at_level("WARNING"):
-        allowed, remaining, retry_after = await quota.check_and_incr_daily_quota(
-            "user:abc", "api", 100
-        )
-    assert allowed is True
-    assert remaining == 100
-    assert retry_after == 0
-    assert "Daily quota check failed" in caplog.text
+    allowed, remaining, retry_after = await quota.check_and_incr_daily_quota(
+        "user:abc", "api", 100, now=NOON
+    )
+    # Fail open exactly as before the library swap: allowed, full headroom.
+    assert (allowed, remaining, retry_after) == (True, 100, 0)
 
 
 # =============================================================================
 # release_daily_quota
-#
-# These cover the Python side; the Lua's own guarantee — that a refund against an
-# already-expired day bucket is a no-op rather than a resurrection into a
-# negative value — is the same script as, and is executed for real by, the
-# mcp-budget-governor suite (fakeredis plus a real-Redis CI job). vpt's tests
-# mock `eval`, so asserting on the script text is the most they can do here.
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_release_daily_quota_evals_against_the_days_key(monkeypatch):
-    eval_mock = AsyncMock(return_value=3)
-    monkeypatch.setattr(quota.redis_client, "eval", eval_mock)
+async def test_release_targets_the_same_key_consume_charged(monkeypatch):
+    """A refund against a different key than the charge would be a silent no-op
+    — the leak this function exists to fix would be back, invisibly."""
+    consume = AsyncMock(return_value=ConsumeResult(allowed=True, total=1, remaining=1))
+    release = AsyncMock()
+    monkeypatch.setattr(quota._backend, "consume", consume)
+    monkeypatch.setattr(quota._backend, "release", release)
 
-    now = datetime(2026, 6, 23, 12, 0, 0, tzinfo=UTC)
-    await quota.release_daily_quota("user:abc", "api", now=now)
+    await quota.check_and_incr_daily_quota("user:abc", "api", 100, now=NOON)
+    await quota.release_daily_quota("user:abc", "api", now=NOON)
 
-    script, numkeys, key, amount = eval_mock.await_args.args
-    assert numkeys == 1
-    assert key.endswith(":20260623")
-    assert "user:abc" in key and "api" in key
-    assert amount == "1"
-
-
-@pytest.mark.asyncio
-async def test_release_daily_quota_refuses_to_resurrect_a_missing_key(monkeypatch):
-    """The script must bail on a missing key rather than DECRBY it negative.
-
-    A bare DECRBY creates the key at -1, which survives a full day and silently
-    hands that user extra headroom. Asserted on the script itself because the
-    Redis client is mocked here.
-    """
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=0))
-    await quota.release_daily_quota("user:abc", "api")
-
-    assert "EXISTS" in quota._RELEASE_QUOTA_LUA
-    # And the clamp must not extend the key's lifetime either.
-    assert "KEEPTTL" in quota._RELEASE_QUOTA_LUA
+    charged_key = consume.await_args.args[0]
+    released_key, released_amount = release.await_args.args
+    assert released_key == charged_key
+    assert released_amount == 1
 
 
 @pytest.mark.asyncio
-async def test_release_daily_quota_swallows_redis_errors(monkeypatch, caplog):
-    """A failed refund must not turn a 429 into a 500.
-
-    This runs on a path whose job is to reject the request; the caller already
-    has its answer, and one over-counted counter for the rest of the day is a far
-    better failure than an unhandled exception in middleware.
-    """
+async def test_release_swallows_redis_errors(monkeypatch, caplog):
+    """A failed refund must not turn a 429 into a 500."""
     monkeypatch.setattr(
-        quota.redis_client, "eval", AsyncMock(side_effect=RuntimeError("redis down"))
+        quota._backend, "release", AsyncMock(side_effect=RuntimeError("redis down"))
     )
     with caplog.at_level("WARNING"):
-        await quota.release_daily_quota("user:abc", "api")
+        await quota.release_daily_quota("user:abc", "api", now=NOON)
     assert "Daily quota refund failed" in caplog.text
 
 
@@ -138,46 +142,65 @@ async def test_release_daily_quota_swallows_redis_errors(monkeypatch, caplog):
 
 @pytest.mark.asyncio
 async def test_global_budget_within(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=[1, 500]))
-    within, total = await quota.incr_and_check_global_budget("groq_tokens", 500, 1000)
-    assert within is True
-    assert total == 500
+    accumulate = AsyncMock(
+        return_value=AccumulateResult(within=True, total=500, crossed=False)
+    )
+    monkeypatch.setattr(quota._backend, "accumulate", accumulate)
+
+    within, total = await quota.incr_and_check_global_budget(
+        "groq_tokens", 500, 1000, now=NOON
+    )
+    assert (within, total) == (True, 500)
+
+    key = accumulate.await_args.args[0]
+    assert key == "mcpbg:groq_tokens:global:20260623"
 
 
 @pytest.mark.asyncio
 async def test_global_budget_trips_and_logs_once(monkeypatch, caplog):
-    # total jumps from <=limit to >limit on this increment -> log the trip.
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=[0, 1200]))
+    accumulate = AsyncMock(
+        return_value=AccumulateResult(within=False, total=1200, crossed=True)
+    )
+    monkeypatch.setattr(quota._backend, "accumulate", accumulate)
+
     with caplog.at_level("WARNING"):
         within, total = await quota.incr_and_check_global_budget(
-            "groq_tokens", 300, 1000
+            "groq_tokens", 600, 1000, now=NOON
         )
-    assert within is False
-    assert total == 1200
-    assert "Global budget breaker tripped" in caplog.text
+    assert (within, total) == (False, 1200)
+    # Two records fire: the library's own governor.breaker_tripped and the
+    # vpt-catalogued budget.breaker_tripped this adapter preserves. Dashboards
+    # key on the latter, so that is the one pinned here.
+    events = [getattr(record, "event", None) for record in caplog.records]
+    assert "budget.breaker_tripped" in events
 
 
 @pytest.mark.asyncio
 async def test_global_budget_over_does_not_relog_after_trip(monkeypatch, caplog):
-    # Already well over the limit before this increment -> no fresh trip log.
-    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=[0, 5000]))
+    # `crossed` is computed atomically in the backend: only the increment that
+    # takes the total over the line reports it, so later calls stay quiet.
+    accumulate = AsyncMock(
+        return_value=AccumulateResult(within=False, total=1800, crossed=False)
+    )
+    monkeypatch.setattr(quota._backend, "accumulate", accumulate)
+
     with caplog.at_level("WARNING"):
         within, total = await quota.incr_and_check_global_budget(
-            "groq_tokens", 100, 1000
+            "groq_tokens", 600, 1000, now=NOON
         )
-    assert within is False
-    assert total == 5000
-    assert "Global budget breaker tripped" not in caplog.text
+    assert (within, total) == (False, 1800)
+    assert not caplog.records
 
 
 @pytest.mark.asyncio
 async def test_global_budget_fails_open_on_redis_error(monkeypatch):
     monkeypatch.setattr(
-        quota.redis_client, "eval", AsyncMock(side_effect=RuntimeError("redis down"))
+        quota._backend, "accumulate", AsyncMock(side_effect=RuntimeError("redis down"))
     )
-    within, total = await quota.incr_and_check_global_budget("skiplagged_calls", 1, 100)
-    assert within is True
-    assert total == 0
+    within, total = await quota.incr_and_check_global_budget(
+        "groq_tokens", 500, 1000, now=NOON
+    )
+    assert (within, total) == (True, 0)
 
 
 # =============================================================================
@@ -187,31 +210,47 @@ async def test_global_budget_fails_open_on_redis_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_is_tripped_false_when_no_key(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "get", AsyncMock(return_value=None))
-    assert await quota.is_global_budget_tripped("groq_tokens", 1000) is False
+    monkeypatch.setattr(quota._backend, "peek", AsyncMock(return_value=0))
+    assert await quota.is_global_budget_tripped("groq_tokens", 1000, now=NOON) is False
 
 
 @pytest.mark.asyncio
 async def test_is_tripped_false_under_limit(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "get", AsyncMock(return_value="999"))
-    assert await quota.is_global_budget_tripped("groq_tokens", 1000) is False
+    monkeypatch.setattr(quota._backend, "peek", AsyncMock(return_value=999))
+    assert await quota.is_global_budget_tripped("groq_tokens", 1000, now=NOON) is False
 
 
 @pytest.mark.asyncio
 async def test_is_tripped_true_over_limit(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "get", AsyncMock(return_value="1001"))
-    assert await quota.is_global_budget_tripped("groq_tokens", 1000) is True
-
-
-@pytest.mark.asyncio
-async def test_is_tripped_false_on_garbage_value(monkeypatch):
-    monkeypatch.setattr(quota.redis_client, "get", AsyncMock(return_value="not-a-number"))
-    assert await quota.is_global_budget_tripped("groq_tokens", 1000) is False
+    monkeypatch.setattr(quota._backend, "peek", AsyncMock(return_value=1001))
+    assert await quota.is_global_budget_tripped("groq_tokens", 1000, now=NOON) is True
 
 
 @pytest.mark.asyncio
 async def test_is_tripped_fails_open_on_redis_error(monkeypatch):
     monkeypatch.setattr(
-        quota.redis_client, "get", AsyncMock(side_effect=RuntimeError("redis down"))
+        quota._backend, "peek", AsyncMock(side_effect=RuntimeError("redis down"))
     )
-    assert await quota.is_global_budget_tripped("groq_tokens", 1000) is False
+    assert await quota.is_global_budget_tripped("groq_tokens", 1000, now=NOON) is False
+
+
+# =============================================================================
+# Adapter configuration guarantees
+# =============================================================================
+
+
+def test_governor_is_configured_for_prod_parity():
+    """local_fallback must stay off until turning it on is its own decision.
+
+    Production vpt has always failed fully open on a Redis outage; the library
+    can instead degrade to per-replica enforcement, which is a behaviour change
+    this adoption deliberately does not make. This test is the tripwire against
+    someone flipping it as a drive-by.
+    """
+    governor = quota._governor(quota._daily_limit("api", 10), NOON)
+    assert governor._fallback is None
+
+
+def test_backend_does_not_own_the_shared_redis_client():
+    """Closing vpt's Redis client is the app lifespan's job, not the adapter's."""
+    assert quota._backend._owns_client is False
