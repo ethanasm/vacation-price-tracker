@@ -135,8 +135,12 @@ and the catalogued Axiom events (`budget.breaker_tripped`,
 `budget.incr_failed` / `budget.read_failed`). Two adapter guarantees are pinned
 by tests: `local_fallback=False` (prod has always failed *fully* open — turning
 on the library's per-replica fallback is its own future decision, not a drive-by)
-and the backend not owning the shared Redis client. The dependency is pinned to
-a git commit until the library ships on PyPI.
+and the backend not owning the shared Redis client. The dependency is an ordinary
+PyPI range, `mcp-budget-governor>=0.1.0,<0.2` — upper-bounded because the library
+is 0.x, where its public API may still move between minor releases, and `quota.py`
+sits directly on that API. **The `mcpbg:*` key scheme is pinned by tests**, so a
+library upgrade that moves it fails a test rather than silently resetting
+production counters on deploy.
 
 - **Per-user daily quota** — day-bucketed counters enforced in
   `rate_limit_middleware`: an overall API cap (`DAILY_QUOTA_PER_USER`, default

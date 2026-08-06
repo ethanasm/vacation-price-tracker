@@ -86,7 +86,9 @@ async def _seed_trip(factory, *, email_enabled=True, threshold=Decimal("2000"), 
         return user.id, trip.id
 
 
-async def _add_snapshot(factory, trip_id, *, total, created_at, flight=None, hotel=None):
+async def _add_snapshot(
+    factory, trip_id, *, total, created_at, flight=None, hotel=None, provider=None
+):
     async with factory() as session:
         snap = PriceSnapshot(
             trip_id=trip_id,
@@ -94,6 +96,7 @@ async def _add_snapshot(factory, trip_id, *, total, created_at, flight=None, hot
             flight_price=Decimal(str(flight)) if flight is not None else None,
             hotel_price=Decimal(str(hotel)) if hotel is not None else None,
             created_at=created_at,
+            provider=provider,
         )
         session.add(snap)
         await session.commit()
@@ -453,3 +456,101 @@ async def test_send_user_digest_records_failure(session_factory, monkeypatch):
 async def test_send_user_digest_flag_off(session_factory):
     await _set_email_flag(session_factory, False)
     assert await wn.send_user_digest_activity(str(uuid.uuid4())) == {"sent": False, "count": 0}
+
+
+# ── Provider-aware drop comparison ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_drop_across_a_provider_change_is_not_an_alert(session_factory):
+    """The price fell, but so did the question it answers.
+
+    Skiplagged, Kiwi and fast-flights see different inventory, so a cheaper
+    number from a different source measures the switch, not the market — and
+    this rule emails the user on any drop.
+    """
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(
+        session_factory, trip_id, total=3000, created_at=BASE_TIME, provider="skiplagged"
+    )
+    snap_id = await _add_snapshot(
+        session_factory,
+        trip_id,
+        total=1200,
+        created_at=BASE_TIME + timedelta(hours=1),
+        provider="kiwi",
+    )
+
+    assert await wn.evaluate_notifications_activity(str(snap_id)) is False
+    assert await _outbox_rows(session_factory, trip_id) == []
+
+
+@pytest.mark.asyncio
+async def test_drop_within_one_provider_still_alerts(session_factory):
+    """The suppression must be narrow — same source, real movement, real alert."""
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(
+        session_factory, trip_id, total=3000, created_at=BASE_TIME, provider="kiwi"
+    )
+    snap_id = await _add_snapshot(
+        session_factory,
+        trip_id,
+        total=2800,
+        created_at=BASE_TIME + timedelta(hours=1),
+        provider="kiwi",
+    )
+
+    assert await wn.evaluate_notifications_activity(str(snap_id)) is True
+    assert len(await _outbox_rows(session_factory, trip_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_provider_does_not_silence_alerts(session_factory):
+    """Rows predating the provider column must not suppress everything.
+
+    Only a *known* mismatch suppresses; one unknown side falls back to
+    comparing, which is what happened before this check existed.
+    """
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("100"), notify_without_threshold=True
+    )
+    await _add_snapshot(
+        session_factory, trip_id, total=3000, created_at=BASE_TIME, provider=None
+    )
+    snap_id = await _add_snapshot(
+        session_factory,
+        trip_id,
+        total=2800,
+        created_at=BASE_TIME + timedelta(hours=1),
+        provider="kiwi",
+    )
+
+    assert await wn.evaluate_notifications_activity(str(snap_id)) is True
+
+
+@pytest.mark.asyncio
+async def test_a_threshold_rule_still_fires_across_a_provider_change(session_factory):
+    """Threshold mode is an absolute rule the user set, not a comparison.
+
+    "Alert me below $500" means below $500 whoever answered, so a provider
+    change must not suppress it — only the drop-vs-previous path is affected.
+    """
+    _, trip_id = await _seed_trip(
+        session_factory, threshold=Decimal("500"), notify_without_threshold=False
+    )
+    await _add_snapshot(
+        session_factory, trip_id, total=3000, created_at=BASE_TIME, provider="skiplagged"
+    )
+    snap_id = await _add_snapshot(
+        session_factory,
+        trip_id,
+        total=400,
+        created_at=BASE_TIME + timedelta(hours=1),
+        provider="kiwi",
+    )
+
+    assert await wn.evaluate_notifications_activity(str(snap_id)) is True

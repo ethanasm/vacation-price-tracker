@@ -51,6 +51,52 @@ def _price_for(snapshot: PriceSnapshot, threshold_type: ThresholdType) -> Decima
     return snapshot.total_price
 
 
+def _comparable_previous_price(
+    snapshot: PriceSnapshot,
+    previous: PriceSnapshot | None,
+    threshold_type: ThresholdType,
+) -> Decimal | None:
+    """The previous price, but only when it answers the same question.
+
+    A price is only a price *for* whatever its provider was asked. Skiplagged,
+    Kiwi and fast-flights see different inventory, so when the active provider
+    changes between snapshots the difference measures the source, not the market
+    — and a ``notify_without_threshold`` rule reads it as a drop and emails the
+    user about a fare that never moved.
+
+    Not hypothetical: the operator switch away from Skiplagged during its July
+    2026 429s changed provider mid-history on every tracked trip, and automatic
+    failover will do the same without anyone deciding to.
+
+    Returning ``None`` suppresses the comparison rather than reaching back for
+    the last same-provider snapshot. A missed alert is recovered on the next
+    refresh; a false "huge drop" email teaches the user to ignore the alerts
+    that matter. Only a *known* mismatch suppresses — rows predating the
+    ``provider`` column would otherwise silence everything.
+    """
+    if previous is None:
+        return None
+
+    changed = (
+        previous.provider is not None
+        and snapshot.provider is not None
+        and previous.provider != snapshot.provider
+    )
+    if changed:
+        logger.info(
+            "Skipping drop comparison across a provider change",
+            extra={
+                "event": "notifications.evaluate.provider_changed",
+                "trip_id": str(snapshot.trip_id),
+                "previous_provider": previous.provider,
+                "provider": snapshot.provider,
+            },
+        )
+        return None
+
+    return _price_for(previous, threshold_type)
+
+
 @activity.defn
 async def evaluate_notifications_activity(snapshot_id: str) -> bool:
     """Evaluate a trip's notification rule against a new snapshot.
@@ -107,7 +153,7 @@ async def evaluate_notifications_activity(snapshot_id: str) -> bool:
                 .limit(1)
             )
         ).scalar_one_or_none()
-        previous_price = _price_for(previous, rule.threshold_type) if previous else None
+        previous_price = _comparable_previous_price(snapshot, previous, rule.threshold_type)
         dropped = previous_price is not None and price < previous_price
 
         if rule.notify_without_threshold:
