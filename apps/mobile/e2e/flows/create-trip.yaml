@@ -49,8 +49,26 @@ tags:
 # From/To are typeahead fields: typing ≥2 chars opens a suggestion list and
 # each row is `<input testID>-option-<CODE>`. Picking the exact-code row both
 # fills the field and exercises the autocomplete path.
+#
+# Regression guard first: opening the suggestion overlay must NOT steal focus
+# from the input. A conditional zIndex/elevation on the field wrapper used to
+# flip React Native's view flattening when the list opened, which re-parented
+# the focused TextInput, dismissed the keyboard, and locked the field on the
+# 2nd character. Type across the point where the overlay opens and prove the
+# later characters landed: with focus intact "SEAX" matches no airport and the
+# overlay closes; with focus lost the field is still "SE" and it stays open.
+# (`inputText: "SEA"` in one shot does NOT catch this — adb delivers the keys
+# faster than React commits the re-parent.)
 - tapOn:
     id: "create-trip-origin-input"
+- inputText: "SE"
+- assertVisible:
+    id: "create-trip-origin-input-suggestions"
+- inputText: "AX"
+- assertNotVisible:
+    id: "create-trip-origin-input-suggestions"
+- eraseText
+
 - inputText: "SEA"
 - tapOn:
     id: "create-trip-origin-input-option-SEA"

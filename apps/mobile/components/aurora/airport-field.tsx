@@ -21,6 +21,21 @@ const MAX_SUGGESTIONS = 5;
  * code (swapping a pretty label through the controlled value would let a
  * fast keystroke feed the label back into form state).
  *
+ * The outer wrap declares its stacking context (`zIndex`/`elevation`, plus an
+ * explicit `collapsable={false}`) UNCONDITIONALLY, and that is load-bearing:
+ * those props are exactly what makes a View "form a view" in React Native's
+ * renderer (ViewShadowNode::formsStackingContext). Toggling them with `open`
+ * flipped this wrap between flattened (no native view at all) and unflattened,
+ * and unflattening re-parents the whole subtree — including the focused
+ * TextInput — into the newly created native view. A view removed from the
+ * window resigns first responder on iOS and clears focus on Android, so the
+ * keyboard closed the instant the dropdown appeared on the 2nd character; and
+ * because re-tapping the field re-opened the dropdown (handleFocus), it blurred
+ * again immediately, locking the user out of the From/To fields entirely.
+ * Never make this wrap's stacking props conditional. Ordering *between* the two
+ * airport fields is the parent screen's job (see the static originFieldWrap /
+ * destinationFieldWrap z-order in app/trip/new.tsx and app/trip/[id]/edit.tsx).
+ *
  * testID contract (Maestro): the input is `testID`; each suggestion row is
  * `${testID}-option-<CODE>`.
  */
@@ -106,9 +121,9 @@ export function AirportField({
       };
 
   return (
-    // Lift the whole field above its siblings while the overlay is open so
-    // the dropdown paints over the fields below instead of under them.
-    <View style={[styles.wrap, open ? styles.wrapRaised : null]}>
+    // Statically raised + never flattened: see the note above — toggling these
+    // props with `open` re-parents the focused TextInput and kills the keyboard.
+    <View collapsable={false} style={styles.wrap}>
       <Text
         style={{
           color: tokens.color.textBodyAlt,
@@ -205,8 +220,8 @@ export function AirportField({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 14 },
-  wrapRaised: { zIndex: 30, elevation: 30 },
+  // Static — never gate these on `open`. See the component doc comment.
+  wrap: { marginBottom: 14, zIndex: 1, elevation: 1 },
   anchor: { position: 'relative' },
   row: { flexDirection: 'row', alignItems: 'center' },
   input: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, fontSize: 15 },
