@@ -1170,6 +1170,15 @@ wheels = [
 ]
 
 [[package]]
+name = "provider-router"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/32/a6bfa65a8de96147434266ca2b44ad3c5862da6a7ef4acdfb13b7a003600/provider_router-0.1.0.tar.gz", hash = "sha256:65fd3e08e0747385e46e0eb4001e4d3b7a2ffa658ae77ba69b34ab418ef3850e", size = 23342, upload-time = "2026-08-06T06:18:13.155Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/55/400bd5611cb93026546b7b43b68c87eb4dbd42e334f160f9abca95c969cb/provider_router-0.1.0-py3-none-any.whl", hash = "sha256:40c4f3555428dba516322466b8a77f5d60805315d41b7e22cd357faf8b20e3e4", size = 21342, upload-time = "2026-08-06T06:18:11.981Z" },
+]
+
+[[package]]
 name = "py-serializable"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1967,6 +1976,7 @@ dependencies = [
     { name = "mako" },
     { name = "mcp-budget-governor" },
     { name = "msgpack" },
+    { name = "provider-router" },
     { name = "pydantic-settings" },
     { name = "pygments" },
     { name = "pyjwt" },
@@ -2022,6 +2032,7 @@ requires-dist = [
     { name = "msgpack", specifier = ">=1.2.1" },
     { name = "pip", marker = "extra == 'dev'", specifier = ">=26.1.2" },
     { name = "pip-audit", marker = "extra == 'dev'" },
+    { name = "provider-router", specifier = ">=0.1.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pydevd-pycharm", marker = "extra == 'dev'", specifier = "~=262.8665.186" },
     { name = "pygments", specifier = ">=2.20.0" },

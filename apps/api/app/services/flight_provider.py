@@ -11,15 +11,46 @@ three-way switch) with no redeploy.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from provider_router import (
+    AllProvidersFailed,
+    Attempt,
+    Deadline,
+    Failure,
+    Outcome,
+    RouteAborted,
+    Router,
+    budget_exhausted,
+    rate_limited,
+    terminal,
+    transient,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.fast_flights import FastFlightsClient, fast_flights_client
-from app.clients.kiwi import KiwiClient, kiwi_client
-from app.clients.skiplagged import SkiplaggedClient, skiplagged_client
+from app.clients.fast_flights import (
+    FastFlightsClient,
+    FastFlightsTransientError,
+    fast_flights_client,
+)
+from app.clients.kiwi import (
+    KiwiClient,
+    KiwiConnectionError,
+    KiwiRateLimitError,
+    KiwiTransientError,
+    kiwi_client,
+)
+from app.clients.skiplagged import (
+    SkiplaggedClient,
+    SkiplaggedConnectionError,
+    SkiplaggedRateLimitError,
+    SkiplaggedTransientError,
+    skiplagged_client,
+)
 from app.core.app_settings import AppSettings, get_app_setting
+from app.core.errors import GlobalBudgetExceeded
 from app.schemas.flight_search import FlightSearchResult
 
 logger = logging.getLogger(__name__)
@@ -34,6 +65,19 @@ FlightClient = FastFlightsClient | KiwiClient | SkiplaggedClient
 
 # How many Skiplagged result pages the tracking path walks (~75 results each).
 TRACKING_MAX_PAGES = 4
+
+# Each client already distinguishes "throttled" from "blip" from "broken"; the
+# router only needs those three buckets named once. Rate limits are checked
+# first because they subclass the transient errors.
+RATE_LIMIT_ERRORS = (SkiplaggedRateLimitError, KiwiRateLimitError)
+TRANSIENT_ERRORS = (
+    SkiplaggedTransientError,
+    SkiplaggedConnectionError,
+    KiwiTransientError,
+    KiwiConnectionError,
+    FastFlightsTransientError,
+    TimeoutError,
+)
 
 
 @dataclass(frozen=True)
@@ -130,7 +174,7 @@ def dropped_constraints(provider: str, request: FlightSearchRequest) -> tuple[st
     return tuple(dropped)
 
 
-async def search_flights(
+async def _search_one(
     provider: str,
     request: FlightSearchRequest,
     *,
@@ -189,3 +233,194 @@ async def search_flights(
     kwargs["limit"] = request.limit
     kwargs["offset"] = request.offset
     return await client.search_flights(**kwargs)
+
+
+# --------------------------------------------------------------------------- #
+# Failover
+#
+# The `flight_provider` setting stops being "the provider" and becomes "the
+# provider we prefer". A Skiplagged 429 used to mean a failed refresh and an
+# operator noticing, then flipping the setting by hand — which is exactly what
+# happened during the sustained 429s of July 2026. The order below is the same
+# preference, honoured automatically.
+#
+# The clients stay exactly as they are; what follows is the translation layer
+# `provider-router` asks for — how each provider says "I can't", in one shared
+# vocabulary.
+# --------------------------------------------------------------------------- #
+
+
+class _FlightProvider:
+    """One flight client, wearing the router's contract."""
+
+    def __init__(
+        self,
+        name: str,
+        make_client: Callable[[str], FlightClient],
+        *,
+        all_pages: bool,
+    ) -> None:
+        self.name = name
+        self._make_client = make_client
+        self._all_pages = all_pages
+
+    def supports(self, request: FlightSearchRequest) -> bool:
+        """Always true — deliberately, and not because nothing can be unsupported.
+
+        The library's instinct is to decline rather than answer a different
+        question than the one asked, and that instinct is right in general. But
+        this repo already decided the opposite for flights: an unhonorable
+        constraint is *logged* (`flight_provider.constraint_dropped`) and the
+        search runs anyway, because the operator picked this provider and a
+        thinner answer beats no answer.
+
+        Changing that here would be a behaviour change smuggled in under a
+        failover change. It is also moot today — all three providers honour
+        cabin, so `dropped_constraints` is empty in practice. Revisit it as its
+        own decision when a provider actually differs.
+        """
+        return True
+
+    async def invoke(self, request: FlightSearchRequest, deadline: Deadline) -> FlightSearchResult:
+        # Built here, not in the constructor: a fallback that never gets tried
+        # should never be constructed. Clients hold connection state and the
+        # common case is that the preferred provider answers.
+        return await _search_one(
+            self.name, request, client=self._make_client(self.name), all_pages=self._all_pages
+        )
+
+    def classify(self, exc: BaseException) -> Failure:
+        """Translate a client's exception into the shared vocabulary.
+
+        The one that matters is ``GlobalBudgetExceeded``: it is route-terminal,
+        so the router aborts instead of failing over. Trying the next provider
+        after a daily spend ceiling trips would spend *more* against the very
+        ceiling that just tripped — the failure amplifies itself.
+        """
+        if isinstance(exc, GlobalBudgetExceeded):
+            return budget_exhausted(str(exc), cause=exc)
+
+        retry_after = getattr(exc, "retry_after", None)
+        if isinstance(exc, RATE_LIMIT_ERRORS):
+            return rate_limited(
+                str(exc),
+                retry_after=retry_after if isinstance(retry_after, int | float) else None,
+                cause=exc,
+            )
+        if isinstance(exc, TRANSIENT_ERRORS):
+            return transient(str(exc), cause=exc)
+        return terminal(str(exc), cause=exc)
+
+    def assess(self, result: FlightSearchResult, attempt: Attempt) -> Outcome:
+        """Always OK — an empty result is a real answer, not a thin one.
+
+        "No flights on this route for these dates" is information the caller
+        wants, and failing over to ask a second provider the same question
+        would spend a call to be told the same thing.
+        """
+        return Outcome.OK
+
+
+def failover_order(preferred: str) -> tuple[str, ...]:
+    """``preferred`` first, then the rest in their declared order."""
+    rest = tuple(p for p in FLIGHT_PROVIDERS if p != preferred)
+    return (preferred, *rest) if preferred in FLIGHT_PROVIDERS else FLIGHT_PROVIDERS
+
+
+async def search_flights(
+    provider: str,
+    request: FlightSearchRequest,
+    *,
+    client_factory: Callable[[str], FlightClient] | None = None,
+    all_pages: bool = False,
+    failover: bool = False,
+) -> FlightSearchResult:
+    """Run one flight search against ``provider``, optionally failing over.
+
+    With ``failover=True``, ``provider`` is the *preferred* provider — the
+    operator's setting — not the only one. On a rate limit or a transient
+    failure the router moves down :func:`failover_order`; on a spend ceiling it
+    aborts rather than spending more against the ceiling that just tripped.
+
+    **Off by default, and on for the tracking sweep.** The worker refreshes
+    prices unattended overnight: a Skiplagged 429 there means a missing point in
+    a price history nobody is watching, so it should quietly ask Kiwi instead.
+    The chat tool's search is interactive — the user is right there, a second
+    provider costs them seconds of latency, and a failed search is something
+    they can simply ask again. Different failure economics, different default.
+
+    The answering provider rides along on ``FlightSearchResult.provider``, which
+    is what ``price_snapshots.provider`` records — so a failover is visible in
+    the price history rather than looking like the market moved.
+
+    ``client_factory`` supplies the instance for a given provider — the chat
+    tool's injected doubles, the worker's per-activity instances. A factory
+    rather than one client because failover reaches providers the caller did
+    not name, and a caller that deliberately constructs its own client should
+    not silently get a shared global for the fallback. It is called lazily, so
+    a provider that is never tried is never constructed.
+    """
+    make_client = client_factory or get_flight_client
+    order = failover_order(provider) if failover else (provider,)
+    providers = [
+        _FlightProvider(name, make_client, all_pages=all_pages) for name in order
+    ]
+
+    router: Router[FlightSearchRequest, FlightSearchResult] = Router(
+        providers,
+        events=_log_route_event,
+    )
+
+    try:
+        route = await router.invoke(request)
+    except RouteAborted as exc:
+        # Route-terminal: re-raise the cause so callers keep the exception type
+        # they already handle (the worker turns GlobalBudgetExceeded into a
+        # non-retriable Temporal failure; chat turns it into an SSE error).
+        if exc.failure.cause is not None:
+            raise exc.failure.cause from None
+        raise
+    except AllProvidersFailed as exc:
+        # Same reasoning: the callers catch the clients' own exception types, so
+        # surface the last real cause rather than a router error they have never
+        # heard of. Only a route where every provider was *skipped* has no cause.
+        last = next(
+            (a.failure.cause for a in reversed(exc.attempts) if a.failure and a.failure.cause),
+            None,
+        )
+        if last is not None:
+            raise last from None
+        raise
+
+    if route.failed_over:
+        logger.warning(
+            "Flight search failed over from %s to %s",
+            provider,
+            route.provider,
+            extra={
+                "event": "flight_provider.failed_over",
+                "preferred": provider,
+                "provider": route.provider,
+                "attempts": [a.provider for a in route.attempts],
+            },
+        )
+    return route.value
+
+
+def _log_route_event(event: object) -> None:
+    """Relay router events into the app's structured logging.
+
+    Only code-defined names and provider identifiers reach the log — never
+    request values, which can originate from LLM tool arguments (CWE-117).
+    """
+    name = getattr(event, "name", "")
+    provider = getattr(event, "provider", None)
+    if name in _NOISY_EVENTS:
+        return
+    logger.info(
+        "flight route event",
+        extra={"event": name, "provider": provider},
+    )
+
+
+_NOISY_EVENTS = frozenset({"router.route.started", "router.route.selected"})
