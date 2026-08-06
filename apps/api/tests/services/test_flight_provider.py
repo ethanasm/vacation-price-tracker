@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from unittest.mock import patch
 
 import pytest
 from app.clients.fast_flights import FastFlightsClient, fast_flights_client
@@ -19,6 +20,7 @@ from app.services.flight_provider import (
     PROVIDER_SKIPLAGGED,
     TRACKING_MAX_PAGES,
     FlightSearchRequest,
+    ProviderCapabilities,
     capabilities_for,
     dropped_constraints,
     get_flight_client,
@@ -97,35 +99,31 @@ def test_capabilities_cover_every_provider():
     assert capabilities_for("unknown-provider") == CAPABILITIES[PROVIDER_SKIPLAGGED]
 
 
-def test_dropped_constraints_reports_cabin_only_where_unsupported():
+def test_every_provider_honors_cabin_so_nothing_is_dropped():
+    """All three providers can filter by cabin — Skiplagged via `fareClass`."""
     with_cabin = _request(cabin="business")
-    assert dropped_constraints(PROVIDER_SKIPLAGGED, with_cabin) == ("cabin",)
-    assert dropped_constraints(PROVIDER_KIWI, with_cabin) == ()
-    assert dropped_constraints(PROVIDER_FAST_FLIGHTS, with_cabin) == ()
-    # No cabin asked for, nothing to drop.
-    assert dropped_constraints(PROVIDER_SKIPLAGGED, _request()) == ()
+    for provider in FLIGHT_PROVIDERS:
+        assert dropped_constraints(provider, with_cabin) == ()
+        assert capabilities_for(provider).cabin is True
 
 
-def test_economy_on_skiplagged_is_honored_implicitly_not_dropped():
-    """The default path must stay quiet.
-
-    `TripFlightPrefs.cabin` defaults to ECONOMY and the worker always sends it,
-    so treating "no cabin parameter" as "constraint dropped" would fire on every
-    tracked trip on every refresh against the default provider — a warning that
-    is ~100% false positive trains everyone to ignore it.
-    """
-    assert dropped_constraints(PROVIDER_SKIPLAGGED, _request(cabin="economy")) == ()
-    assert capabilities_for(PROVIDER_SKIPLAGGED).implicit_cabin == "economy"
+def test_dropped_constraints_still_reports_a_provider_that_cannot():
+    """The mechanism has to keep working for the next provider that lacks a knob."""
+    incapable = ProviderCapabilities(cabin=False, paginates=False)
+    with patch.dict(CAPABILITIES, {"incapable": incapable}):
+        assert dropped_constraints("incapable", _request(cabin="business")) == ("cabin",)
+        assert dropped_constraints("incapable", _request()) == ()
 
 
 @pytest.mark.anyio
-async def test_economy_on_skiplagged_logs_nothing(caplog):
+async def test_no_warning_when_the_provider_can_honor_the_cabin(caplog):
     client = RecordingClient()
     with caplog.at_level(logging.WARNING):
-        await search_flights(PROVIDER_SKIPLAGGED, _request(cabin="economy"), client=client)
+        await search_flights(PROVIDER_SKIPLAGGED, _request(cabin="business"), client=client)
 
     dropped = [r for r in caplog.records if getattr(r, "event", None) == _DROPPED_EVENT]
     assert dropped == []
+    assert client.single["cabin"] == "business", "and it is actually forwarded"
 
 
 def test_dropped_constraint_names_are_code_defined_not_request_values():
@@ -134,9 +132,10 @@ def test_dropped_constraint_names_are_code_defined_not_request_values():
     `cabin` can originate from LLM tool arguments, so the log carries the
     constraint *name* — a constant in this module — and never the value.
     """
-    assert dropped_constraints(PROVIDER_SKIPLAGGED, _request(cabin="business")) == ("cabin",)
-    injected = _request(cabin="business\nWARNING fake log line")
-    assert dropped_constraints(PROVIDER_SKIPLAGGED, injected) == ("cabin",)
+    incapable = ProviderCapabilities(cabin=False, paginates=False)
+    with patch.dict(CAPABILITIES, {"incapable": incapable}):
+        injected = _request(cabin="business\nWARNING fake log line")
+        assert dropped_constraints("incapable", injected) == ("cabin",)
 
 
 def test_dispatch_kwargs_bind_against_every_real_client_signature():
@@ -189,7 +188,7 @@ async def test_omitting_the_client_resolves_the_shared_instance(monkeypatch):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", [PROVIDER_KIWI, PROVIDER_FAST_FLIGHTS])
+@pytest.mark.parametrize("provider", list(FLIGHT_PROVIDERS))
 async def test_cabin_is_forwarded_to_providers_that_support_it(provider):
     client = RecordingClient()
     await search_flights(provider, _request(cabin="business"), client=client)
@@ -197,15 +196,18 @@ async def test_cabin_is_forwarded_to_providers_that_support_it(provider):
 
 
 @pytest.mark.anyio
-async def test_cabin_is_dropped_for_skiplagged_and_logged(caplog):
-    """Skiplagged has no cabin parameter, so the price returned is for a different cabin.
+async def test_an_unhonorable_cabin_is_dropped_and_logged(caplog):
+    """A provider that genuinely cannot filter by cabin returns a price for a
+    different cabin. The operator chose it, so it is not an error — but it must
+    not be invisible.
 
-    The operator chose this provider, so it is not an error — but it must not be
-    invisible, which is exactly how it behaved before.
+    No shipped provider is in this state today; the fixture stands in for the
+    next one that is.
     """
+    incapable = ProviderCapabilities(cabin=False, paginates=False)
     client = RecordingClient()
-    with caplog.at_level(logging.WARNING):
-        await search_flights(PROVIDER_SKIPLAGGED, _request(cabin="business"), client=client)
+    with patch.dict(CAPABILITIES, {"incapable": incapable}), caplog.at_level(logging.WARNING):
+        await search_flights("incapable", _request(cabin="business"), client=client)
 
     assert "cabin" not in client.single
     events = [r.event for r in caplog.records if hasattr(r, "event")]

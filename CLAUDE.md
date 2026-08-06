@@ -64,7 +64,10 @@ switch — no redeploy):
 
 - **Skiplagged MCP** (default): chat tools use single-page `search_flights`;
   the tracking worker uses `search_flights_all` (up to 300 results across
-  `max_pages=4`). Flight numbers are parsed from the `id` string.
+  `max_pages=4`). Flight numbers are parsed from the `id` string. Cabin is
+  supported natively via the `fareClass` argument
+  (`basic-economy`|`economy`|`premium`|`business`|`first`, default `economy`);
+  our `CabinClass` maps onto it in `CABIN_CLASS_TO_FARE_CLASS`.
 - **Kiwi.com MCP**: `https://mcp.kiwi.com/` — public, stateless, no API key.
   Returns structured per-segment data (carrier, flight number, times,
   durations, stops, cabin class) but no server-side pagination (~15 itineraries
@@ -103,10 +106,18 @@ provider-agnostic `FlightSearchRequest` and passes each provider only the
 arguments it accepts. The clients are interface-compatible on their *results*
 but not their *inputs* (`CAPABILITIES` records the gaps: Skiplagged has no
 `cabin` parameter; Kiwi and fast-flights ignore `max_pages`), and those gaps are
-silent at the client boundary — a dropped `cabin` returns a price for a
-different cabin rather than an error. A constraint the active provider cannot
-honor is therefore logged as `flight_provider.constraint_dropped` (WARNING).
-Add a new provider's parameter set to `CAPABILITIES`, not to a call site.
+silent at the client boundary — a dropped constraint returns a price for a
+different question rather than an error. A constraint the active provider
+cannot honor is therefore logged as `flight_provider.constraint_dropped`
+(WARNING). Add a new provider's parameter set to `CAPABILITIES`, not to a call
+site.
+
+**`CAPABILITIES` describes the provider, not our client.** Verify against the
+provider's own tool schema before recording a `False`. Skiplagged was listed
+`cabin=False` for a day on the strength of *our client* not sending the
+parameter — it had supported `fareClass` all along, so every tracked trip was
+being priced in economy regardless of the user's choice. All three providers
+currently honor cabin.
 
 There is **no** response cache. `CacheKeys.flight_cache` / `hotel_cache` /
 `price_cache` and `CacheTTL.PRICE_CACHE` exist but have no call sites; this file
@@ -125,7 +136,12 @@ provider flag).
 - **Idempotency:** `X-Idempotency-Key` required for `POST /v1/trips`, stored in
   Redis (24h TTL).
 - **Post-fetch filtering:** airline and room-type/view preferences are filtered
-  in-memory by the worker because Skiplagged supports neither natively. Details:
+  in-memory by the worker. Room type / view genuinely have no provider-side
+  equivalent (`sk_hotels_search` takes only city/dates/occupancy/paging).
+  **Airlines are a different story:** `sk_flights_search` exposes
+  `preferredAirlines` / `excludedAirlines`, so the in-memory airline filter is
+  a missed optimization rather than a necessity — we fetch and discard results
+  the API could have excluded. Details:
   [`apps/worker/CLAUDE.md`](apps/worker/CLAUDE.md).
 
 ## Environment Configuration

@@ -41,6 +41,16 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # self-heal without blowing the Temporal activity timeout. Sustained blocks are
 # left to the caller (Temporal retry policy) to reschedule.
 RETRYABLE_HTTP_STATUS = frozenset({429, 502, 503, 504})
+
+# Our CabinClass values -> Skiplagged's `fareClass` enum on `sk_flights_search`
+# ("basic-economy" | "economy" | "premium" | "business" | "first", default
+# "economy"). Only the spelling of premium economy differs.
+CABIN_CLASS_TO_FARE_CLASS = {
+    "economy": "economy",
+    "premium_economy": "premium",
+    "business": "business",
+    "first": "first",
+}
 MAX_TRANSIENT_RETRIES = 2
 BASE_BACKOFF_SECONDS = 0.5
 MAX_BACKOFF_SECONDS = 4.0
@@ -485,6 +495,7 @@ class SkiplaggedClient:
         sort: str = "value",
         limit: int = 75,
         offset: int = 0,
+        cabin: str | None = None,
     ) -> FlightSearchResult:
         """Search for flights via Skiplagged MCP.
 
@@ -498,6 +509,7 @@ class SkiplaggedClient:
             sort: Sort order: "price", "duration", or "value".
             limit: Max results per page.
             offset: Pagination offset.
+            cabin: Cabin class, mapped to Skiplagged's `fareClass`.
 
         Returns:
             FlightSearchResult with normalized flight data.
@@ -512,6 +524,7 @@ class SkiplaggedClient:
             sort=sort,
             limit=limit,
             offset=offset,
+            cabin=cabin,
         )
         return result
 
@@ -526,6 +539,7 @@ class SkiplaggedClient:
         sort: str = "value",
         limit: int = 75,
         offset: int = 0,
+        cabin: str | None = None,
     ) -> tuple[FlightSearchResult, dict[str, Any]]:
         """Internal: search one page of flights, returning (result, pagination)."""
         params: dict[str, Any] = {
@@ -542,6 +556,11 @@ class SkiplaggedClient:
             params["returnDate"] = return_date
         if max_stops:
             params["maxStops"] = max_stops
+        # Unknown cabin values are dropped rather than passed through: the tool
+        # rejects anything outside its enum, and Skiplagged defaults to economy.
+        fare_class = CABIN_CLASS_TO_FARE_CLASS.get(cabin) if cabin else None
+        if fare_class:
+            params["fareClass"] = fare_class
 
         try:
             response = await self._call_mcp("sk_flights_search", params)
@@ -586,6 +605,7 @@ class SkiplaggedClient:
         sort: str = "value",
         limit: int = 75,
         max_pages: int = 4,
+        cabin: str | None = None,
     ) -> FlightSearchResult:
         """Search for flights across multiple pages.
 
@@ -599,6 +619,7 @@ class SkiplaggedClient:
             sort: Sort order.
             limit: Results per page.
             max_pages: Maximum number of pages to fetch.
+            cabin: Cabin class, mapped to Skiplagged's `fareClass`.
 
         Returns:
             FlightSearchResult with all flights combined.
@@ -617,6 +638,7 @@ class SkiplaggedClient:
                 sort=sort,
                 limit=limit,
                 offset=offset,
+                cabin=cabin,
             )
 
             if not result.success:

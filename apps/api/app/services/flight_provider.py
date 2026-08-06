@@ -20,7 +20,6 @@ from app.clients.fast_flights import FastFlightsClient, fast_flights_client
 from app.clients.kiwi import KiwiClient, kiwi_client
 from app.clients.skiplagged import SkiplaggedClient, skiplagged_client
 from app.core.app_settings import AppSettings, get_app_setting
-from app.core.constants import CabinClass
 from app.schemas.flight_search import FlightSearchResult
 
 logger = logging.getLogger(__name__)
@@ -54,22 +53,17 @@ class ProviderCapabilities:
     paginates: bool
     """Whether the provider walks multiple result pages (``max_pages``)."""
 
-    implicit_cabin: str | None = None
-    """The cabin this provider prices when it cannot be asked for one.
 
-    Skiplagged has no cabin parameter but its fares *are* economy, so an
-    economy request is honored — just implicitly. Without this distinction the
-    "constraint dropped" signal fires on every tracked trip on every refresh
-    (``cabin`` defaults to ``economy`` on ``TripFlightPrefs``, and the worker
-    always sends it), which would make the warning pure noise on the default
-    provider and train everyone to ignore it.
-    """
-
-
+# Every provider currently honors cabin. Kept as a table rather than collapsed
+# away because the *point* is that a provider's parameter set is data, not
+# something each call site re-derives — and the next provider may well differ.
+#
+# A capability MUST describe the provider, not this repo's adapter. An earlier
+# version declared Skiplagged `cabin=False` on the strength of our client not
+# sending the parameter; the provider had supported it (`fareClass`) all along.
+# Verify against the provider's own schema before recording a `False` here.
 CAPABILITIES: dict[str, ProviderCapabilities] = {
-    PROVIDER_SKIPLAGGED: ProviderCapabilities(
-        cabin=False, paginates=True, implicit_cabin=CabinClass.ECONOMY.value
-    ),
+    PROVIDER_SKIPLAGGED: ProviderCapabilities(cabin=True, paginates=True),
     PROVIDER_KIWI: ProviderCapabilities(cabin=True, paginates=False),
     PROVIDER_FAST_FLIGHTS: ProviderCapabilities(cabin=True, paginates=False),
 }
@@ -122,17 +116,16 @@ def capabilities_for(provider: str) -> ProviderCapabilities:
 def dropped_constraints(provider: str, request: FlightSearchRequest) -> tuple[str, ...]:
     """Constraints in ``request`` that ``provider`` will genuinely not honor.
 
-    Empty for the common case — including the very common one where the
-    requested cabin happens to be what the provider prices anyway. A non-empty
-    result means the answer will be a price for something other than what was
-    asked for.
+    Empty for every provider today — all three honor cabin. The check stays
+    because the next provider may not, and a constraint silently dropped is an
+    answer to a different question than the one asked.
 
     Returns code-defined constraint names, never request values, so callers can
     log the result directly (CWE-117).
     """
     caps = capabilities_for(provider)
     dropped: list[str] = []
-    if request.cabin and not caps.cabin and request.cabin != caps.implicit_cabin:
+    if request.cabin and not caps.cabin:
         dropped.append("cabin")
     return tuple(dropped)
 

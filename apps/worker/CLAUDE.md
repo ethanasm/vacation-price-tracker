@@ -96,17 +96,23 @@ top 5 against live data. Gated behind the `beta_optimizer` feature flag (DB
 
 ## Post-fetch filtering (`activities/price_check.py`)
 
-No provider supports these filters natively, so both are applied in-memory
-after fetching:
+Both are applied in-memory after fetching, but for different reasons — and one
+of them is no longer a good reason:
 
-1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes:
+1. **Airlines** — match `trip.flight_prefs.airlines` against carrier codes.
+   *Skiplagged actually supports this server-side* (`preferredAirlines` /
+   `excludedAirlines` on `sk_flights_search`); filtering in-memory means
+   fetching and discarding results the API could have excluded. Worth pushing
+   down to the provider where supported. Current implementation:
    Kiwi offers carry structured `outbound`/`inbound` segments (read directly);
    fast-flights offers carry a `carrier_codes` list spanning outbound + any
    attached return options;
    Skiplagged codes are parsed from the `id` field via `parse_flight_segments()`.
-2. **Room types / views** — match `preferred_room_types` and `preferred_views`
-   against each room's `title` (from `get_hotel_details`) and the hotel's
-   `amenityNames`.
+2. **Room types / views** — genuinely unavailable provider-side
+   (`sk_hotels_search` accepts only city, dates, occupancy, and paging), so
+   this one has to stay in-memory: match `preferred_room_types` and
+   `preferred_views` against each room's `title` (from `get_hotel_details`)
+   and the hotel's `amenityNames`.
 
 ## Resilience
 

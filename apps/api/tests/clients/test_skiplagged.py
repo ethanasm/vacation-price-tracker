@@ -198,6 +198,83 @@ class TestSkiplaggedFlightSearch:
         _tool, params = mock_call.call_args.args
         assert params.get("includeHiddenCity") is False
 
+    @staticmethod
+    def _empty_page() -> dict:
+        return {
+            "flights": [],
+            "pagination": {
+                "totalAvailable": 0,
+                "currentlyShowing": 0,
+                "offset": 0,
+                "limit": 75,
+                "hasMoreResults": False,
+            },
+        }
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("cabin", "expected"),
+        [
+            ("economy", "economy"),
+            ("premium_economy", "premium"),
+            ("business", "business"),
+            ("first", "first"),
+        ],
+    )
+    async def test_cabin_maps_onto_skiplagged_fare_class(self, cabin, expected):
+        """Skiplagged filters by cabin via `fareClass` — only premium economy is respelled.
+
+        This client sent no cabin at all until 2026-08-06, so every search
+        silently took the API's `economy` default; a first-class trip was
+        tracked at economy prices with nothing to show for it.
+        """
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = self._empty_page()
+            await client.search_flights("SFO", "JFK", "2026-09-15", cabin=cabin)
+        _tool, params = mock_call.call_args.args
+        assert params["fareClass"] == expected
+
+    @pytest.mark.anyio
+    async def test_no_cabin_sends_no_fare_class(self):
+        """Absent a preference, let the API pick its own default rather than guessing."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = self._empty_page()
+            await client.search_flights("SFO", "JFK", "2026-09-15")
+        _tool, params = mock_call.call_args.args
+        assert "fareClass" not in params
+
+    @pytest.mark.anyio
+    async def test_unknown_cabin_is_dropped_not_forwarded(self):
+        """The tool rejects values outside its enum, so never pass one through."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = self._empty_page()
+            await client.search_flights("SFO", "JFK", "2026-09-15", cabin="sleeper-pod")
+        _tool, params = mock_call.call_args.args
+        assert "fareClass" not in params
+
+    @pytest.mark.anyio
+    async def test_tracking_path_forwards_cabin_on_every_page(self):
+        """The worker's multi-page sweep must not lose the cabin after page 1."""
+        client = SkiplaggedClient()
+        client._initialized = True
+        client._session_id = "test-session"
+        with patch.object(client, "_call_mcp", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = self._empty_page()
+            await client.search_flights_all(
+                "SFO", "JFK", "2026-09-15", cabin="business", max_pages=2
+            )
+        for call in mock_call.call_args_list:
+            assert call.args[1]["fareClass"] == "business"
+
     @pytest.mark.anyio
     async def test_search_flights_all_always_excludes_hidden_city(self):
         """includeHiddenCity must be False on every paginated call too."""
