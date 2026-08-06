@@ -764,6 +764,114 @@ async def test_ceilings_allow_when_under_all_limits(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_chat_quota_rejection_refunds_the_api_quota(monkeypatch):
+    """A request rejected by the chat cap must not keep the api quota it took.
+
+    The ceilings are charged in order — api, then chat — so a chat request that
+    the chat cap refuses has already incremented the *overall* api counter. Left
+    uncorrected, a user parked at their 200/day chat cap burns the 2000/day API
+    quota purely on rejected retries, and is eventually locked out of trips,
+    settings, and everything else until UTC midnight by requests that never ran.
+    """
+    charged: list[tuple[str, str]] = []
+    refunded: list[tuple[str, str]] = []
+
+    async def mock_quota(identifier, resource, limit, **kwargs):
+        charged.append((identifier, resource))
+        if resource == "chat":
+            return False, 0, 1800
+        return True, 5, 0
+
+    async def mock_release(identifier, resource, **kwargs):
+        refunded.append((identifier, resource))
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
+    monkeypatch.setattr(rate_limit_module, "release_daily_quota", mock_release)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+
+    assert result is not None and result.status_code == 429
+    assert charged == [("user:abc", "api"), ("user:abc", "chat")]
+    # The api charge is given back; the chat charge is not — the chat counter is
+    # the one that did the rejecting and its total is already correct.
+    assert refunded == [("user:abc", "api")]
+
+
+@pytest.mark.asyncio
+async def test_breaker_rejection_refunds_every_quota_it_charged(monkeypatch):
+    """Same guarantee when the rejection comes from the global breaker.
+
+    The breaker is read-only, so both daily quotas have been charged by the time
+    it refuses — and neither of them is the reason the call was rejected.
+    """
+    refunded: list[tuple[str, str]] = []
+
+    async def allow_quota(*args, **kwargs):
+        return True, 1, 0
+
+    async def tripped(metric, limit, **kwargs):
+        return metric == "groq_tokens"
+
+    async def mock_release(identifier, resource, **kwargs):
+        refunded.append((identifier, resource))
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", allow_quota)
+    monkeypatch.setattr(rate_limit_module, "is_global_budget_tripped", tripped)
+    monkeypatch.setattr(rate_limit_module, "release_daily_quota", mock_release)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+
+    assert result is not None and result.status_code == 503
+    assert refunded == [("user:abc", "api"), ("user:abc", "chat")]
+
+
+@pytest.mark.asyncio
+async def test_allowed_request_refunds_nothing(monkeypatch):
+    """The rollback must not fire on the happy path, or nothing is ever counted."""
+    refunded: list[tuple[str, str]] = []
+
+    async def allow_quota(*args, **kwargs):
+        return True, 1, 0
+
+    async def not_tripped(metric, limit, **kwargs):
+        return False
+
+    async def mock_release(identifier, resource, **kwargs):
+        refunded.append((identifier, resource))
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", allow_quota)
+    monkeypatch.setattr(rate_limit_module, "is_global_budget_tripped", not_tripped)
+    monkeypatch.setattr(rate_limit_module, "release_daily_quota", mock_release)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    assert await _check_daily_ceilings(request, "user:abc") is None
+    assert refunded == []
+
+
+@pytest.mark.asyncio
+async def test_api_quota_rejection_refunds_nothing(monkeypatch):
+    """The first ceiling rejecting has nothing earlier to give back."""
+    refunded: list[tuple[str, str]] = []
+
+    async def mock_quota(identifier, resource, limit, **kwargs):
+        return False, 0, 3600
+
+    async def mock_release(identifier, resource, **kwargs):
+        refunded.append((identifier, resource))
+
+    monkeypatch.setattr(rate_limit_module, "check_and_incr_daily_quota", mock_quota)
+    monkeypatch.setattr(rate_limit_module, "release_daily_quota", mock_release)
+
+    request = _make_request(method="POST", path="/v1/chat/messages")
+    result = await _check_daily_ceilings(request, "user:abc")
+
+    assert result is not None and result.status_code == 429
+    assert refunded == []
+
+
+@pytest.mark.asyncio
 async def test_middleware_blocks_on_daily_ceiling(monkeypatch):
     """Full middleware: per-minute OK but daily ceiling trips -> rejection."""
 

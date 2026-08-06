@@ -116,10 +116,27 @@ the SQLite test DB.
 
 On top of the per-minute limiter, two Redis-backed daily defenses guard against
 unbounded spend (a user parked at the per-minute cap for hours, or a leaked
-session). All counters carry a `:{YYYYMMDD}` (UTC) suffix and a
+session). All counters carry a UTC day bucket in their key and a
 seconds-to-midnight TTL, so they **auto-reset at UTC midnight — no cron**. Every
 helper **fails open** on a Redis error. Always on (like the per-minute limiter);
 there is no on/off flag — set a limit very high to effectively disable it.
+
+**This module is an adapter over the `mcp-budget-governor` library** — the
+design was extracted from here into that package and adopted back. The Lua, the
+key scheme, and the gated/ungated counter semantics live in the library (tested
+there against fakeredis executing the scripts for real, plus a real-Redis CI
+job); `quota.py` keeps vpt's public function signatures, fail-open behaviour,
+and the catalogued Axiom events (`budget.breaker_tripped`,
+`quota.release_failed`; the middleware's `quota.daily_exceeded` /
+`budget.breaker_rejected` are unchanged). Counter keys are the library's scheme:
+`mcpbg:daily_{resource}:user={identifier}:{YYYYMMDD}` and
+`mcpbg:{metric}:global:{YYYYMMDD}`. Backend-failure logs are the library's
+`governor.backend_unavailable` (replacing the old `quota.check_failed` /
+`budget.incr_failed` / `budget.read_failed`). Two adapter guarantees are pinned
+by tests: `local_fallback=False` (prod has always failed *fully* open — turning
+on the library's per-replica fallback is its own future decision, not a drive-by)
+and the backend not owning the shared Redis client. The dependency is pinned to
+a git commit until the library ships on PyPI.
 
 - **Per-user daily quota** — day-bucketed counters enforced in
   `rate_limit_middleware`: an overall API cap (`DAILY_QUOTA_PER_USER`, default
@@ -127,6 +144,18 @@ there is no on/off flag — set a limit very high to effectively disable it.
   `/v1/chat/elicitation`) via `CHAT_DAILY_QUOTA_PER_USER` (default 200). Over
   limit → 429 with `Retry-After` = seconds to midnight. Keys:
   `daily_quota:{identifier}:{resource}:{day}`.
+- **Ceilings are all-or-nothing.** They are charged in order (api → chat → the
+  read-only breakers), so a request refused by a *later* ceiling has already
+  incremented every *earlier* one. `_check_daily_ceilings` therefore refunds
+  whatever it charged before returning a rejection, via `release_daily_quota`
+  (a `DECRBY` guarded by `EXISTS` so it can't resurrect an expired day bucket
+  into a negative value, and `KEEPTTL` so a refund never extends a key's life).
+  Without the refund a user parked at their 200/day chat cap drained the
+  2000/day *overall API* quota on rejected retries and was eventually locked out
+  of trips, settings, and everything else until UTC midnight by calls that never
+  ran. The **per-minute** counter is deliberately not refunded: it is the
+  backpressure that stops a retry loop, and it clears within the minute anyway.
+  If you add a ceiling, add it to the `charged` list too.
 - **Global daily budget guard / circuit breaker** — a per-UTC-day counter per
   metric, incremented at the two shared provider chokepoints so the worker's
   scheduled refreshes are covered too:

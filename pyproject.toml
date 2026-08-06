@@ -33,6 +33,9 @@ dependencies = [
     "tiktoken>=0.13.0",
     "langfuse>=4.14.2,<5",
     "axiom-py>=0.12.0",
+    # The cost/abuse-ceiling kernel, extracted FROM this codebase and adopted
+    # back — app/core/quota.py is now a thin adapter over it.
+    "mcp-budget-governor>=0.1.0,<0.2",
 ]
 
 [project.optional-dependencies]
