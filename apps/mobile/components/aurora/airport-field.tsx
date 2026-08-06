@@ -21,6 +21,25 @@ const MAX_SUGGESTIONS = 5;
  * code (swapping a pretty label through the controlled value would let a
  * fast keystroke feed the label back into form state).
  *
+ * `collapsable={false}` on the outer wrap is load-bearing, not decoration. It
+ * pins the wrap as a real native view unconditionally, and that view must never
+ * come and go: it used to gain `zIndex`/`elevation` only while the list was
+ * open, and those are precisely the props that decide whether a View forms a
+ * native view at all (`!collapsable`, `zIndex` on a non-static position, and —
+ * Android only — `elevation != 0`; see ViewShadowNode::formsStackingContext and
+ * HostPlatformViewTraitsInitializer). Flipping them flipped this wrap between
+ * flattened (no native view) and unflattened, and unflattening re-parents the
+ * whole subtree — including the focused TextInput — into the newly created
+ * view. A view detached from the window resigns first responder on iOS and
+ * clears focus on Android, so the keyboard closed the instant the dropdown
+ * appeared on the 2nd character; and because re-tapping the field re-opened the
+ * dropdown (handleFocus), it blurred again immediately, locking the user out of
+ * the From/To fields entirely. `collapsable={false}` is the one guard that
+ * holds on both platforms — never trade it for a conditional style. Ordering
+ * *between* the two airport fields is the parent screen's job (see the static
+ * originFieldWrap / destinationFieldWrap z-order in app/trip/new.tsx and
+ * app/trip/[id]/edit.tsx).
+ *
  * testID contract (Maestro): the input is `testID`; each suggestion row is
  * `${testID}-option-<CODE>`.
  */
@@ -106,9 +125,9 @@ export function AirportField({
       };
 
   return (
-    // Lift the whole field above its siblings while the overlay is open so
-    // the dropdown paints over the fields below instead of under them.
-    <View style={[styles.wrap, open ? styles.wrapRaised : null]}>
+    // Never flattened: see the note above — a wrap that materializes only while
+    // the list is open re-parents the focused TextInput and kills the keyboard.
+    <View collapsable={false} style={styles.wrap}>
       <Text
         style={{
           color: tokens.color.textBodyAlt,
@@ -205,8 +224,11 @@ export function AirportField({
 }
 
 const styles = StyleSheet.create({
+  // Deliberately carries no zIndex/elevation: the wrap is pinned as a native
+  // view by collapsable={false}, and stacking is the parent screen's job. Adding
+  // stacking props here is fine only if they are unconditional — see the note
+  // on the component.
   wrap: { marginBottom: 14 },
-  wrapRaised: { zIndex: 30, elevation: 30 },
   anchor: { position: 'relative' },
   row: { flexDirection: 'row', alignItems: 'center' },
   input: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, fontSize: 15 },
@@ -220,7 +242,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     zIndex: 30,
-    elevation: 30,
+    // No `elevation` here: tokens.shadow.cardOnCanvas is applied after this
+    // style and sets elevation 8, so anything declared here is dead. 8 already
+    // clears every sibling inside the wrap (all at 0).
   },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 12 },
   optionIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
