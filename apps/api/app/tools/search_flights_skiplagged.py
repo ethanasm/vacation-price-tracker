@@ -100,7 +100,7 @@ class SearchFlightsSkiplaggedTool(BaseTool):
         offset = args.get("offset", 0)
 
         provider = await get_flight_provider_name(db)
-        client = self._client_for(provider)
+        make_client = self._client_for
 
         try:
             result = await run_flight_search(
@@ -117,7 +117,7 @@ class SearchFlightsSkiplaggedTool(BaseTool):
                     offset=offset,
                     cabin=args.get("cabin"),
                 ),
-                client=client,
+                client_factory=make_client,
             )
 
             if not result.success:

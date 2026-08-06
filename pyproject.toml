@@ -36,6 +36,7 @@ dependencies = [
     # The cost/abuse-ceiling kernel, extracted FROM this codebase and adopted
     # back — app/core/quota.py is now a thin adapter over it.
     "mcp-budget-governor>=0.1.0,<0.2",
+    "provider-router>=0.1.0",
 ]
 
 [project.optional-dependencies]
