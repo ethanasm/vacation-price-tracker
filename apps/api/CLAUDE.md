@@ -175,15 +175,17 @@ stops, cabin), so no id-string parsing; the full itinerary rides along in
 `raw_data` for the worker's airline filter and the trips router's itinerary
 builder (`_parse_kiwi_flight_offer`). **No server-side pagination** — the
 schema has no `limit`/`offset`/`page` argument at all, so a search is ~15
-itineraries and `limit` is a client-side truncation. Sorting and stop/airline
-filtering are a different matter: `search-flight` *does* accept `sort`
-(`price|duration|quality|date|popularity`), `max_sector_stopovers`, and
-`select_airlines`/`exclude_airlines` (the last two mutually exclusive). We
-apply sort and max-stops in memory regardless (`_apply_sort` /
-`_apply_max_stops`) — partly because our `sort="value"` default means "leave
-Kiwi's own ordering alone", which has no server-side equivalent. That is a
-missed optimization to revisit, not a provider limitation; this file claimed
-the latter until 2026-08-06. Each stateless
+itineraries and `limit` is a client-side truncation. That is the only real gap.
+Sorting and stop/airline filtering are a different matter: `search-flight` *does*
+accept `sort` (`price|duration|quality|date|popularity`),
+`max_sector_stopovers`, and `select_airlines`/`exclude_airlines` (the last two
+mutually exclusive). **We send none of them** — `_arguments` omits `sort`
+entirely, so results arrive in Kiwi's default price order and are re-sorted by
+`_apply_sort`, and `_apply_max_stops` filters after the fact even though a Kiwi
+"sector" is exactly the per-direction leg it counts. Unexploited pushdowns to
+revisit, not provider limitations; this file claimed the latter until
+2026-08-06. (Our `sort="value"` default is Skiplagged's vocabulary leaking into
+a shared signature: on Kiwi it just means "don't re-sort".) Each stateless
 call returns a *varying* sample of pairings that can miss whole carriers, so
 the tracking path (`search_flights_all`) unions `COVERAGE_QUERIES` queries,
 deduped by segment fingerprint (cheapest price per pairing wins). Airline
