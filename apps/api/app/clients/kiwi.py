@@ -8,9 +8,18 @@ no ``initialize`` handshake and no ``mcp-session-id`` header — every
 The server exposes a single search tool, ``search-flight``, which returns
 round-trip itineraries with **structured per-segment data** (carrier code,
 flight number, departure/arrival airports and times, durations, stops, cabin
-class). It supports no server-side pagination, sorting, or stop filtering, so
-those are applied client-side to keep the public interface compatible with
-``SkiplaggedClient``.
+class).
+
+``search-flight`` has **no pagination argument** — no ``limit``, ``offset`` or
+``page`` — so one call is one ~15-itinerary sample and ``limit`` can only be a
+client-side truncation. It *does* accept ``sort``
+(``price|duration|quality|date|popularity``), ``max_sector_stopovers`` and
+``select_airlines``/``exclude_airlines``; this module applies sort and
+max-stops in memory anyway (see ``_apply_sort`` / ``_apply_max_stops``), which
+keeps the interface compatible with ``SkiplaggedClient`` and lets the default
+``sort="value"`` mean "preserve Kiwi's own ordering" — a thing no server-side
+value expresses. Verified against ``tools/list`` 2026-08-06. Do not restate
+this module's choices as provider limitations; check the schema.
 """
 
 from __future__ import annotations
@@ -714,7 +723,12 @@ def _flight_fingerprint(flight: FlightSearchFlight) -> str:
 def _apply_max_stops(
     flights: list[FlightSearchFlight], max_stops: str | None
 ) -> list[FlightSearchFlight]:
-    """Client-side stop filter over both legs (Kiwi has no server-side filter)."""
+    """Client-side stop filter over both legs.
+
+    Kiwi *does* have ``max_sector_stopovers``; this filter is in memory because
+    it counts stops per **leg** as our schema reports them, not per sector.
+    Pushing it down is an open optimization, not something the provider blocks.
+    """
     if max_stops not in ("none", "one"):
         return flights
     ceiling = 0 if max_stops == "none" else 1

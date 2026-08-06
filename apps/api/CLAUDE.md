@@ -173,8 +173,17 @@ Set `MOCK_SKIPLAGGED_API=true` to use `skiplagged_mock.py` in development.
 per-segment data** (carrier, flight number, airports, ISO times, durations,
 stops, cabin), so no id-string parsing; the full itinerary rides along in
 `raw_data` for the worker's airline filter and the trips router's itinerary
-builder (`_parse_kiwi_flight_offer`). No server-side pagination/sort/stop
-filtering — applied client-side (~15 itineraries per search). Each stateless
+builder (`_parse_kiwi_flight_offer`). **No server-side pagination** — the
+schema has no `limit`/`offset`/`page` argument at all, so a search is ~15
+itineraries and `limit` is a client-side truncation. Sorting and stop/airline
+filtering are a different matter: `search-flight` *does* accept `sort`
+(`price|duration|quality|date|popularity`), `max_sector_stopovers`, and
+`select_airlines`/`exclude_airlines` (the last two mutually exclusive). We
+apply sort and max-stops in memory regardless (`_apply_sort` /
+`_apply_max_stops`) — partly because our `sort="value"` default means "leave
+Kiwi's own ordering alone", which has no server-side equivalent. That is a
+missed optimization to revisit, not a provider limitation; this file claimed
+the latter until 2026-08-06. Each stateless
 call returns a *varying* sample of pairings that can miss whole carriers, so
 the tracking path (`search_flights_all`) unions `COVERAGE_QUERIES` queries,
 deduped by segment fingerprint (cheapest price per pairing wins). Airline
