@@ -88,6 +88,31 @@ return {1, remaining, 0}
 """
 
 
+# DECRBY, but only against a key that still exists. Returns the resulting total.
+#
+# The existence check matters: a bare DECRBY on a missing key *creates* it at a
+# negative value, which then lingers for a full day and silently hands that user
+# extra headroom. If the day bucket rolled over between the increment and the
+# refund, the charge expired with it and there is nothing to give back.
+#
+# KEEPTTL on the clamp so a refund never resurrects a key's lifetime either.
+_RELEASE_QUOTA_LUA = """
+local key = KEYS[1]
+local amount = tonumber(ARGV[1])
+
+if redis.call('EXISTS', key) == 0 then
+    return 0
+end
+
+local total = redis.call('DECRBY', key, amount)
+if total < 0 then
+    redis.call('SET', key, 0, 'KEEPTTL')
+    return 0
+end
+return total
+"""
+
+
 # INCRBY → repair TTL when missing → compare to limit. Returns [within, total].
 _GLOBAL_BUDGET_LUA = """
 local key = KEYS[1]
@@ -136,6 +161,38 @@ async def check_and_incr_daily_quota(
             extra={"event": "quota.check_failed"},
         )
         return True, limit, 0
+
+
+async def release_daily_quota(
+    identifier: str,
+    resource: str,
+    *,
+    amount: int = 1,
+    now: datetime | None = None,
+) -> None:
+    """Give back a daily-quota unit taken by a request that was then rejected.
+
+    Ceilings are charged in order, so a request refused by a *later* ceiling has
+    already incremented every *earlier* one. Without a refund, a user parked at
+    their chat cap would drain the overall API quota on rejected retries and end
+    up locked out of the whole API by calls that never ran.
+
+    Best-effort by design: this runs on a path whose job is to reject a request,
+    the caller already has its answer, and a failed refund leaves one counter
+    slightly over-counted for the rest of the day. That is a strictly safer
+    failure than turning a 429 into a 500.
+    """
+    moment = _now(now)
+    key = CacheKeys.daily_quota(identifier, resource, _day_bucket(moment))
+    try:
+        await redis_client.eval(_RELEASE_QUOTA_LUA, 1, key, str(amount))
+    except Exception as exc:
+        logger.warning(
+            "Daily quota refund failed: %s",
+            exc,
+            exc_info=exc,
+            extra={"event": "quota.release_failed", "resource": resource},
+        )
 
 
 async def incr_and_check_global_budget(

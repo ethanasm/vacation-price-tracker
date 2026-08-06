@@ -74,6 +74,64 @@ async def test_daily_quota_fails_open_on_redis_error(monkeypatch, caplog):
 
 
 # =============================================================================
+# release_daily_quota
+#
+# These cover the Python side; the Lua's own guarantee — that a refund against an
+# already-expired day bucket is a no-op rather than a resurrection into a
+# negative value — is the same script as, and is executed for real by, the
+# mcp-budget-governor suite (fakeredis plus a real-Redis CI job). vpt's tests
+# mock `eval`, so asserting on the script text is the most they can do here.
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_release_daily_quota_evals_against_the_days_key(monkeypatch):
+    eval_mock = AsyncMock(return_value=3)
+    monkeypatch.setattr(quota.redis_client, "eval", eval_mock)
+
+    now = datetime(2026, 6, 23, 12, 0, 0, tzinfo=UTC)
+    await quota.release_daily_quota("user:abc", "api", now=now)
+
+    script, numkeys, key, amount = eval_mock.await_args.args
+    assert numkeys == 1
+    assert key.endswith(":20260623")
+    assert "user:abc" in key and "api" in key
+    assert amount == "1"
+
+
+@pytest.mark.asyncio
+async def test_release_daily_quota_refuses_to_resurrect_a_missing_key(monkeypatch):
+    """The script must bail on a missing key rather than DECRBY it negative.
+
+    A bare DECRBY creates the key at -1, which survives a full day and silently
+    hands that user extra headroom. Asserted on the script itself because the
+    Redis client is mocked here.
+    """
+    monkeypatch.setattr(quota.redis_client, "eval", AsyncMock(return_value=0))
+    await quota.release_daily_quota("user:abc", "api")
+
+    assert "EXISTS" in quota._RELEASE_QUOTA_LUA
+    # And the clamp must not extend the key's lifetime either.
+    assert "KEEPTTL" in quota._RELEASE_QUOTA_LUA
+
+
+@pytest.mark.asyncio
+async def test_release_daily_quota_swallows_redis_errors(monkeypatch, caplog):
+    """A failed refund must not turn a 429 into a 500.
+
+    This runs on a path whose job is to reject the request; the caller already
+    has its answer, and one over-counted counter for the rest of the day is a far
+    better failure than an unhandled exception in middleware.
+    """
+    monkeypatch.setattr(
+        quota.redis_client, "eval", AsyncMock(side_effect=RuntimeError("redis down"))
+    )
+    with caplog.at_level("WARNING"):
+        await quota.release_daily_quota("user:abc", "api")
+    assert "Daily quota refund failed" in caplog.text
+
+
+# =============================================================================
 # incr_and_check_global_budget
 # =============================================================================
 

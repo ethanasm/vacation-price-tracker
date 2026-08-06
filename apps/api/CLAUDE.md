@@ -127,6 +127,18 @@ there is no on/off flag — set a limit very high to effectively disable it.
   `/v1/chat/elicitation`) via `CHAT_DAILY_QUOTA_PER_USER` (default 200). Over
   limit → 429 with `Retry-After` = seconds to midnight. Keys:
   `daily_quota:{identifier}:{resource}:{day}`.
+- **Ceilings are all-or-nothing.** They are charged in order (api → chat → the
+  read-only breakers), so a request refused by a *later* ceiling has already
+  incremented every *earlier* one. `_check_daily_ceilings` therefore refunds
+  whatever it charged before returning a rejection, via `release_daily_quota`
+  (a `DECRBY` guarded by `EXISTS` so it can't resurrect an expired day bucket
+  into a negative value, and `KEEPTTL` so a refund never extends a key's life).
+  Without the refund a user parked at their 200/day chat cap drained the
+  2000/day *overall API* quota on rejected retries and was eventually locked out
+  of trips, settings, and everything else until UTC midnight by calls that never
+  ran. The **per-minute** counter is deliberately not refunded: it is the
+  backpressure that stops a retry loop, and it clears within the minute anyway.
+  If you add a ceiling, add it to the `charged` list too.
 - **Global daily budget guard / circuit breaker** — a per-UTC-day counter per
   metric, incremented at the two shared provider chokepoints so the worker's
   scheduled refreshes are covered too:
