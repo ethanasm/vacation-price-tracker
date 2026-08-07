@@ -54,6 +54,14 @@ on:
       - ".github/workflows/web.yml"
       - ".github/workflows/server.yml"
       - ".github/workflows/sonarqube.yml"
+  # Manual re-trigger. The scan can die for reasons that have nothing to do
+  # with the code — 2026-08-06 it failed in "Set up job" with GitHub's own
+  # "Failed to resolve action download info: Service Unavailable", leaving
+  # main's latest analysis red with a green gate behind it. Without this,
+  # re-running needs either repo Actions write access or a dummy commit.
+  # Dispatch re-uses the coverage artifacts already published for the ref's
+  # head SHA, so it only works on a SHA whose web/server runs succeeded.
+  workflow_dispatch:
 
 concurrency:
   group: sonar-${{ github.ref }}
@@ -91,6 +99,13 @@ jobs:
           set -euo pipefail
           for wf in web.yml server.yml; do
             deadline=$(( $(date +%s) + 1800 ))  # 30 min per workflow
+            # A run that never appears means no coverage will ever arrive —
+            # the usual cause is a workflow_dispatch on a SHA whose coverage
+            # workflows didn't run. Say so in 3 minutes rather than burning
+            # the full 30 on a wait that cannot succeed. The grace window
+            # covers the seconds between this job starting and GitHub
+            # registering the sibling runs on a push/PR.
+            absent_deadline=$(( $(date +%s) + 180 ))
             while true; do
               # Tolerate transient API errors: treat a failed poll like an
               # in-progress run and retry until the deadline.
@@ -105,6 +120,10 @@ jobs:
                 fi
                 echo "$wf completed successfully."
                 break
+              fi
+              if [ "$status" = "absent" ] && [ "$(date +%s)" -ge "$absent_deadline" ]; then
+                echo "::error::No $wf run exists for $HEAD_SHA, so its coverage artifact will never be published. If this is a manual re-run, dispatch it on a commit whose Web and Server workflows both ran."
+                exit 1
               fi
               if [ "$(date +%s)" -ge "$deadline" ]; then
                 echo "::error::Timed out waiting for $wf on $HEAD_SHA (status: $status)."

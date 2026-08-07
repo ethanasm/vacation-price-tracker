@@ -376,6 +376,15 @@ change that triggers one triggers all (all-or-neither) — the scan's wait step
 depends on both coverage runs existing for its SHA. When editing any of the
 three triggers, keep them in lockstep.
 
+**Re-running a flaked scan.** `sonarqube.yml` also takes `workflow_dispatch`,
+because the scan can go red for reasons unrelated to the code — it once failed
+in "Set up job" on GitHub's own `Failed to resolve action download info:
+Service Unavailable`, leaving main's latest analysis red with a green gate
+behind it. Dispatch re-uses the coverage artifacts already published for the
+ref's head SHA, so it only works on a commit whose `web.yml` and `server.yml`
+runs both succeeded; if they didn't run at all, the wait step says so in three
+minutes instead of polling for thirty.
+
 ## Verification Preference
 
 - After code changes, automatically run the most relevant tests/checks without
