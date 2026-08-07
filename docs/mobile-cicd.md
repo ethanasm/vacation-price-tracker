@@ -155,6 +155,20 @@ the stack exists but `.env.e2e` has gone missing (a silent skip is how a stale
 e2e backend goes unnoticed for weeks), and warns — without failing the prod
 deploy — if the refresh itself errors or `/ready` doesn't come back.
 
+**If `e2e:db:migrate` fails, the refresh resets the e2e database** via
+`pnpm e2e:db:reset` (`DROP SCHEMA public CASCADE`, then `alembic upgrade head`,
+then an api/worker restart so flag/setting seeding re-runs). The e2e data is
+throwaway by design — only the Maestro test user's fixtures live there — and an
+unmigratable schema is worse than an empty one: the stack once ran for weeks on
+a database born from SQLModel `create_all` (tables but no `alembic_version`
+stamp, and `create_all` never adds columns to existing tables), so every
+refresh's migrate failed at `001_initial` on "users already exists" while the
+api 500'd on schema the migrations had never delivered. The api's startup
+`create_all` is now skipped for `ENVIRONMENT=e2e` (Alembic owns this schema,
+like prod), so a reset database stays migration-shaped. Prod is never
+auto-reset: a prod migration failure fails the deploy loudly in the earlier
+"Run database migrations" step.
+
 **The `POST /v1/e2e/mint-token` endpoint is owned by P5.** It lives in
 `apps/api/**`, is gated on `E2E_MODE=1` so it never exists in prod, and is
 authenticated via the `X-E2E-Token` header checked against
