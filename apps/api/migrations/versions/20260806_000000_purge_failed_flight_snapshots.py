@@ -22,9 +22,15 @@ conditions together, so a hotels-only trip (which legitimately has no flight
 price and no error) is never touched. Verified against production 2026-08-06:
 2 of 33 snapshots match, and they are exactly the 2 with a flights error.
 
-Revision ID: 012_purge_failed_flight_snapshots
+Revision ID: 012_purge_failed_snapshots
 Revises: 011_flight_provider
 Create Date: 2026-08-06 00:00:00.000000
+
+The revision id must stay within 32 characters: alembic's version table is
+``alembic_version.version_num VARCHAR(32)``, and the original id here
+(``012_purge_failed_flight_snapshots``, 33 chars) made every
+``alembic upgrade head`` fail while writing the version row — rolling back the
+whole upgrade on prod deploys and the e2e-stack refresh alike.
 """
 
 from collections.abc import Sequence
@@ -32,7 +38,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "012_purge_failed_flight_snapshots"
+revision: str = "012_purge_failed_snapshots"
 down_revision: str | None = "011_flight_provider"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
