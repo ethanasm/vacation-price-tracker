@@ -21,7 +21,9 @@ apps/api/tests/
 - Real HTTP requests/responses
 - Full OAuth flow with Google
 - Redis integration
-- Database migrations
+- Database migration *execution* (static chain/id checks live in
+  `test_migrations.py`; CI runs the real chain against Postgres in
+  `server.yml`)
 - CORS/middleware
 
 ## Future: Integration Tests

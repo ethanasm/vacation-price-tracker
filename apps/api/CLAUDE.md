@@ -50,6 +50,13 @@ the SQLite test DB.
 - Migrations: `pnpm db:migrate` (= `alembic upgrade head`), `pnpm db:migrate:new "<msg>"`
   to autogenerate, `pnpm db:migrate:status` for current revision. `env.py` reads
   `DATABASE_URL`.
+- **Revision ids must be ≤ 32 characters** — alembic records the current
+  revision in `alembic_version.version_num VARCHAR(32)`, and a longer id makes
+  every `alembic upgrade head` fail *while writing the version row*, rolling
+  the whole upgrade back (this broke prod deploys and the mobile-e2e stack;
+  see `012_purge_failed_snapshots`). Enforced by
+  `tests/test_migrations.py` and by the CI "Migrations against Postgres" step
+  in `server.yml`, which runs the full chain on a real Postgres.
 - Tables also include `feature_flags` (boolean toggles) and `app_settings`
   (string-valued toggles, e.g. `flight_provider`).
 - `PriceSnapshot.raw_data` is a JSONB column kept for debugging — query it when a
