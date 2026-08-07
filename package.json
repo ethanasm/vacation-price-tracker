@@ -73,6 +73,7 @@
     "e2e:ps": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml ps",
     "e2e:logs": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml logs -f --tail=100",
     "e2e:db:migrate": "docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml run --rm --entrypoint sh api -c 'cd /app && alembic upgrade head'",
+    "e2e:db:reset": "bash scripts/e2e-db-reset.sh",
     "e2e:health:ready": "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8010/ready"
   },
   "devDependencies": {

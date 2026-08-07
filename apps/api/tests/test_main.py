@@ -65,6 +65,42 @@ class TestLifespan:
             # Verify run_sync was called with metadata.create_all
             mock_conn.run_sync.assert_called_once()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("environment", ["production", "e2e"])
+    async def test_lifespan_skips_create_all_when_alembic_owns_schema(self, environment):
+        """No create_all in production or e2e — Alembic owns those schemas.
+
+        create_all never adds columns to existing tables, so a schema born
+        from it can't be migrated afterwards (alembic starts at 001_initial
+        and dies on "users already exists"). This is how the vpt-e2e database
+        drifted; the guard must skip both environments.
+        """
+        from contextlib import asynccontextmanager
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_conn = MagicMock()
+        mock_conn.run_sync = AsyncMock()
+
+        @asynccontextmanager
+        async def mock_begin():
+            yield mock_conn
+
+        mock_engine = MagicMock()
+        mock_engine.begin = mock_begin
+
+        with (
+            patch("app.main.async_engine", mock_engine),
+            patch("app.main.init_temporal_client", AsyncMock()),
+            patch("app.main.close_temporal_client", AsyncMock()),
+            patch("app.main.settings.environment", environment),
+        ):
+            from app.main import lifespan
+
+            async with lifespan(MagicMock()):
+                pass
+
+            mock_conn.run_sync.assert_not_called()
+
 
 class TestHealthEndpoint:
     """Test health check endpoint."""

@@ -70,10 +70,15 @@ if os.getenv("DEBUG") == "1":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup, cleanup on shutdown."""
-    # Create database tables in dev only. In production Alembic owns the schema
-    # (`pnpm prod:db:migrate`); auto-creating here would race migrations and
-    # leave the DB with tables but no alembic_version stamp.
-    if not settings.is_production:
+    # Create database tables only where the schema is throwaway (local dev,
+    # unit tests). Production AND the e2e stack are Alembic-owned
+    # (`pnpm prod:db:migrate` / `pnpm e2e:db:migrate`); auto-creating there
+    # races migrations and leaves the DB with tables but no alembic_version
+    # stamp. That is exactly how the vpt-e2e database drifted: born from
+    # create_all (which never adds columns to existing tables), every
+    # subsequent `alembic upgrade head` failed at 001_initial on
+    # "users already exists", and new-column schema never arrived.
+    if settings.environment not in ("production", "e2e"):
         async with async_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
 
