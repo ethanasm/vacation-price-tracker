@@ -47,6 +47,20 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      # For the migration step only — the unit suites run on SQLite.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vpt_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       ENVIRONMENT: test
       SECRET_KEY: test-secret
@@ -91,6 +105,16 @@ jobs:
 
       - name: Install Python dependencies
         run: uv sync --extra dev
+
+      # Run the full migration chain against a real Postgres. The unit suite
+      # runs on SQLite built from models, so nothing else executes these
+      # scripts — and some failures only exist on Postgres (e.g. a revision id
+      # overflowing alembic_version.version_num VARCHAR(32), which rolled back
+      # every prod deploy's upgrade; see 012_purge_failed_snapshots).
+      - name: Migrations against Postgres
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/vpt_migrate
+        run: uv run alembic upgrade head
 
       # Scope to the Python projects only — this workflow provisions the Python
       # toolchain; the workflow-level paths filter skips it on non-Python PRs.
