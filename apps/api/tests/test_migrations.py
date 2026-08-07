@@ -53,7 +53,8 @@ def _load_revisions() -> list[tuple[str, str, str | None]]:
     for script in scripts:
         tree = ast.parse(script.read_text(), filename=str(script))
         rev_found, rev = _extract_str_assignment(tree, "revision")
-        assert rev_found and isinstance(rev, str), f"{script.name}: no revision declaration found"
+        assert rev_found, f"{script.name}: no revision declaration found"
+        assert isinstance(rev, str), f"{script.name}: revision must be a string, got {rev!r}"
         down_found, down = _extract_str_assignment(tree, "down_revision")
         assert down_found, f"{script.name}: no down_revision declaration found"
         entries.append((script.name, rev, down))
