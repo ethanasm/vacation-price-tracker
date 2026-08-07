@@ -8,9 +8,26 @@ no ``initialize`` handshake and no ``mcp-session-id`` header — every
 The server exposes a single search tool, ``search-flight``, which returns
 round-trip itineraries with **structured per-segment data** (carrier code,
 flight number, departure/arrival airports and times, durations, stops, cabin
-class). It supports no server-side pagination, sorting, or stop filtering, so
-those are applied client-side to keep the public interface compatible with
-``SkiplaggedClient``.
+class).
+
+``search-flight`` has **no pagination argument** — no ``limit``, ``offset`` or
+``page`` — so one call is one ~15-itinerary sample and ``limit`` can only be a
+client-side truncation. That is the provider's one real gap.
+
+Everything else this module does in memory, it does by choice. ``search-flight``
+accepts ``sort`` (``price|duration|quality|date|popularity``),
+``max_sector_stopovers``, and ``select_airlines``/``exclude_airlines``
+(mutually exclusive), all verified against ``tools/list`` 2026-08-06. We send
+none of them: ``_arguments`` omits ``sort`` entirely — so every search comes
+back in Kiwi's default ``price`` order and is then re-sorted here — and
+``_apply_max_stops`` filters after the fact. Both are unexploited pushdowns.
+
+The ``sort="value"`` default is Skiplagged's vocabulary (its enum is
+``price|duration|value``) reaching a client whose provider has no such value;
+here it simply means "don't re-sort", which today leaves Kiwi's price ordering
+in place. ``price`` and ``duration`` map straight onto Kiwi's enum.
+
+Do not restate this module's choices as provider limitations; check the schema.
 """
 
 from __future__ import annotations
@@ -396,8 +413,9 @@ class KiwiClient:
             return_date: Return date for round trips (YYYY-MM-DD).
             adults: Number of adult passengers.
             max_stops: Stop filter ("none", "one", "many") — applied client-side.
-            sort: "price", "duration", or "value" — applied client-side
-                ("value" keeps Kiwi's own quality ordering).
+            sort: "price", "duration", or "value" — applied client-side.
+                "value" is Skiplagged vocabulary and means "don't re-sort",
+                leaving whatever order Kiwi returned (its default is by price).
             limit: Max results (client-side slice; Kiwi returns ~15).
             offset: Pagination offset (client-side slice).
             cabin: CabinClass value ("economy", "premium_economy", "business",
@@ -714,7 +732,12 @@ def _flight_fingerprint(flight: FlightSearchFlight) -> str:
 def _apply_max_stops(
     flights: list[FlightSearchFlight], max_stops: str | None
 ) -> list[FlightSearchFlight]:
-    """Client-side stop filter over both legs (Kiwi has no server-side filter)."""
+    """Client-side stop filter over both legs.
+
+    Kiwi's ``max_sector_stopovers`` is the same constraint by another name — a
+    Kiwi sector is one direction, which is what this counts — so this is an
+    unexploited pushdown, not something the provider blocks.
+    """
     if max_stops not in ("none", "one"):
         return flights
     ceiling = 0 if max_stops == "none" else 1
@@ -734,7 +757,10 @@ def _apply_max_stops(
 
 
 def _apply_sort(flights: list[FlightSearchFlight], sort: str) -> list[FlightSearchFlight]:
-    """Client-side sort; "value" preserves Kiwi's own quality ordering."""
+    """Client-side sort; "value" means "don't re-sort", keeping Kiwi's order.
+
+    We never send ``sort``, so that order is Kiwi's own default — by price.
+    """
     if sort == "price":
         return sorted(flights, key=lambda f: f.price_amount)
     if sort == "duration":

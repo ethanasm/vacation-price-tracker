@@ -1,19 +1,35 @@
-"""Cost / abuse ceilings: per-user daily quotas + a global daily budget guard.
+"""Cost / abuse ceilings, backed by the mcp-budget-governor library.
 
-These are Redis-backed defenses layered on top of the per-minute rate limiter
-(`app/middleware/rate_limit.py`):
+This module's design was extracted into the standalone `mcp-budget-governor`
+package and is now adopted back: the Lua, the key scheme, the day-bucketed
+self-expiry, and the gated/ungated split live in the library, and this module is
+the vpt-shaped adapter over it. The public functions, their signatures, their
+fail-open behaviour, and the Axiom events the observability catalog documents
+(`quota.daily_exceeded` is the middleware's; `budget.breaker_tripped` and
+`quota.release_failed` are emitted here) are all unchanged — callers and
+dashboards should not notice the swap.
 
-- **Per-user daily quota** (`check_and_incr_daily_quota`) — a day-bucketed
-  counter, atomically checked + incremented, mirroring the per-minute limiter.
-- **Global daily budget guard / circuit breaker** (`incr_and_check_global_budget`
-  + `is_global_budget_tripped`) — a per-UTC-day counter incremented at the shared
-  provider chokepoints (`groq.chat()`, `skiplagged._call_mcp()`) so a leaked
-  session or aggregate abuse can't run up an unbounded bill silently.
+Two deliberate adapter choices, so nobody re-derives them later:
 
-All keys carry a `:{YYYYMMDD}` (UTC) suffix and a seconds-to-midnight TTL, so the
-quotas and the breaker auto-reset at UTC midnight — no cleanup job. Every helper
-**fails open** on Redis error (logs a warning, allows the request); the per-user
-quota and per-minute limiter remain the backstop.
+- **Per-call policies.** vpt's callers pass caps as arguments (they come from
+  `Settings`, but tests pass arbitrary values), while a library `Policy` is
+  frozen. Building a one-limit policy per call keeps the public contract exact;
+  a `Policy` is two small frozen dataclasses, so this costs allocations, not
+  round trips.
+- **`local_fallback=False`.** The library can degrade a fail-open limit to
+  per-replica enforcement when Redis is down; production vpt has always failed
+  fully open, and this adoption must not silently change prod behaviour. Turning
+  the fallback on is its own future decision, not a side effect of this swap.
+
+**Operational note:** counter keys move from `daily_quota:*` / `global_budget:*`
+to the library's `mcpbg:*` scheme, so the deploy that ships this resets the
+day's counters once (in the permissive direction — everyone starts the day
+fresh). The old keys expire on their own at UTC midnight.
+
+Backend failure events: the library logs `governor.backend_unavailable` (WARNING,
+with the limit name) where this module used to log `quota.check_failed` /
+`budget.incr_failed` / `budget.read_failed`; those records still carry an
+`event` field and ship to Axiom.
 """
 
 from __future__ import annotations
@@ -21,10 +37,26 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
-from app.core.cache_keys import CacheKeys, CacheTTL
+from mcp_budget_governor import (
+    Context,
+    Governor,
+    Limit,
+    Policy,
+    RedisBackend,
+    Scope,
+    Unit,
+    Window,
+)
+from mcp_budget_governor import keys as governor_keys
+
+from app.core.cache_keys import CacheTTL
 from app.db.redis import redis_client
 
 logger = logging.getLogger(__name__)
+
+#: One backend for the whole app, sharing the app's Redis pool. It does not own
+#: the client — closing vpt's Redis is the app lifespan's job, not this module's.
+_backend = RedisBackend(redis_client)
 
 
 def _now(now: datetime | None) -> datetime:
@@ -32,16 +64,15 @@ def _now(now: datetime | None) -> datetime:
 
 
 def _day_bucket(now: datetime) -> str:
-    """UTC calendar-day bucket, e.g. '20260623'."""
+    """UTC calendar-day bucket, e.g. '20260623'. Kept for callers and tests."""
     return now.astimezone(UTC).strftime("%Y%m%d")
 
 
 def _seconds_to_utc_midnight(now: datetime | None = None) -> int:
     """Seconds from `now` until the next 00:00 UTC.
 
-    Used as the TTL for every day-bucket key so they all expire together at the
-    reset boundary. Floored at `CacheTTL.DAILY_QUOTA_MIN_TTL` so a request landing
-    a second before midnight still sets a usable TTL.
+    Still exported for the middleware's 503 `Retry-After`. Floored at
+    `CacheTTL.DAILY_QUOTA_MIN_TTL`, matching the library's own TTL floor.
     """
     current = _now(now).astimezone(UTC)
     next_midnight = (current + timedelta(days=1)).replace(
@@ -50,61 +81,27 @@ def _seconds_to_utc_midnight(now: datetime | None = None) -> int:
     return max(CacheTTL.DAILY_QUOTA_MIN_TTL, int((next_midnight - current).total_seconds()))
 
 
-# GET → compare to limit → INCR → repair TTL when missing. Returns
-# [allowed, remaining, retry_after]. Mirrors the per-minute limiter's script but
-# with a seconds-to-midnight TTL and an unconditional EXPIRE whenever the key has
-# no TTL (a dropped EXPIRE on a day-bucket key would otherwise never self-heal).
-_DAILY_QUOTA_LUA = """
-local key = KEYS[1]
-local max_requests = tonumber(ARGV[1])
-local ttl = tonumber(ARGV[2])
-
-local current = redis.call('GET', key)
-if current == false then
-    current = 0
-else
-    current = tonumber(current)
-end
-
-if current >= max_requests then
-    local remaining_ttl = redis.call('TTL', key)
-    if remaining_ttl < 0 then
-        redis.call('EXPIRE', key, ttl)
-        remaining_ttl = ttl
-    end
-    return {0, 0, remaining_ttl}
-end
-
-local new_count = redis.call('INCR', key)
-if redis.call('TTL', key) < 0 then
-    redis.call('EXPIRE', key, ttl)
-end
-
-local remaining = max_requests - new_count
-if remaining < 0 then
-    remaining = 0
-end
-return {1, remaining, 0}
-"""
+def _daily_limit(resource: str, cap: int) -> Limit:
+    """A per-user, per-UTC-day gated limit for one resource ('api', 'chat')."""
+    return Limit(f"daily_{resource}", cap=cap, window=Window.DAY, scope=Scope.USER)
 
 
-# INCRBY → repair TTL when missing → compare to limit. Returns [within, total].
-_GLOBAL_BUDGET_LUA = """
-local key = KEYS[1]
-local amount = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2])
-local ttl = tonumber(ARGV[3])
+def _budget_limit(metric: str, cap: int) -> Limit:
+    """The global daily budget for one metric ('groq_tokens', ...). Ungated —
+    spend already incurred is always recorded — and a breaker by role."""
+    return Limit(
+        metric, cap=cap, window=Window.DAY, unit=Unit.TOKENS, breaker=True, gated=False
+    )
 
-local total = redis.call('INCRBY', key, amount)
-if redis.call('TTL', key) < 0 then
-    redis.call('EXPIRE', key, ttl)
-end
 
-if total <= limit then
-    return {1, total}
-end
-return {0, total}
-"""
+def _governor(limit: Limit, now: datetime | None) -> Governor:
+    moment = _now(now)
+    return Governor(
+        Policy.of(limit),
+        _backend,
+        local_fallback=False,  # prod parity: fail fully open, as vpt always has
+        clock=lambda: moment,
+    )
 
 
 async def check_and_incr_daily_quota(
@@ -117,25 +114,49 @@ async def check_and_incr_daily_quota(
     """Atomically check + increment a per-day counter for (identifier, resource).
 
     Returns ``(allowed, remaining, retry_after_seconds)``. When over limit,
-    ``(False, 0, seconds_to_midnight)``. Fails open as ``(True, limit, 0)`` on a
-    Redis error.
+    ``(False, 0, seconds_to_midnight)``. Fails open as ``(True, limit, 0)`` when
+    Redis is unavailable (the library logs the outage).
+    """
+    daily = _daily_limit(resource, limit)
+    decision = await _governor(daily, now).check(Context(user=identifier))
+    if decision.allowed:
+        # The library omits a limit it could not evaluate (fail-open); report
+        # the full cap as remaining then, exactly as the old code did.
+        return True, decision.remaining.get(daily.name, limit), 0
+    return False, 0, decision.retry_after
+
+
+async def release_daily_quota(
+    identifier: str,
+    resource: str,
+    *,
+    amount: int = 1,
+    now: datetime | None = None,
+) -> None:
+    """Give back a daily-quota unit taken by a request that was then rejected.
+
+    Ceilings are charged in order, so a request refused by a *later* ceiling has
+    already incremented every *earlier* one; without the refund, a user parked at
+    their chat cap drains the overall API quota on rejected retries. The
+    library's release refuses to resurrect an expired day bucket and never
+    extends a key's life.
+
+    Best-effort by design: this runs on a path whose job is to reject, the
+    caller already has its answer, and one over-counted counter beats turning a
+    429 into a 500.
     """
     moment = _now(now)
-    key = CacheKeys.daily_quota(identifier, resource, _day_bucket(moment))
-    ttl = _seconds_to_utc_midnight(moment)
+    daily = _daily_limit(resource, cap=0)  # the cap is irrelevant to a release
+    key = governor_keys.counter_key(daily, {Scope.USER: identifier}, moment)
     try:
-        allowed, remaining, retry_after = await redis_client.eval(
-            _DAILY_QUOTA_LUA, 1, key, str(limit), str(ttl)
-        )
-        return bool(allowed), int(remaining), int(retry_after)
-    except Exception as exc:  # pragma: no cover - exercised via monkeypatched eval
+        await _backend.release(key, amount)
+    except Exception as exc:
         logger.warning(
-            "Daily quota check failed, allowing request: %s",
+            "Daily quota refund failed: %s",
             exc,
             exc_info=exc,
-            extra={"event": "quota.check_failed"},
+            extra={"event": "quota.release_failed", "resource": resource},
         )
-        return True, limit, 0
 
 
 async def incr_and_check_global_budget(
@@ -148,37 +169,26 @@ async def incr_and_check_global_budget(
     """Atomically add ``amount`` to the global per-UTC-day counter for ``metric``.
 
     Returns ``(within_budget, total_after_increment)``. Fails open as
-    ``(True, 0)`` on a Redis error. Logs ``budget.breaker_tripped`` on the
-    increment that trips the breaker so the operator has a signal in stdout and
-    Axiom.
+    ``(True, 0)`` when Redis is unavailable. Logs ``budget.breaker_tripped`` on
+    the increment that trips the breaker — exactly once per window — so the
+    operator has a signal in stdout and Axiom.
     """
-    moment = _now(now)
-    key = CacheKeys.global_budget(metric, _day_bucket(moment))
-    ttl = _seconds_to_utc_midnight(moment)
-    try:
-        within, total = await redis_client.eval(
-            _GLOBAL_BUDGET_LUA, 1, key, str(amount), str(limit), str(ttl)
-        )
-    except Exception as exc:  # pragma: no cover - exercised via monkeypatched eval
-        logger.warning(
-            "Global budget increment failed, allowing request: %s",
-            exc,
-            exc_info=exc,
-            extra={"event": "budget.incr_failed", "metric": metric},
-        )
-        return True, 0
-
-    within, total = bool(within), int(total)
-    if not within and (total - amount) <= limit:
-        # Log only on the increment that crosses the line, not every call after.
+    budget = _budget_limit(metric, limit)
+    result = await _governor(budget, now).meter(metric, amount)
+    if result.crossed:
         logger.warning(
             "Global budget breaker tripped: metric=%s total=%s limit=%s",
             metric,
-            total,
+            result.total,
             limit,
-            extra={"event": "budget.breaker_tripped", "metric": metric, "total": total, "limit": limit},
+            extra={
+                "event": "budget.breaker_tripped",
+                "metric": metric,
+                "total": result.total,
+                "limit": limit,
+            },
         )
-    return within, total
+    return result.within, result.total
 
 
 async def is_global_budget_tripped(
@@ -190,22 +200,8 @@ async def is_global_budget_tripped(
     """Read-only check (no increment) of whether the breaker is tripped.
 
     Used by edge gatekeepers (chat middleware, manual-refresh trigger) to reject
-    new expensive work cheaply. Fails open as ``False`` (not tripped) on error.
+    new expensive work cheaply. Fails open as ``False`` (not tripped) when Redis
+    is unavailable — a store that cannot answer is not evidence of a breach.
     """
-    key = CacheKeys.global_budget(metric, _day_bucket(_now(now)))
-    try:
-        raw = await redis_client.get(key)
-    except Exception as exc:  # pragma: no cover - exercised via monkeypatched get
-        logger.warning(
-            "Global budget read failed, treating as not tripped: %s",
-            exc,
-            exc_info=exc,
-            extra={"event": "budget.read_failed", "metric": metric},
-        )
-        return False
-    if raw is None:
-        return False
-    try:
-        return int(raw) > limit
-    except (TypeError, ValueError):
-        return False
+    budget = _budget_limit(metric, limit)
+    return await _governor(budget, now).is_tripped(metric)

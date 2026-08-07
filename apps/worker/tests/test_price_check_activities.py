@@ -299,18 +299,16 @@ async def test_fetch_flights_activity_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_flights_activity_error(monkeypatch):
     """Skiplagged failures propagate so Temporal can retry / fail the workflow."""
-    from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
 
-    mock_client = AsyncMock()
-    mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("API error"))
-
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     _patch_flag_session(monkeypatch)
-    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        with pytest.raises(SkiplaggedConnectionError, match="API error"):
-            await pc.fetch_flights_activity(_trip_details())
+    # Every provider down: the sweep fails over now, so an error only
+    # reaches Temporal once there is nobody left to ask.
+    _all_providers_failing(monkeypatch, SkiplaggedConnectionError("API error"))
+    with pytest.raises(SkiplaggedConnectionError, match="API error"):
+        await pc.fetch_flights_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -802,17 +800,15 @@ async def test_fetch_flights_uses_skiplagged(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_flights_skiplagged_error(monkeypatch):
     """SkiplaggedClient errors propagate so Temporal retries / fails the workflow."""
-    from unittest.mock import AsyncMock, patch
 
     from app.clients.skiplagged import SkiplaggedConnectionError
 
-    mock_client = AsyncMock()
-    mock_client.search_flights_all = AsyncMock(side_effect=SkiplaggedConnectionError("connection refused"))
-
     _patch_flag_session(monkeypatch)
-    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        with pytest.raises(SkiplaggedConnectionError, match="connection refused"):
-            await pc.fetch_flights_activity(sample_trip_details)
+    # Every provider down: the sweep fails over now, so an error only
+    # reaches Temporal once there is nobody left to ask.
+    _all_providers_failing(monkeypatch, SkiplaggedConnectionError("connection refused"))
+    with pytest.raises(SkiplaggedConnectionError, match="connection refused"):
+        await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
@@ -1037,17 +1033,15 @@ def test_filter_hotels_min_star_rating_none_skipped():
 @pytest.mark.asyncio
 async def test_fetch_flights_generic_exception_propagates(monkeypatch):
     """Non-SkiplaggedMCPError exceptions propagate so Temporal fails the workflow."""
-    from unittest.mock import AsyncMock, patch
 
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     _patch_flag_session(monkeypatch)
 
-    mock_client = AsyncMock()
-    mock_client.search_flights_all = AsyncMock(side_effect=RuntimeError("boom"))
-
-    with patch("worker.activities.price_check.SkiplaggedClient", return_value=mock_client):
-        with pytest.raises(RuntimeError, match="boom"):
-            await pc.fetch_flights_activity(sample_trip_details)
+    # Every provider down: the sweep fails over now, so an error only
+    # reaches Temporal once there is nobody left to ask.
+    _all_providers_failing(monkeypatch, RuntimeError("boom"))
+    with pytest.raises(RuntimeError, match="boom"):
+        await pc.fetch_flights_activity(sample_trip_details)
 
 
 @pytest.mark.asyncio
@@ -1432,18 +1426,16 @@ async def test_fetch_flights_flag_off_uses_skiplagged(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_flights_kiwi_error_propagates(monkeypatch):
     """KiwiMCPError propagates so Temporal can retry the activity."""
-    from unittest.mock import AsyncMock, patch
 
     from app.clients.kiwi import KiwiConnectionError
 
-    mock_kiwi = AsyncMock()
-    mock_kiwi.search_flights_all = AsyncMock(side_effect=KiwiConnectionError("kiwi down"))
-
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     _patch_flag_session(monkeypatch, provider="kiwi")
-    with patch("worker.activities.price_check.KiwiClient", return_value=mock_kiwi):
-        with pytest.raises(KiwiConnectionError, match="kiwi down"):
-            await pc.fetch_flights_activity(_trip_details())
+    # Every provider down: the sweep fails over, so the error only reaches
+    # Temporal once there is nobody left to ask.
+    _all_providers_failing(monkeypatch, KiwiConnectionError("kiwi down"))
+    with pytest.raises(KiwiConnectionError, match="kiwi down"):
+        await pc.fetch_flights_activity(_trip_details())
 
 
 def _fast_flights_search_result():
@@ -1516,20 +1508,16 @@ async def test_fetch_flights_setting_routes_to_fast_flights(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_flights_fast_flights_error_propagates(monkeypatch):
     """FastFlightsError propagates so Temporal can retry the activity."""
-    from unittest.mock import AsyncMock, patch
 
     from app.clients.fast_flights import FastFlightsTransientError
 
-    mock_fast = AsyncMock()
-    mock_fast.search_flights_all = AsyncMock(
-        side_effect=FastFlightsTransientError("google blocked")
-    )
-
     monkeypatch.setattr(pc.settings, "mock_skiplagged_api", False)
     _patch_flag_session(monkeypatch, provider="fast_flights")
-    with patch("worker.activities.price_check.FastFlightsClient", return_value=mock_fast):
-        with pytest.raises(FastFlightsTransientError, match="google blocked"):
-            await pc.fetch_flights_activity(_trip_details())
+    # Every provider down: the sweep fails over now, so an error only
+    # reaches Temporal once there is nobody left to ask.
+    _all_providers_failing(monkeypatch, FastFlightsTransientError("google blocked"))
+    with pytest.raises(FastFlightsTransientError, match="google blocked"):
+        await pc.fetch_flights_activity(_trip_details())
 
 
 @pytest.mark.asyncio
@@ -1606,3 +1594,18 @@ def test_filter_flights_matches_kiwi_offers():
         {"outbound": {"segments": [{"carrier": "UA"}]}},
     ]
     assert pc._filter_flights(offers, {"airlines": ["ua"]}) == [offers[1]]
+
+
+def _all_providers_failing(monkeypatch, exc):
+    """Make every flight client raise ``exc``.
+
+    The tracking sweep fails over now, so an error only reaches Temporal once
+    all three providers have refused. Stubbing one leaves the others reachable
+    — and, in a test, reachable means a real network call.
+    """
+    from unittest.mock import AsyncMock
+
+    for attr in ("SkiplaggedClient", "KiwiClient", "FastFlightsClient"):
+        stub = AsyncMock()
+        stub.search_flights_all = AsyncMock(side_effect=exc)
+        monkeypatch.setattr(pc, attr, lambda *_a, _s=stub, **_k: _s)

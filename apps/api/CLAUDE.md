@@ -116,10 +116,31 @@ the SQLite test DB.
 
 On top of the per-minute limiter, two Redis-backed daily defenses guard against
 unbounded spend (a user parked at the per-minute cap for hours, or a leaked
-session). All counters carry a `:{YYYYMMDD}` (UTC) suffix and a
+session). All counters carry a UTC day bucket in their key and a
 seconds-to-midnight TTL, so they **auto-reset at UTC midnight — no cron**. Every
 helper **fails open** on a Redis error. Always on (like the per-minute limiter);
 there is no on/off flag — set a limit very high to effectively disable it.
+
+**This module is an adapter over the `mcp-budget-governor` library** — the
+design was extracted from here into that package and adopted back. The Lua, the
+key scheme, and the gated/ungated counter semantics live in the library (tested
+there against fakeredis executing the scripts for real, plus a real-Redis CI
+job); `quota.py` keeps vpt's public function signatures, fail-open behaviour,
+and the catalogued Axiom events (`budget.breaker_tripped`,
+`quota.release_failed`; the middleware's `quota.daily_exceeded` /
+`budget.breaker_rejected` are unchanged). Counter keys are the library's scheme:
+`mcpbg:daily_{resource}:user={identifier}:{YYYYMMDD}` and
+`mcpbg:{metric}:global:{YYYYMMDD}`. Backend-failure logs are the library's
+`governor.backend_unavailable` (replacing the old `quota.check_failed` /
+`budget.incr_failed` / `budget.read_failed`). Two adapter guarantees are pinned
+by tests: `local_fallback=False` (prod has always failed *fully* open — turning
+on the library's per-replica fallback is its own future decision, not a drive-by)
+and the backend not owning the shared Redis client. The dependency is an ordinary
+PyPI range, `mcp-budget-governor>=0.1.0,<0.2` — upper-bounded because the library
+is 0.x, where its public API may still move between minor releases, and `quota.py`
+sits directly on that API. **The `mcpbg:*` key scheme is pinned by tests**, so a
+library upgrade that moves it fails a test rather than silently resetting
+production counters on deploy.
 
 - **Per-user daily quota** — day-bucketed counters enforced in
   `rate_limit_middleware`: an overall API cap (`DAILY_QUOTA_PER_USER`, default
@@ -127,6 +148,18 @@ there is no on/off flag — set a limit very high to effectively disable it.
   `/v1/chat/elicitation`) via `CHAT_DAILY_QUOTA_PER_USER` (default 200). Over
   limit → 429 with `Retry-After` = seconds to midnight. Keys:
   `daily_quota:{identifier}:{resource}:{day}`.
+- **Ceilings are all-or-nothing.** They are charged in order (api → chat → the
+  read-only breakers), so a request refused by a *later* ceiling has already
+  incremented every *earlier* one. `_check_daily_ceilings` therefore refunds
+  whatever it charged before returning a rejection, via `release_daily_quota`
+  (a `DECRBY` guarded by `EXISTS` so it can't resurrect an expired day bucket
+  into a negative value, and `KEEPTTL` so a refund never extends a key's life).
+  Without the refund a user parked at their 200/day chat cap drained the
+  2000/day *overall API* quota on rejected retries and was eventually locked out
+  of trips, settings, and everything else until UTC midnight by calls that never
+  ran. The **per-minute** counter is deliberately not refunded: it is the
+  backpressure that stops a retry loop, and it clears within the minute anyway.
+  If you add a ceiling, add it to the `charged` list too.
 - **Global daily budget guard / circuit breaker** — a per-UTC-day counter per
   metric, incremented at the two shared provider chokepoints so the worker's
   scheduled refreshes are covered too:
@@ -173,8 +206,19 @@ Set `MOCK_SKIPLAGGED_API=true` to use `skiplagged_mock.py` in development.
 per-segment data** (carrier, flight number, airports, ISO times, durations,
 stops, cabin), so no id-string parsing; the full itinerary rides along in
 `raw_data` for the worker's airline filter and the trips router's itinerary
-builder (`_parse_kiwi_flight_offer`). No server-side pagination/sort/stop
-filtering — applied client-side (~15 itineraries per search). Each stateless
+builder (`_parse_kiwi_flight_offer`). **No server-side pagination** — the
+schema has no `limit`/`offset`/`page` argument at all, so a search is ~15
+itineraries and `limit` is a client-side truncation. That is the only real gap.
+Sorting and stop/airline filtering are a different matter: `search-flight` *does*
+accept `sort` (`price|duration|quality|date|popularity`),
+`max_sector_stopovers`, and `select_airlines`/`exclude_airlines` (the last two
+mutually exclusive). **We send none of them** — `_arguments` omits `sort`
+entirely, so results arrive in Kiwi's default price order and are re-sorted by
+`_apply_sort`, and `_apply_max_stops` filters after the fact even though a Kiwi
+"sector" is exactly the per-direction leg it counts. Unexploited pushdowns to
+revisit, not provider limitations; this file claimed the latter until
+2026-08-06. (Our `sort="value"` default is Skiplagged's vocabulary leaking into
+a shared signature: on Kiwi it just means "don't re-sort".) Each stateless
 call returns a *varying* sample of pairings that can miss whole carriers, so
 the tracking path (`search_flights_all`) unions `COVERAGE_QUERIES` queries,
 deduped by segment fingerprint (cheapest price per pairing wins). Airline
@@ -193,9 +237,16 @@ hold — the chat tool's injected doubles, the worker's freshly constructed
 client. `CAPABILITIES` declares what each provider can honor, and
 `dropped_constraints()` reports what a given request would lose; an unhonored
 constraint logs `flight_provider.constraint_dropped` at WARNING instead of
-silently changing what the returned price is a price *for*. Skiplagged has no
-`cabin` parameter, so a business-class trip tracked on Skiplagged is priced in
-economy — visible in logs now rather than only in a user's bug report.
+silently changing what the returned price is a price *for*. All three providers
+honor cabin today, so that list is empty in practice — the check remains for
+the next provider that differs.
+
+**A capability must describe the provider, not this repo's client.** Skiplagged
+was briefly recorded as `cabin=False` because `SkiplaggedClient` never sent the
+parameter; the MCP had exposed `fareClass` from the start, and the consequence
+was that every tracked trip took the API's `economy` default no matter what
+cabin the user picked. Check the provider's own `tools/list` schema before
+declaring something unsupported.
 Kiwi calls meter into the `kiwi_calls` global daily budget metric, sharing the
 `GLOBAL_DAILY_SKIPLAGGED_CALL_BUDGET` ceiling.
 

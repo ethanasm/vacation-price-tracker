@@ -64,12 +64,19 @@ switch — no redeploy):
 
 - **Skiplagged MCP** (default): chat tools use single-page `search_flights`;
   the tracking worker uses `search_flights_all` (up to 300 results across
-  `max_pages=4`). Flight numbers are parsed from the `id` string.
+  `max_pages=4`). Flight numbers are parsed from the `id` string. Cabin is
+  supported natively via the `fareClass` argument
+  (`basic-economy`|`economy`|`premium`|`business`|`first`, default `economy`);
+  our `CabinClass` maps onto it in `CABIN_CLASS_TO_FARE_CLASS`.
 - **Kiwi.com MCP**: `https://mcp.kiwi.com/` — public, stateless, no API key.
   Returns structured per-segment data (carrier, flight number, times,
-  durations, stops, cabin class) but no server-side pagination (~15 itineraries
-  per search; stops/sort/limit applied client-side). Added when Skiplagged's
-  flight-search backend began returning sustained 429s (July 2026).
+  durations, stops, cabin class). **Pagination is the one thing it genuinely
+  lacks** — no `limit`/`offset`/`page` argument, ~15 itineraries per search.
+  Sorting and stop filtering it *does* support (`sort`,
+  `max_sector_stopovers`, plus `select_airlines`/`exclude_airlines`); we apply
+  those in memory anyway, which is a missed optimization, not a limitation.
+  Added when Skiplagged's flight-search backend began returning sustained 429s
+  (July 2026).
 - **fast-flights** (Google Flights scraper via the `fast-flights` PyPI
   fetcher + our extended page parser): no API key; one ranked page per query
   (both page sections parsed), structured segments **with real flight
@@ -96,17 +103,46 @@ quirk in the web/mobile UI: clients render fields as-is. Canonical example:
 (`"AS3361"`); clients must not concatenate `carrier_code` with it (that
 renders "AS AS3361").
 
-**Provider dispatch is centralized.** Both call sites — the chat tool's single
-page and the worker's full tracking sweep — go through
+**Provider dispatch is centralized, and fails over.** Both call sites — the
+chat tool's single page and the worker's full tracking sweep — go through
 `search_flights()` in `apps/api/app/services/flight_provider.py`, which takes one
 provider-agnostic `FlightSearchRequest` and passes each provider only the
-arguments it accepts. The clients are interface-compatible on their *results*
-but not their *inputs* (`CAPABILITIES` records the gaps: Skiplagged has no
-`cabin` parameter; Kiwi and fast-flights ignore `max_pages`), and those gaps are
-silent at the client boundary — a dropped `cabin` returns a price for a
-different cabin rather than an error. A constraint the active provider cannot
-honor is therefore logged as `flight_provider.constraint_dropped` (WARNING).
-Add a new provider's parameter set to `CAPABILITIES`, not to a call site.
+arguments it accepts.
+
+With `failover=True` the `flight_provider` setting is the *preferred* provider,
+not the only one: a rate limit or transient failure moves down
+`failover_order()` (preferred first, then the rest) via
+[`provider-router`](https://pypi.org/project/provider-router/). A spend ceiling
+(`GlobalBudgetExceeded`) is route-terminal — the router aborts rather than
+spending more against the ceiling that just tripped. **The tracking sweep opts
+in; the chat search does not** — the worker runs unattended overnight, while a
+chat user is right there and can ask again. The answering provider lands on
+`FlightSearchResult.provider` → `price_snapshots.provider`, so a failover is
+visible in the price history rather than looking like the market moved (and
+`evaluate_notifications_activity` suppresses the drop comparison across it). The clients are interface-compatible on their *results*
+but not their *inputs* (`CAPABILITIES` records the gaps — currently just
+`paginates`: Kiwi and fast-flights ignore `max_pages`), and those gaps are
+silent at the client boundary — a dropped constraint returns a price for a
+different question rather than an error. A constraint the active provider
+cannot honor is therefore logged as `flight_provider.constraint_dropped`
+(WARNING). Add a new provider's parameter set to `CAPABILITIES`, not to a call
+site.
+
+**`CAPABILITIES` describes the provider, not our client.** Verify against the
+provider's own tool schema before recording a `False`. Skiplagged was listed
+`cabin=False` for a day on the strength of *our client* not sending the
+parameter — it had supported `fareClass` all along, so every tracked trip was
+being priced in economy regardless of the user's choice. All three providers
+currently honor cabin.
+
+The same mistake was made three times, always the same way: read our client's
+signature, write it down as a fact about the provider. Skiplagged `cabin`
+(above); Skiplagged airlines (`preferredAirlines`/`excludedAirlines` exist);
+Kiwi sort/stops/airlines (`sort`, `max_sector_stopovers`, `select_airlines`,
+`exclude_airlines` all exist). Only two provider-side gaps survive contact with
+the actual schemas: Kiwi and fast-flights don't paginate, and Skiplagged's
+`sk_hotels_search` has no room-type/view filter. **Read `tools/list`, not our
+own code.**
 
 There is **no** response cache. `CacheKeys.flight_cache` / `hotel_cache` /
 `price_cache` and `CacheTTL.PRICE_CACHE` exist but have no call sites; this file
@@ -125,7 +161,12 @@ provider flag).
 - **Idempotency:** `X-Idempotency-Key` required for `POST /v1/trips`, stored in
   Redis (24h TTL).
 - **Post-fetch filtering:** airline and room-type/view preferences are filtered
-  in-memory by the worker because Skiplagged supports neither natively. Details:
+  in-memory by the worker. Room type / view genuinely have no provider-side
+  equivalent (`sk_hotels_search` takes only city/dates/occupancy/paging).
+  **Airlines are a different story:** `sk_flights_search` exposes
+  `preferredAirlines` / `excludedAirlines`, so the in-memory airline filter is
+  a missed optimization rather than a necessity — we fetch and discard results
+  the API could have excluded. Details:
   [`apps/worker/CLAUDE.md`](apps/worker/CLAUDE.md).
 
 ## Environment Configuration
