@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Vacation Price Tracker - Full Stack Application"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     "sqlmodel",
     "asyncpg",
     "alembic",
@@ -13,7 +13,7 @@ dependencies = [
     "httpx",
     "pyjwt>=2.10.1",
     "uvicorn",
-    "redis>=8.0.1",
+    "redis>=8.1.0",
     "pydantic-settings>=2.14.2",
     "greenlet",
     "itsdangerous",
@@ -33,6 +33,10 @@ dependencies = [
     "tiktoken>=0.13.0",
     "langfuse>=4.14.2,<5",
     "axiom-py>=0.12.0",
+    # The cost/abuse-ceiling kernel, extracted FROM this codebase and adopted
+    # back — app/core/quota.py is now a thin adapter over it.
+    "mcp-budget-governor>=0.1.0,<0.2",
+    "provider-router>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +48,7 @@ dev = [
     "ruff",
     "pip-audit",
     # Pinned for known CVEs flagged by the pip-audit step
-    "pip>=26.1.2",
+    "pip>=26.2",
     "pydevd-pycharm~=262.8665.186",
     "croniter>=6.2.4",
 ]

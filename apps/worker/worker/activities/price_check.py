@@ -195,15 +195,26 @@ async def fetch_flights_activity(trip: TripDetails) -> FetchResult:
         cabin=trip["flight_prefs"].get("cabin"),
     )
 
-    if provider == PROVIDER_KIWI:
-        client = KiwiClient()
-    elif provider == PROVIDER_FAST_FLIGHTS:
-        client = FastFlightsClient()
-    else:
-        client = SkiplaggedClient()
+    def _client_for(name: str) -> "SkiplaggedClient | KiwiClient | FastFlightsClient":
+        # A fresh client per provider — an activity must not share the
+        # module-level instances across the Temporal sandbox. Called lazily by
+        # the router, so a fallback that is never tried is never constructed.
+        if name == PROVIDER_KIWI:
+            return KiwiClient()
+        if name == PROVIDER_FAST_FLIGHTS:
+            return FastFlightsClient()
+        return SkiplaggedClient()
 
     try:
-        result = await run_flight_search(provider, request, client=client, all_pages=True)
+        # failover=True: this sweep runs unattended overnight. A Skiplagged 429
+        # here is a missing point in a price history nobody is watching, so ask
+        # Kiwi instead of failing the refresh and waiting for someone to notice
+        # and flip the setting by hand — which is what July 2026 actually cost.
+        # The answering provider lands on the snapshot's `provider` column, so
+        # the switch stays visible rather than looking like the market moved.
+        result = await run_flight_search(
+            provider, request, client_factory=_client_for, all_pages=True, failover=True
+        )
     except GlobalBudgetExceeded as exc:
         raise _budget_application_error(exc) from exc
     except (SkiplaggedMCPError, KiwiMCPError, FastFlightsError) as exc:

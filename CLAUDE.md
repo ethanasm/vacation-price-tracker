@@ -103,11 +103,23 @@ quirk in the web/mobile UI: clients render fields as-is. Canonical example:
 (`"AS3361"`); clients must not concatenate `carrier_code` with it (that
 renders "AS AS3361").
 
-**Provider dispatch is centralized.** Both call sites — the chat tool's single
-page and the worker's full tracking sweep — go through
+**Provider dispatch is centralized, and fails over.** Both call sites — the
+chat tool's single page and the worker's full tracking sweep — go through
 `search_flights()` in `apps/api/app/services/flight_provider.py`, which takes one
 provider-agnostic `FlightSearchRequest` and passes each provider only the
-arguments it accepts. The clients are interface-compatible on their *results*
+arguments it accepts.
+
+With `failover=True` the `flight_provider` setting is the *preferred* provider,
+not the only one: a rate limit or transient failure moves down
+`failover_order()` (preferred first, then the rest) via
+[`provider-router`](https://pypi.org/project/provider-router/). A spend ceiling
+(`GlobalBudgetExceeded`) is route-terminal — the router aborts rather than
+spending more against the ceiling that just tripped. **The tracking sweep opts
+in; the chat search does not** — the worker runs unattended overnight, while a
+chat user is right there and can ask again. The answering provider lands on
+`FlightSearchResult.provider` → `price_snapshots.provider`, so a failover is
+visible in the price history rather than looking like the market moved (and
+`evaluate_notifications_activity` suppresses the drop comparison across it). The clients are interface-compatible on their *results*
 but not their *inputs* (`CAPABILITIES` records the gaps — currently just
 `paginates`: Kiwi and fast-flights ignore `max_pages`), and those gaps are
 silent at the client boundary — a dropped constraint returns a price for a
@@ -363,6 +375,15 @@ to 16.9% then 25.7%). All three workflows (`web.yml`, `server.yml`,
 change that triggers one triggers all (all-or-neither) — the scan's wait step
 depends on both coverage runs existing for its SHA. When editing any of the
 three triggers, keep them in lockstep.
+
+**Re-running a flaked scan.** `sonarqube.yml` also takes `workflow_dispatch`,
+because the scan can go red for reasons unrelated to the code — it once failed
+in "Set up job" on GitHub's own `Failed to resolve action download info:
+Service Unavailable`, leaving main's latest analysis red with a green gate
+behind it. Dispatch re-uses the coverage artifacts already published for the
+ref's head SHA, so it only works on a commit whose `web.yml` and `server.yml`
+runs both succeeded; if they didn't run at all, the wait step says so in three
+minutes instead of polling for thirty.
 
 ## Verification Preference
 

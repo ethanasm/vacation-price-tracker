@@ -119,7 +119,7 @@ def test_dropped_constraints_still_reports_a_provider_that_cannot():
 async def test_no_warning_when_the_provider_can_honor_the_cabin(caplog):
     client = RecordingClient()
     with caplog.at_level(logging.WARNING):
-        await search_flights(PROVIDER_SKIPLAGGED, _request(cabin="business"), client=client)
+        await search_flights(PROVIDER_SKIPLAGGED, _request(cabin="business"), client_factory=lambda _n, _c=client: _c)
 
     dropped = [r for r in caplog.records if getattr(r, "event", None) == _DROPPED_EVENT]
     assert dropped == []
@@ -157,7 +157,7 @@ def test_dispatch_kwargs_bind_against_every_real_client_signature():
         for all_pages in (False, True):
             recorder = RecordingClient()
             asyncio.run(
-                search_flights(provider, request, client=recorder, all_pages=all_pages)
+                search_flights(provider, request, client_factory=lambda _n, _c=recorder: _c, all_pages=all_pages)
             )
             captured = recorder.all_pages if all_pages else recorder.single
             assert captured is not None
@@ -191,7 +191,7 @@ async def test_omitting_the_client_resolves_the_shared_instance(monkeypatch):
 @pytest.mark.parametrize("provider", list(FLIGHT_PROVIDERS))
 async def test_cabin_is_forwarded_to_providers_that_support_it(provider):
     client = RecordingClient()
-    await search_flights(provider, _request(cabin="business"), client=client)
+    await search_flights(provider, _request(cabin="business"), client_factory=lambda _n, _c=client: _c)
     assert client.single["cabin"] == "business"
 
 
@@ -207,7 +207,7 @@ async def test_an_unhonorable_cabin_is_dropped_and_logged(caplog):
     incapable = ProviderCapabilities(cabin=False, paginates=False)
     client = RecordingClient()
     with patch.dict(CAPABILITIES, {"incapable": incapable}), caplog.at_level(logging.WARNING):
-        await search_flights("incapable", _request(cabin="business"), client=client)
+        await search_flights("incapable", _request(cabin="business"), client_factory=lambda _n, _c=client: _c)
 
     assert "cabin" not in client.single
     events = [r.event for r in caplog.records if hasattr(r, "event")]
@@ -218,7 +218,7 @@ async def test_an_unhonorable_cabin_is_dropped_and_logged(caplog):
 async def test_no_warning_when_no_cabin_was_requested(caplog):
     client = RecordingClient()
     with caplog.at_level(logging.WARNING):
-        await search_flights(PROVIDER_SKIPLAGGED, _request(), client=client)
+        await search_flights(PROVIDER_SKIPLAGGED, _request(), client_factory=lambda _n, _c=client: _c)
 
     assert not [r for r in caplog.records if getattr(r, "event", None) == _DROPPED_EVENT]
 
@@ -226,8 +226,8 @@ async def test_no_warning_when_no_cabin_was_requested(caplog):
 @pytest.mark.anyio
 async def test_tracking_path_paginates_only_where_supported():
     skiplagged, kiwi = RecordingClient(), RecordingClient()
-    await search_flights(PROVIDER_SKIPLAGGED, _request(), client=skiplagged, all_pages=True)
-    await search_flights(PROVIDER_KIWI, _request(), client=kiwi, all_pages=True)
+    await search_flights(PROVIDER_SKIPLAGGED, _request(), client_factory=lambda _n, _c=skiplagged: _c, all_pages=True)
+    await search_flights(PROVIDER_KIWI, _request(), client_factory=lambda _n, _c=kiwi: _c, all_pages=True)
 
     assert skiplagged.all_pages["max_pages"] == TRACKING_MAX_PAGES
     assert "max_pages" not in kiwi.all_pages, "Kiwi accepts max_pages but ignores it"
@@ -237,8 +237,8 @@ async def test_tracking_path_paginates_only_where_supported():
 async def test_paging_flag_selects_the_method_and_page_args():
     """Single-page (chat) carries sort/limit/offset; the full sweep does not."""
     chat, tracking = RecordingClient(), RecordingClient()
-    result = await search_flights(PROVIDER_KIWI, _request(limit=10, offset=5), client=chat)
-    await search_flights(PROVIDER_KIWI, _request(), client=tracking, all_pages=True)
+    result = await search_flights(PROVIDER_KIWI, _request(limit=10, offset=5), client_factory=lambda _n, _c=chat: _c)
+    await search_flights(PROVIDER_KIWI, _request(), client_factory=lambda _n, _c=tracking: _c, all_pages=True)
 
     assert result == "single-result"
     assert (chat.single["sort"], chat.single["limit"], chat.single["offset"]) == ("value", 10, 5)
@@ -253,7 +253,7 @@ async def test_core_query_fields_always_reach_the_client():
     await search_flights(
         PROVIDER_SKIPLAGGED,
         _request(return_date="2026-09-08", adults=3, max_stops="none"),
-        client=client,
+        client_factory=lambda _n, _c=client: _c,
     )
     assert client.single["origin"] == "SFO"
     assert client.single["destination"] == "JFK"

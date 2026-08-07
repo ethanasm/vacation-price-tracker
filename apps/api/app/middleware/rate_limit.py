@@ -18,6 +18,7 @@ from app.core.quota import (
     _seconds_to_utc_midnight,
     check_and_incr_daily_quota,
     is_global_budget_tripped,
+    release_daily_quota,
 )
 from app.db.redis import redis_client
 
@@ -264,10 +265,27 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
     Returns a rejection Response when a ceiling is hit, or None to proceed.
     Always on (like the per-minute limiter); fails open (returns None) on Redis
     errors via the underlying quota helpers.
+
+    **All-or-nothing.** Ceilings are charged in order — api, then chat, then the
+    read-only breakers — so a request refused by a later ceiling has already
+    incremented every earlier one. Anything charged during a rejected request is
+    given back, or a user parked at their chat cap would drain the overall API
+    quota on rejected retries and end up locked out of trips, settings, and
+    everything else until UTC midnight by calls that never ran.
+
+    The per-minute counter is deliberately *not* refunded. Unlike the daily
+    quotas it is the backpressure that stops a retry loop, and it clears in under
+    a minute either way; giving it back would let a user who is already over a
+    daily ceiling retry as fast as they like with nothing moving.
     """
     path = request.url.path
     is_chat_message = _is_chat_message_path(path)
     is_refresh = _is_refresh_trigger(request)
+    charged: list[str] = []
+
+    async def _refund() -> None:
+        for resource in charged:
+            await release_daily_quota(identifier, resource)
 
     # Per-user daily quota: an overall API cap plus a stricter chat-message cap.
     allowed, _, retry_after = await check_and_incr_daily_quota(
@@ -281,6 +299,7 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
             extra={"event": "quota.daily_exceeded", "resource": "api", "path": path},
         )
         return _rate_limit_response(retry_after, path)
+    charged.append("api")
 
     if is_chat_message:
         allowed, _, retry_after = await check_and_incr_daily_quota(
@@ -293,7 +312,9 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
                 path,
                 extra={"event": "quota.daily_exceeded", "resource": "chat", "path": path},
             )
+            await _refund()
             return _rate_limit_response(retry_after, path)
+        charged.append("chat")
 
     # Global budget breaker (read-only gate): reject new expensive work cheaply.
     if is_chat_message and await is_global_budget_tripped(
@@ -304,6 +325,7 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
             path,
             extra={"event": "budget.breaker_rejected", "metric": "groq_tokens", "path": path},
         )
+        await _refund()
         return _budget_response(_seconds_to_utc_midnight(), path)
 
     if is_refresh and await is_global_budget_tripped(
@@ -318,6 +340,7 @@ async def _check_daily_ceilings(request: Request, identifier: str) -> Response |
                 "path": path,
             },
         )
+        await _refund()
         return _budget_response(_seconds_to_utc_midnight(), path)
 
     return None
