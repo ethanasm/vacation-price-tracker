@@ -146,6 +146,10 @@ Then bring up the stack (helper scripts wrap the compose invocations):
 ```bash
 pnpm e2e:up          # docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml up -d
 pnpm e2e:db:migrate  # alembic upgrade head inside the api image
+# The api boots before the migrate lands and skips create_all (this schema is
+# Alembic-owned), so restart it once so its startup seeding (feature flags /
+# app settings) runs against the migrated schema:
+docker compose --env-file .env.e2e -f infra/docker-compose.e2e.yml restart api worker
 ```
 
 **Refreshes after that are automatic:** `deploy.yml` re-pulls the e2e stack on
@@ -156,8 +160,11 @@ e2e backend goes unnoticed for weeks), and warns — without failing the prod
 deploy — if the refresh itself errors or `/ready` doesn't come back.
 
 **If `e2e:db:migrate` fails, the refresh resets the e2e database** via
-`pnpm e2e:db:reset` (`DROP SCHEMA public CASCADE`, then `alembic upgrade head`,
-then an api/worker restart so flag/setting seeding re-runs). The e2e data is
+`pnpm e2e:db:reset` (`scripts/e2e-db-reset.sh`: stop api/worker so no pooled or
+idle-in-transaction connection can block the drop, `DROP SCHEMA public CASCADE`
+under a 15s `lock_timeout` with `ON_ERROR_STOP`, `alembic upgrade head`, echo
+the stamped `alembic_version`, start api/worker so flag/setting seeding
+re-runs). The e2e data is
 throwaway by design — only the Maestro test user's fixtures live there — and an
 unmigratable schema is worse than an empty one: the stack once ran for weeks on
 a database born from SQLModel `create_all` (tables but no `alembic_version`

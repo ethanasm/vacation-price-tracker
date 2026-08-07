@@ -101,6 +101,10 @@ jobs:
       # job, not prod deploys.
       - name: Refresh e2e backend (if configured)
         working-directory: /opt/vacation-price-tracker
+        # Bounded because deploy-prod runs cancel-in-progress: false — a hung
+        # refresh (e.g. a DB drop blocked on a stray connection) must time out
+        # rather than wedge every later deploy behind it.
+        timeout-minutes: 15
         env:
           IMAGE_TAG: ${{ steps.sha.outputs.sha }}
         run: |
