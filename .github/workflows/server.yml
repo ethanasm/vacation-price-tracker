@@ -116,6 +116,16 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/vpt_migrate
         run: uv run alembic upgrade head
 
+      # The step above runs on an empty database, so 013's enum→varchar
+      # conversion only exercises its skip path there. This one rebuilds the
+      # create_all-era shape (native enum types storing member NAMES, incl.
+      # the ONE_STOP → '1-stop' mapping) at revision 012 and verifies
+      # `upgrade head` converts columns and data and drops the types.
+      - name: Migration 013 conversion path (legacy enum fixture)
+        env:
+          PGURL: postgresql://postgres:postgres@localhost:5432
+        run: bash scripts/test-migration-013-conversion.sh
+
       # Scope to the Python projects only — this workflow provisions the Python
       # toolchain; the workflow-level paths filter skips it on non-Python PRs.
       - name: Lint (api + worker)

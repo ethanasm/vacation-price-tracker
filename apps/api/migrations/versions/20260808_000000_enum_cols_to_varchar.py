@@ -102,25 +102,54 @@ def upgrade() -> None:
             {"t": table, "c": column},
         ).scalar()
         if udt == typename:
+            # No ELSE fallback: an enum label missing from the mapping yields
+            # NULL and aborts on the NOT NULL constraint, rolling the revision
+            # back — a loud stop beats silently storing a mislabeled value.
+            # (Every label was verified against prod's pg_enum before this
+            # shipped, so the branch should be unreachable.)
             cases = " ".join(f"WHEN '{k}' THEN '{v}'" for k, v in mapping.items())
             # A default like 'ACTIVE'::tripstatus would block the TYPE change.
             op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} DROP DEFAULT")
             op.execute(
                 f"ALTER TABLE {table} ALTER COLUMN {column} TYPE VARCHAR(20)"
-                f" USING CASE {column}::text {cases} ELSE lower({column}::text) END"
+                f" USING CASE {column}::text {cases} END"
             )
             op.execute(
                 f"ALTER TABLE {table} ALTER COLUMN {column} SET DEFAULT '{default}'"
             )
-        # Fresh migration-built DBs never had the type; IF EXISTS makes the
-        # drop a no-op there.
-        op.execute(f"DROP TYPE IF EXISTS {typename}")
+        # Drop the orphaned type — but only when nothing still references it.
+        # An unconditional drop would raise DependentObjectsStillExistError if
+        # any column outside _COLUMNS used the type, rolling back the whole
+        # revision *after* the deploy already put new images live (deploy.yml
+        # brings the stack up before migrating) — a full outage rather than a
+        # clean failure. IF EXISTS covers fresh migration-built DBs that never
+        # had the type.
+        refs = bind.execute(
+            sa.text(
+                "SELECT count(*) FROM pg_attribute a"
+                " JOIN pg_type t ON t.oid = a.atttypid"
+                " WHERE t.typname = :typ AND a.attnum > 0 AND NOT a.attisdropped"
+            ),
+            {"typ": typename},
+        ).scalar()
+        if refs == 0:
+            op.execute(f"DROP TYPE IF EXISTS {typename}")
+        else:
+            print(
+                f"NOT dropping type {typename}: still referenced by {refs} "
+                f"column(s) outside this migration's list — investigate"
+            )
 
 
 def downgrade() -> None:
-    """Deliberately a no-op.
+    """Deliberately a no-op — and NOT a safe rollback path.
 
     The VARCHAR shape is what ``001_initial`` declared all along — downgrading
     to the accidental native-enum shape would reintroduce the model/migration
     divergence this revision exists to end.
+
+    Operational note: once this revision has run, reverting the app image
+    alone does NOT recover — the old (bare-enum) models query enum types that
+    no longer exist. Roll forward, or restore the pre-migration dump that
+    deploy.yml takes before every migrate ("Pre-migration DB backup").
     """

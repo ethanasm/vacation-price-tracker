@@ -89,6 +89,11 @@ def test_no_native_enum_model_columns() -> None:
             qualified = f"{table.name}.{col.name}"
             if col.type.native_enum:
                 native.append(qualified)
+            if col.type.enum_class is None:
+                # sa.Enum("a", "b") — raw strings, no enum class, so there is
+                # no values contract to check against. Require the real class.
+                wrong_values.append((qualified, "raw-string sa.Enum", "use varchar_enum"))
+                continue
             expected = sorted(m.value for m in col.type.enum_class)
             if sorted(col.type.enums) != expected:
                 wrong_values.append((qualified, sorted(col.type.enums), expected))

@@ -57,6 +57,20 @@ the SQLite test DB.
   see `012_purge_failed_snapshots`). Enforced by
   `tests/test_migrations.py` and by the CI "Migrations against Postgres" step
   in `server.yml`, which runs the full chain on a real Postgres.
+- **Enum fields use `varchar_enum()` (`app/models/enum_column.py`), never a
+  bare enum annotation.** A bare annotation makes SQLModel emit a native
+  Postgres ENUM type, while the migrations declare these columns
+  `VARCHAR(20)` — two different schemas, and whichever a database matches,
+  the other side's queries fail (`type "tripstatus" does not exist` /
+  `operator does not exist: <type> = character varying`). This mistake shipped
+  twice (`notification_outbox` documented it in 2026-06; five Phase-1 columns
+  carried it until `013_enum_cols_to_varchar`). Enforced by
+  `test_no_native_enum_model_columns`.
+- **Long-lived dev databases created before `013_enum_cols_to_varchar`** were
+  born from `create_all` and have no `alembic_version` stamp, so
+  `pnpm db:migrate` fails at `001_initial` ("users already exists"). Either
+  reset the dev DB (dev data is throwaway) or adopt it once:
+  `DATABASE_URL=… uv run alembic stamp 012_purge_failed_snapshots && pnpm db:migrate`.
 - Tables also include `feature_flags` (boolean toggles) and `app_settings`
   (string-valued toggles, e.g. `flight_provider`).
 - `PriceSnapshot.raw_data` is a JSONB column kept for debugging — query it when a

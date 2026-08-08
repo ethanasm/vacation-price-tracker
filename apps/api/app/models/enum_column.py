@@ -38,6 +38,9 @@ def varchar_enum(
             create_constraint=False,
             length=length,
             values_callable=lambda e: [member.value for member in e],
+            # With no CHECK constraint, this is the only thing rejecting a raw
+            # string that isn't a legal enum value at bind time.
+            validate_strings=True,
         ),
         nullable=False,
         server_default=server_default,
