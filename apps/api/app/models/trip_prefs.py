@@ -4,6 +4,7 @@ from sqlalchemy import JSON, Column, ForeignKey
 from sqlmodel import Field, SQLModel
 
 from app.core.constants import CabinClass, RoomSelectionMode, StopsMode
+from app.models.enum_column import varchar_enum
 
 
 class TripFlightPrefs(SQLModel, table=True):
@@ -24,9 +25,17 @@ class TripFlightPrefs(SQLModel, table=True):
         default_factory=list,
         sa_column=Column(JSON, nullable=False, server_default="[]"),
     )
-    stops_mode: StopsMode = Field(default=StopsMode.ANY, nullable=False)
+    # VARCHAR-backed (see enum_column.py) — a bare enum annotation would emit
+    # native Postgres ENUMs that the migrations never create.
+    stops_mode: StopsMode = Field(
+        default=StopsMode.ANY,
+        sa_column=varchar_enum(StopsMode, server_default="any"),
+    )
     max_stops: int | None = Field(default=None, ge=0, le=3)
-    cabin: CabinClass = Field(default=CabinClass.ECONOMY, nullable=False)
+    cabin: CabinClass = Field(
+        default=CabinClass.ECONOMY,
+        sa_column=varchar_enum(CabinClass, server_default="economy"),
+    )
 
 
 class TripHotelPrefs(SQLModel, table=True):
@@ -45,7 +54,11 @@ class TripHotelPrefs(SQLModel, table=True):
     rooms: int = Field(default=1, ge=1, le=9, nullable=False)
     adults_per_room: int = Field(default=2, ge=1, le=4, nullable=False)
     city: str | None = Field(default=None, max_length=200, nullable=True)
-    room_selection_mode: RoomSelectionMode = Field(default=RoomSelectionMode.CHEAPEST, nullable=False)
+    # VARCHAR-backed for the same reason as the flight prefs above.
+    room_selection_mode: RoomSelectionMode = Field(
+        default=RoomSelectionMode.CHEAPEST,
+        sa_column=varchar_enum(RoomSelectionMode, server_default="cheapest"),
+    )
     min_star_rating: int | None = Field(default=None, ge=1, le=5, nullable=True)
     # Store as JSON for SQLite/PostgreSQL compatibility (arrays stored as JSON)
     preferred_room_types: list[str] = Field(

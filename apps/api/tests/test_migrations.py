@@ -61,6 +61,52 @@ def _load_revisions() -> list[tuple[str, str, str | None]]:
     return entries
 
 
+def test_no_native_enum_model_columns() -> None:
+    """Every enum-typed model column must render as VARCHAR, never a native ENUM.
+
+    The migrations declare these columns as ``sa.String(20)``; a bare enum
+    annotation makes SQLModel emit a native Postgres ENUM type instead, so the
+    models and migrations describe two different schemas. On a migration-built
+    database every query against such a column fails with
+    ``type "tripstatus" does not exist`` (found when the e2e DB was rebuilt
+    from the chain); on a create_all-built database the varchar-emitting side
+    fails with ``operator does not exist: <type> = character varying``. Use
+    ``app.models.enum_column.varchar_enum`` for enum fields — it also stores
+    the StrEnum *values* (checked here too: without ``values_callable``,
+    SQLAlchemy stores the member *names*, e.g. ``ACTIVE`` instead of
+    ``active``).
+    """
+    import app.models  # noqa: F401 — registers every table on the metadata
+    import sqlalchemy as sa
+    from sqlmodel import SQLModel
+
+    native = []
+    wrong_values = []
+    for table in SQLModel.metadata.tables.values():
+        for col in table.columns:
+            if not isinstance(col.type, sa.Enum):
+                continue
+            qualified = f"{table.name}.{col.name}"
+            if col.type.native_enum:
+                native.append(qualified)
+            if col.type.enum_class is None:
+                # sa.Enum("a", "b") — raw strings, no enum class, so there is
+                # no values contract to check against. Require the real class.
+                wrong_values.append((qualified, "raw-string sa.Enum", "use varchar_enum"))
+                continue
+            expected = sorted(m.value for m in col.type.enum_class)
+            if sorted(col.type.enums) != expected:
+                wrong_values.append((qualified, sorted(col.type.enums), expected))
+    assert not native, (
+        f"model columns emit native Postgres ENUM types (migrations declare "
+        f"VARCHAR): {native} — use varchar_enum() from app.models.enum_column"
+    )
+    assert not wrong_values, (
+        f"enum columns store member names instead of StrEnum values "
+        f"(missing values_callable): {wrong_values}"
+    )
+
+
 def test_revision_ids_fit_alembic_version_column() -> None:
     over_limit = {rev: len(rev) for _, rev, _ in _load_revisions() if len(rev) > ALEMBIC_VERSION_NUM_MAX_LEN}
     assert not over_limit, (

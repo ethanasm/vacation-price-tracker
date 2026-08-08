@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from app.models.notification_outbox import NotificationOutbox
 from app.models.user import User
-from sqlalchemy import Enum, String
+from sqlalchemy import Enum
 from sqlalchemy.exc import IntegrityError
 
 
@@ -112,14 +112,24 @@ class TestNotificationOutboxColumns:
     UndefinedObjectError — invisible on the SQLite test DB, which never casts.
     """
 
-    def test_status_and_threshold_type_are_plain_strings(self):
+    def test_status_and_threshold_type_render_varchar(self):
+        # Since 013_enum_cols_to_varchar these use varchar_enum(): an sa.Enum
+        # that renders VARCHAR(20) (native_enum=False) and stores the StrEnum
+        # *values* — same DDL as the plain String(20) this replaced, but rows
+        # load back as enum members. test_no_native_enum_model_columns guards
+        # the same contract metadata-wide; this pins the outbox specifics.
         table = NotificationOutbox.__table__
         for column in (table.c.status, table.c.threshold_type):
-            # sa.Enum subclasses String, so the Enum check is the real guard.
-            assert isinstance(column.type, String), column.name
-            assert not isinstance(column.type, Enum), column.name
+            assert isinstance(column.type, Enum), column.name
+            assert column.type.native_enum is False, column.name
             assert column.type.length == 20, column.name
             assert column.nullable is False, column.name
+        assert sorted(table.c.status.type.enums) == ["failed", "pending", "sent"]
+        assert sorted(table.c.threshold_type.type.enums) == [
+            "flight_total",
+            "hotel_total",
+            "trip_total",
+        ]
 
     def test_server_defaults_match_migration(self):
         table = NotificationOutbox.__table__

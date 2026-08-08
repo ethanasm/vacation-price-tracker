@@ -6,6 +6,7 @@ from sqlalchemy.sql import func
 from sqlmodel import Column, DateTime, Field, SQLModel
 
 from app.core.constants import TripStatus
+from app.models.enum_column import varchar_enum
 
 
 class Trip(SQLModel, table=True):
@@ -24,7 +25,12 @@ class Trip(SQLModel, table=True):
     adults: int = Field(default=1, ge=1, le=9, nullable=False)
     track_flights: bool = Field(default=True, nullable=False)
     track_hotels: bool = Field(default=True, nullable=False)
-    status: TripStatus = Field(default=TripStatus.ACTIVE, nullable=False)
+    # VARCHAR-backed (see enum_column.py) — a bare enum annotation would emit a
+    # native Postgres ENUM that the migrations never create.
+    status: TripStatus = Field(
+        default=TripStatus.ACTIVE,
+        sa_column=varchar_enum(TripStatus, server_default="active"),
+    )
 
     created_at: datetime = Field(
         sa_column=Column(

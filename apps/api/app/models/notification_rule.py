@@ -6,6 +6,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Numeric
 from sqlmodel import Field, SQLModel
 
 from app.core.constants import ThresholdType
+from app.models.enum_column import varchar_enum
 
 
 class NotificationRule(SQLModel, table=True):
@@ -21,7 +22,12 @@ class NotificationRule(SQLModel, table=True):
             nullable=False,
         )
     )
-    threshold_type: ThresholdType = Field(default=ThresholdType.TRIP_TOTAL, nullable=False)
+    # VARCHAR-backed (see enum_column.py) — a bare enum annotation would emit a
+    # native Postgres ENUM that the migrations never create.
+    threshold_type: ThresholdType = Field(
+        default=ThresholdType.TRIP_TOTAL,
+        sa_column=varchar_enum(ThresholdType, server_default="trip_total"),
+    )
     threshold_value: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
     notify_without_threshold: bool = Field(default=False, nullable=False)
     email_enabled: bool = Field(default=True, nullable=False)
