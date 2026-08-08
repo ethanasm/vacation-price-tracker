@@ -24,7 +24,10 @@ uv run alembic upgrade 012_purge_failed_snapshots
 psql "${PGURL}/${DB}" -v ON_ERROR_STOP=1 <<'SQL'
 -- Recreate the create_all-era shape: native enum types labeled with the
 -- member NAMES (what SQLModel's bare-enum columns produced), then flip the
--- five columns onto them.
+-- five columns onto them. The view from 002 blocks ALTER COLUMN TYPE, so it
+-- is dropped and recreated around the flips — leaving the DB in the hybrid
+-- enum-columns-plus-view shape that exercises 013's own view handling.
+DROP VIEW trip_form_view;
 CREATE TYPE tripstatus AS ENUM ('ACTIVE','PAUSED','ERROR','EXPIRED');
 CREATE TYPE stopsmode AS ENUM ('NONSTOP','ONE_STOP','ANY');
 CREATE TYPE cabinclass AS ENUM ('ECONOMY','PREMIUM_ECONOMY','BUSINESS','FIRST');
@@ -46,6 +49,34 @@ ALTER TABLE trip_hotel_prefs
 ALTER TABLE notification_rules
   ALTER COLUMN threshold_type DROP DEFAULT,
   ALTER COLUMN threshold_type TYPE thresholdtype USING upper(threshold_type)::thresholdtype;
+
+-- Restore the view (verbatim from 002) so the fixture DB has BOTH the enum
+-- columns and the dependent view — the shape that blocks a naive migration.
+CREATE VIEW trip_form_view AS
+SELECT
+    trips.name AS name,
+    trips.origin_airport AS origin_airport,
+    trips.destination_code AS destination_code,
+    trips.is_round_trip AS is_round_trip,
+    trips.depart_date AS depart_date,
+    trips.return_date AS return_date,
+    trips.adults AS adults,
+    trip_flight_prefs.cabin AS flight_cabin,
+    trip_flight_prefs.stops_mode AS flight_stops_mode,
+    trip_flight_prefs.airlines AS flight_airlines,
+    trip_hotel_prefs.rooms AS hotel_rooms,
+    trip_hotel_prefs.adults_per_room AS hotel_adults_per_room,
+    trip_hotel_prefs.room_selection_mode AS hotel_room_selection_mode,
+    trip_hotel_prefs.preferred_room_types AS hotel_room_types,
+    trip_hotel_prefs.preferred_views AS hotel_views,
+    notification_rules.threshold_type AS notification_threshold_type,
+    notification_rules.threshold_value AS notification_threshold_value,
+    notification_rules.email_enabled AS notification_email_enabled,
+    notification_rules.sms_enabled AS notification_sms_enabled
+FROM trips
+LEFT JOIN trip_flight_prefs ON trip_flight_prefs.trip_id = trips.id
+LEFT JOIN trip_hotel_prefs ON trip_hotel_prefs.trip_id = trips.id
+LEFT JOIN notification_rules ON notification_rules.trip_id = trips.id;
 
 -- Seed rows storing the member NAMES, exactly like prod (ONE_STOP included —
 -- the one value where a blanket lower() would corrupt data).
@@ -87,6 +118,10 @@ check "SELECT room_selection_mode FROM trip_hotel_prefs" "cheapest"
 check "SELECT threshold_type FROM notification_rules" "trip_total"
 check "SELECT count(*) FROM pg_type WHERE typname IN ('tripstatus','stopsmode','cabinclass','roomselectionmode','thresholdtype')" "0"
 check "SELECT version_num FROM alembic_version" "013_enum_cols_to_varchar"
+# The migration must drop and faithfully recreate trip_form_view around the
+# ALTERs — a dependent view blocks ALTER COLUMN TYPE outright.
+check "SELECT count(*) FROM information_schema.views WHERE table_name='trip_form_view'" "1"
+check "SELECT flight_stops_mode FROM trip_form_view" "1-stop"
 
 if [ "${fail}" -eq 0 ]; then
   echo "migration 013 conversion-path assertions all passed"

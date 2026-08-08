@@ -86,12 +86,68 @@ _COLUMNS: list[tuple[str, str, str, dict[str, str], str]] = [
 ]
 
 
+# Verbatim from 002_trip_form_view. ALTER COLUMN TYPE is blocked by dependent
+# views ("cannot alter type of a column used by a view or rule"), and this
+# view reads four of the five converted columns — so it is dropped before the
+# conversions and recreated identically afterwards. Prod (create_all-born)
+# has no views at all — create_all never ran 002 — so this only fires on a
+# hybrid database that has both the enum columns and the view.
+_TRIP_FORM_VIEW_SQL = """
+    CREATE VIEW trip_form_view AS
+    SELECT
+        trips.name AS name,
+        trips.origin_airport AS origin_airport,
+        trips.destination_code AS destination_code,
+        trips.is_round_trip AS is_round_trip,
+        trips.depart_date AS depart_date,
+        trips.return_date AS return_date,
+        trips.adults AS adults,
+        trip_flight_prefs.cabin AS flight_cabin,
+        trip_flight_prefs.stops_mode AS flight_stops_mode,
+        trip_flight_prefs.airlines AS flight_airlines,
+        trip_hotel_prefs.rooms AS hotel_rooms,
+        trip_hotel_prefs.adults_per_room AS hotel_adults_per_room,
+        trip_hotel_prefs.room_selection_mode AS hotel_room_selection_mode,
+        trip_hotel_prefs.preferred_room_types AS hotel_room_types,
+        trip_hotel_prefs.preferred_views AS hotel_views,
+        notification_rules.threshold_type AS notification_threshold_type,
+        notification_rules.threshold_value AS notification_threshold_value,
+        notification_rules.email_enabled AS notification_email_enabled,
+        notification_rules.sms_enabled AS notification_sms_enabled
+    FROM trips
+    LEFT JOIN trip_flight_prefs ON trip_flight_prefs.trip_id = trips.id
+    LEFT JOIN trip_hotel_prefs ON trip_hotel_prefs.trip_id = trips.id
+    LEFT JOIN notification_rules ON notification_rules.trip_id = trips.id
+"""
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
         # Native enum types are a Postgres concept; the SQLite test DB is
         # built from the (now VARCHAR-rendering) models.
         return
+
+    needs_conversion = bind.execute(
+        sa.text(
+            "SELECT count(*) FROM information_schema.columns"
+            " WHERE udt_name IN ('tripstatus','stopsmode','cabinclass',"
+            "'roomselectionmode','thresholdtype')"
+        )
+    ).scalar()
+    had_view = False
+    if needs_conversion:
+        had_view = bool(
+            bind.execute(
+                sa.text(
+                    "SELECT count(*) FROM information_schema.views"
+                    " WHERE table_schema = 'public'"
+                    " AND table_name = 'trip_form_view'"
+                )
+            ).scalar()
+        )
+        if had_view:
+            op.execute("DROP VIEW trip_form_view")
 
     for table, column, typename, mapping, default in _COLUMNS:
         udt = bind.execute(
@@ -139,6 +195,9 @@ def upgrade() -> None:
                 f"NOT dropping type {typename}: still referenced by {refs} "
                 f"column(s) outside this migration's list — investigate"
             )
+
+    if had_view:
+        op.execute(_TRIP_FORM_VIEW_SQL)
 
 
 def downgrade() -> None:
