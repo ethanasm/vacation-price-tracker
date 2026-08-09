@@ -509,7 +509,10 @@ jobs:
           echo "::group::Maestro debug dir contents"
           ls -la /tmp/vpt-maestro-debug/ 2>/dev/null || echo "no debug dir"
           echo "::endgroup::"
-          shopt -s nullglob
+          # globstar so ** actually recurses (it degrades to * without it) and
+          # dotglob so the hidden .maestro/ tree — where Maestro puts the
+          # per-step logs — is included.
+          shopt -s nullglob globstar dotglob
           for f in /tmp/vpt-maestro-debug/**/*.txt /tmp/vpt-maestro-debug/**/*.json /tmp/vpt-maestro-debug/**/*.log /tmp/vpt-maestro-debug/*.txt /tmp/vpt-maestro-debug/*.json /tmp/vpt-maestro-debug/*.log; do
             echo "::group::$f"
             tail -200 "$f" 2>/dev/null || true
@@ -529,6 +532,13 @@ jobs:
             /tmp/vpt-emulator.log
           if-no-files-found: ignore
           retention-days: 7
+          # Maestro writes everything that matters for a failed step — the
+          # per-step screenshots and the UI hierarchy — under the HIDDEN
+          # .maestro/ directory inside --debug-output. upload-artifact defaults
+          # this to false, which silently shipped artifacts containing only the
+          # cold-launch capture and backend logs while the "Screenshots
+          # captured" summary listed files that never made it in.
+          include-hidden-files: true
 
       - name: Post failure comment on PR
         if: failure() && github.event_name == 'pull_request'
