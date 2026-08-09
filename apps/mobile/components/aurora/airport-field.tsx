@@ -233,18 +233,23 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   input: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, fontSize: 15 },
   right: { marginLeft: 8 },
+  // In normal flow, NOT an absolute overlay. An absolutely positioned
+  // dropdown (top: '100%') sits entirely outside the anchor's layout bounds:
+  // Android still paints it (no clipping), but a view whose rect falls
+  // outside every ancestor's bounds has an empty global-visible-rect, so the
+  // accessibility tree prunes the whole subtree — Maestro/UIAutomator can't
+  // see or tap the options, and TalkBack loses the list. The nightly e2e
+  // failed on exactly this: the step screenshot showed the list fully
+  // rendered while the UI hierarchy contained no trace of it. In-flow, the
+  // anchor grows to contain the list and everything below shifts down while
+  // it's open — visible to a11y, tappable, and identical on web.
   dropdown: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
     marginTop: 6,
     borderWidth: 1,
     overflow: 'hidden',
-    zIndex: 30,
     // No `elevation` here: tokens.shadow.cardOnCanvas is applied after this
-    // style and sets elevation 8, so anything declared here is dead. 8 already
-    // clears every sibling inside the wrap (all at 0).
+    // style and sets elevation 8. zIndex is gone with the overlay — the list
+    // no longer paints over siblings, it displaces them.
   },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 12 },
   optionIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
