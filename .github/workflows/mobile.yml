@@ -439,6 +439,13 @@ jobs:
           # workflow on this shared box uses /tmp/showbook-maestro-debug, and a
           # shared /tmp/maestro-debug once let its failure publisher post OUR
           # screenshots on a showbook PR.
+          #
+          # Full clear, not just mkdir: the self-hosted runner persists between
+          # runs, so stale cold-launch captures and container logs from prior
+          # runs would otherwise ride along in this run's artifact. This is the
+          # one safe place to clear — the cold-launch capture below is the
+          # first writer into the dir.
+          rm -rf /tmp/vpt-maestro-debug
           mkdir -p /tmp/vpt-maestro-debug
           adb shell pm clear me.ethanasm.vacation_price_tracker || true
           adb shell am start -W -n me.ethanasm.vacation_price_tracker/.MainActivity || true
@@ -509,8 +516,14 @@ jobs:
           echo "::group::Maestro debug dir contents"
           ls -la /tmp/vpt-maestro-debug/ 2>/dev/null || echo "no debug dir"
           echo "::endgroup::"
-          shopt -s nullglob
-          for f in /tmp/vpt-maestro-debug/**/*.txt /tmp/vpt-maestro-debug/**/*.json /tmp/vpt-maestro-debug/**/*.log /tmp/vpt-maestro-debug/*.txt /tmp/vpt-maestro-debug/*.json /tmp/vpt-maestro-debug/*.log; do
+          # globstar so ** actually recurses (it degrades to * without it) and
+          # dotglob so the hidden .maestro/ tree — where Maestro puts the
+          # per-step logs — is included. With globstar, ** matches zero or more
+          # directories, so the recursive patterns also cover the top level —
+          # no separate /tmp/vpt-maestro-debug/*.log trio (that would print
+          # every top-level log twice).
+          shopt -s nullglob globstar dotglob
+          for f in /tmp/vpt-maestro-debug/**/*.txt /tmp/vpt-maestro-debug/**/*.json /tmp/vpt-maestro-debug/**/*.log; do
             echo "::group::$f"
             tail -200 "$f" 2>/dev/null || true
             echo "::endgroup::"
@@ -529,6 +542,13 @@ jobs:
             /tmp/vpt-emulator.log
           if-no-files-found: ignore
           retention-days: 7
+          # Maestro writes everything that matters for a failed step — the
+          # per-step screenshots and the UI hierarchy — under the HIDDEN
+          # .maestro/ directory inside --debug-output. upload-artifact defaults
+          # this to false, which silently shipped artifacts containing only the
+          # cold-launch capture and backend logs while the "Screenshots
+          # captured" summary listed files that never made it in.
+          include-hidden-files: true
 
       - name: Post failure comment on PR
         if: failure() && github.event_name == 'pull_request'
