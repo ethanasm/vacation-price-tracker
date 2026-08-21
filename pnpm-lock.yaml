@@ -263,8 +263,8 @@ importers:
         specifier: ^4.4.0
         version: 4.4.0
       lucide-react:
-        specifier: ^1.24.0
-        version: 1.24.0(react@19.2.3)
+        specifier: ^1.32.0
+        version: 1.32.0(react@19.2.3)
       next:
         specifier: 16.2.11
         version: 16.2.11(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@26.2.0)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(sass@1.102.0)
@@ -6280,6 +6280,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -7958,8 +7959,8 @@ packages:
       react-native: '*'
       react-native-svg: ^12.0.0 || ^13.0.0 || ^14.0.0 || ^15.0.0
 
-  lucide-react@1.24.0:
-    resolution: {integrity: sha512-YT6mBD8lGKkg4nM39enlm94/sfJIiW0YKUT60fBy4YK8tai31ylg1VhGNWxkpSKHo9UagfnZqwIff3HTDQwXeA==}
+  lucide-react@1.32.0:
+    resolution: {integrity: sha512-txX56hMFnRxPi1f9/nH69YN8uvAO6a7Y1KSWKjCDAtdD9+soEgmWuCt6iRm1pkxUZo2+YntSdsE1L6bIuKoY8Q==}
     peerDependencies:
       react: 19.2.3
 
@@ -20100,7 +20101,7 @@ snapshots:
       react-native: 0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.8)(react@19.2.3)
       react-native-svg: 15.15.5(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.8)(react@19.2.3))(react@19.2.3)
 
-  lucide-react@1.24.0(react@19.2.3):
+  lucide-react@1.32.0(react@19.2.3):
     dependencies:
       react: 19.2.3
 
