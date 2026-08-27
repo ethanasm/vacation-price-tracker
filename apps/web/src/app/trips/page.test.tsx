@@ -279,12 +279,13 @@ describe("DashboardPage", () => {
     it("renders trip status badges with uppercase display", async () => {
       render(<DashboardPage />);
 
+      // Check for status badges (API returns lowercase, displayed as uppercase).
+      // Wait on the rendered badges themselves, not just the API call, since the
+      // list call resolving doesn't guarantee the resulting state update has
+      // flushed to the DOM yet.
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getAllByText("ACTIVE")).toHaveLength(2);
       });
-
-      // Check for status badges (API returns lowercase, displayed as uppercase)
-      expect(screen.getAllByText("ACTIVE")).toHaveLength(2);
       expect(screen.getByText("PAUSED")).toBeInTheDocument();
     });
 
