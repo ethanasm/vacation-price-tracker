@@ -248,8 +248,12 @@ describe("DashboardPage", () => {
         expect(api.trips.list).toHaveBeenCalledTimes(1);
       });
 
-      // Check for trip names from API
-      expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      // Check for trip names from API. The list call resolving doesn't
+      // guarantee the resulting state update has flushed to the DOM yet,
+      // so wait on the rendered content itself.
+      await waitFor(() => {
+        expect(screen.getByText("Orlando Family Vacation")).toBeInTheDocument();
+      });
       expect(screen.getByText("Hawaii Honeymoon")).toBeInTheDocument();
       expect(screen.getByText("NYC Weekend")).toBeInTheDocument();
     });
@@ -266,12 +270,13 @@ describe("DashboardPage", () => {
     it("renders trip routes correctly", async () => {
       render(<DashboardPage />);
 
+      // Check airport codes are displayed (SFO appears twice - for Orlando
+      // and NYC trips). Wait on the rendered content itself rather than just
+      // the API call, since the list call resolving doesn't guarantee the
+      // resulting state update has flushed to the DOM yet.
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getAllByText("SFO")).toHaveLength(2);
       });
-
-      // Check airport codes are displayed (SFO appears twice - for Orlando and NYC trips)
-      expect(screen.getAllByText("SFO")).toHaveLength(2);
       expect(screen.getByText("MCO")).toBeInTheDocument();
       expect(screen.getByText("LAX")).toBeInTheDocument();
     });
@@ -309,24 +314,20 @@ describe("DashboardPage", () => {
     it("has links to individual trip pages", async () => {
       render(<DashboardPage />);
 
-      await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
-      });
-
-      const tripLink = screen.getByRole("link", { name: "Orlando Family Vacation" });
+      const tripLink = await screen.findByRole("link", { name: "Orlando Family Vacation" });
       expect(tripLink).toHaveAttribute("href", "/trips/1");
     });
 
     it("displays round trip indicator for trips with return dates", async () => {
       render(<DashboardPage />);
 
+      // All mock trips have return dates, so they show bidirectional arrow.
+      // Wait on the rendered content itself rather than just the API call,
+      // since the list call resolving doesn't guarantee the resulting state
+      // update has flushed to the DOM yet.
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getAllByText("↔")).toHaveLength(3);
       });
-
-      // All mock trips have return dates, so they show bidirectional arrow
-      const arrows = screen.getAllByText("↔");
-      expect(arrows.length).toBe(3);
     });
 
     it("renders the New Trip link with correct href", async () => {
@@ -343,12 +344,13 @@ describe("DashboardPage", () => {
     it("renders prices formatted correctly", async () => {
       render(<DashboardPage />);
 
+      // Check for formatted prices. Wait on the rendered content itself
+      // rather than just the API call, since the list call resolving
+      // doesn't guarantee the resulting state update has flushed to the
+      // DOM yet.
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText("$893")).toBeInTheDocument();
       });
-
-      // Check for formatted prices
-      expect(screen.getByText("$893")).toBeInTheDocument();
       expect(screen.getByText("$1,245")).toBeInTheDocument();
       expect(screen.getByText("$2,138")).toBeInTheDocument();
     });
@@ -356,27 +358,25 @@ describe("DashboardPage", () => {
     it("renders a table with proper structure after loading", async () => {
       render(<DashboardPage />);
 
-      await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
-      });
-
-      const table = screen.getByRole("table");
+      const table = await screen.findByRole("table");
       expect(table).toBeInTheDocument();
 
       // Check that we have expected number of rows (header + 3 trips)
-      const rows = screen.getAllByRole("row");
-      expect(rows.length).toBe(4); // 1 header + 3 data rows
+      await waitFor(() => {
+        expect(screen.getAllByRole("row")).toHaveLength(4); // 1 header + 3 data rows
+      });
     });
 
     it("renders trip dates formatted correctly", async () => {
       render(<DashboardPage />);
 
+      // Check for date formatting. Wait on the rendered content itself
+      // rather than just the API call, since the list call resolving
+      // doesn't guarantee the resulting state update has flushed to the
+      // DOM yet.
       await waitFor(() => {
-        expect(api.trips.list).toHaveBeenCalled();
+        expect(screen.getByText(/Jun 15/)).toBeInTheDocument();
       });
-
-      // Check for date formatting
-      expect(screen.getByText(/Jun 15/)).toBeInTheDocument();
     });
   });
 
