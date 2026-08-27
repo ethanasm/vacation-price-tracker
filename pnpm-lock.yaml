@@ -215,7 +215,7 @@ importers:
   apps/web:
     dependencies:
       '@assistant-ui/react':
-        specifier: ^0.15.16
+        specifier: 0.15.16
         version: 0.15.16(@types/react-dom@19.2.3(@types/react@19.2.8))(@types/react@19.2.8)(immer@11.1.16)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3))
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.23
