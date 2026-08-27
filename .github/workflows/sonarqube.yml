@@ -139,7 +139,7 @@ jobs:
       # workflows succeeded, so a missing artifact is a hard error (it would
       # silently zero-coverage that language's files).
       - name: Download web coverage
-        uses: dawidd6/action-download-artifact@v23
+        uses: dawidd6/action-download-artifact@v24
         with:
           name: web-coverage
           workflow: web.yml
@@ -148,7 +148,7 @@ jobs:
           if_no_artifact_found: fail
 
       - name: Download Python coverage
-        uses: dawidd6/action-download-artifact@v23
+        uses: dawidd6/action-download-artifact@v24
         with:
           name: python-coverage
           workflow: server.yml
