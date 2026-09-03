@@ -91,6 +91,13 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    # pnpm audit has been crashing with "JavaScript heap out of memory" right
+    # at V8's default ~4GB old-space ceiling (not a real advisory — the same
+    # two audit commands finish cleanly on other runs minutes apart). Raise
+    # the limit well below the runner's 7GB RAM ceiling so the audit database
+    # diff can be built without exhausting the default heap.
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v7
 
