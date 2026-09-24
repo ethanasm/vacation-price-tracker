@@ -78,7 +78,7 @@
   },
   "devDependencies": {
     "@nx/next": "23.2.1",
-    "@nxlv/python": "^23.0.2",
+    "@nxlv/python": "^23.1.1",
     "nx": "23.2.1",
     "sonarqube-scanner": "^5.0.0",
     "vite": "8.3.0"
