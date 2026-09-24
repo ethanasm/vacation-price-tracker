@@ -19,6 +19,7 @@ dependencies = [
     "itsdangerous",
     "jinja2",
     # Pinned for known CVEs (transitive); see `pnpm verify` audit step
+    "anyio>=4.14.2",
     "cryptography>=50.0.0",
     "msgpack>=1.2.1",
     "pygments>=2.20.0",
