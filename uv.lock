@@ -1395,9 +1395,9 @@ wheels = [
 
 [[package]]
 name = "pydevd-pycharm"
-version = "263.5701.41"
+version = "263.7031.30"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ab/11/9b3393cb93ecf529a386709e5cfafc9243b061128fce2a39d9ca341cecc5/pydevd_pycharm-263.5701.41.tar.gz", hash = "sha256:58c1f2cc09f92c3fecf08e0c42aa78759715674c2f0d2b345eabfec1a448d822", size = 7636669, upload-time = "2026-09-25T12:08:13.087Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/b5/d1b433232a8e8f17423af4813f762861f98aef641121e718ec32d8175e7d/pydevd_pycharm-263.7031.30.tar.gz", hash = "sha256:132ab3c6476d37714b956ce91ef580ddee6343af36ddccde83c60ef9e33b4f6b", size = 7637001, upload-time = "2026-10-16T09:55:46.91Z" }
 
 [[package]]
 name = "pygments"
@@ -2135,7 +2135,7 @@ requires-dist = [
     { name = "pip-audit", marker = "extra == 'dev'" },
     { name = "provider-router", specifier = ">=0.1.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
-    { name = "pydevd-pycharm", marker = "extra == 'dev'", specifier = ">=262.8665.186,<263.5702.0" },
+    { name = "pydevd-pycharm", marker = "extra == 'dev'", specifier = ">=262.8665.186,<263.7032.0" },
     { name = "pygments", specifier = ">=2.20.0" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
