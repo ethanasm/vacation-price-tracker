@@ -133,7 +133,7 @@ wheels = [
 
 [[package]]
 name = "axiom-py"
-version = "0.12.0"
+version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dacite" },
@@ -144,9 +144,9 @@ dependencies = [
     { name = "requests-toolbelt" },
     { name = "ujson" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/c5/be105497803b94afd77b9fa9136d2186f25f1b7fc154cb838e6709f76f4f/axiom_py-0.12.0.tar.gz", hash = "sha256:e91471c074e45b9d5f78f20efc24428939cb01b01b1539bce321e412ed3ea1e3", size = 117282, upload-time = "2026-05-18T10:12:32.359Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/ca/565fb9e381db0dfd435c4f596d58fe365e0525839c0147a5c1aecf39402d/axiom_py-0.15.0.tar.gz", hash = "sha256:3d5a41fdcece597850bccf49cc82488e6a5450e17d78bf6ef9964f4822714abe", size = 116949, upload-time = "2026-09-23T09:15:52.135Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/53/5931ec97f1778aa6c4053e2d787999f539faafe5099cdf669653890d7b8c/axiom_py-0.12.0-py3-none-any.whl", hash = "sha256:dc2eef7b026a909bda8664d0535b69943f8844180bdb4d0f316b11b005627258", size = 37162, upload-time = "2026-05-18T10:12:30.978Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/4a/d5942e4cdfefdbb5fec1d109f491de5be1dbe98313bb5b519436b06e9798/axiom_py-0.15.0-py3-none-any.whl", hash = "sha256:e1d0493ec5e959438a1732bd38fa12c6dcef8500ae2791f001a2221979cf6577", size = 32955, upload-time = "2026-09-23T09:15:51.075Z" },
 ]
 
 [[package]]
