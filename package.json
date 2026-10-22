@@ -80,7 +80,7 @@
     "@nx/next": "23.3.0",
     "@nxlv/python": "^23.2.1",
     "nx": "23.3.0",
-    "sonarqube-scanner": "^5.0.1",
+    "sonarqube-scanner": "^5.0.2",
     "vite": "8.3.4"
   },
   "pnpm": {
