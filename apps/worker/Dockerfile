@@ -1,5 +1,5 @@
 # Temporal Worker Dockerfile
-FROM python:3.14-slim AS base
+FROM python:3.15-slim AS base
 
 WORKDIR /app
 
