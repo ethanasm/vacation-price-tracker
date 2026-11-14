@@ -37,7 +37,12 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=https://localhost:8000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-RUN pnpm run build
+# next/font/google downloads the font files from fonts.gstatic.com during the
+# build, and a transient fetch failure there surfaces as a hard "module not
+# found" error in the generated font CSS. Retry once so a network blip doesn't
+# fail the image build (and block the deploy); a real compile error still
+# fails both attempts.
+RUN pnpm run build || { echo "next build failed; retrying once in 15s" >&2; sleep 15; pnpm run build; }
 
 # Production stage
 FROM base AS production
