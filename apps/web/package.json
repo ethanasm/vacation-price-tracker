@@ -48,13 +48,13 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.6",
-    "@playwright/test": "^1.65.0",
+    "@biomejs/biome": "2.6.8",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4.3.5",
     "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.8",
+    "@testing-library/user-event": "^14.6.12",
     "@types/jest": "^30.0.0",
     "@types/node": "26.6.6",
     "@types/react": "19.2.8",
@@ -63,7 +63,7 @@
     "jest": "30.5.2",
     "jest-environment-jsdom": "30.5.2",
     "openapi-typescript": "^7.13.0",
-    "postcss": "^8.5.32",
+    "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
     "ts-node": "^10.9.2",
     "typescript": "6.0.3"
