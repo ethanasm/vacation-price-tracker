@@ -8074,6 +8074,16 @@ packages:
       webpack:
         optional: true
 
+  schema-utils@4.8.5:
+    resolution: {integrity: sha512-K1RRP7aTUAY2lGXNzPwjMK6AMMzbETdpF3pTPMEnH/RrpmPx6K1X47/gSebrV+1I9pRcgpwZwqpYBlyZAsliiw==}
+    engines: {node: '>= 10.13.0'}
+    hasBin: true
+    peerDependencies:
+      webpack: ^5.0.0
+    peerDependenciesMeta:
+      webpack:
+        optional: true
+
   secure-compare@3.0.1:
     resolution: {integrity: sha512-AckIIV90rPDcBcglUwXPF3kg0P0qmPsPXAj6BBEENQE1p5yA1xfmDJzfi1Tappj37Pv2mVbKpL3Z1T+Nn7k1Qw==}
 
@@ -8225,6 +8235,10 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  source-map-js@1.2.3:
+    resolution: {integrity: sha512-xj+WrAkyv5Qp+t7r9N5HvCBu7g1qOe6CKRNpq22X1GGcPEQADFU54v5qsPVs3/vrUFQ7XivFrcAVKA2stI0kWA==}
+    engines: {node: '>=0.10.0'}
 
   source-map-js@1.2.3:
     resolution: {integrity: sha512-xj+WrAkyv5Qp+t7r9N5HvCBu7g1qOe6CKRNpq22X1GGcPEQADFU54v5qsPVs3/vrUFQ7XivFrcAVKA2stI0kWA==}
@@ -18521,6 +18535,15 @@ snapshots:
     optionalDependencies:
       webpack: 5.105.2(esbuild@0.28.2)
 
+  schema-utils@4.8.5(webpack@5.105.2(esbuild@0.28.2)):
+    dependencies:
+      '@types/json-schema': 7.0.15
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      ajv-keywords: 5.1.0(ajv@8.20.0)
+    optionalDependencies:
+      webpack: 5.105.2(esbuild@0.28.2)
+
   secure-compare@3.0.1: {}
 
   secure-json-parse@4.1.1: {}
@@ -18720,6 +18743,9 @@ snapshots:
       '@types/react': 19.2.8
 
   source-map-js@1.2.3: {}
+
+  source-map-js@1.2.3:
+    optional: true
 
   source-map-support@0.5.21:
     dependencies:
